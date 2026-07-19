@@ -18,9 +18,10 @@ Usage:
   av hardeners --json
   av inject +KEY [--] COMMAND
   av save KEY
-  av harden";
+  av harden
+  av open [--secret-gate ID]";
 
-const INSTALL_REVISION: u32 = 2;
+const INSTALL_REVISION: u32 = 3;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -122,71 +123,92 @@ where
                 return 2;
             };
             if target == "aws" {
-                return match hardeners::aws_cli::run_aws(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::aws_cli::run_aws(stdout, yes);
+                return finish_hardening(result, "aws", stdout, stderr);
             }
             if target == "gh" || target == "gh-cli" {
                 return match hardeners::gh_cli::run(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
+                    Ok(()) => {
+                        print_hardening_followup(stdout, "gh");
+                        0
+                    }
+                    Err(hardeners::gh_cli::HardenError::GhCliNotInstalled) => {
+                        print_gh_cli_install_guidance(stderr, style);
+                        1
+                    }
+                    Err(hardeners::gh_cli::HardenError::Other(err)) => {
                         let _ = writeln!(stderr, "av harden: {err}");
                         1
                     }
                 };
             }
             if target == "brew" || target == "homebrew" {
-                return match hardeners::homebrew::run(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::homebrew::run(stdout, yes);
+                return finish_hardening(result, "brew", stdout, stderr);
             }
             if target == "sudo" {
-                return match hardeners::sudo::run(stdout, style.color) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::sudo::run(stdout, style.color);
+                return finish_hardening(result, "sudo", stdout, stderr);
             }
             if target == "supabase" || target == "supabase-cli" {
-                return match hardeners::supabase::run(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::supabase::run(stdout, yes);
+                return finish_hardening(result, "supabase", stdout, stderr);
             }
-            if let Some(result) = target
-                .to_str()
-                .and_then(|target| hardeners::env_wrapper::run_target(target, stdout, yes))
+            if let Some(target) = target.to_str()
+                && let Some(result) = hardeners::env_wrapper::run_target(target, stdout, yes)
             {
-                return match result {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                return finish_hardening(result, target, stdout, stderr);
             }
             let _ = writeln!(stderr, "{USAGE}");
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
-        Some("open") if rest.is_empty() => open::run(stderr),
+        Some("open") => {
+            let Some(secret_gate) = parse_open_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            open::run(stderr, secret_gate.as_deref())
+        }
         Some("save") => save::run(rest, stderr),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
+        }
+    }
+}
+
+fn print_gh_cli_install_guidance(stderr: &mut dyn Write, style: scan::Style) {
+    let _ = writeln!(stderr, "╭─ harden gh");
+    let _ = writeln!(stderr, "│");
+    let _ = writeln!(stderr, "◆ {}", style.paint("33", "gh-cli is not installed"));
+    let _ = writeln!(stderr, "│");
+    let _ = writeln!(
+        stderr,
+        "├─ 1. run: `{}`",
+        hardeners::gh_cli::INSTALL_COMMAND
+    );
+    let _ = writeln!(stderr, "╰─ 2. run: `av harden gh` again");
+}
+
+fn print_hardening_followup(stdout: &mut dyn Write, target: &str) {
+    let _ = writeln!(stdout, "◇ verify with `av doctor {target}`");
+}
+
+fn finish_hardening<W: Write, E: Write>(
+    result: Result<(), String>,
+    target: &str,
+    stdout: &mut W,
+    stderr: &mut E,
+) -> i32 {
+    match result {
+        Ok(()) => {
+            print_hardening_followup(stdout, target);
+            0
+        }
+        Err(err) => {
+            let _ = writeln!(stderr, "av harden: {err}");
+            1
         }
     }
 }
@@ -204,6 +226,17 @@ fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
         }
     }
     target.map(|target| (target, yes))
+}
+
+fn parse_open_args(args: &[OsString]) -> Option<Option<String>> {
+    match args {
+        [] => Some(None),
+        [flag, id] if flag == "--secret-gate" => {
+            let id = id.to_str()?;
+            open::valid_secret_gate_id(id).then(|| Some(id.to_string()))
+        }
+        _ => None,
+    }
 }
 
 fn parse_doctor_args(args: &[OsString]) -> Option<(Option<String>, bool)> {
@@ -289,7 +322,7 @@ mod tests {
         assert_eq!(stdout, "");
         assert_eq!(
             stderr,
-            "av harden: gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`\n"
+            "╭─ harden gh\n│\n◆ gh-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/gh-cli`\n╰─ 2. run: `av harden gh` again\n"
         );
     }
 
@@ -339,7 +372,7 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n◇ verify with `av doctor sudo`\n"
         );
         assert_eq!(stderr, "");
     }
@@ -405,10 +438,24 @@ mod tests {
             assert_eq!(stderr, "");
             assert!(stdout.contains("\n  av harden\n"));
             assert!(!stdout.contains("av harden [--yes]"));
-            assert!(!stdout.contains("av open"));
+            assert!(stdout.contains("\n  av open [--secret-gate ID]\n"));
             assert!(!stdout.contains("av help"));
             assert!(!stdout.contains("__version"));
         }
+    }
+
+    #[test]
+    fn secret_gate_open_arguments_are_strictly_parsed() {
+        assert_eq!(parse_open_args(&[]), Some(None));
+        assert_eq!(
+            parse_open_args(&[OsString::from("--secret-gate"), OsString::from("aws")]),
+            Some(Some("aws".to_string()))
+        );
+        assert_eq!(
+            parse_open_args(&[OsString::from("--secret-gate"), OsString::from("../aws")]),
+            None
+        );
+        assert_eq!(parse_open_args(&[OsString::from("--secret-gate")]), None);
     }
 
     #[test]
@@ -420,7 +467,7 @@ mod tests {
         );
 
         let (code, stdout, stderr) = run_args(&["av", "__version"]);
-        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "2\n", ""));
+        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "3\n", ""));
     }
 
     #[test]

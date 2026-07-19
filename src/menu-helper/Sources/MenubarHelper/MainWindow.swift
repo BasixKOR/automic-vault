@@ -26,8 +26,16 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
         model.reload()
     }
 
+    func updateDetectorFindings(_ findings: [DetectorFinding]) {
+        model.updateDetectorFindings(findings)
+    }
+
     func showAccessRequest(id: UUID) {
         model.showAccessRequest(id: id)
+    }
+
+    func showSecretGate(id: String) {
+        model.showSecretGate(id: id)
     }
 }
 
@@ -76,6 +84,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var cliInstallState: CLIInstallState?
 
     private var reloadTask: Task<Void, Never>?
+    private var detectorFindingsGeneration = 0
 
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
@@ -178,6 +187,14 @@ final class DashboardModel: ObservableObject {
         return snapshot.secretGates.first
     }
 
+    var selectedStoredSecret: StoredSecret? {
+        if let selectedItemID,
+           let secret = snapshot.secrets.first(where: { $0.account == selectedItemID }) {
+            return secret
+        }
+        return snapshot.secrets.first
+    }
+
     var selectedAccessRequest: AccessRequestRecord? {
         if let selectedItemID,
            let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
@@ -214,6 +231,11 @@ final class DashboardModel: ObservableObject {
         selectedItemID = id.uuidString
     }
 
+    func showSecretGate(id: String) {
+        selectedSection = .secretGates
+        selectedItemID = id
+    }
+
     func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {
         snapshot.accessRequests.filter { $0.tool == item.title }
     }
@@ -221,11 +243,15 @@ final class DashboardModel: ObservableObject {
     func reload() {
         reloadTask?.cancel()
         isReloading = true
+        let findingsGeneration = detectorFindingsGeneration
         reloadTask = Task {
-            let (next, cliInstallState) = await Task.detached(priority: .background) {
+            var (next, cliInstallState) = await Task.detached(priority: .background) {
                 (DashboardSnapshot.load(), currentCLIInstallState())
             }.value
             guard !Task.isCancelled else { return }
+            if findingsGeneration != detectorFindingsGeneration {
+                next.detectorFindings = snapshot.detectorFindings
+            }
             snapshot = next
             self.cliInstallState = cliInstallState
             if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
@@ -235,17 +261,48 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    func addSecret(account: String, value: String) {
+    func updateDetectorFindings(_ findings: [DetectorFinding]) {
+        detectorFindingsGeneration += 1
+        snapshot.detectorFindings = findings
+        if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
+            selectedItemID = nil
+        }
+    }
+
+    func addSecret(
+        account: String,
+        value: String,
+        accessibility: StoredSecretAccessibility = .whenUnlocked
+    ) {
         let account = account.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !account.isEmpty, !value.isEmpty else { return }
-        let status = saveStoredSecret(account: account, value: value)
+        let status = saveStoredSecret(
+            account: account,
+            value: value,
+            accessibility: accessibility
+        )
         if status == errSecSuccess {
+            errorMessage = nil
             selectedSection = .allSecrets
             selectedItemID = account
             reload()
         } else {
             errorMessage = "Could not save \(account): \(status)"
         }
+    }
+
+    func setAccessibility(_ accessibility: StoredSecretAccessibility, for secret: StoredSecret) -> Bool {
+        let status = setStoredSecretAccessibility(
+            account: secret.account,
+            accessibility: accessibility
+        )
+        if status == errSecSuccess {
+            errorMessage = nil
+            reload()
+            return true
+        }
+        errorMessage = "Could not update \(secret.account): \(status)"
+        return false
     }
 
     func deleteSelectedSecret() {
@@ -274,19 +331,8 @@ final class DashboardModel: ObservableObject {
     }
 
     func installCLI() {
-        guard let bundledAVURL else {
-            errorMessage = "Bundled av executable is unavailable."
-            return
-        }
-        let commandURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
-            .appendingPathExtension("command")
         do {
-            try installCLICommand(bundleAVPath: bundledAVURL.path).write(to: commandURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
-            if !NSWorkspace.shared.open(commandURL) {
-                errorMessage = "Could not open the install command."
-            }
+            try openCLIInstaller()
         } catch {
             errorMessage = "Could not create install command: \(error.localizedDescription)"
         }
@@ -395,15 +441,26 @@ final class DashboardModel: ObservableObject {
                     isTriggered: true
                 )
             }
-            .sorted {
-                if $0.isTriggered != $1.isTriggered { return $0.isTriggered }
-                if $0.title != $1.title {
-                    return $0.title.localizedStandardCompare($1.title) == .orderedAscending
-                }
-                return ($0.kind ?? "").localizedStandardCompare($1.kind ?? "") == .orderedAscending
-            }
+            .sorted(by: detectorItemPrecedes)
     }
 
+}
+
+private func detectorItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) -> Bool {
+    if lhs.isTriggered != rhs.isTriggered { return lhs.isTriggered }
+    if lhs.isTriggered {
+        let lhsSeverity = detectorSeveritySortPriority(lhs.severity)
+        let rhsSeverity = detectorSeveritySortPriority(rhs.severity)
+        if lhsSeverity != rhsSeverity { return lhsSeverity < rhsSeverity }
+    }
+    if lhs.title != rhs.title {
+        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    }
+    return (lhs.kind ?? "").localizedStandardCompare(rhs.kind ?? "") == .orderedAscending
+}
+
+private func detectorSeveritySortPriority(_ severity: String?) -> Int {
+    severity.map(isMediumDetectorSeverity) == true ? 1 : 0
 }
 
 private let installedAVCLIPath = "/usr/local/bin/av"
@@ -428,7 +485,7 @@ private var bundledAVURL: URL? {
     return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
 }
 
-private func currentCLIInstallState(
+func currentCLIInstallState(
     installedURL: URL = URL(fileURLWithPath: installedAVCLIPath),
     bundledURL: URL? = bundledAVURL,
     expectedRevision: Int? = Bundle.main.object(forInfoDictionaryKey: "AVCLIRevision") as? Int
@@ -515,6 +572,34 @@ private func installCLICommand(bundleAVPath: String) -> String {
     """
 }
 
+@MainActor
+func openCLIInstaller() throws {
+    guard let bundledAVURL else {
+        throw CLIInstallerError.bundledExecutableUnavailable
+    }
+    let commandURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
+        .appendingPathExtension("command")
+    try installCLICommand(bundleAVPath: bundledAVURL.path)
+        .write(to: commandURL, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
+    guard NSWorkspace.shared.open(commandURL) else {
+        throw CLIInstallerError.couldNotOpenCommand
+    }
+}
+
+private enum CLIInstallerError: LocalizedError {
+    case bundledExecutableUnavailable
+    case couldNotOpenCommand
+
+    var errorDescription: String? {
+        switch self {
+        case .bundledExecutableUnavailable: "Bundled av executable is unavailable."
+        case .couldNotOpenCommand: "Could not open the install command."
+        }
+    }
+}
+
 private func shellQuoted(_ value: String) -> String {
     "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
 }
@@ -551,7 +636,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         ],
         secretGates: [],
         secrets: [
-            StoredSecret(account: "AWS_TOKEN"),
+            StoredSecret(account: "AWS_TOKEN", accessibility: .afterFirstUnlock),
             StoredSecret(account: "GITHUB_TOKEN"),
         ],
         accessRequests: [accessRequest],
@@ -584,13 +669,18 @@ func runDashboardSearchSelfCheck() -> Int32 {
         gate: gate,
         setProtection: { _ in }
     ).frame(width: 500)).fittingSize.height
+    let secretDetailHeight = model.selectedStoredSecret.map {
+        NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
+    }
     guard DashboardSection.allCases.last == .doctor,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 2,
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1,
+          model.selectedStoredSecret?.accessibility == .afterFirstUnlock,
           gateHeight > 0,
+          secretDetailHeight.map({ $0 > 0 }) == true,
           appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
@@ -627,6 +717,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
           detectorSeverityLevel(["medium", "high"]) == .high,
           detectorSeverityLevel([]) == .high
     else { return 1 }
+    let severitySortedItems = [
+        DashboardItem(id: "medium", title: "alpha", subtitle: "", detail: "", severity: "MEDIUM", isTriggered: true),
+        DashboardItem(id: "clean", title: "aardvark", subtitle: "", detail: ""),
+        DashboardItem(id: "high", title: "zulu", subtitle: "", detail: "", severity: "HIGH", isTriggered: true),
+    ].sorted(by: detectorItemPrecedes)
+    guard severitySortedItems.map(\.id) == ["high", "medium", "clean"] else { return 1 }
     model.searchText = ""
     model.selectSection(.doctor)
     guard model.selectedItem?.title == "aws",
@@ -907,6 +1003,13 @@ private struct DashboardDetailView: View {
                     .padding(.top, 32)
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .allSecrets, let secret = model.selectedStoredSecret {
+                StoredSecretDetailView(model: model, secret: secret)
+                    .id(secret.account)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if let item = model.selectedItem {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(item.title)
@@ -917,23 +1020,6 @@ private struct DashboardDetailView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                     InfoBlock(title: model.selectedSection.title, text: item.detail)
-                    if model.selectedSection == .allSecrets {
-                        HStack {
-                            Button { model.isRenamingSecret = true } label: {
-                                Label("Rename Secret", systemImage: "pencil")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            Button { model.deleteSelectedSecret() } label: {
-                                Label("Delete Secret", systemImage: "trash")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .tint(.red)
-                        }
-                    }
                     if let error = model.errorMessage {
                         InfoBlock(title: "Error", text: error)
                     }
@@ -1041,6 +1127,7 @@ private struct AddSecretView: View {
     @ObservedObject var model: DashboardModel
     @State private var account = ""
     @State private var value = ""
+    @State private var isAvailableWhileLocked = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1052,11 +1139,21 @@ private struct AddSecretView: View {
                 .textFieldStyle(.roundedBorder)
             SecureField("Value", text: $value)
                 .textFieldStyle(.roundedBorder)
+            Toggle("Available While Locked", isOn: $isAvailableWhileLocked)
+                .toggleStyle(.switch)
+            Text("Allows already-approved apps to use this secret while your Mac is locked, after the first unlock following a restart.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Save") {
-                    model.addSecret(account: account, value: value)
+                    model.addSecret(
+                        account: account,
+                        value: value,
+                        accessibility: isAvailableWhileLocked ? .afterFirstUnlock : .whenUnlocked
+                    )
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -1066,6 +1163,87 @@ private struct AddSecretView: View {
         .padding(22)
         .frame(width: 360)
         .background(.ultraThinMaterial)
+    }
+}
+
+private struct StoredSecretDetailView: View {
+    @ObservedObject var model: DashboardModel
+    let secret: StoredSecret
+    @State private var isAvailableWhileLocked: Bool
+
+    init(model: DashboardModel, secret: StoredSecret) {
+        self.model = model
+        self.secret = secret
+        _isAvailableWhileLocked = State(initialValue: secret.accessibility.isAvailableWhileLocked)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(secret.account)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+            Text(secret.subtitle)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+            InfoBlock(
+                title: "All Secrets",
+                text: "Secret value is hidden.\n\(secret.subtitle)"
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Available While Locked", isOn: availabilityBinding)
+                    .toggleStyle(.switch)
+                Text("Allows already-approved apps to use this secret while your Mac is locked, after the first unlock following a restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            }
+
+            HStack {
+                Button { model.isRenamingSecret = true } label: {
+                    Label("Rename Secret", systemImage: "pencil")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                Button { model.deleteSelectedSecret() } label: {
+                    Label("Delete Secret", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.red)
+            }
+
+            if let error = model.errorMessage {
+                InfoBlock(title: "Error", text: error)
+            }
+        }
+        .onChange(of: secret.accessibility) { _, accessibility in
+            isAvailableWhileLocked = accessibility.isAvailableWhileLocked
+        }
+    }
+
+    private var availabilityBinding: Binding<Bool> {
+        Binding {
+            isAvailableWhileLocked
+        } set: { isAvailable in
+            let previous = isAvailableWhileLocked
+            isAvailableWhileLocked = isAvailable
+            let accessibility: StoredSecretAccessibility = isAvailable
+                ? .afterFirstUnlock
+                : .whenUnlocked
+            if !model.setAccessibility(accessibility, for: secret) {
+                isAvailableWhileLocked = previous
+            }
+        }
     }
 }
 

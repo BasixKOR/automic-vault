@@ -21,9 +21,11 @@ Use `av harden gh` to migrate existing `gh` credentials into Automic Vault.
 
 The menu bar app creates a `gh` Secret Gate as soon as the hardened CLI is
 installed. Configure its default and per-app protection levels there. Read Only
-auto-approves known read-only commands and `gh api` GET requests. Full Access
-Except Secret Dumps still prompts for `gh auth token` and `gh auth status
---show-token`.
+auto-approves known read-only commands and `gh api` GET requests. Local Write
+Access additionally approves `repo clone`, `pr checkout`, `gist clone`, and
+download commands, which can change local files but do not mutate GitHub.
+Trusted Access approves remote mutations, but still prompts for `gh auth token`
+and `gh auth status --show-token`.
 
 ## Details
 

@@ -130,6 +130,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         "╰─ hardened brew; run `hash -r` (or start a new shell) before using brew"
     )
     .ok();
+    super::write_secret_gate_notice(stdout, "brew");
     Ok(())
 }
 

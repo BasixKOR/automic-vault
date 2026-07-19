@@ -30,6 +30,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "│").ok();
     if tokens.is_empty() {
         writeln!(stdout, "╰─ no legacy Supabase credentials found").ok();
+        super::write_secret_gate_notice(stdout, "supabase");
         return Ok(());
     }
     if tokens.len() > 1 {
@@ -58,6 +59,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         delete_legacy_keychain_token(account)?;
     }
     writeln!(stdout, "╰─ migrated Supabase credentials").ok();
+    super::write_secret_gate_notice(stdout, "supabase");
     Ok(())
 }
 

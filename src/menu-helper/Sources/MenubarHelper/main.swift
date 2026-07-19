@@ -14,6 +14,7 @@ private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let openMainWindowArgument = "--open-main-window"
 private let pendingMainWindowKey = "pendingMainWindow"
+private let pendingSecretGateKey = "pendingSecretGate"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
@@ -29,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         action: #selector(checkForUpdates),
         keyEquivalent: ""
     )
+    private lazy var installCLIItem = NSMenuItem(
+        title: "Install av-cli",
+        action: #selector(installCLI),
+        keyEquivalent: ""
+    )
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
@@ -42,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scanWorkItem: DispatchWorkItem?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
+    private var isUserSessionActive = true
+    private var areScreensAwake = true
     private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
     private var isCheckingForUpdates = false
     #if !DEBUG
@@ -56,11 +64,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if CommandLine.arguments.contains(openMainWindowArgument) {
                 UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
             }
+            if let secretGateID = requestedSecretGateID(arguments: CommandLine.arguments) {
+                UserDefaults.standard.set(secretGateID, forKey: pendingSecretGateKey)
+            }
             handOffToLaunchAgent()
             return
         }
 
         startServicesAndOpenMainWindowIfRequested()
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(
+            self,
+            selector: #selector(userSessionDidResignActive(_:)),
+            name: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(userSessionDidBecomeActive(_:)),
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(screensDidSleep(_:)),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(screensDidWake(_:)),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func userSessionDidResignActive(_ notification: Notification) {
+        isUserSessionActive = false
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
+    }
+
+    @objc private func userSessionDidBecomeActive(_ notification: Notification) {
+        isUserSessionActive = true
+        _ = migrateBackgroundKeychainItems()
+    }
+
+    @objc private func screensDidSleep(_ notification: Notification) {
+        areScreensAwake = false
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
+    }
+
+    @objc private func screensDidWake(_ notification: Notification) {
+        areScreensAwake = true
     }
 
     private func installStatusMenu() {
@@ -75,6 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+        installCLIItem.target = self
+        menu.addItem(installCLIItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         menu.delegate = self
@@ -95,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.startServicesAndOpenMainWindowIfRequested()
                 case .failure(let error):
                     UserDefaults.standard.removeObject(forKey: pendingMainWindowKey)
+                    UserDefaults.standard.removeObject(forKey: pendingSecretGateKey)
                     NSAlert(error: error).runModal()
                     NSApp.terminate(nil)
                 }
@@ -108,16 +173,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    private func consumePendingSecretGate() -> String? {
+        guard let id = UserDefaults.standard.string(forKey: pendingSecretGateKey) else { return nil }
+        UserDefaults.standard.removeObject(forKey: pendingSecretGateKey)
+        return validSecretGateID(id) ? id : nil
+    }
+
     private func startServicesAndOpenMainWindowIfRequested() {
         startServices()
-        if shouldOpenMainWindow(pending: consumePendingMainWindow()) {
-            openMainWindow()
+        let secretGateID = consumePendingSecretGate()
+        let shouldOpen = shouldOpenMainWindow(pending: consumePendingMainWindow())
+        if secretGateID != nil || shouldOpen {
+            showMainWindow(secretGateID: secretGateID)
         }
     }
 
     private func startServices() {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
+        _ = migrateBackgroundKeychainItems()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
         do {
@@ -129,6 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Task { @MainActor in self?.didRecordAccessRequest(record) }
                 }
                 return recorded
+            } canRequestHumanApproval: { [weak self] in
+                self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
             try approval.start()
             self.approval = approval
@@ -141,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         stopServices()
     }
 
@@ -162,6 +239,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let secretGateID = urls.lazy.compactMap(secretGateID(from:)).first else { return }
+        if shouldHandOffToLaunchAgent() {
+            UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
+            UserDefaults.standard.set(secretGateID, forKey: pendingSecretGateKey)
+            return
+        }
+        showMainWindow(secretGateID: secretGateID)
+    }
+
     @MainActor @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -174,6 +261,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor [weak self] in
             await self?.performUpdateCheck()
+        }
+    }
+
+    @MainActor @objc private func installCLI() {
+        do {
+            try openCLIInstaller()
+        } catch {
+            NSAlert(error: error).runModal()
         }
     }
 
@@ -217,10 +312,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func openMainWindow() {
+        showMainWindow(secretGateID: nil)
+    }
+
+    @MainActor private func showMainWindow(secretGateID: String?) {
         let wasVisible = mainWindow?.isVisible ?? false
         if let mainWindow {
             mainWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            if let secretGateID {
+                (mainWindow.contentViewController as? AutomicVaultMainWindowController)?
+                    .showSecretGate(id: secretGateID)
+            }
             #if !DEBUG
             if wasVisible == false {
                 postHogTelemetry.captureMainWindowOpened()
@@ -248,6 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.mainWindow = window
+        if let secretGateID {
+            controller.showSecretGate(id: secretGateID)
+        }
         NSApp.activate(ignoringOtherApps: true)
         window.setContentSize(defaultWindowSize)
         window.center()
@@ -321,6 +427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyScanResult(_ result: ScanResult) {
         switch result {
         case .clean:
+            updateMainWindowFindings([])
             #if !DEBUG
             lastTelemetryFindingCount = nil
             #endif
@@ -329,7 +436,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "No Vulnerabilities Detected",
                 image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
             )
-        case .findings(let count, let detectorCount, let level):
+        case .findings(let findings, let detectorCount, let level):
+            updateMainWindowFindings(findings)
+            let count = findings.count
             #if !DEBUG
             if lastTelemetryFindingCount != detectorCount {
                 postHogTelemetry.captureDetectorTriggered(count: detectorCount)
@@ -348,6 +457,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.image = brandImage(color: .systemRed)
             setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
         }
+    }
+
+    private func updateMainWindowFindings(_ findings: [DetectorFinding]) {
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?
+            .updateDetectorFindings(findings)
     }
 
     private func setScanStatus(_ title: String, image: NSImage?) {
@@ -464,6 +578,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        installCLIItem.isHidden = currentCLIInstallState() == .current
         refreshAutoApprovalMenuItems()
     }
 }
@@ -596,7 +711,7 @@ private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
 
 private enum ScanResult {
     case clean(Int)
-    case findings(Int, Int, ScanAlertLevel)
+    case findings([DetectorFinding], Int, ScanAlertLevel)
     case failed
 }
 
@@ -632,14 +747,15 @@ private func scanResult() -> ScanResult {
     process.waitUntilExit()
     guard process.terminationStatus == 0,
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let findings = object["findings"] as? [[String: Any]]
+          let findingObjects = object["findings"] as? [[String: Any]],
+          let findings = try? detectorFindings(from: data)
     else {
         return .failed
     }
-    let detectorCount = Set(findings.compactMap { $0["source"] as? String }).count
+    let detectorCount = Set(findings.map(\.source)).count
     return findings.isEmpty
         ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
-        : .findings(findings.count, detectorCount, scanAlertLevel(findings))
+        : .findings(findings, detectorCount, scanAlertLevel(findingObjects))
 }
 
 private func scanAlertLevel(_ findings: [[String: Any]]) -> ScanAlertLevel {
@@ -708,6 +824,17 @@ private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
     cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
+private func missingRequiredSecret(
+    for request: ApprovalRequest,
+    exists: (String) -> Bool = { storedSecretExists(account: $0) }
+) -> String? {
+    guard !request.allowMissingKeys else { return nil }
+    let conflicts = Set(request.envConflicts)
+    return request.keys.first {
+        (request.replaceExistingEnv || !conflicts.contains($0)) && !exists($0)
+    }
+}
+
 private struct TransientApprovalCache {
     private enum Key: Hashable {
         case approval(TransientApprovalKey)
@@ -762,6 +889,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let hardeners: [HardenerMetadata]?
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
+    private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
@@ -770,7 +898,8 @@ private final class ApprovalServer: @unchecked Sendable {
         serviceName: String,
         hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
-        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) }
+        onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
+        canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
@@ -780,6 +909,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.hardeners = hardeners
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
+        self.canRequestHumanApproval = canRequestHumanApproval
     }
 
     func start() throws {
@@ -883,6 +1013,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) {
         guard let request = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
+            return
+        }
+        if let key = missingRequiredSecret(for: request) {
+            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
             return
         }
         let scriptApproval = scriptApproval(for: request)
@@ -1017,6 +1151,24 @@ private final class ApprovalServer: @unchecked Sendable {
                     ))
                     self.reply(peer, to: message, ok: false, error: error.localizedDescription)
                 }
+                return
+            }
+
+            guard self.canRequestHumanApproval() else {
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    approvalSource: "Auto",
+                    reason: "User session is inactive",
+                    launcher: launcher
+                ))
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: "\(request.op) denied while user session is inactive"
+                )
                 return
             }
 
@@ -1355,8 +1507,7 @@ private func classifySecretGateRequest(
 ) -> SecretGateRequestClassification {
     switch gateID {
     case "gh":
-        if ghRequestIsSecretDump(request.args) { return .secretDump }
-        return ghRequestIsReadOnly(request.args) ? .readOnly : .mutating
+        return ghRequestClassification(request.args)
     case "aws":
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
     case "brew":
@@ -1488,15 +1639,15 @@ private func standardizedPath(_ path: String, cwd: String) -> String {
 }
 
 private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
-    let words = ghCommandWords(args).map { $0.lowercased() }
+    let words = ghCommandWords(args)
     guard let firstWord = words.first else { return false }
-    let command = ghCanonicalCommand(firstWord)
+    let command = ghCanonicalCommand(firstWord.lowercased())
     if words.contains("--show-token") { return false }
     if command == "api" { return ghApiRequestIsReadOnly(Array(words.dropFirst())) }
     if ["alias", "extension", "config", "skill"].contains(command) { return false }
     if ["status", "browse", "search"].contains(command) { return true }
     guard words.count >= 2 else { return false }
-    let subcommand = words[1]
+    let subcommand = words[1].lowercased()
     switch command {
     case "auth":
         return subcommand == "status"
@@ -1507,19 +1658,45 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     case "pr":
         return ["view", "status", "checks", "diff"].contains(subcommand) || ghSubcommandIsList(subcommand)
     case "run":
-        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "workflow":
         return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "release":
-        return ["view", "download"].contains(subcommand) || ghSubcommandIsList(subcommand)
+        return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "gist":
         return subcommand == "view" || ghSubcommandIsList(subcommand)
     case "cache", "secret", "variable", "ruleset", "org", "label", "gpg-key", "ssh-key":
         return ghSubcommandIsList(subcommand) || (command == "ruleset" && subcommand == "view")
     case "attestation":
-        return ["verify", "download", "trusted-root"].contains(subcommand)
+        return ["verify", "trusted-root"].contains(subcommand)
     case "agent-task":
         return ["view", "list"].contains(subcommand)
+    default:
+        return false
+    }
+}
+
+private func ghRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    if ghRequestIsSecretDump(args) { return .secretDump }
+    if ghRequestIsReadOnly(args) { return .readOnly }
+    if ghRequestIsLocalWrite(args) { return .localWrite }
+    return .mutating
+}
+
+private func ghRequestIsLocalWrite(_ args: [String]) -> Bool {
+    let words = ghCommandWords(args)
+    guard words.count >= 2 else { return false }
+    let command = ghCanonicalCommand(words[0].lowercased())
+    let subcommand = words[1].lowercased()
+    switch command {
+    case "repo":
+        return subcommand == "clone"
+    case "pr":
+        return subcommand == "checkout"
+    case "gist":
+        return subcommand == "clone"
+    case "run", "release", "attestation":
+        return subcommand == "download"
     default:
         return false
     }
@@ -1544,25 +1721,27 @@ private func ghSubcommandIsList(_ subcommand: String) -> Bool {
 
 private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
     var index = 0
-    var endpointSeen = false
+    var endpoints: [String] = []
     var method: String?
     var hasFields = false
+    var graphQLArguments = GhGraphQLArguments()
     while index < args.count {
         let arg = args[index]
         switch arg {
         case "--":
             return false
-        case "-x", "--method":
+        case "-X", "--method":
             guard index + 1 < args.count else { return false }
             method = args[index + 1].uppercased()
             index += 2
-        case "-f", "--field", "--raw-field":
+        case "-f", "--raw-field", "-F", "--field":
             guard index + 1 < args.count else { return false }
             hasFields = true
+            graphQLArguments.add(field: args[index + 1], readsFile: arg == "-F" || arg == "--field")
             index += 2
         case "--input":
             return false
-        case "-h", "--header", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
+        case "-H", "--header", "-p", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
             guard index + 1 < args.count else { return false }
             index += 2
         case "-i", "--include", "--paginate", "--slurp", "--silent", "--verbose":
@@ -1570,8 +1749,12 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
         default:
             if let value = arg.value(afterOption: "--method=") {
                 method = value.uppercased()
-            } else if arg.hasPrefix("--field=") || arg.hasPrefix("--raw-field=") {
+            } else if let field = arg.value(afterOption: "--field=") {
                 hasFields = true
+                graphQLArguments.add(field: field, readsFile: true)
+            } else if let field = arg.value(afterOption: "--raw-field=") {
+                hasFields = true
+                graphQLArguments.add(field: field, readsFile: false)
             } else if arg.hasPrefix("--input=") {
                 return false
             } else if arg.hasPrefix("--header=")
@@ -1581,19 +1764,62 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
                 || arg.hasPrefix("--template=")
                 || arg.hasPrefix("--hostname=") {
                 // read-only option with inline value
-            } else if arg.hasPrefix("-x"), arg.count > 2 {
+            } else if arg.hasPrefix("-X"), arg.count > 2 {
                 method = String(arg.dropFirst(2)).uppercased()
-            } else if arg.hasPrefix("-f") {
+            } else if arg.hasPrefix("-f"), arg.count > 2 {
                 hasFields = true
+                graphQLArguments.add(field: String(arg.dropFirst(2)), readsFile: false)
+            } else if arg.hasPrefix("-F"), arg.count > 2 {
+                hasFields = true
+                graphQLArguments.add(field: String(arg.dropFirst(2)), readsFile: true)
             } else if arg.hasPrefix("-") {
                 return false
             } else {
-                endpointSeen = true
+                endpoints.append(arg)
             }
             index += 1
         }
     }
-    return endpointSeen && (method ?? (hasFields ? "POST" : "GET")) == "GET"
+    guard endpoints.count == 1 else { return false }
+    if endpoints[0] == "graphql" {
+        return graphQLArguments.isReadOnly
+    }
+    return (method ?? (hasFields ? "POST" : "GET")) == "GET"
+}
+
+private struct GhGraphQLArguments {
+    private var queries: [String] = []
+    private var operationNames: [String] = []
+    private var hasIndirectFieldInput = false
+
+    mutating func add(field: String, readsFile: Bool) {
+        let parts = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return }
+
+        let name = String(parts[0])
+        let value = String(parts[1])
+        if readsFile, value.hasPrefix("@") {
+            hasIndirectFieldInput = true
+            return
+        }
+        guard name == "query" || name == "operationName" else { return }
+        if name == "query" {
+            queries.append(value)
+        } else {
+            operationNames.append(value)
+        }
+    }
+
+    var isReadOnly: Bool {
+        guard !hasIndirectFieldInput,
+              queries.count == 1,
+              operationNames.count <= 1,
+              let query = queries.first
+        else {
+            return false
+        }
+        return graphQLRequestIsReadOnly(query: query, operationName: operationNames.first)
+    }
 }
 
 private func ghCommandWords(_ args: [String]) -> [String] {
@@ -1722,6 +1948,32 @@ private func shouldOpenMainWindow(
     pending: Bool
 ) -> Bool {
     pending || arguments.contains(openMainWindowArgument)
+}
+
+private func requestedSecretGateID(arguments: [String]) -> String? {
+    guard let flag = arguments.firstIndex(of: "--secret-gate"),
+          arguments.indices.contains(flag + 1)
+    else { return nil }
+    let id = arguments[flag + 1]
+    return validSecretGateID(id) ? id : nil
+}
+
+private func secretGateID(from url: URL) -> String? {
+    guard url.scheme == "automic-vault",
+          url.host == "secret-gate",
+          url.pathComponents.count == 2
+    else { return nil }
+    let id = url.lastPathComponent
+    return validSecretGateID(id) ? id : nil
+}
+
+private func validSecretGateID(_ id: String) -> Bool {
+    !id.isEmpty && id.utf8.allSatisfy {
+        switch $0 {
+        case 45, 46, 48...57, 65...90, 95, 97...122: true
+        default: false
+        }
+    }
 }
 
 private func runLaunchctl(_ arguments: [String]) throws {
@@ -2148,6 +2400,7 @@ private func showApprovalAlert(
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?
 ) -> ApprovalDecision {
+    let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
         requesterName: requester.name,
@@ -2165,7 +2418,8 @@ private func showApprovalAlert(
             pid: pid,
             signing: signing,
             scriptApproval: scriptApproval,
-            launcher: launcher
+            launcher: launcher,
+            receivedAt: receivedAt
         )
     )
     var decision = ApprovalDecision.denied
@@ -2252,9 +2506,13 @@ private func approvalPromptSections(
     pid: pid_t,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
-    launcher: LauncherIdentity?
+    launcher: LauncherIdentity?,
+    receivedAt: Date
 ) -> [ApprovalPromptSection] {
     var sections = [
+        ApprovalPromptSection("Request", "clock", [
+            ApprovalPromptRow("Received", approvalPromptTimestamp(receivedAt)),
+        ]),
         ApprovalPromptSection("Environment", "arrow.triangle.2.circlepath", [
             ApprovalPromptRow("Existing", request.envConflicts.isEmpty ? "(none)" : request.envConflicts.joined(separator: ", ")),
             ApprovalPromptRow("Replace existing", request.replaceExistingEnv ? "yes" : "no"),
@@ -2289,6 +2547,13 @@ private func approvalPromptSections(
     }
 
     return sections
+}
+
+private func approvalPromptTimestamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .long
+    return formatter.string(from: date)
 }
 
 private struct ApprovalPromptSection: Identifiable {
@@ -2927,13 +3192,18 @@ private func runApprovalSelfCheck() -> Int32 {
           isGhTokenKey("GH_TOKEN_GITHUB_COM_MXCL"),
           !isGhTokenKey("GITHUB_TOKEN"),
           !isGhTokenKey("GH_TOKEN_bad-key")
-    else { return 1 }
+    else {
+        return 1
+    }
 
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
         args: [String] = ["-f", "/usr/local/bin/aws", "s3", "ls"],
-        shebangScript: String? = "/usr/local/bin/aws"
+        shebangScript: String? = "/usr/local/bin/aws",
+        replaceExistingEnv: Bool = false,
+        allowMissingKeys: Bool = false,
+        envConflicts: [String] = []
     ) -> ApprovalRequest {
         ApprovalRequest(
             op: "inject",
@@ -2941,9 +3211,9 @@ private func runApprovalSelfCheck() -> Int32 {
             target: "/bin/zsh",
             args: args,
             cwd: "/tmp",
-            replaceExistingEnv: false,
-            allowMissingKeys: false,
-            envConflicts: [],
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            envConflicts: envConflicts,
             shebangScript: shebangScript,
             tool: nil,
             title: nil,
@@ -2969,6 +3239,21 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     )
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
+          missingRequiredSecret(for: readOnlyAws, exists: { $0 == "AWS_SECRET_ACCESS_KEY" }) == "AWS_ACCESS_KEY_ID",
+          missingRequiredSecret(for: readOnlyAws, exists: { _ in true }) == nil,
+          missingRequiredSecret(for: awsRequest(allowMissingKeys: true), exists: { _ in false }) == nil,
+          missingRequiredSecret(
+              for: awsRequest(keys: ["AWS_ACCESS_KEY_ID"], envConflicts: ["AWS_ACCESS_KEY_ID"]),
+              exists: { _ in false }
+          ) == nil,
+          missingRequiredSecret(
+              for: awsRequest(
+                  keys: ["AWS_ACCESS_KEY_ID"],
+                  replaceExistingEnv: true,
+                  envConflicts: ["AWS_ACCESS_KEY_ID"]
+              ),
+              exists: { _ in false }
+          ) == "AWS_ACCESS_KEY_ID",
           matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, hardeners: [awsMetadata]) == nil,
           matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, hardeners: [awsMetadata]) == nil,
           matchingSecretGate(
@@ -2987,6 +3272,9 @@ private func runApprovalSelfCheck() -> Int32 {
           !secretGateProtectionAllows(.noAccess, classification: .readOnly),
           secretGateProtectionAllows(.readOnly, classification: .readOnly),
           !secretGateProtectionAllows(.readOnly, classification: .unknown),
+          secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .readOnly),
+          secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .localWrite),
+          !secretGateProtectionAllows(.readOnlyAndLocalWrites, classification: .mutating),
           secretGateProtectionAllows(.readOnlyAndUpdates, classification: .readOnly),
           secretGateProtectionAllows(.readOnlyAndUpdates, classification: .update),
           !secretGateProtectionAllows(.readOnlyAndUpdates, classification: .mutating),
@@ -3058,12 +3346,10 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["pr", "diff"],
         ["run", "view"],
         ["run", "list"],
-        ["run", "download"],
         ["workflow", "view"],
         ["workflow", "list"],
         ["release", "view"],
         ["release", "list"],
-        ["release", "download"],
         ["gist", "view"],
         ["gist", "list"],
         ["cache", "list"],
@@ -3075,10 +3361,8 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["rs", "list"],
         ["rs", "ls"],
         ["attestation", "verify"],
-        ["attestation", "download"],
         ["attestation", "trusted-root"],
         ["at", "verify"],
-        ["at", "download"],
         ["at", "trusted-root"],
         ["agent-task", "view"],
         ["agent-task", "list"],
@@ -3096,8 +3380,31 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "-XGET", "-H", "Accept: application/vnd.github+json", "repos/owner/repo/releases/latest"],
         ["api", "--method=GET", "-f", "per_page=1", "search/issues"],
         ["api", "--paginate", "repos/owner/repo/actions/runs", "--jq", ".workflow_runs[].id"],
+        ["api", "graphql", "-f", "query=query { viewer { login } }"],
+        ["api", "graphql", "-fquery={ viewer { login } }"],
+        [
+            "api", "graphql",
+            "-f", "query=query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { body bodyHTML } } }",
+            "-f", "owner=automic-vault",
+            "-f", "repo=automic-vault",
+            "-F", "number=49",
+            "--hostname", "github.com",
+        ],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }", "-f", "operationName=Read"],
     ]
     guard allowed.allSatisfy(ghRequestIsReadOnly) else { return 1 }
+
+    let localWrites = [
+        ["repo", "clone", "owner/repo"],
+        ["pr", "checkout", "123"],
+        ["gist", "clone", "0123456789abcdef"],
+        ["run", "download", "123456"],
+        ["release", "download", "v1.0.0"],
+        ["attestation", "download", "owner/repo"],
+        ["at", "download", "owner/repo"],
+        ["-R", "owner/repo", "repo", "clone"],
+    ]
+    guard localWrites.allSatisfy({ ghRequestClassification($0) == .localWrite }) else { return 1 }
 
     let denied = [
         ["api"],
@@ -3105,6 +3412,15 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["api", "-X", "DELETE", "repos/owner/repo"],
         ["api", "-f", "name=value", "repos/owner/repo"],
         ["api", "--input", "body.json", "repos/owner/repo"],
+        ["api", "graphql"],
+        ["api", "graphql", "-f", "query=mutation { addStar(input: {}) { clientMutationId } }"],
+        ["api", "graphql", "-f", "query=subscription { viewer { login } }"],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }"],
+        ["api", "graphql", "-f", "query=query Read { viewer { login } } mutation Write { addStar(input: {}) { clientMutationId } }", "-f", "operationName=Write"],
+        ["api", "graphql", "-F", "query=@query.graphql"],
+        ["api", "graphql", "-f", "query={ viewer { login } }", "-F", "secret=@/etc/passwd"],
+        ["api", "graphql", "-f", "query={ viewer { login } }", "-f", "query={ viewer { name } }"],
+        ["api", "graphql", "--input", "body.json"],
         ["auth", "token"],
         ["auth", "status", "--show-token"],
         ["alias", "set", "x", "repo view"],
@@ -3120,7 +3436,10 @@ private func runGhReadOnlySelfCheck() -> Int32 {
         ["unknown", "view"],
         ["--unknown", "repo", "view"],
     ]
-    guard denied.allSatisfy({ !ghRequestIsReadOnly($0) }) else { return 1 }
+    guard denied.allSatisfy({
+        let classification = ghRequestClassification($0)
+        return classification != .readOnly && classification != .localWrite
+    }) else { return 1 }
     return 0
 }
 
@@ -3316,6 +3635,10 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
           shouldOpenMainWindow(arguments: ["AutomicVaultMenubar", openMainWindowArgument], pending: false),
           shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: true),
           !shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: false),
+          requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "aws"]) == "aws",
+          requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "../aws"]) == nil,
+          secretGateID(from: URL(string: "automic-vault://secret-gate/aws")!) == "aws",
+          secretGateID(from: URL(string: "automic-vault://secret-gate/aws/extra")!) == nil,
           plist["ProgramArguments"] as? [String] == [executableURL.path],
           String(decoding: configured, as: UTF8.self).contains("/Applications/") == false
     else {

@@ -8,7 +8,7 @@
 - Homebrew:
   ```sh
   brew install --cask automic-vault/isotopes/automic-vault \
-    && open -a "Automic Vault"
+    && open /Applications/Automic\ Vault.app
   ```
 - cURL one-liner:
   ```sh
@@ -26,8 +26,8 @@
 
 ## What is Automic Vault?
 
-Automic Vault runs in your menu bar detecting existing and new threats to the
-integrity of your local developer environment’s integrity & security.
+Automic Vault runs in your menu bar detecting existing and emerging
+vulnerabilities in your command line tool stacks.
 
 We support (optional) “hardening” steps that typically:
 
@@ -121,9 +121,9 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
     `aws-vault`, which converts your too-powerful AWS keys into short-lived
     session tokens for each invocation.
 - We make approval gates rare and smart.
-  - By default, secret gates only trigger for secret exfiltration.
-  - This means that the default setting for Automic Vault is merely: keep your
-    secrets safe.
+  - By default, secret gates automatically approve read-only commands. Homebrew
+    also automatically approves updates.
+  - Mutating commands still require approval, keeping side effects explicit.
   - Once you get used to that we recommend playing with the levels, eg.
     disabling access to *everything* but one Terminal and your agent apps.
   - We also try to be smart, eg. `gh` even decodes GraphQL queries to determine

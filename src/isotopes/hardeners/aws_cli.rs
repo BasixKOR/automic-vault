@@ -97,6 +97,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         writeln!(stdout, "├─ wrote {AWS_STUB_PATH}").ok();
         writeln!(stdout, "╰─ next: run `av harden aws` to import credentials").ok();
     }
+    super::write_secret_gate_notice(stdout, "aws");
     Ok(())
 }
 
@@ -530,11 +531,11 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
         }
         assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
-        assert!(
-            !String::from_utf8(stdout)
-                .unwrap()
-                .contains("plaintext keys")
-        );
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(!stdout.contains("plaintext keys"));
+        assert!(stdout.contains(
+            "`aws` defaults to Read Only Access, adjust this in the app: `av open --secret-gate aws`"
+        ));
         let _ = fs::remove_dir_all(dir);
     }
 

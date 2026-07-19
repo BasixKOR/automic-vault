@@ -264,22 +264,30 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gates.count == 1)
     #expect(gates.first?.id == "gh")
     #expect(gates.first?.keyPatterns == ["GH_TOKEN_*"])
-    #expect(gates.first?.defaultProtection == .noAccess)
+    #expect(gates.first?.defaultProtection == .readOnly)
     #expect(gates.first?.appPolicies.isEmpty == true)
 }
 
-@Test func missingPoliciesFailClosed() throws {
+@Test func missingPoliciesUseInitialDefaults() throws {
     let service = "com.automicvault.tests.\(UUID().uuidString)"
     let gate = try #require(loadSecretGates(hardeners: [secretlessGateMetadata()], service: service).first)
 
     #expect(gate.keyPatterns.isEmpty)
-    #expect(gate.defaultProtection == .noAccess)
+    #expect(gate.defaultProtection == .readOnlyAndUpdates)
     #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
     #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
 
     let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
-    #expect(secretGate.availableProtections == [.noAccess, .readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps])
+    #expect(secretGate.defaultProtection == .readOnly)
+    #expect(secretGate.availableProtections == [
+        .noAccess,
+        .readOnly,
+        .readOnlyAndLocalWrites,
+        .fullExceptSecretDumps,
+        .fullIncludingSecretDumps,
+    ])
+    #expect(secretGate.protectionTitle(.readOnlyAndLocalWrites) == "Local Write Access")
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
 }
 
@@ -291,7 +299,19 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     let metadata = testGateMetadata()
 
     #expect(initializeSecretGatePolicies(hardeners: [metadata], service: service, account: account) == errSecSuccess)
-    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .fullExceptSecretDumps)
+    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .readOnly)
+    #expect(keychainAccessibility(account: account, service: service) == kSecAttrAccessibleAfterFirstUnlock as String)
+}
+
+@Test func newBrewGateGetsReadOnlyAndUpdatesPolicy() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let metadata = secretlessGateMetadata()
+
+    #expect(initializeSecretGatePolicies(hardeners: [metadata], service: service, account: account) == errSecSuccess)
+    #expect(loadSecretGates(hardeners: [metadata], service: service, account: account).first?.defaultProtection == .readOnlyAndUpdates)
 }
 
 @Test func malformedPoliciesFailClosedAndAreNotReplaced() throws {
@@ -375,6 +395,7 @@ func protectionPolicyMatrix(
     let expected = switch protection {
     case .noAccess: false
     case .readOnly: classification == .readOnly
+    case .readOnlyAndLocalWrites: classification == .readOnly || classification == .localWrite
     case .readOnlyAndUpdates: classification == .readOnly || classification == .update
     case .fullExceptSecretDumps: classification != .secretDump
     case .fullIncludingSecretDumps: true
@@ -439,10 +460,22 @@ func protectionPolicyMatrix(
 
     let secrets = loadStoredSecrets(service: service)
     #expect(secrets.map(\.account) == ["API_TOKEN"])
+    #expect(secrets.first?.accessibility == .whenUnlocked)
+    #expect(secrets.first?.accessibility.isAvailableWhileLocked == false)
     #expect(secrets.first?.keychainProperties.contains("Data Protection Enabled") == true)
     #expect(secrets.first?.keychainProperties.contains("iCloud Off") == true)
     #expect(deleteStoredSecret(account: "API_TOKEN", service: service) == errSecSuccess)
     #expect(loadStoredSecrets(service: service).isEmpty)
+}
+
+@Test func storedSecretExistenceDoesNotRequireLoadingItsValue() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    #expect(!storedSecretExists(account: "API_TOKEN", service: service))
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    #expect(storedSecretExists(account: "API_TOKEN", service: service))
 }
 
 @Test func storedSecretsUseDataProtectionKeychain() throws {
@@ -451,29 +484,74 @@ func protectionPolicyMatrix(
     #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: service) == errSecSuccess)
     defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
 
-    let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: "API_TOKEN",
-        kSecUseDataProtectionKeychain as String: true,
-        kSecReturnAttributes as String: true,
-        kSecMatchLimit as String: kSecMatchLimitOne,
-    ]
-    var result: CFTypeRef?
-    #expect(SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess)
-    let attributes = try #require(result as? [String: Any])
-    #expect(attributes[kSecAttrAccessible as String] as? String == kSecAttrAccessibleWhenUnlocked as String)
+    #expect(keychainAccessibility(account: "API_TOKEN", service: service) == kSecAttrAccessibleWhenUnlocked as String)
+}
+
+@Test func storedSecretAccessibilityCanChangeWithoutChangingValue() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: service) }
+
+    #expect(saveStoredSecret(
+        account: "API_TOKEN",
+        value: "secret",
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess)
+    #expect(loadStoredSecrets(service: service).first?.accessibility == .afterFirstUnlock)
+    #expect(keychainAccessibility(account: "API_TOKEN", service: service) == kSecAttrAccessibleAfterFirstUnlock as String)
+
+    #expect(setStoredSecretAccessibility(
+        account: "API_TOKEN",
+        accessibility: .whenUnlocked,
+        service: service
+    ) == errSecSuccess)
+    #expect(loadStoredSecret(account: "API_TOKEN", service: service) == "secret")
+    #expect(loadStoredSecrets(service: service).first?.accessibility == .whenUnlocked)
+    #expect(keychainAccessibility(account: "API_TOKEN", service: service) == kSecAttrAccessibleWhenUnlocked as String)
 }
 
 @Test func storedSecretsCanBeRenamed() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
-    #expect(saveStoredSecret(account: "OLD_TOKEN", value: "secret", service: service) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: "OLD_TOKEN",
+        value: "secret",
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess)
     defer { _ = deleteStoredSecret(account: "OLD_TOKEN", service: service) }
     defer { _ = deleteStoredSecret(account: "NEW_TOKEN", service: service) }
 
     #expect(renameStoredSecret(account: "OLD_TOKEN", to: "NEW_TOKEN", service: service) == errSecSuccess)
     #expect(loadStoredSecrets(service: service).map(\.account) == ["NEW_TOKEN"])
+    #expect(loadStoredSecrets(service: service).first?.accessibility == .afterFirstUnlock)
+}
+
+@Test func backgroundMetadataMigratesWithoutChangingSecretAccessibility() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let policyService = "com.automicvault.tests.policy.\(UUID().uuidString)"
+    let accessLogService = "com.automicvault.tests.log.\(UUID().uuidString)"
+    let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
+    let policyAccount = "policies"
+    let accessLogAccount = "access-log"
+    defer { _ = deleteStoredSecret(account: policyAccount, service: policyService) }
+    defer { _ = deleteStoredSecret(account: accessLogAccount, service: accessLogService) }
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: secretService) }
+
+    #expect(saveStoredSecret(account: policyAccount, value: "[]", service: policyService) == errSecSuccess)
+    #expect(saveStoredSecret(account: accessLogAccount, value: "[]", service: accessLogService) == errSecSuccess)
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: secretService) == errSecSuccess)
+
+    #expect(migrateBackgroundKeychainItems(
+        policyService: policyService,
+        policyAccount: policyAccount,
+        accessLogService: accessLogService,
+        accessLogAccount: accessLogAccount
+    ) == errSecSuccess)
+    #expect(keychainAccessibility(account: policyAccount, service: policyService) == kSecAttrAccessibleAfterFirstUnlock as String)
+    #expect(keychainAccessibility(account: accessLogAccount, service: accessLogService) == kSecAttrAccessibleAfterFirstUnlock as String)
+    #expect(keychainAccessibility(account: "API_TOKEN", service: secretService) == kSecAttrAccessibleWhenUnlocked as String)
 }
 
 @Test func accessRequestLogKeepsNewestFifty() throws {
@@ -526,6 +604,10 @@ func protectionPolicyMatrix(
     )
 
     #expect(appendAccessRequestRecord(record, key: key))
+    #expect(keychainAccessibility(
+        account: key,
+        service: accessRequestLogKeychainService
+    ) == kSecAttrAccessibleAfterFirstUnlock as String)
     UserDefaults.standard.set(Data("[]".utf8), forKey: key)
     _ = UserDefaults.standard.synchronize()
 
@@ -567,4 +649,20 @@ private func dataProtectionKeychainAvailable() -> Bool {
     let status = saveStoredSecret(account: "PROBE", value: "secret", service: service)
     defer { _ = deleteStoredSecret(account: "PROBE", service: service) }
     return status != errSecMissingEntitlement
+}
+
+private func keychainAccessibility(account: String, service: String) -> String? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecReturnAttributes as String: true,
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+          let attributes = result as? [String: Any]
+    else { return nil }
+    return attributes[kSecAttrAccessible as String] as? String
 }

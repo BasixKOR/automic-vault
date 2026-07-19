@@ -17,6 +17,11 @@ fn harden_installs_stub_then_migrates_direct_token() {
         .unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains("◇ verify with `av doctor doctl`"),
+        "{}",
+        stdout(&output)
+    );
     assert!(root.join("stubs/doctl").exists());
     assert_eq!(
         fs::read_to_string(root.join("keychain/DIGITALOCEAN_ACCESS_TOKEN")).unwrap(),
@@ -157,6 +162,10 @@ fn prepare(root: &Path, command: &str) {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn stdout(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 fn fixture(label: &str) -> PathBuf {
