@@ -18,9 +18,10 @@ Usage:
   av hardeners --json
   av inject +KEY [--] COMMAND
   av save KEY
-  av harden";
+  av harden
+  av open [--secret-gate ID]";
 
-const INSTALL_REVISION: u32 = 2;
+const INSTALL_REVISION: u32 = 3;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -186,7 +187,13 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
-        Some("open") if rest.is_empty() => open::run(stderr),
+        Some("open") => {
+            let Some(secret_gate) = parse_open_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            open::run(stderr, secret_gate.as_deref())
+        }
         Some("save") => save::run(rest, stderr),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
@@ -221,6 +228,17 @@ fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
         }
     }
     target.map(|target| (target, yes))
+}
+
+fn parse_open_args(args: &[OsString]) -> Option<Option<String>> {
+    match args {
+        [] => Some(None),
+        [flag, id] if flag == "--secret-gate" => {
+            let id = id.to_str()?;
+            open::valid_secret_gate_id(id).then(|| Some(id.to_string()))
+        }
+        _ => None,
+    }
 }
 
 fn parse_doctor_args(args: &[OsString]) -> Option<(Option<String>, bool)> {
@@ -422,10 +440,24 @@ mod tests {
             assert_eq!(stderr, "");
             assert!(stdout.contains("\n  av harden\n"));
             assert!(!stdout.contains("av harden [--yes]"));
-            assert!(!stdout.contains("av open"));
+            assert!(stdout.contains("\n  av open [--secret-gate ID]\n"));
             assert!(!stdout.contains("av help"));
             assert!(!stdout.contains("__version"));
         }
+    }
+
+    #[test]
+    fn secret_gate_open_arguments_are_strictly_parsed() {
+        assert_eq!(parse_open_args(&[]), Some(None));
+        assert_eq!(
+            parse_open_args(&[OsString::from("--secret-gate"), OsString::from("aws")]),
+            Some(Some("aws".to_string()))
+        );
+        assert_eq!(
+            parse_open_args(&[OsString::from("--secret-gate"), OsString::from("../aws")]),
+            None
+        );
+        assert_eq!(parse_open_args(&[OsString::from("--secret-gate")]), None);
     }
 
     #[test]
@@ -437,7 +469,7 @@ mod tests {
         );
 
         let (code, stdout, stderr) = run_args(&["av", "__version"]);
-        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "2\n", ""));
+        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "3\n", ""));
     }
 
     #[test]

@@ -33,6 +33,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
     func showAccessRequest(id: UUID) {
         model.showAccessRequest(id: id)
     }
+
+    func showSecretGate(id: String) {
+        model.showSecretGate(id: id)
+    }
 }
 
 final class AutomicVaultWindow: NSWindow {
@@ -225,6 +229,11 @@ final class DashboardModel: ObservableObject {
         guard snapshot.accessRequests.contains(where: { $0.id == id }) else { return }
         selectedSection = .secretUsage
         selectedItemID = id.uuidString
+    }
+
+    func showSecretGate(id: String) {
+        selectedSection = .secretGates
+        selectedItemID = id
     }
 
     func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {

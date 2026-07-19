@@ -14,6 +14,7 @@ private let approvalServiceName = "com.automicvault.av2.approval"
 private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let openMainWindowArgument = "--open-main-window"
 private let pendingMainWindowKey = "pendingMainWindow"
+private let pendingSecretGateKey = "pendingSecretGate"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
@@ -62,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if shouldHandOffToLaunchAgent() {
             if CommandLine.arguments.contains(openMainWindowArgument) {
                 UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
+            }
+            if let secretGateID = requestedSecretGateID(arguments: CommandLine.arguments) {
+                UserDefaults.standard.set(secretGateID, forKey: pendingSecretGateKey)
             }
             handOffToLaunchAgent()
             return
@@ -155,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.startServicesAndOpenMainWindowIfRequested()
                 case .failure(let error):
                     UserDefaults.standard.removeObject(forKey: pendingMainWindowKey)
+                    UserDefaults.standard.removeObject(forKey: pendingSecretGateKey)
                     NSAlert(error: error).runModal()
                     NSApp.terminate(nil)
                 }
@@ -168,10 +173,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    private func consumePendingSecretGate() -> String? {
+        guard let id = UserDefaults.standard.string(forKey: pendingSecretGateKey) else { return nil }
+        UserDefaults.standard.removeObject(forKey: pendingSecretGateKey)
+        return validSecretGateID(id) ? id : nil
+    }
+
     private func startServicesAndOpenMainWindowIfRequested() {
         startServices()
-        if shouldOpenMainWindow(pending: consumePendingMainWindow()) {
-            openMainWindow()
+        let secretGateID = consumePendingSecretGate()
+        let shouldOpen = shouldOpenMainWindow(pending: consumePendingMainWindow())
+        if secretGateID != nil || shouldOpen {
+            showMainWindow(secretGateID: secretGateID)
         }
     }
 
@@ -224,6 +237,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         openMainWindow()
         return true
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let secretGateID = urls.lazy.compactMap(secretGateID(from:)).first else { return }
+        if shouldHandOffToLaunchAgent() {
+            UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
+            UserDefaults.standard.set(secretGateID, forKey: pendingSecretGateKey)
+            return
+        }
+        showMainWindow(secretGateID: secretGateID)
     }
 
     @MainActor @objc private func quit() {
@@ -289,10 +312,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func openMainWindow() {
+        showMainWindow(secretGateID: nil)
+    }
+
+    @MainActor private func showMainWindow(secretGateID: String?) {
         let wasVisible = mainWindow?.isVisible ?? false
         if let mainWindow {
             mainWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            if let secretGateID {
+                (mainWindow.contentViewController as? AutomicVaultMainWindowController)?
+                    .showSecretGate(id: secretGateID)
+            }
             #if !DEBUG
             if wasVisible == false {
                 postHogTelemetry.captureMainWindowOpened()
@@ -320,6 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.mainWindow = window
+        if let secretGateID {
+            controller.showSecretGate(id: secretGateID)
+        }
         NSApp.activate(ignoringOtherApps: true)
         window.setContentSize(defaultWindowSize)
         window.center()
@@ -1914,6 +1948,32 @@ private func shouldOpenMainWindow(
     pending: Bool
 ) -> Bool {
     pending || arguments.contains(openMainWindowArgument)
+}
+
+private func requestedSecretGateID(arguments: [String]) -> String? {
+    guard let flag = arguments.firstIndex(of: "--secret-gate"),
+          arguments.indices.contains(flag + 1)
+    else { return nil }
+    let id = arguments[flag + 1]
+    return validSecretGateID(id) ? id : nil
+}
+
+private func secretGateID(from url: URL) -> String? {
+    guard url.scheme == "automic-vault",
+          url.host == "secret-gate",
+          url.pathComponents.count == 2
+    else { return nil }
+    let id = url.lastPathComponent
+    return validSecretGateID(id) ? id : nil
+}
+
+private func validSecretGateID(_ id: String) -> Bool {
+    !id.isEmpty && id.utf8.allSatisfy {
+        switch $0 {
+        case 45, 46, 48...57, 65...90, 95, 97...122: true
+        default: false
+        }
+    }
 }
 
 private func runLaunchctl(_ arguments: [String]) throws {
@@ -3575,6 +3635,10 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
           shouldOpenMainWindow(arguments: ["AutomicVaultMenubar", openMainWindowArgument], pending: false),
           shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: true),
           !shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: false),
+          requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "aws"]) == "aws",
+          requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "../aws"]) == nil,
+          secretGateID(from: URL(string: "automic-vault://secret-gate/aws")!) == "aws",
+          secretGateID(from: URL(string: "automic-vault://secret-gate/aws/extra")!) == nil,
           plist["ProgramArguments"] as? [String] == [executableURL.path],
           String(decoding: configured, as: UTF8.self).contains("/Applications/") == false
     else {

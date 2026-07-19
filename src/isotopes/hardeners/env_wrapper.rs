@@ -104,6 +104,7 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
     super::migrations::run(wrapper.name)
         .ok_or_else(|| format!("no credential migration registered for {}", wrapper.name))??;
     writeln!(stdout, "╰─ hardened {}", wrapper.name).ok();
+    super::write_secret_gate_notice(stdout, wrapper.name);
     Ok(())
 }
 

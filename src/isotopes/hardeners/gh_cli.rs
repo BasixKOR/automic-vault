@@ -45,6 +45,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
     writeln!(stdout, "│").ok();
     if credentials.is_empty() {
         writeln!(stdout, "╰─ no legacy gh credentials found").ok();
+        super::write_secret_gate_notice(stdout, "gh");
         return Ok(());
     }
 
@@ -75,6 +76,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
         delete_legacy_keychain_tokens(&credential.host, credential.user.as_deref())?;
     }
     writeln!(stdout, "╰─ migrated gh credentials").ok();
+    super::write_secret_gate_notice(stdout, "gh");
     Ok(())
 }
 

@@ -437,7 +437,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 
     public var initialProtection: SecretGateProtection {
-        keyPatterns.isEmpty ? .readOnlyAndUpdates : .fullExceptSecretDumps
+        id == "brew" ? .readOnlyAndUpdates : .readOnly
     }
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
@@ -673,10 +673,12 @@ public func loadSecretGates(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
-    let records: [SecretGatePolicyRecord] = switch loadSecretGatePolicyRecords(service: service, account: account) {
+    let loadedRecords = loadSecretGatePolicyRecords(service: service, account: account)
+    let records: [SecretGatePolicyRecord] = switch loadedRecords {
     case .success(let records): records
     case .failure: []
     }
+    let policiesAreReadable = if case .success = loadedRecords { true } else { false }
     return hardeners.compactMap { hardener -> SecretGate? in
         guard let descriptor = hardener.secretGate,
               hardener.hardened || descriptor.routes
@@ -697,7 +699,7 @@ public func loadSecretGates(
             routes: prototype.routes,
             defaultProtection: prototype.normalizedProtection(
                 gateRecords.last(where: { $0.requirement == nil })?.protection
-                    ?? .noAccess
+                    ?? (policiesAreReadable ? prototype.initialProtection : .noAccess)
             ),
             appPolicies: gateRecords.compactMap { record in
                 record.requirement.map {
