@@ -6,7 +6,19 @@ use std::process::Command;
 use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
 const GH_CLI_PATH: &str = "/opt/homebrew/opt/gh-cli/bin/gh";
-const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
+pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
+
+#[derive(Debug)]
+pub(crate) enum HardenError {
+    GhCliNotInstalled,
+    Other(String),
+}
+
+impl From<String> for HardenError {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GhCredential {
@@ -15,9 +27,9 @@ struct GhCredential {
     token: String,
 }
 
-pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
     if !gh_cli_path().exists() {
-        return Err(format!("gh-cli is not installed; run `{INSTALL_COMMAND}`"));
+        return Err(HardenError::GhCliNotInstalled);
     }
 
     let hosts_paths = gh_hosts_paths()?;
@@ -365,15 +377,12 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
         }
 
-        let err = run(&mut Vec::new(), true).unwrap_err();
+        let err = run(&mut Vec::new(), true).err().unwrap();
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
         }
-        assert_eq!(
-            err,
-            "gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`"
-        );
+        assert!(matches!(err, HardenError::GhCliNotInstalled));
     }
 
     #[test]

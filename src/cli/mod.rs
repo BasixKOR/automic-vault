@@ -133,7 +133,11 @@ where
             if target == "gh" || target == "gh-cli" {
                 return match hardeners::gh_cli::run(stdout, yes) {
                     Ok(()) => 0,
-                    Err(err) => {
+                    Err(hardeners::gh_cli::HardenError::GhCliNotInstalled) => {
+                        print_gh_cli_install_guidance(stderr, style);
+                        1
+                    }
+                    Err(hardeners::gh_cli::HardenError::Other(err)) => {
                         let _ = writeln!(stderr, "av harden: {err}");
                         1
                     }
@@ -189,6 +193,19 @@ where
             2
         }
     }
+}
+
+fn print_gh_cli_install_guidance(stderr: &mut dyn Write, style: scan::Style) {
+    let _ = writeln!(stderr, "╭─ harden gh");
+    let _ = writeln!(stderr, "│");
+    let _ = writeln!(stderr, "◆ {}", style.paint("33", "gh-cli is not installed"));
+    let _ = writeln!(stderr, "│");
+    let _ = writeln!(
+        stderr,
+        "├─ 1. run: `{}`",
+        hardeners::gh_cli::INSTALL_COMMAND
+    );
+    let _ = writeln!(stderr, "╰─ 2. run: `av harden gh` again");
 }
 
 fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
@@ -289,7 +306,7 @@ mod tests {
         assert_eq!(stdout, "");
         assert_eq!(
             stderr,
-            "av harden: gh-cli is not installed; run `brew install automic-vault/isotopes/gh-cli`\n"
+            "╭─ harden gh\n│\n◆ gh-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/gh-cli`\n╰─ 2. run: `av harden gh` again\n"
         );
     }
 
