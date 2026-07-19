@@ -432,15 +432,26 @@ final class DashboardModel: ObservableObject {
                     isTriggered: true
                 )
             }
-            .sorted {
-                if $0.isTriggered != $1.isTriggered { return $0.isTriggered }
-                if $0.title != $1.title {
-                    return $0.title.localizedStandardCompare($1.title) == .orderedAscending
-                }
-                return ($0.kind ?? "").localizedStandardCompare($1.kind ?? "") == .orderedAscending
-            }
+            .sorted(by: detectorItemPrecedes)
     }
 
+}
+
+private func detectorItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) -> Bool {
+    if lhs.isTriggered != rhs.isTriggered { return lhs.isTriggered }
+    if lhs.isTriggered {
+        let lhsSeverity = detectorSeveritySortPriority(lhs.severity)
+        let rhsSeverity = detectorSeveritySortPriority(rhs.severity)
+        if lhsSeverity != rhsSeverity { return lhsSeverity < rhsSeverity }
+    }
+    if lhs.title != rhs.title {
+        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    }
+    return (lhs.kind ?? "").localizedStandardCompare(rhs.kind ?? "") == .orderedAscending
+}
+
+private func detectorSeveritySortPriority(_ severity: String?) -> Int {
+    severity.map(isMediumDetectorSeverity) == true ? 1 : 0
 }
 
 private let installedAVCLIPath = "/usr/local/bin/av"
@@ -697,6 +708,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
           detectorSeverityLevel(["medium", "high"]) == .high,
           detectorSeverityLevel([]) == .high
     else { return 1 }
+    let severitySortedItems = [
+        DashboardItem(id: "medium", title: "alpha", subtitle: "", detail: "", severity: "MEDIUM", isTriggered: true),
+        DashboardItem(id: "clean", title: "aardvark", subtitle: "", detail: ""),
+        DashboardItem(id: "high", title: "zulu", subtitle: "", detail: "", severity: "HIGH", isTriggered: true),
+    ].sorted(by: detectorItemPrecedes)
+    guard severitySortedItems.map(\.id) == ["high", "medium", "clean"] else { return 1 }
     model.searchText = ""
     model.selectSection(.doctor)
     guard model.selectedItem?.title == "aws",
