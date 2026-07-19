@@ -569,7 +569,19 @@ private func installCLICommand(bundleAVPath: String) -> String {
     set -x
     bundle_av=\(shellQuoted(bundleAVPath))
     sudo install "$bundle_av" \(installedAVCLIPath)
+    /usr/bin/open -g -b com.automicvault 'automic-vault://cli-installed' || printf '%s\n' 'Installed av, but could not notify Automic Vault.' >&2
     """
+}
+
+func isCLIInstallCompletionURL(_ url: URL) -> Bool {
+    url.scheme == "automic-vault"
+        && url.host == "cli-installed"
+        && url.path.isEmpty
+        && url.user == nil
+        && url.password == nil
+        && url.port == nil
+        && url.query == nil
+        && url.fragment == nil
 }
 
 @MainActor
@@ -696,11 +708,16 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .hardenedTools) == 1,
           model.count(for: .allSecrets) == 1
     else { return 1 }
+    let cliInstallCommand = installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
     guard shellQuoted("/tmp/Automic Vault's av") == "'/tmp/Automic Vault'\"'\"'s av'",
-          installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
-            .contains("launchctl") == false,
-          installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
-            .contains("sudo install \"$bundle_av\" /usr/local/bin/av")
+          !cliInstallCommand.contains("launchctl"),
+          let installRange = cliInstallCommand.range(of: "sudo install \"$bundle_av\" /usr/local/bin/av"),
+          let notificationRange = cliInstallCommand.range(of: "/usr/bin/open -g -b com.automicvault 'automic-vault://cli-installed'"),
+          installRange.lowerBound < notificationRange.lowerBound,
+          isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed")!),
+          !isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed/extra")!),
+          !isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed?revision=1")!),
+          !isCLIInstallCompletionURL(URL(string: "https://cli-installed")!)
     else { return 1 }
     guard cliInstallState(installedExists: false, installedTrusted: false, expectedRevision: 1, installedRevision: nil) == .missing,
           cliInstallState(installedExists: true, installedTrusted: true, expectedRevision: 1, installedRevision: 1) == .current,

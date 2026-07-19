@@ -240,6 +240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        if urls.contains(where: isCLIInstallCompletionURL) {
+            (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
+        }
         guard let secretGateID = urls.lazy.compactMap(secretGateID(from:)).first else { return }
         if shouldHandOffToLaunchAgent() {
             UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
