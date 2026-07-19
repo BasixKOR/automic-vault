@@ -120,6 +120,7 @@ ensure_clone() {
   local repo_dir="$clone_root/$repo_name"
 
   if [[ -d "$repo_dir/.git" ]]; then
+    git -C "$repo_dir" remote set-url origin "https://github.com/$org/$repo_name.git"
     return 0
   fi
   if [[ -e "$repo_dir" ]]; then
@@ -132,6 +133,7 @@ ensure_clone() {
     echo "Would clone $org/$repo_name to $repo_dir"
   else
     gh repo clone "$org/$repo_name" "$repo_dir"
+    git -C "$repo_dir" remote set-url origin "https://github.com/$org/$repo_name.git"
   fi
 }
 
