@@ -268,7 +268,7 @@ fn legacy_token(host: &str, user: Option<&str>) -> Option<String> {
 }
 
 fn security_find_generic_password(service: &str, account: Option<&str>) -> Option<String> {
-    let mut command = Command::new("/usr/bin/security");
+    let mut command = Command::new(security_path());
     command.args(["find-generic-password", "-s", service]);
     if let Some(account) = account {
         command.args(["-a", account]);
@@ -278,8 +278,86 @@ fn security_find_generic_password(service: &str, account: Option<&str>) -> Optio
     if !output.status.success() {
         return None;
     }
-    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!token.is_empty()).then_some(token)
+    decode_legacy_keychain_password(String::from_utf8_lossy(&output.stdout).trim())
+}
+
+fn decode_legacy_keychain_password(value: &str) -> Option<String> {
+    // zalando/go-keyring wraps macOS Keychain passwords so arbitrary bytes
+    // survive `/usr/bin/security -w`. Decode its two published legacy forms
+    // before moving the credential into Automic Vault.
+    const BASE64_PREFIX: &str = "go-keyring-base64:";
+    const HEX_PREFIX: &str = "go-keyring-encoded:";
+
+    let decoded = if let Some(value) = value.strip_prefix(BASE64_PREFIX) {
+        decode_base64(value)?
+    } else if let Some(value) = value.strip_prefix(HEX_PREFIX) {
+        decode_hex(value)?
+    } else {
+        return (!value.is_empty()).then(|| value.to_string());
+    };
+    let decoded = String::from_utf8(decoded).ok()?;
+    (!decoded.is_empty()).then_some(decoded)
+}
+
+fn decode_base64(value: &str) -> Option<Vec<u8>> {
+    if value.is_empty() || !value.len().is_multiple_of(4) {
+        return None;
+    }
+
+    fn sextet(byte: u8) -> Option<u8> {
+        Some(match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        })
+    }
+
+    let chunks = value.as_bytes().chunks_exact(4);
+    let chunk_count = chunks.len();
+    let mut decoded = Vec::with_capacity(value.len() / 4 * 3);
+    for (index, chunk) in chunks.enumerate() {
+        let last = index + 1 == chunk_count;
+        let a = sextet(chunk[0])?;
+        let b = sextet(chunk[1])?;
+        decoded.push((a << 2) | (b >> 4));
+
+        if chunk[2] == b'=' {
+            if !last || chunk[3] != b'=' || b & 0x0f != 0 {
+                return None;
+            }
+            continue;
+        }
+        let c = sextet(chunk[2])?;
+        decoded.push(((b & 0x0f) << 4) | (c >> 2));
+
+        if chunk[3] == b'=' {
+            if !last || c & 0x03 != 0 {
+                return None;
+            }
+            continue;
+        }
+        let d = sextet(chunk[3])?;
+        decoded.push(((c & 0x03) << 6) | d);
+    }
+    Some(decoded)
+}
+
+fn decode_hex(value: &str) -> Option<Vec<u8>> {
+    if value.is_empty() || !value.len().is_multiple_of(2) {
+        return None;
+    }
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)? as u8;
+            let low = (pair[1] as char).to_digit(16)? as u8;
+            Some((high << 4) | low)
+        })
+        .collect()
 }
 
 fn store_gh_credential(credential: &GhCredential) -> Result<(), String> {
@@ -319,7 +397,7 @@ fn delete_legacy_keychain_tokens(host: &str, user: Option<&str>) -> Result<(), S
 }
 
 fn security_delete_generic_password(service: &str, account: Option<&str>) -> Result<(), String> {
-    let mut command = Command::new("/usr/bin/security");
+    let mut command = Command::new(security_path());
     command.args(["delete-generic-password", "-s", service]);
     if let Some(account) = account {
         command.args(["-a", account]);
@@ -340,6 +418,12 @@ fn security_delete_generic_password(service: &str, account: Option<&str>) -> Res
         "failed to delete legacy gh keychain item: {}",
         stderr.trim()
     ))
+}
+
+fn security_path() -> PathBuf {
+    crate::test_env_var("AUTOMIC_VAULT_TEST_SECURITY_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/usr/bin/security"))
 }
 
 fn vault_key(host: &str, user: Option<&str>) -> String {
@@ -369,6 +453,7 @@ fn sanitize_key_part(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -468,11 +553,102 @@ mod tests {
     }
 
     #[test]
+    fn harden_decodes_go_keyring_legacy_token() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("gh-go-keyring-import");
+        let config = dir.join("config");
+        let keychain = dir.join("keychain");
+        let gh = dir.join("gh");
+        let security = dir.join("security");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(&gh, "").unwrap();
+        fs::write(
+            config.join("hosts.yml"),
+            "github.com:\n    users:\n        mxcl:\n    user: mxcl\n",
+        )
+        .unwrap();
+        fs::write(
+            &security,
+            "#!/bin/sh\nprintf '%s\\n' 'go-keyring-base64:Z2hvX3NlY3JldA=='\n",
+        )
+        .unwrap();
+        fs::set_permissions(&security, fs::Permissions::from_mode(0o700)).unwrap();
+        unsafe {
+            std::env::set_var("GH_CONFIG_DIR", &config);
+            std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &gh);
+            std::env::set_var("AUTOMIC_VAULT_TEST_SECURITY_PATH", &security);
+        }
+
+        run(&mut Vec::new(), true).unwrap();
+
+        unsafe {
+            std::env::remove_var("GH_CONFIG_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SECURITY_PATH");
+        }
+        assert_eq!(
+            fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM")).unwrap(),
+            "gho_secret"
+        );
+        assert_eq!(
+            fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM_MXCL")).unwrap(),
+            "gho_secret"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn vault_key_matches_gh_isotope() {
         assert_eq!(vault_key("github.com", None), "GH_TOKEN_GITHUB_COM");
         assert_eq!(
             vault_key("github.com", Some("mona-lisa")),
             "GH_TOKEN_GITHUB_COM_MONA_LISA"
+        );
+    }
+
+    #[test]
+    fn decodes_go_keyring_wrapped_tokens() {
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-base64:Z2hvX3NlY3JldA==").as_deref(),
+            Some("gho_secret")
+        );
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-encoded:67686f5f736563726574").as_deref(),
+            Some("gho_secret")
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_go_keyring_wrappers() {
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-base64:not-base64"),
+            None
+        );
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-encoded:not-hex"),
+            None
+        );
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-base64:Z===x"),
+            None
+        );
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-base64:/w=="),
+            None
+        );
+        assert_eq!(
+            decode_legacy_keychain_password("go-keyring-encoded:ff"),
+            None
+        );
+    }
+
+    #[test]
+    fn preserves_unwrapped_legacy_tokens() {
+        assert_eq!(
+            decode_legacy_keychain_password("gho_secret").as_deref(),
+            Some("gho_secret")
         );
     }
 
