@@ -26,6 +26,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
         model.reload()
     }
 
+    func updateDetectorFindings(_ findings: [DetectorFinding]) {
+        model.updateDetectorFindings(findings)
+    }
+
     func showAccessRequest(id: UUID) {
         model.showAccessRequest(id: id)
     }
@@ -76,6 +80,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var cliInstallState: CLIInstallState?
 
     private var reloadTask: Task<Void, Never>?
+    private var detectorFindingsGeneration = 0
 
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
@@ -229,17 +234,29 @@ final class DashboardModel: ObservableObject {
     func reload() {
         reloadTask?.cancel()
         isReloading = true
+        let findingsGeneration = detectorFindingsGeneration
         reloadTask = Task {
-            let (next, cliInstallState) = await Task.detached(priority: .background) {
+            var (next, cliInstallState) = await Task.detached(priority: .background) {
                 (DashboardSnapshot.load(), currentCLIInstallState())
             }.value
             guard !Task.isCancelled else { return }
+            if findingsGeneration != detectorFindingsGeneration {
+                next.detectorFindings = snapshot.detectorFindings
+            }
             snapshot = next
             self.cliInstallState = cliInstallState
             if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
                 selectedItemID = nil
             }
             isReloading = false
+        }
+    }
+
+    func updateDetectorFindings(_ findings: [DetectorFinding]) {
+        detectorFindingsGeneration += 1
+        snapshot.detectorFindings = findings
+        if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
+            selectedItemID = nil
         }
     }
 
@@ -305,19 +322,8 @@ final class DashboardModel: ObservableObject {
     }
 
     func installCLI() {
-        guard let bundledAVURL else {
-            errorMessage = "Bundled av executable is unavailable."
-            return
-        }
-        let commandURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
-            .appendingPathExtension("command")
         do {
-            try installCLICommand(bundleAVPath: bundledAVURL.path).write(to: commandURL, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
-            if !NSWorkspace.shared.open(commandURL) {
-                errorMessage = "Could not open the install command."
-            }
+            try openCLIInstaller()
         } catch {
             errorMessage = "Could not create install command: \(error.localizedDescription)"
         }
@@ -459,7 +465,7 @@ private var bundledAVURL: URL? {
     return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
 }
 
-private func currentCLIInstallState(
+func currentCLIInstallState(
     installedURL: URL = URL(fileURLWithPath: installedAVCLIPath),
     bundledURL: URL? = bundledAVURL,
     expectedRevision: Int? = Bundle.main.object(forInfoDictionaryKey: "AVCLIRevision") as? Int
@@ -544,6 +550,34 @@ private func installCLICommand(bundleAVPath: String) -> String {
     bundle_av=\(shellQuoted(bundleAVPath))
     sudo install "$bundle_av" \(installedAVCLIPath)
     """
+}
+
+@MainActor
+func openCLIInstaller() throws {
+    guard let bundledAVURL else {
+        throw CLIInstallerError.bundledExecutableUnavailable
+    }
+    let commandURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
+        .appendingPathExtension("command")
+    try installCLICommand(bundleAVPath: bundledAVURL.path)
+        .write(to: commandURL, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
+    guard NSWorkspace.shared.open(commandURL) else {
+        throw CLIInstallerError.couldNotOpenCommand
+    }
+}
+
+private enum CLIInstallerError: LocalizedError {
+    case bundledExecutableUnavailable
+    case couldNotOpenCommand
+
+    var errorDescription: String? {
+        switch self {
+        case .bundledExecutableUnavailable: "Bundled av executable is unavailable."
+        case .couldNotOpenCommand: "Could not open the install command."
+        }
+    }
 }
 
 private func shellQuoted(_ value: String) -> String {

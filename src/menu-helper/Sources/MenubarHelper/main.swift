@@ -29,6 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         action: #selector(checkForUpdates),
         keyEquivalent: ""
     )
+    private lazy var installCLIItem = NSMenuItem(
+        title: "Install av-cli",
+        action: #selector(installCLI),
+        keyEquivalent: ""
+    )
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
@@ -128,6 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+        installCLIItem.target = self
+        menu.addItem(installCLIItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         menu.delegate = self
@@ -231,6 +238,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor [weak self] in
             await self?.performUpdateCheck()
+        }
+    }
+
+    @MainActor @objc private func installCLI() {
+        do {
+            try openCLIInstaller()
+        } catch {
+            NSAlert(error: error).runModal()
         }
     }
 
@@ -378,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyScanResult(_ result: ScanResult) {
         switch result {
         case .clean:
+            updateMainWindowFindings([])
             #if !DEBUG
             lastTelemetryFindingCount = nil
             #endif
@@ -386,7 +402,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 "No Vulnerabilities Detected",
                 image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
             )
-        case .findings(let count, let detectorCount, let level):
+        case .findings(let findings, let detectorCount, let level):
+            updateMainWindowFindings(findings)
+            let count = findings.count
             #if !DEBUG
             if lastTelemetryFindingCount != detectorCount {
                 postHogTelemetry.captureDetectorTriggered(count: detectorCount)
@@ -405,6 +423,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.image = brandImage(color: .systemRed)
             setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
         }
+    }
+
+    private func updateMainWindowFindings(_ findings: [DetectorFinding]) {
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?
+            .updateDetectorFindings(findings)
     }
 
     private func setScanStatus(_ title: String, image: NSImage?) {
@@ -521,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        installCLIItem.isHidden = currentCLIInstallState() == .current
         refreshAutoApprovalMenuItems()
     }
 }
@@ -653,7 +677,7 @@ private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
 
 private enum ScanResult {
     case clean(Int)
-    case findings(Int, Int, ScanAlertLevel)
+    case findings([DetectorFinding], Int, ScanAlertLevel)
     case failed
 }
 
@@ -689,14 +713,15 @@ private func scanResult() -> ScanResult {
     process.waitUntilExit()
     guard process.terminationStatus == 0,
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let findings = object["findings"] as? [[String: Any]]
+          let findingObjects = object["findings"] as? [[String: Any]],
+          let findings = try? detectorFindings(from: data)
     else {
         return .failed
     }
-    let detectorCount = Set(findings.compactMap { $0["source"] as? String }).count
+    let detectorCount = Set(findings.map(\.source)).count
     return findings.isEmpty
         ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
-        : .findings(findings.count, detectorCount, scanAlertLevel(findings))
+        : .findings(findings, detectorCount, scanAlertLevel(findingObjects))
 }
 
 private func scanAlertLevel(_ findings: [[String: Any]]) -> ScanAlertLevel {
