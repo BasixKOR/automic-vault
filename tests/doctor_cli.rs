@@ -73,6 +73,58 @@ fn av_doctor_rejects_unknown_commands() {
     );
 }
 
+#[test]
+fn av_doctor_reports_unsigned_agent_clis() {
+    let root = temp_dir();
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    executable(&bin.join("codex"));
+
+    let output = av(&root)
+        .args(["doctor", "codex", "--json"])
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["results"][0]["name"], "codex");
+    assert_eq!(
+        report["results"][0]["issues"][0]["kind"],
+        "agent_cli_signature_invalid"
+    );
+    assert_eq!(
+        report["results"][0]["issues"][0]["resolved_path"],
+        bin.join("codex").display().to_string()
+    );
+    assert!(
+        report["results"][0]["issues"][0]["remediation"]
+            .as_str()
+            .unwrap()
+            .contains("/usr/local/bin/codex")
+    );
+
+    let aggregate = av(&root)
+        .args(["doctor", "--json"])
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+    assert_eq!(aggregate.status.code(), Some(1));
+    let aggregate: serde_json::Value = serde_json::from_slice(&aggregate.stdout).unwrap();
+    assert!(
+        aggregate["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|result| {
+                result["name"] == "codex"
+                    && result["issues"][0]["kind"] == "agent_cli_signature_invalid"
+            })
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
 fn av(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
     command.env(

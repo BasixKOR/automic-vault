@@ -3,6 +3,8 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::{Command, Stdio};
 
 use crate::isotopes::hardeners::{
     self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, executable,
@@ -26,17 +28,49 @@ struct DoctorIssue {
     resolved_path: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+struct AgentCliDoctor {
+    command: &'static str,
+    vendor: &'static str,
+    team_identifier: &'static str,
+    app_name: &'static str,
+}
+
+const AGENT_CLIS: [AgentCliDoctor; 2] = [
+    AgentCliDoctor {
+        command: "claude",
+        vendor: "Anthropic",
+        team_identifier: "Q6L2SF6YDW",
+        app_name: "Claude.app",
+    },
+    AgentCliDoctor {
+        command: "codex",
+        vendor: "OpenAI",
+        team_identifier: "2DC432GLL2",
+        app_name: "Codex.app",
+    },
+];
+
 pub(crate) fn run<W: Write>(
     stdout: &mut W,
     selector: Option<&str>,
     json: bool,
     style: Style,
 ) -> Result<i32, String> {
-    let results = diagnose(
-        hardeners::metadata(),
-        selector,
-        &std::env::var_os("PATH").unwrap_or_default(),
-    )?;
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut results = if let Some(agent) = select_agent_cli(selector) {
+        vec![diagnose_agent_cli(agent, &path, vendor_signature_valid)]
+    } else {
+        diagnose(hardeners::metadata(), selector, &path)?
+    };
+    if selector.is_none() {
+        results.extend(
+            AGENT_CLIS
+                .iter()
+                .filter(|agent| resolve(agent.command, &path).is_some())
+                .map(|agent| diagnose_agent_cli(agent, &path, vendor_signature_valid)),
+        );
+    }
     let issue_count = results
         .iter()
         .map(|result| result.issues.len())
@@ -47,6 +81,84 @@ pub(crate) fn run<W: Write>(
         print_human(stdout, &results, issue_count, style);
     }
     Ok(if issue_count == 0 { 0 } else { 1 })
+}
+
+fn select_agent_cli(selector: Option<&str>) -> Option<&'static AgentCliDoctor> {
+    let selector = selector?;
+    AGENT_CLIS.iter().find(|agent| agent.command == selector)
+}
+
+fn diagnose_agent_cli(
+    agent: &AgentCliDoctor,
+    path: &OsStr,
+    signature_valid: impl Fn(&Path, &str) -> bool,
+) -> DoctorResult {
+    let resolved = resolve(agent.command, path);
+    let issues = match resolved.as_deref() {
+        Some(executable) if signature_valid(executable, agent.team_identifier) => Vec::new(),
+        Some(executable) => vec![agent_cli_signature_issue(agent, executable)],
+        None => vec![agent_cli_missing_issue(agent)],
+    };
+    DoctorResult {
+        name: agent.command,
+        commands: vec![agent.command.to_string()],
+        issues,
+    }
+}
+
+fn agent_cli_signature_issue(agent: &AgentCliDoctor, executable: &Path) -> DoctorIssue {
+    let executable = executable.display().to_string();
+    let link = format!("/usr/local/bin/{}", agent.command);
+    DoctorIssue {
+        kind: "agent_cli_signature_invalid",
+        command: Some(agent.command.to_string()),
+        message: format!(
+            "{} resolves to {executable}, which does not have a valid {} code signature",
+            agent.command, agent.vendor
+        ),
+        remediation: agent_cli_remediation(agent),
+        stub_path: Some(link),
+        target_path: None,
+        resolved_path: Some(executable),
+    }
+}
+
+fn agent_cli_missing_issue(agent: &AgentCliDoctor) -> DoctorIssue {
+    DoctorIssue {
+        kind: "agent_cli_unavailable",
+        command: Some(agent.command.to_string()),
+        message: format!("{} is not available through PATH", agent.command),
+        remediation: agent_cli_remediation(agent),
+        stub_path: Some(format!("/usr/local/bin/{}", agent.command)),
+        target_path: None,
+        resolved_path: None,
+    }
+}
+
+fn agent_cli_remediation(agent: &AgentCliDoctor) -> String {
+    format!(
+        "Install the full {}, then make /usr/local/bin/{} a root-owned symbolic link to the {} CLI bundled inside the app. Review any existing path before replacing it, ensure /usr/local/bin precedes other CLI locations in PATH, then rerun `av doctor {}`.",
+        agent.app_name, agent.command, agent.command, agent.command
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn vendor_signature_valid(path: &Path, team_identifier: &str) -> bool {
+    let requirement =
+        format!("=anchor apple generic and certificate leaf[subject.OU] = \"{team_identifier}\"");
+    Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", "-R", &requirement])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn vendor_signature_valid(_path: &Path, _team_identifier: &str) -> bool {
+    false
 }
 
 fn diagnose(
@@ -668,6 +780,48 @@ mod tests {
             ["stub_missing"]
         );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn agent_cli_doctors_require_the_expected_vendor_signature() {
+        let dir = temp_dir("agent-cli-signatures");
+        let codex = executable_file(&dir.join("codex"));
+        let agent = select_agent_cli(Some("codex")).unwrap();
+
+        let healthy = diagnose_agent_cli(agent, dir.as_os_str(), |path, team| {
+            path == codex && team == "2DC432GLL2"
+        });
+        assert!(healthy.issues.is_empty());
+
+        let unsigned = diagnose_agent_cli(agent, dir.as_os_str(), |_, _| false);
+        assert_eq!(unsigned.issues[0].kind, "agent_cli_signature_invalid");
+        assert_eq!(unsigned.issues[0].resolved_path.as_deref(), codex.to_str());
+        assert!(unsigned.issues[0].message.contains("OpenAI code signature"));
+        assert!(
+            unsigned.issues[0]
+                .remediation
+                .contains("Install the full Codex.app")
+        );
+        assert!(
+            unsigned.issues[0]
+                .remediation
+                .contains("/usr/local/bin/codex")
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn explicit_agent_cli_doctor_reports_a_missing_command() {
+        let agent = select_agent_cli(Some("claude")).unwrap();
+        let result = diagnose_agent_cli(agent, OsStr::new(""), |_, _| true);
+
+        assert_eq!(result.name, "claude");
+        assert_eq!(result.issues[0].kind, "agent_cli_unavailable");
+        assert!(
+            result.issues[0]
+                .remediation
+                .contains("Install the full Claude.app")
+        );
     }
 
     #[test]
