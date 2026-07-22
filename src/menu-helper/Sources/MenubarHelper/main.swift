@@ -507,9 +507,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
         recordMenuAccess(record)
-        showAutomaticAccessToast(record, below: statusItem.button) { [weak self] in
-            self?.showAutoApproval(id: record.accessRequestID)
-        }
+        showAutomaticAccessToast(record, below: statusItem.button)
     }
 
     private func recordMenuAccess(_ record: AutoApprovalRecord) {
@@ -525,9 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if record.decision == "Denied", let menuRecord = autoApprovalRecord(record) {
             recordMenuAccess(menuRecord)
             if shouldShowAutomaticAccessToast(record) {
-                showAutomaticAccessToast(menuRecord, below: statusItem.button) { [weak self] in
-                    self?.showAutoApproval(id: menuRecord.accessRequestID)
-                }
+                showAutomaticAccessToast(menuRecord, below: statusItem.button)
             }
         }
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
@@ -3054,14 +3050,14 @@ private func automaticAccessDecisionSymbol(wasDenied: Bool) -> String {
 
 private struct AutomaticAccessToastView: View {
     let record: AutoApprovalRecord
-    let open: () -> Void
+    let dismiss: () -> Void
 
     var body: some View {
-        Button(action: open) {
+        Button(action: dismiss) {
             content
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Open \(record.wasDenied ? "rejection" : "approval") details for \(record.command)")
+        .accessibilityLabel("Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(record.command)")
     }
 
     private var content: some View {
@@ -3127,8 +3123,7 @@ private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: 
 @MainActor
 private func showAutomaticAccessToast(
     _ record: AutoApprovalRecord,
-    below button: NSStatusBarButton?,
-    open: @escaping () -> Void
+    below button: NSStatusBarButton?
 ) {
     guard let button, let statusWindow = button.window else { return }
     let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
@@ -3143,7 +3138,6 @@ private func showAutomaticAccessToast(
             window.orderOut(nil)
             toastWindows.removeAll { $0 === window }
         }
-        open()
     })
     let size = hostingView.fittingSize
     hostingView.frame.size = size
