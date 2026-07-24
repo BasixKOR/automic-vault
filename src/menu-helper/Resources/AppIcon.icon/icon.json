@@ -1,22 +1,32 @@
 {
-  "color-space-for-untagged-svg-colors": "display-p3",
-  "fill": "automatic",
-  "groups": [
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.74118,0.54118,0.97647,1.00000",
+      "srgb:0.47843,0.22745,0.97647,1.00000"
+    ]
+  },
+  "groups" : [
     {
-      "layers": [
+      "layers" : [
         {
-          "image-name": "AppIcon.png",
-          "name": "AppIcon"
+          "glass" : false,
+          "image-name" : "Shield.png",
+          "name" : "Shield"
         }
       ],
-      "specular": true,
-      "translucency": {
-        "enabled": true,
-        "value": 0.2
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
       }
     }
   ],
-  "supported-platforms": {
-    "squares": "shared"
+  "supported-platforms" : {
+    "squares" : "shared"
   }
 }
