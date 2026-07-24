@@ -142,6 +142,10 @@ where
                     }
                 };
             }
+            if target == "stripe" || target == "stripe-cli" {
+                let result = hardeners::stripe_cli::run(stdout, yes);
+                return finish_hardening(result, "stripe", stdout, stderr);
+            }
             if target == "brew" || target == "homebrew" {
                 let result = hardeners::homebrew::run(stdout, yes);
                 return finish_hardening(result, "brew", stdout, stderr);

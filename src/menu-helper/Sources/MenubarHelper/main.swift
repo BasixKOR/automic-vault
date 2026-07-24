@@ -1102,7 +1102,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let requirement = """
         anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
         (identifier "com.automicvault.av" or identifier "com.automicvault.av-brew-stub" or \
-        identifier "gh" or identifier "com.github.cli" or \
+        identifier "gh" or identifier "com.github.cli" or identifier "stripe" or \
         identifier "supabase" or identifier "supabase-go" or identifier "com.supabase.cli")
         """
         let status = requirement.withCString {
@@ -1181,6 +1181,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleGhDelete(message, on: peer, caller: mutationCaller)
         case "gh-delete" where isTrustedGhCaller(path: callerPath, signing: signing):
             handleGhDelete(message, on: peer, caller: mutationCaller)
+        case "stripe-save" where isTrustedStripeCaller(path: callerPath, signing: signing):
+            handleStripeSave(message, on: peer, caller: mutationCaller)
+        case "stripe-delete" where isTrustedStripeCaller(path: callerPath, signing: signing):
+            handleStripeDelete(message, on: peer, caller: mutationCaller)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
@@ -1481,6 +1485,34 @@ private final class ApprovalServer: @unchecked Sendable {
         handleDelete(message, on: peer, caller: caller)
     }
 
+    private func handleStripeSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              isStripeCredentialKey(String(cString: keyPointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Stripe credential key")
+            return
+        }
+        handleSave(message, on: peer, caller: caller)
+    }
+
+    private func handleStripeDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              isStripeCredentialKey(String(cString: keyPointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Stripe credential key")
+            return
+        }
+        handleDelete(message, on: peer, caller: caller)
+    }
+
     private func handleDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -1657,6 +1689,9 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if isTrustedGhCaller(path: path, signing: signing) {
         return true
     }
+    if isTrustedStripeCaller(path: path, signing: signing) {
+        return true
+    }
     if isTrustedBrewStubCaller(path: path, signing: signing) {
         return true
     }
@@ -1675,6 +1710,11 @@ private func isTrustedAvCaller(path: String, signing: SigningInfo) -> Bool {
 private func isTrustedGhCaller(path: String, signing: SigningInfo) -> Bool {
     URL(fileURLWithPath: path).lastPathComponent == "gh"
         && (signing.identifier == "gh" || signing.identifier == "com.github.cli")
+}
+
+private func isTrustedStripeCaller(path: String, signing: SigningInfo) -> Bool {
+    URL(fileURLWithPath: path).lastPathComponent == "stripe"
+        && signing.identifier == "stripe"
 }
 
 private func isTrustedBrewStubCaller(path: String, signing: SigningInfo) -> Bool {
@@ -2115,6 +2155,10 @@ private func validSecretKeyName(_ key: String) -> Bool {
 
 private func isGhTokenKey(_ key: String) -> Bool {
     key.hasPrefix("GH_TOKEN_") && validSecretKeyName(key)
+}
+
+private func isStripeCredentialKey(_ key: String) -> Bool {
+    key.hasPrefix("STRIPE_CLI_") && validSecretKeyName(key)
 }
 
 private extension UnicodeScalar {
@@ -3469,6 +3513,38 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    let stripeSigning = SigningInfo(identifier: "stripe", teamIdentifier: "TEAM")
+    let stripeRequest = ApprovalRequest(
+        op: "keys",
+        keys: ["STRIPE_CLI_6163636F756E742E616363745F3132332E746573745F6D6F64655F6170695F6B6579".uppercased()],
+        target: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+        args: ["customers", "list"],
+        cwd: "/tmp",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        tool: "stripe",
+        title: "Stripe credential requested",
+        detail: nil
+    )
+    let stripeMetadata = HardenerMetadata(
+        name: "stripe",
+        hardened: true,
+        secretGate: SecretGateDescriptor(
+            id: "stripe",
+            keyPatterns: ["STRIPE_CLI_*"],
+            routes: [SecretGateRoute(
+                operation: "keys",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+                callerIdentifiers: ["stripe"],
+                keyPatterns: ["STRIPE_CLI_*"],
+                replaceExistingEnv: true,
+                allowMissingKeys: false
+            )]
+        )
+    )
     guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
@@ -3486,7 +3562,22 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["auth", "status", "--show-token"])) == .secretDump,
           isGhTokenKey("GH_TOKEN_GITHUB_COM_MXCL"),
           !isGhTokenKey("GITHUB_TOKEN"),
-          !isGhTokenKey("GH_TOKEN_bad-key")
+          !isGhTokenKey("GH_TOKEN_bad-key"),
+          matchingSecretGate(request: stripeRequest, signing: stripeSigning, hardeners: [stripeMetadata])?.id == "stripe",
+          matchingSecretGate(
+              request: stripeRequest,
+              signing: SigningInfo(identifier: "gh", teamIdentifier: "TEAM"),
+              hardeners: [stripeMetadata]
+          ) == nil,
+          classifySecretGateRequest(gateID: "stripe", request: stripeRequest) == .unknown,
+          isTrustedStripeCaller(
+              path: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+              signing: stripeSigning
+          ),
+          !isTrustedStripeCaller(path: "/tmp/stripe", signing: ghSigning),
+          isStripeCredentialKey("STRIPE_CLI_616263"),
+          !isStripeCredentialKey("STRIPE_CLI_bad-key"),
+          !isStripeCredentialKey("GH_TOKEN_GITHUB_COM")
     else {
         return 1
     }

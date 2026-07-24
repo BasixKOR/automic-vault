@@ -103,7 +103,7 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     }
 }
 
-fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
+pub(super) fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
     if yes {
         writeln!(stdout, "◇ Continue? yes (--yes)").ok();
         return Ok(true);
@@ -267,7 +267,10 @@ fn legacy_token(host: &str, user: Option<&str>) -> Option<String> {
         .or_else(|| security_find_generic_password(&service, None))
 }
 
-fn security_find_generic_password(service: &str, account: Option<&str>) -> Option<String> {
+pub(super) fn security_find_generic_password(
+    service: &str,
+    account: Option<&str>,
+) -> Option<String> {
     let mut command = Command::new(security_path());
     command.args(["find-generic-password", "-s", service]);
     if let Some(account) = account {
@@ -396,7 +399,10 @@ fn delete_legacy_keychain_tokens(host: &str, user: Option<&str>) -> Result<(), S
     security_delete_generic_password(&service, Some(""))
 }
 
-fn security_delete_generic_password(service: &str, account: Option<&str>) -> Result<(), String> {
+pub(super) fn security_delete_generic_password(
+    service: &str,
+    account: Option<&str>,
+) -> Result<(), String> {
     let mut command = Command::new(security_path());
     command.args(["delete-generic-password", "-s", service]);
     if let Some(account) = account {
@@ -415,7 +421,7 @@ fn security_delete_generic_password(service: &str, account: Option<&str>) -> Res
         return Ok(());
     }
     Err(format!(
-        "failed to delete legacy gh keychain item: {}",
+        "failed to delete legacy keychain item (service {service:?}, account {account:?}): {}",
         stderr.trim()
     ))
 }
@@ -597,6 +603,25 @@ mod tests {
             "gho_secret"
         );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn keychain_delete_error_identifies_item() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let security = temp_path("failing-security");
+        fs::write(&security, "#!/bin/sh\nprintf denied >&2\nexit 1\n").unwrap();
+        fs::set_permissions(&security, fs::Permissions::from_mode(0o700)).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SECURITY_PATH", &security);
+        }
+
+        let err = security_delete_generic_password("StripeCLI", Some("uat")).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SECURITY_PATH");
+        }
+        assert!(err.contains("service \"StripeCLI\", account Some(\"uat\")"));
+        let _ = fs::remove_file(security);
     }
 
     #[test]
