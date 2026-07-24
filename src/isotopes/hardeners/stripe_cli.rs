@@ -80,6 +80,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "╭─ harden stripe").ok();
     writeln!(stdout, "│").ok();
     if credentials.is_empty() {
+        remove_fallback(&credentials_path)?;
         writeln!(stdout, "╰─ no legacy Stripe credentials found").ok();
         super::write_secret_gate_notice(stdout, "stripe");
         return Ok(());
@@ -101,14 +102,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         crate::secrets::store_secret(key, &credential.value)?;
     }
     rewrite_config(&config_path, &config, &credentials)?;
-    if !fallback.is_empty() {
-        fs::remove_file(&credentials_path).map_err(|err| {
-            format!(
-                "credentials migrated but failed to remove {}: {err}",
-                credentials_path.display()
-            )
-        })?;
-    }
+    remove_fallback(&credentials_path)?;
     for credential in credentials.values() {
         for account in &credential.legacy_accounts {
             delete_legacy_keychain_value(account)?;
@@ -230,6 +224,14 @@ fn read_fallback(path: &Path) -> Result<BTreeMap<String, String>, String> {
     };
     serde_json::from_slice(&data)
         .map_err(|err| format!("failed to parse {}: {err}", path.display()))
+}
+
+fn remove_fallback(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("failed to remove {}: {err}", path.display())),
+    }
 }
 
 fn remap_api_key(key: &str, profiles: &BTreeMap<String, String>) -> String {
@@ -415,6 +417,33 @@ mod tests {
         let config = fs::read_to_string(config_dir.join("config.toml")).unwrap();
         assert!(!config.contains("sk_test_1234567890"));
         assert!(!config_dir.join("credentials.json").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn harden_removes_empty_fallback() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("stripe-empty-fallback");
+        let config_dir = dir.join("stripe");
+        let fallback = config_dir.join("credentials.json");
+        let stripe = dir.join("stripe-cli");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(&fallback, "{}").unwrap();
+        fs::write(&stripe, "").unwrap();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH", &stripe);
+            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS", "{}");
+        }
+
+        run(&mut Vec::new(), true).unwrap();
+
+        unsafe {
+            std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS");
+        }
+        assert!(!fallback.exists());
         let _ = fs::remove_dir_all(dir);
     }
 

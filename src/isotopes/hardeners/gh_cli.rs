@@ -421,7 +421,7 @@ pub(super) fn security_delete_generic_password(
         return Ok(());
     }
     Err(format!(
-        "failed to delete legacy keychain item: {}",
+        "failed to delete legacy keychain item (service {service:?}, account {account:?}): {}",
         stderr.trim()
     ))
 }
@@ -603,6 +603,25 @@ mod tests {
             "gho_secret"
         );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn keychain_delete_error_identifies_item() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let security = temp_path("failing-security");
+        fs::write(&security, "#!/bin/sh\nprintf denied >&2\nexit 1\n").unwrap();
+        fs::set_permissions(&security, fs::Permissions::from_mode(0o700)).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SECURITY_PATH", &security);
+        }
+
+        let err = security_delete_generic_password("StripeCLI", Some("uat")).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SECURITY_PATH");
+        }
+        assert!(err.contains("service \"StripeCLI\", account Some(\"uat\")"));
+        let _ = fs::remove_file(security);
     }
 
     #[test]
