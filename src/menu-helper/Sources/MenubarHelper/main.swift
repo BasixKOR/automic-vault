@@ -798,6 +798,70 @@ private struct ApprovalRequest {
     let detail: String?
 }
 
+enum SecretMutation {
+    case save(account: String, value: String, accessibility: StoredSecretAccessibility)
+    case delete(account: String)
+    case rename(account: String, newAccount: String)
+    case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
+
+    fileprivate func approvalRequest(callerPath: String) -> ApprovalRequest {
+        let properties: (op: String, keys: [String], args: [String], title: String, detail: String)
+        switch self {
+        case .save(let account, _, _):
+            properties = (
+                "save", [account], ["save", account], "Store \(account)?",
+                "This will create or replace a secret in Automic Vault."
+            )
+        case .delete(let account):
+            properties = (
+                "delete", [account], ["delete", account], "Delete \(account)?",
+                "This will remove the secret from Automic Vault."
+            )
+        case .rename(let account, let newAccount):
+            properties = (
+                "rename", [account, newAccount], ["rename", account, newAccount],
+                "Rename \(account)?", "This will rename the secret to \(newAccount)."
+            )
+        case .setAccessibility(let account, let accessibility):
+            let protection = accessibility.isAvailableWhileLocked ? "after-first-unlock" : "when-unlocked"
+            properties = (
+                "set-accessibility", [account], ["set-accessibility", account, protection],
+                "Change protection for \(account)?",
+                accessibility.isAvailableWhileLocked
+                    ? "This will make the secret available after the first unlock following a restart."
+                    : "This will restrict the secret to use while your Mac is unlocked."
+            )
+        }
+        return ApprovalRequest(
+            op: properties.op,
+            keys: properties.keys,
+            target: callerPath,
+            args: properties.args,
+            cwd: "",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            tool: URL(fileURLWithPath: callerPath).lastPathComponent,
+            title: properties.title,
+            detail: properties.detail
+        )
+    }
+
+    fileprivate func perform() -> OSStatus {
+        switch self {
+        case .save(let account, let value, let accessibility):
+            saveStoredSecret(account: account, value: value, accessibility: accessibility)
+        case .delete(let account):
+            deleteStoredSecret(account: account)
+        case .rename(let account, let newAccount):
+            renameStoredSecret(account: account, to: newAccount)
+        case .setAccessibility(let account, let accessibility):
+            setStoredSecretAccessibility(account: account, accessibility: accessibility)
+        }
+    }
+}
+
 private struct TransientApprovalKey: Hashable {
     let pid: Int32
     let startUsec: UInt64
@@ -819,6 +883,87 @@ private struct TransientApprovalKey: Hashable {
 private enum ApprovalDecision: Equatable {
     case denied
     case approved
+}
+
+@MainActor
+private func performApprovedSecretMutation(
+    _ mutation: SecretMutation,
+    callerPath: String,
+    pid: pid_t,
+    signing: SigningInfo,
+    launcher: LauncherIdentity?,
+    launcherFallbackPath: String,
+    canRequestHumanApproval: () -> Bool,
+    onAccessRequest: (AccessRequestRecord) -> Bool,
+    decision: ((ApprovalRequest) -> ApprovalDecision)? = nil,
+    perform: ((SecretMutation) -> OSStatus)? = nil
+) -> (status: OSStatus?, error: String?) {
+    let request = mutation.approvalRequest(callerPath: callerPath)
+    guard canRequestHumanApproval() else {
+        _ = onAccessRequest(accessRequestRecord(
+            request: request,
+            callerPath: callerPath,
+            decision: "Denied",
+            approvalSource: "Auto",
+            reason: "User session is inactive",
+            launcher: launcher
+        ))
+        return (nil, "secret mutation denied while user session is inactive")
+    }
+
+    let approval = decision?(request) ?? showApprovalAlert(
+        request: request,
+        callerPath: callerPath,
+        pid: pid,
+        signing: signing,
+        scriptApproval: nil,
+        launcher: launcher,
+        launcherFallbackPath: launcherFallbackPath,
+        automaticApprovalExplanation: nil
+    )
+    guard approval == .approved else {
+        _ = onAccessRequest(accessRequestRecord(
+            request: request,
+            callerPath: callerPath,
+            decision: "Denied",
+            approvalSource: "Manual",
+            reason: "Denied in prompt",
+            launcher: launcher
+        ))
+        return (nil, "secret mutation denied")
+    }
+    guard onAccessRequest(accessRequestRecord(
+        request: request,
+        callerPath: callerPath,
+        decision: "Approved",
+        approvalSource: "Manual",
+        reason: "Approved in prompt",
+        launcher: launcher
+    )) else {
+        return (nil, "approval audit log is unavailable")
+    }
+    return (perform?(mutation) ?? mutation.perform(), nil)
+}
+
+@MainActor
+func performInAppSecretMutation(
+    _ mutation: SecretMutation
+) -> (status: OSStatus?, error: String?) {
+    let callerPath = Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
+    var identity = AVProcessIdentity()
+    let launcher = av_process_identity(getpid(), &identity)
+        ? launcherIdentity(pid: getpid(), identity: identity)
+        : nil
+    return performApprovedSecretMutation(
+        mutation,
+        callerPath: callerPath,
+        pid: getpid(),
+        signing: signingInfo(path: callerPath),
+        launcher: launcher,
+        launcherFallbackPath: callerPath,
+        canRequestHumanApproval: { true },
+        onAccessRequest: { appendAccessRequestRecord($0) }
+    )
 }
 
 private let humanApprovalRequiredEvent = "human-approval-required"
@@ -871,6 +1016,13 @@ private struct TransientApprovalCache {
 private struct SigningInfo {
     let identifier: String
     let teamIdentifier: String
+}
+
+private struct MutationCaller {
+    let pid: pid_t
+    let identity: AVProcessIdentity
+    let path: String
+    let signing: SigningInfo
 }
 
 private struct LauncherIdentity {
@@ -983,24 +1135,30 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "approval caller is not trusted")
             return
         }
+        let mutationCaller = MutationCaller(
+            pid: pid,
+            identity: identity,
+            path: callerPath,
+            signing: signing
+        )
 
         switch op {
         case "inject", "keys", "authorize":
             handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
         case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleSave(message, on: peer)
+            handleSave(message, on: peer, caller: mutationCaller)
         case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleLoad(message, on: peer)
         case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleDelete(message, on: peer)
+            handleDelete(message, on: peer, caller: mutationCaller)
         case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhSave(message, on: peer)
+            handleGhSave(message, on: peer, caller: mutationCaller)
         case "gh-save" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhSave(message, on: peer)
+            handleGhSave(message, on: peer, caller: mutationCaller)
         case "delete" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhDelete(message, on: peer)
+            handleGhDelete(message, on: peer, caller: mutationCaller)
         case "gh-delete" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhDelete(message, on: peer)
+            handleGhDelete(message, on: peer, caller: mutationCaller)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
@@ -1231,7 +1389,11 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
-    private func handleSave(_ message: xpc_object_t, on peer: xpc_connection_t) {
+    private func handleSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
               let valuePointer = xpc_dictionary_get_string(message, "value")
         else {
@@ -1244,12 +1406,12 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let value = String(cString: valuePointer)
-        let status = saveStoredSecret(account: key, value: value)
-        if status == errSecSuccess {
-            reply(peer, to: message, ok: true, error: nil)
-        } else {
-            reply(peer, to: message, ok: false, error: "failed to store isotope key \(key): \(status)")
-        }
+        handleMutation(
+            .save(account: key, value: value, accessibility: .whenUnlocked),
+            on: peer,
+            message: message,
+            caller: caller
+        )
     }
 
     private func handleLoad(_ message: xpc_object_t, on peer: xpc_connection_t) {
@@ -1269,27 +1431,39 @@ private final class ApprovalServer: @unchecked Sendable {
         reply(peer, to: message, ok: true, error: nil, value: value)
     }
 
-    private func handleGhSave(_ message: xpc_object_t, on peer: xpc_connection_t) {
+    private func handleGhSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
               isGhTokenKey(String(cString: keyPointer))
         else {
             reply(peer, to: message, ok: false, error: "invalid GitHub token key")
             return
         }
-        handleSave(message, on: peer)
+        handleSave(message, on: peer, caller: caller)
     }
 
-    private func handleGhDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
+    private func handleGhDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
               isGhTokenKey(String(cString: keyPointer))
         else {
             reply(peer, to: message, ok: false, error: "invalid GitHub token key")
             return
         }
-        handleDelete(message, on: peer)
+        handleDelete(message, on: peer, caller: caller)
     }
 
-    private func handleDelete(_ message: xpc_object_t, on peer: xpc_connection_t) {
+    private func handleDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        caller: MutationCaller
+    ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
             reply(peer, to: message, ok: false, error: "invalid delete request")
             return
@@ -1299,11 +1473,63 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
             return
         }
-        let status = deleteStoredSecret(account: key)
-        if status == errSecSuccess || status == errSecItemNotFound {
-            reply(peer, to: message, ok: true, error: nil)
-        } else {
-            reply(peer, to: message, ok: false, error: "failed to delete isotope key \(key): \(status)")
+        handleMutation(
+            .delete(account: key),
+            on: peer,
+            message: message,
+            caller: caller
+        )
+    }
+
+    private func handleMutation(
+        _ mutation: SecretMutation,
+        on peer: xpc_connection_t,
+        message: xpc_object_t,
+        caller: MutationCaller
+    ) {
+        let launcher = launcherIdentities(for: caller.identity).first
+        let launcherFallbackPath = launcherFallbackPath(for: caller.identity) ?? caller.path
+        DispatchQueue.main.async {
+            let result = performApprovedSecretMutation(
+                mutation,
+                callerPath: caller.path,
+                pid: caller.pid,
+                signing: caller.signing,
+                launcher: launcher,
+                launcherFallbackPath: launcherFallbackPath,
+                canRequestHumanApproval: self.canRequestHumanApproval,
+                onAccessRequest: self.onAccessRequest
+            )
+            guard let status = result.status else {
+                self.reply(peer, to: message, ok: false, error: result.error)
+                return
+            }
+            switch mutation {
+            case .save(let account, _, _):
+                if status == errSecSuccess {
+                    self.reply(peer, to: message, ok: true, error: nil)
+                } else {
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "failed to store isotope key \(account): \(status)"
+                    )
+                }
+            case .delete(let account):
+                if status == errSecSuccess || status == errSecItemNotFound {
+                    self.reply(peer, to: message, ok: true, error: nil)
+                } else {
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "failed to delete isotope key \(account): \(status)"
+                    )
+                }
+            case .rename, .setAccessibility:
+                self.reply(peer, to: message, ok: false, error: "invalid XPC mutation")
+            }
         }
     }
 
@@ -2952,6 +3178,50 @@ private func showAutomaticAccessToast(
 }
 
 @MainActor
+private func runSecretMutationSelfCheck() -> Int32 {
+    for mutation in [
+        SecretMutation.save(account: "TEST_SECRET", value: "secret", accessibility: .whenUnlocked),
+        SecretMutation.delete(account: "TEST_SECRET"),
+    ] {
+        var performed = false
+        let result = performApprovedSecretMutation(
+            mutation,
+            callerPath: "/usr/local/bin/av",
+            pid: 42,
+            signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+            launcher: nil,
+            launcherFallbackPath: "/Applications/Terminal.app",
+            canRequestHumanApproval: { true },
+            onAccessRequest: { _ in true },
+            decision: { _ in .denied },
+            perform: { _ in
+                performed = true
+                return errSecSuccess
+            }
+        )
+        guard result.status == nil, !performed else { return 1 }
+    }
+
+    var performedWithoutAudit = false
+    let unaudited = performApprovedSecretMutation(
+        .delete(account: "TEST_SECRET"),
+        callerPath: "/usr/local/bin/av",
+        pid: 42,
+        signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+        launcher: nil,
+        launcherFallbackPath: "/Applications/Terminal.app",
+        canRequestHumanApproval: { true },
+        onAccessRequest: { _ in false },
+        decision: { _ in .approved },
+        perform: { _ in
+            performedWithoutAudit = true
+            return errSecSuccess
+        }
+    )
+    return unaudited.status == nil && !performedWithoutAudit ? 0 : 1
+}
+
+@MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let requester = approvalPromptRequester(
         launcher: LauncherIdentity(
@@ -3810,6 +4080,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-secret-mutations") {
+    exit(MainActor.assumeIsolated { runSecretMutationSelfCheck() })
 }
 
 if CommandLine.arguments.contains("--self-check-gh-read-only") {

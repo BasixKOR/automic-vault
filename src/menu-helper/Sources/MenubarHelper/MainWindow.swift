@@ -273,29 +273,36 @@ final class DashboardModel: ObservableObject {
         account: String,
         value: String,
         accessibility: StoredSecretAccessibility = .whenUnlocked
-    ) {
+    ) -> Bool {
         let account = account.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !account.isEmpty, !value.isEmpty else { return }
-        let status = saveStoredSecret(
-            account: account,
-            value: value,
-            accessibility: accessibility
+        guard !account.isEmpty, !value.isEmpty else { return false }
+        let result = performInAppSecretMutation(
+            .save(account: account, value: value, accessibility: accessibility)
         )
+        guard let status = result.status else {
+            errorMessage = result.error
+            return false
+        }
         if status == errSecSuccess {
             errorMessage = nil
             selectedSection = .allSecrets
             selectedItemID = account
             reload()
+            return true
         } else {
             errorMessage = "Could not save \(account): \(status)"
+            return false
         }
     }
 
     func setAccessibility(_ accessibility: StoredSecretAccessibility, for secret: StoredSecret) -> Bool {
-        let status = setStoredSecretAccessibility(
-            account: secret.account,
-            accessibility: accessibility
+        let result = performInAppSecretMutation(
+            .setAccessibility(account: secret.account, accessibility: accessibility)
         )
+        guard let status = result.status else {
+            errorMessage = result.error
+            return false
+        }
         if status == errSecSuccess {
             errorMessage = nil
             reload()
@@ -307,7 +314,11 @@ final class DashboardModel: ObservableObject {
 
     func deleteSelectedSecret() {
         guard selectedSection == .allSecrets, let account = selectedItem?.id else { return }
-        let status = deleteStoredSecret(account: account)
+        let result = performInAppSecretMutation(.delete(account: account))
+        guard let status = result.status else {
+            errorMessage = result.error
+            return
+        }
         if status == errSecSuccess || status == errSecItemNotFound {
             selectedItemID = nil
             reload()
@@ -316,17 +327,25 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    func renameSelectedSecret(to newAccount: String) {
-        guard selectedSection == .allSecrets, let account = selectedItem?.id else { return }
+    func renameSelectedSecret(to newAccount: String) -> Bool {
+        guard selectedSection == .allSecrets, let account = selectedItem?.id else { return false }
         let newAccount = newAccount.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !newAccount.isEmpty, newAccount != account else { return }
-        let status = renameStoredSecret(account: account, to: newAccount)
+        guard !newAccount.isEmpty, newAccount != account else { return false }
+        let result = performInAppSecretMutation(
+            .rename(account: account, newAccount: newAccount)
+        )
+        guard let status = result.status else {
+            errorMessage = result.error
+            return false
+        }
         if status == errSecSuccess {
             errorMessage = nil
             selectedItemID = newAccount
             reload()
+            return true
         } else {
             errorMessage = "Could not rename \(account): \(status)"
+            return false
         }
     }
 
@@ -1166,12 +1185,13 @@ private struct AddSecretView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Save") {
-                    model.addSecret(
+                    if model.addSecret(
                         account: account,
                         value: value,
                         accessibility: isAvailableWhileLocked ? .afterFirstUnlock : .whenUnlocked
-                    )
-                    dismiss()
+                    ) {
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.isEmpty)
@@ -1285,8 +1305,9 @@ private struct RenameSecretView: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Rename") {
-                    model.renameSelectedSecret(to: account)
-                    dismiss()
+                    if model.renameSelectedSecret(to: account) {
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
