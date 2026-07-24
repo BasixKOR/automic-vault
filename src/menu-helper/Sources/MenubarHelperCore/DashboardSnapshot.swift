@@ -1315,14 +1315,15 @@ func loginShellPATH() -> String? {
     }
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    guard process.terminationStatus == 0,
-          let path = String(data: data, encoding: .utf8)?
-            .split(whereSeparator: \.isNewline)
-            .last(where: { $0.hasPrefix("/") })
-            .map(String.init),
-          !path.isEmpty
-    else { return nil }
-    return path
+    guard process.terminationStatus == 0 else { return nil }
+    return loginShellPATH(from: data)
+}
+
+func loginShellPATH(from data: Data) -> String? {
+    String(data: data, encoding: .utf8)?
+        .split(whereSeparator: \.isNewline)
+        .last(where: { $0.hasPrefix("/") })
+        .map(String.init)
 }
 
 public func defaultAVExecutableURL() -> URL {
