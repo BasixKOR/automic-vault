@@ -211,6 +211,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Task { @MainActor in self?.didRecordAccessRequest(record) }
                 }
                 return recorded
+            } onBlessRequest: { [weak self] request, completion in
+                guard let self else {
+                    completion("Automic Vault is unavailable")
+                    return
+                }
+                self.showMainWindow(secretGateID: nil)
+                guard let controller = self.mainWindow?.contentViewController
+                    as? AutomicVaultMainWindowController
+                else {
+                    completion("Automic Vault could not open the blessing review")
+                    return
+                }
+                controller.reviewBlessing(request, completion: completion)
             } canRequestHumanApproval: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
@@ -860,6 +873,7 @@ private struct ApprovalRequest {
     let allowMissingKeys: Bool
     let envConflicts: [String]
     let shebangScript: String?
+    let scriptData: Data?
     let tool: String?
     let title: String?
     let detail: String?
@@ -909,6 +923,7 @@ enum SecretMutation {
             allowMissingKeys: false,
             envConflicts: [],
             shebangScript: nil,
+            scriptData: nil,
             tool: URL(fileURLWithPath: callerPath).lastPathComponent,
             title: properties.title,
             detail: properties.detail
@@ -1105,22 +1120,54 @@ private struct ScriptApproval {
     let checksum: String
 }
 
+private func blessedScriptMatches(
+    _ script: BlessedScript,
+    request: ApprovalRequest,
+    approval: ScriptApproval,
+    launcher: LauncherIdentity
+) -> Bool {
+    request.op == "inject"
+        && request.scriptData != nil
+        && script.path == approval.path
+        && script.checksum == approval.checksum
+        && script.keys == request.keys.sorted()
+        && script.target == request.target
+        && script.replaceExistingEnv == request.replaceExistingEnv
+        && script.allowMissingKeys == request.allowMissingKeys
+        && script.launchers.contains { $0.requirement == launcher.designatedRequirement }
+}
+
+private struct BlessedExecutionKey: Hashable {
+    let pid: Int32
+    let startUsec: UInt64
+}
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
     private let hardeners: [HardenerMetadata]?
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
+    private let onBlessRequest: @MainActor (
+        BlessedScriptReviewRequest,
+        @escaping (String?) -> Void
+    ) -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
     private var transientApprovals = TransientApprovalCache()
+    private let blessedExecutionsLock = NSLock()
+    private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
 
     init(
         serviceName: String,
         hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
+        onBlessRequest: @escaping @MainActor (
+            BlessedScriptReviewRequest,
+            @escaping (String?) -> Void
+        ) -> Void = { _, completion in completion("script blessing is unavailable") },
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -1131,6 +1178,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.hardeners = hardeners
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
+        self.onBlessRequest = onBlessRequest
         self.canRequestHumanApproval = canRequestHumanApproval
     }
 
@@ -1216,6 +1264,8 @@ private final class ApprovalServer: @unchecked Sendable {
             handleSave(message, on: peer, caller: mutationCaller)
         case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleLoad(message, on: peer)
+        case "bless" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleBless(message, on: peer, identity: identity)
         case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDelete(message, on: peer, caller: mutationCaller)
         case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
@@ -1247,20 +1297,81 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
-        if let key = missingRequiredSecret(for: request) {
-            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
-            return
-        }
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(for: identity)
         let launcherFallbackPath = launcherFallbackPath(for: identity) ?? callerPath
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
+        let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
+        if let script = activeBlessedScript(pid: pid, identity: identity) {
+            handleBlessedCapability(
+                script,
+                request: request,
+                signing: signing,
+                metadata: metadata,
+                launcher: launchers.first,
+                callerPath: callerPath,
+                peer: peer,
+                message: message
+            )
+            return
+        }
+        if let scriptApproval,
+           let launcher = launchers.first,
+           let script = matchingBlessedScript(
+               request: request,
+               approval: scriptApproval,
+               launcher: launcher
+           )
+        {
+            do {
+                let secrets = try approvedSecrets(for: request)
+                let accessRequestID = UUID()
+                let record = accessRequestRecord(
+                    id: accessRequestID,
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Approved",
+                    approvalSource: "Auto",
+                    reason: "Blessed script \(script.path)",
+                    launcher: launcher
+                )
+                guard onAccessRequest(record) else {
+                    reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    return
+                }
+                registerBlessedExecution(script, pid: pid, identity: identity)
+                Task { @MainActor in
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: scriptApproval,
+                        launcher: launcher
+                    ))
+                }
+                reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+            } catch {
+                _ = onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    approvalSource: "Auto",
+                    reason: error.localizedDescription,
+                    launcher: launcher
+                ))
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+            return
+        }
+        if let key = missingRequiredSecret(for: request) {
+            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
+            return
+        }
         let configuredGate = matchingSecretGate(
             request: request,
             signing: signing,
-            hardeners: hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
+            hardeners: metadata
         )
         let resolvedPolicy = configuredGate.flatMap { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
         let classification = configuredGate.map {
@@ -1460,6 +1571,126 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func matchingBlessedScript(
+        request: ApprovalRequest,
+        approval: ScriptApproval,
+        launcher: LauncherIdentity
+    ) -> BlessedScript? {
+        loadBlessedScripts().first {
+            blessedScriptMatches($0, request: request, approval: approval, launcher: launcher)
+        }
+    }
+
+    private func registerBlessedExecution(
+        _ script: BlessedScript,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) {
+        blessedExecutionsLock.lock()
+        blessedExecutions[BlessedExecutionKey(pid: pid, startUsec: identity.start_usec)] = script
+        blessedExecutionsLock.unlock()
+    }
+
+    private func activeBlessedScript(pid: pid_t, identity: AVProcessIdentity) -> BlessedScript? {
+        let currentBlessings = loadBlessedScripts()
+        blessedExecutionsLock.lock()
+        blessedExecutions = blessedExecutions.filter { key, script in
+            var current = AVProcessIdentity()
+            return currentBlessings.contains(script)
+                && av_process_identity(key.pid, &current)
+                && current.start_usec == key.startUsec
+        }
+        let executions = blessedExecutions
+        blessedExecutionsLock.unlock()
+
+        var currentPID = pid
+        var currentIdentity = identity
+        for _ in 0..<64 {
+            if let script = executions[BlessedExecutionKey(
+                pid: currentPID,
+                startUsec: currentIdentity.start_usec
+            )] {
+                return script
+            }
+            guard currentIdentity.ppid > 1 else { return nil }
+            currentPID = currentIdentity.ppid
+            guard av_process_identity(currentPID, &currentIdentity) else { return nil }
+        }
+        return nil
+    }
+
+    private func handleBlessedCapability(
+        _ script: BlessedScript,
+        request: ApprovalRequest,
+        signing: SigningInfo,
+        metadata: [HardenerMetadata],
+        launcher: LauncherIdentity?,
+        callerPath: String,
+        peer: xpc_connection_t,
+        message: xpc_object_t
+    ) {
+        guard let gate = matchingSecretGateDefinition(
+            request: request,
+            signing: signing,
+            hardeners: metadata
+        ),
+        let protection = script.capabilities[gate.id],
+        secretGateProtectionAllows(
+            protection,
+            classification: classifySecretGateRequest(gateID: gate.id, request: request)
+        )
+        else {
+            _ = onAccessRequest(accessRequestRecord(
+                request: request,
+                callerPath: callerPath,
+                decision: "Denied",
+                approvalSource: "Auto",
+                reason: "Denied by blessed script capability ceiling",
+                launcher: launcher
+            ))
+            reply(peer, to: message, ok: false, error: "\(request.op) denied")
+            return
+        }
+
+        do {
+            let secrets = try approvedSecrets(for: request)
+            let accessRequestID = UUID()
+            guard onAccessRequest(accessRequestRecord(
+                id: accessRequestID,
+                request: request,
+                callerPath: callerPath,
+                decision: "Approved",
+                approvalSource: "Auto",
+                reason: "Blessed script \(script.path)",
+                launcher: launcher
+            )) else {
+                reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                return
+            }
+            if let launcher {
+                Task { @MainActor in
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: ScriptApproval(path: script.path, checksum: script.checksum),
+                        launcher: launcher
+                    ))
+                }
+            }
+            reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+        } catch {
+            _ = onAccessRequest(accessRequestRecord(
+                request: request,
+                callerPath: callerPath,
+                decision: "Failed",
+                approvalSource: "Auto",
+                reason: error.localizedDescription,
+                launcher: launcher
+            ))
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -1500,6 +1731,70 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         reply(peer, to: message, ok: true, error: nil, value: value)
+    }
+
+    private func handleBless(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        identity: AVProcessIdentity
+    ) {
+        guard let pathPointer = xpc_dictionary_get_string(message, "path") else {
+            reply(peer, to: message, ok: false, error: "invalid bless request")
+            return
+        }
+        let path = String(cString: pathPointer)
+        guard path.hasPrefix("/"),
+              URL(fileURLWithPath: path).standardizedFileURL.path == path,
+              URL(fileURLWithPath: path).resolvingSymlinksInPath().path == path
+        else {
+            reply(peer, to: message, ok: false, error: "script path must be canonical")
+            return
+        }
+        guard let data = try? readBlessedScript(path: path),
+              let declaration = try? blessedScriptDeclaration(data: data)
+        else {
+            reply(peer, to: message, ok: false, error: "script is not a valid blessable file")
+            return
+        }
+        let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
+        for (id, protection) in declaration.manifest.capabilities {
+            guard let descriptor = metadata.lazy.compactMap(\.secretGate).first(where: { $0.id == id }) else {
+                reply(peer, to: message, ok: false, error: "unknown script capability: \(id)")
+                return
+            }
+            let gate = SecretGate(
+                id: descriptor.id,
+                keyPatterns: descriptor.keyPatterns,
+                routes: descriptor.routes,
+                defaultProtection: .noAccess,
+                appPolicies: []
+            )
+            guard gate.availableProtections.contains(protection) else {
+                reply(peer, to: message, ok: false, error: "unsupported access level for \(id)")
+                return
+            }
+        }
+        guard let launcher = launcherIdentities(for: identity).first else {
+            reply(peer, to: message, ok: false, error: "calling app identity is unavailable")
+            return
+        }
+        let request = BlessedScriptReviewRequest(
+            path: path,
+            declaration: declaration,
+            launcher: BlessedScriptLauncher(
+                bundleIdentifier: launcher.identifier,
+                requirement: launcher.designatedRequirement
+            )
+        )
+        DispatchQueue.main.async {
+            guard self.canRequestHumanApproval() else {
+                self.reply(peer, to: message, ok: false, error: "user approval is unavailable")
+                return
+            }
+            self.onBlessRequest(request) { error in
+                self.reply(peer, to: message, ok: error == nil, error: error)
+            }
+        }
     }
 
     private func handleGhSave(
@@ -1657,6 +1952,13 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" else { return nil }
+        let scriptData: Data?
+        if xpc_dictionary_get_value(message, "script_data") != nil {
+            guard let data = xpcData(message, key: "script_data") else { return nil }
+            scriptData = data
+        } else {
+            scriptData = nil
+        }
 
         return ApprovalRequest(
             op: op,
@@ -1668,6 +1970,7 @@ private final class ApprovalServer: @unchecked Sendable {
             allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
             envConflicts: envConflicts,
             shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
+            scriptData: scriptData,
             tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
             title: xpc_dictionary_get_string(message, "title").map(String.init(cString:)),
             detail: xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
@@ -1686,6 +1989,14 @@ private final class ApprovalServer: @unchecked Sendable {
             strings.append(String(cString: pointer))
         }
         return strings
+    }
+
+    private func xpcData(_ message: xpc_object_t, key: String) -> Data? {
+        var length = 0
+        guard let bytes = xpc_dictionary_get_data(message, key, &length),
+              length <= blessedScriptMaximumBytes
+        else { return nil }
+        return Data(bytes: bytes, count: length)
     }
 
     private func reply(
@@ -1780,17 +2091,43 @@ private func matchingSecretGate(
     hardeners: [HardenerMetadata],
     service: String = secretGatePoliciesKeychainService
 ) -> SecretGate? {
-    loadSecretGates(hardeners: hardeners, service: service).first { gate in
-        gate.routes.contains { route in
-            route.operation == request.op
-                && route.callerIdentifiers.contains(signing.identifier)
-                && normalizedExecutablePath(route.targetPath) == normalizedExecutablePath(request.target)
-                && route.scriptPath.map { standardizedPath($0, cwd: request.cwd) }
-                    == resolvedShebangScriptPath(request)
-                && routeKeysMatch(route.keyPatterns, request.keys)
-                && route.replaceExistingEnv == request.replaceExistingEnv
-                && route.allowMissingKeys == request.allowMissingKeys
-        }
+    loadSecretGates(hardeners: hardeners, service: service).first {
+        secretGateMatches($0, request: request, signing: signing)
+    }
+}
+
+private func matchingSecretGateDefinition(
+    request: ApprovalRequest,
+    signing: SigningInfo,
+    hardeners: [HardenerMetadata]
+) -> SecretGate? {
+    hardeners.lazy.compactMap(\.secretGate).map {
+        SecretGate(
+            id: $0.id,
+            keyPatterns: $0.keyPatterns,
+            routes: $0.routes,
+            defaultProtection: .noAccess,
+            appPolicies: []
+        )
+    }.first {
+        secretGateMatches($0, request: request, signing: signing)
+    }
+}
+
+private func secretGateMatches(
+    _ gate: SecretGate,
+    request: ApprovalRequest,
+    signing: SigningInfo
+) -> Bool {
+    gate.routes.contains { route in
+        route.operation == request.op
+            && route.callerIdentifiers.contains(signing.identifier)
+            && normalizedExecutablePath(route.targetPath) == normalizedExecutablePath(request.target)
+            && route.scriptPath.map { standardizedPath($0, cwd: request.cwd) }
+                == resolvedShebangScriptPath(request)
+            && routeKeysMatch(route.keyPatterns, request.keys)
+            && route.replaceExistingEnv == request.replaceExistingEnv
+            && route.allowMissingKeys == request.allowMissingKeys
     }
 }
 
@@ -2693,8 +3030,10 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     let url = script.hasPrefix("/")
         ? URL(fileURLWithPath: script)
         : URL(fileURLWithPath: request.cwd).appendingPathComponent(script)
-    let path = url.standardizedFileURL.path
-    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+    let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+    guard let data = request.scriptData ?? (try? readBlessedScript(path: path)) else {
+        return nil
+    }
     let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     return ScriptApproval(path: path, checksum: checksum)
 }
@@ -3514,6 +3853,7 @@ private func runApprovalSelfCheck() -> Int32 {
             allowMissingKeys: false,
             envConflicts: [],
             shebangScript: nil,
+            scriptData: nil,
             tool: "gh",
             title: nil,
             detail: nil
@@ -3567,6 +3907,7 @@ private func runApprovalSelfCheck() -> Int32 {
         allowMissingKeys: false,
         envConflicts: [],
         shebangScript: nil,
+        scriptData: nil,
         tool: "stripe",
         title: "Stripe credential requested",
         detail: nil
@@ -3630,6 +3971,7 @@ private func runApprovalSelfCheck() -> Int32 {
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
         args: [String] = ["-f", "/usr/local/bin/aws", "s3", "ls"],
         shebangScript: String? = "/usr/local/bin/aws",
+        scriptData: Data? = nil,
         replaceExistingEnv: Bool = false,
         allowMissingKeys: Bool = false,
         envConflicts: [String] = []
@@ -3644,6 +3986,7 @@ private func runApprovalSelfCheck() -> Int32 {
             allowMissingKeys: allowMissingKeys,
             envConflicts: envConflicts,
             shebangScript: shebangScript,
+            scriptData: scriptData,
             tool: nil,
             title: nil,
             detail: nil
@@ -3667,6 +4010,43 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    let blessedRequest = awsRequest(shebangScript: "/tmp/script", scriptData: Data("script".utf8))
+    let blessedScript = BlessedScript(
+        path: "/tmp/script",
+        checksum: "checksum",
+        keys: blessedRequest.keys,
+        target: blessedRequest.target,
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["aws": .readOnly],
+        launchers: [BlessedScriptLauncher(
+            bundleIdentifier: blockedLauncher.identifier,
+            requirement: blockedLauncher.designatedRequirement
+        )]
+    )
+    guard matchingSecretGateDefinition(
+        request: readOnlyAws,
+        signing: avSigning,
+        hardeners: [HardenerMetadata(
+            name: awsMetadata.name,
+            hardened: false,
+            secretGate: awsMetadata.secretGate
+        )]
+    )?.id == "aws",
+        blessedScriptMatches(
+            blessedScript,
+            request: blessedRequest,
+            approval: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
+            launcher: blockedLauncher
+        ),
+        !blessedScriptMatches(
+            blessedScript,
+            request: awsRequest(shebangScript: "/tmp/script"),
+            approval: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
+            launcher: blockedLauncher
+        )
+    else { return 1 }
+
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
           missingRequiredSecret(for: readOnlyAws, exists: { $0 == "AWS_SECRET_ACCESS_KEY" }) == "AWS_ACCESS_KEY_ID",
           missingRequiredSecret(for: readOnlyAws, exists: { _ in true }) == nil,
@@ -3722,6 +4102,7 @@ private func runApprovalSelfCheck() -> Int32 {
         allowMissingKeys: false,
         envConflicts: [],
         shebangScript: nil,
+        scriptData: nil,
         tool: "brew",
         title: nil,
         detail: nil
@@ -4091,6 +4472,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         allowMissingKeys: false,
         envConflicts: [],
         shebangScript: "/usr/local/bin/aws",
+        scriptData: nil,
         tool: nil,
         title: nil,
         detail: nil
@@ -4105,6 +4487,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         allowMissingKeys: true,
         envConflicts: [],
         shebangScript: "/usr/local/bin/pulumi",
+        scriptData: nil,
         tool: nil,
         title: nil,
         detail: nil
