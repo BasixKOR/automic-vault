@@ -10,17 +10,27 @@ const KEYCHAIN_SERVICE: &str = "StripeCLI";
 pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/stripe-cli";
 const API_KEY_FIELDS: [&str; 2] = ["test_mode_api_key", "live_mode_api_key"];
 
+#[derive(Debug)]
+pub(crate) enum HardenError {
+    StripeCliNotInstalled,
+    Other(String),
+}
+
+impl From<String> for HardenError {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
+
 #[derive(Clone)]
 struct Credential {
     value: String,
     legacy_accounts: BTreeSet<String>,
 }
 
-pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
     if !stripe_cli_path().exists() {
-        return Err(format!(
-            "patched stripe-cli is not installed; run `{INSTALL_COMMAND}`"
-        ));
+        return Err(HardenError::StripeCliNotInstalled);
     }
 
     let config_dir = stripe_config_dir()?;
@@ -29,7 +39,9 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let config = match fs::read_to_string(&config_path) {
         Ok(config) => config,
         Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
-        Err(err) => return Err(format!("failed to read {}: {err}", config_path.display())),
+        Err(err) => {
+            return Err(format!("failed to read {}: {err}", config_path.display()).into());
+        }
     };
     let profiles = parse_profiles(&config);
     let mut credentials = BTreeMap::<String, Credential>::new();

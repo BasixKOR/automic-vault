@@ -135,7 +135,13 @@ where
                         0
                     }
                     Err(hardeners::gh_cli::HardenError::GhCliNotInstalled) => {
-                        print_gh_cli_install_guidance(stderr, style);
+                        print_isotope_install_guidance(
+                            stderr,
+                            style,
+                            "gh",
+                            "gh-cli",
+                            hardeners::gh_cli::INSTALL_COMMAND,
+                        );
                         1
                     }
                     Err(hardeners::gh_cli::HardenError::Other(err)) => {
@@ -145,8 +151,26 @@ where
                 };
             }
             if target == "stripe" || target == "stripe-cli" {
-                let result = hardeners::stripe_cli::run(stdout, yes);
-                return finish_hardening(result, "stripe", stdout, stderr);
+                return match hardeners::stripe_cli::run(stdout, yes) {
+                    Ok(()) => {
+                        print_hardening_followup(stdout, "stripe");
+                        0
+                    }
+                    Err(hardeners::stripe_cli::HardenError::StripeCliNotInstalled) => {
+                        print_isotope_install_guidance(
+                            stderr,
+                            style,
+                            "stripe",
+                            "stripe-cli",
+                            hardeners::stripe_cli::INSTALL_COMMAND,
+                        );
+                        1
+                    }
+                    Err(hardeners::stripe_cli::HardenError::Other(err)) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
             }
             if target == "brew" || target == "homebrew" {
                 let result = hardeners::homebrew::run(stdout, yes);
@@ -185,17 +209,23 @@ where
     }
 }
 
-fn print_gh_cli_install_guidance(stderr: &mut dyn Write, style: scan::Style) {
-    let _ = writeln!(stderr, "╭─ harden gh");
-    let _ = writeln!(stderr, "│");
-    let _ = writeln!(stderr, "◆ {}", style.paint("33", "gh-cli is not installed"));
+fn print_isotope_install_guidance(
+    stderr: &mut dyn Write,
+    style: scan::Style,
+    target: &str,
+    package: &str,
+    install_command: &str,
+) {
+    let _ = writeln!(stderr, "╭─ harden {target}");
     let _ = writeln!(stderr, "│");
     let _ = writeln!(
         stderr,
-        "├─ 1. run: `{}`",
-        hardeners::gh_cli::INSTALL_COMMAND
+        "◆ {}",
+        style.paint("33", &format!("{package} is not installed"))
     );
-    let _ = writeln!(stderr, "╰─ 2. run: `av harden gh` again");
+    let _ = writeln!(stderr, "│");
+    let _ = writeln!(stderr, "├─ 1. run: `{install_command}`");
+    let _ = writeln!(stderr, "╰─ 2. run: `av harden {target}` again");
 }
 
 fn print_hardening_followup(stdout: &mut dyn Write, target: &str) {
@@ -330,6 +360,28 @@ mod tests {
         assert_eq!(
             stderr,
             "╭─ harden gh\n│\n◆ gh-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/gh-cli`\n╰─ 2. run: `av harden gh` again\n"
+        );
+    }
+
+    #[test]
+    fn harden_stripe_tells_user_to_install_isotope() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing =
+            std::env::temp_dir().join(format!("av-missing-stripe-{}", std::process::id()));
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH", &missing);
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "stripe"]);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH");
+        }
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            "╭─ harden stripe\n│\n◆ stripe-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/stripe-cli`\n╰─ 2. run: `av harden stripe` again\n"
         );
     }
 
