@@ -26,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
     private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
+    private lazy var doctorStatusItem: NSMenuItem = {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isHidden = true
+        return item
+    }()
     private lazy var checkForUpdatesItem = NSMenuItem(
         title: "Check for Updates…",
         action: #selector(checkForUpdates),
@@ -132,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
+        menu.addItem(doctorStatusItem)
         menu.addItem(.separator())
         checkForUpdatesItem.target = self
         menu.addItem(checkForUpdatesItem)
@@ -440,7 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyScanResult(_ result: ScanResult) {
         switch result {
-        case .clean:
+        case .clean(_):
             updateMainWindowFindings([])
             #if !DEBUG
             lastTelemetryFindingCount = nil
@@ -464,7 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .high: brandImage(color: .systemRed)
             }
             setScanStatus(
-                count == 1 ? "1 scan finding" : "\(count) scan findings",
+                vulnerabilityStatusTitle(count: count),
                 image: shieldImage(color: level.color)
             )
         case .failed:
@@ -484,6 +490,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scanStatusItem.image = image
     }
 
+    private func setDoctorStatus(count: Int) {
+        guard let title = doctorStatusTitle(count: count) else {
+            doctorStatusItem.isHidden = true
+            return
+        }
+        doctorStatusItem.title = title
+        doctorStatusItem.image = shieldImage(
+            symbolName: "stethoscope",
+            accessibilityDescription: "Doctor"
+        )
+        doctorStatusItem.isHidden = false
+    }
+
+    private func refreshDoctorStatus() {
+        scanQueue.async { [weak self] in
+            let count = loadDoctorIssues(avExecutableURL: avExecutableURL()).count
+            Task { @MainActor in
+                self?.setDoctorStatus(count: count)
+            }
+        }
+    }
+
     private func brandImage(color: NSColor? = nil) -> NSImage? {
         let fallback = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
@@ -492,8 +520,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return tinted(image, color: color)
     }
 
-    private func shieldImage(symbolName: String = "shield.lefthalf.filled", color: NSColor? = nil) -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: "SHIELD") else {
+    private func shieldImage(
+        symbolName: String = "shield.lefthalf.filled",
+        color: NSColor? = nil,
+        accessibilityDescription: String = "Shield"
+    ) -> NSImage? {
+        guard let symbol = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: accessibilityDescription
+        ) else {
             return nil
         }
         let image = symbol.withSymbolConfiguration(.init(pointSize: 14, weight: .semibold)) ?? symbol
@@ -594,6 +629,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         installCLIItem.isHidden = currentCLIInstallState() == .current
         refreshAutoApprovalMenuItems()
+        refreshDoctorStatus()
     }
 }
 
@@ -738,6 +774,19 @@ private func boundedScanDelay(
     let startedAt = burstStartedAt ?? now
     burstStartedAt = startedAt
     return min(debounceDelay, max(0, startedAt + maximumDelay - now))
+}
+
+private func doctorStatusTitle(count: Int) -> String? {
+    guard count > 0 else { return nil }
+    return "\(spelledOut(count)) Doctor \(count == 1 ? "Report" : "Reports")"
+}
+
+private func vulnerabilityStatusTitle(count: Int) -> String {
+    "\(spelledOut(count)) \(count == 1 ? "Vulnerability" : "Vulnerabilities") Detected"
+}
+
+private func spelledOut(_ count: Int) -> String {
+    NumberFormatter.localizedString(from: NSNumber(value: count), number: .spellOut).capitalized
 }
 
 private enum ScanAlertLevel {
@@ -4095,6 +4144,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
           """,
           scanAlertLevel([["severity": "medium"]]) == .medium,
           scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
+          doctorStatusTitle(count: 0) == nil,
+          doctorStatusTitle(count: 1) == "One Doctor Report",
+          doctorStatusTitle(count: 2) == "Two Doctor Reports",
+          vulnerabilityStatusTitle(count: 1) == "One Vulnerability Detected",
+          vulnerabilityStatusTitle(count: 2) == "Two Vulnerabilities Detected",
           autoApprovalTitle(
               AutoApprovalRecord(
                   accessRequestID: UUID(),
