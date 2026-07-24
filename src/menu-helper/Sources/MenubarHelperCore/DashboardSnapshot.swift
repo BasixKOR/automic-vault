@@ -1320,18 +1320,19 @@ func loginShellPATH() -> String? {
 }
 
 func loginShellPATH(from data: Data) -> String? {
-    String(data: data, encoding: .utf8)?
-        .split(whereSeparator: \.isNewline)
-        .compactMap { line -> Substring? in
-            var line = line
-            while line.hasPrefix("\u{1B}]") {
-                guard let terminator = line.firstIndex(of: "\u{07}") else { return nil }
-                line = line[line.index(after: terminator)...]
-            }
-            return line.hasPrefix("/") ? line : nil
+    guard let output = String(data: data, encoding: .utf8) else { return nil }
+    var path: Substring?
+    for outputLine in output.split(whereSeparator: \.isNewline) {
+        var line = outputLine
+        while line.hasPrefix("\u{1B}]") {
+            guard let terminator = line.firstIndex(of: "\u{07}") else { return nil }
+            line = line[line.index(after: terminator)...]
         }
-        .last
-        .map(String.init)
+        if line.hasPrefix("/") {
+            path = line
+        }
+    }
+    return path.map(String.init)
 }
 
 public func defaultAVExecutableURL() -> URL {

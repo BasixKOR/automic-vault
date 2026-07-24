@@ -171,6 +171,7 @@ import Testing
     #expect(loginShellPATH(from: Data("startup noise\n/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
     #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\u{07}/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
     #expect(loginShellPATH(from: Data("\u{1B}]0;zsh/usr/bin:/bin\n".utf8)) == nil)
+    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\n/usr/bin:/bin\n".utf8)) == nil)
 }
 
 @Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {
