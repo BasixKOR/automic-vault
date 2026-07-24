@@ -11,9 +11,8 @@
 - `$XDG_CONFIG_HOME/stripe/config.toml`
 - `~/.config/stripe/config.toml`
 
-## Why This is not Yet Hardened
+## Mitigation
 
-Stripe CLI owns and refreshes this profile state. Safe remediation belongs in
-its upstream keyring store.
-
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+```sh
+av harden stripe
+```
