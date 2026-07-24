@@ -438,17 +438,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runScan() {
         scanQueue.async { [weak self] in
             let result = scanResult()
-            let doctorCount = loadDoctorIssues(avExecutableURL: avExecutableURL()).count
             Task { @MainActor in
                 self?.applyScanResult(result)
-                self?.setDoctorStatus(count: doctorCount)
             }
         }
     }
 
     private func applyScanResult(_ result: ScanResult) {
         switch result {
-        case .clean:
+        case .clean(_):
             updateMainWindowFindings([])
             #if !DEBUG
             lastTelemetryFindingCount = nil
@@ -503,6 +501,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityDescription: "Doctor"
         )
         doctorStatusItem.isHidden = false
+    }
+
+    private func refreshDoctorStatus() {
+        scanQueue.async { [weak self] in
+            let count = loadDoctorIssues(avExecutableURL: avExecutableURL()).count
+            Task { @MainActor in
+                self?.setDoctorStatus(count: count)
+            }
+        }
     }
 
     private func brandImage(color: NSColor? = nil) -> NSImage? {
@@ -622,6 +629,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         installCLIItem.isHidden = currentCLIInstallState() == .current
         refreshAutoApprovalMenuItems()
+        refreshDoctorStatus()
     }
 }
 
