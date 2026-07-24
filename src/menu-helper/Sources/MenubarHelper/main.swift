@@ -17,6 +17,7 @@ private let pendingMainWindowKey = "pendingMainWindow"
 private let pendingSecretGateKey = "pendingSecretGate"
 private let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
+private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private var toastWindows: [NSWindow] = []
 
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
     private var approval: ApprovalServer?
     private var scanWorkItem: DispatchWorkItem?
+    private var scanBurstStartedAt: TimeInterval?
     private var eventStream: FSEventStreamRef?
     private var mainWindow: NSWindow?
     private var isUserSessionActive = true
@@ -224,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopServices() {
         scanWorkItem?.cancel()
         scanWorkItem = nil
+        scanBurstStartedAt = nil
         if let eventStream {
             FSEventStreamStop(eventStream)
             FSEventStreamInvalidate(eventStream)
@@ -410,8 +413,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleScan(after delay: TimeInterval) {
+        let delay = boundedScanDelay(
+            now: ProcessInfo.processInfo.systemUptime,
+            burstStartedAt: &scanBurstStartedAt,
+            debounceDelay: delay,
+            maximumDelay: scanMaximumDelay
+        )
         scanWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
+            self?.scanWorkItem = nil
+            self?.scanBurstStartedAt = nil
             self?.runScan()
         }
         scanWorkItem = workItem
@@ -716,6 +727,17 @@ private enum ScanResult {
     case clean(Int)
     case findings([DetectorFinding], Int, ScanAlertLevel)
     case failed
+}
+
+private func boundedScanDelay(
+    now: TimeInterval,
+    burstStartedAt: inout TimeInterval?,
+    debounceDelay: TimeInterval,
+    maximumDelay: TimeInterval
+) -> TimeInterval {
+    let startedAt = burstStartedAt ?? now
+    burstStartedAt = startedAt
+    return min(debounceDelay, max(0, startedAt + maximumDelay - now))
 }
 
 private enum ScanAlertLevel {
@@ -4078,6 +4100,32 @@ private func runMenuStatusSelfCheck() -> Int32 {
     return 0
 }
 
+private func runScanSchedulingSelfCheck() -> Int32 {
+    var burstStartedAt: TimeInterval?
+    guard boundedScanDelay(
+        now: 10,
+        burstStartedAt: &burstStartedAt,
+        debounceDelay: 1,
+        maximumDelay: 5
+    ) == 1,
+    boundedScanDelay(
+        now: 14.5,
+        burstStartedAt: &burstStartedAt,
+        debounceDelay: 1,
+        maximumDelay: 5
+    ) == 0.5,
+    boundedScanDelay(
+        now: 15,
+        burstStartedAt: &burstStartedAt,
+        debounceDelay: 1,
+        maximumDelay: 5
+    ) == 0
+    else {
+        return 1
+    }
+    return 0
+}
+
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
@@ -4112,6 +4160,10 @@ if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
 
 if CommandLine.arguments.contains("--self-check-menu-status") {
     exit(runMenuStatusSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-scan-scheduling") {
+    exit(runScanSchedulingSelfCheck())
 }
 
 let app = NSApplication.shared
