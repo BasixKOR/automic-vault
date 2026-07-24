@@ -113,7 +113,7 @@ fn agent_cli_signature_issue(agent: &AgentCliDoctor, executable: &Path) -> Docto
         kind: "agent_cli_signature_invalid",
         command: Some(agent.command.to_string()),
         message: format!(
-            "{} resolves to {executable}, which does not have a valid {} code signature",
+            "{} resolves to {executable}, which does not have a valid {} code signature. Without a valid code signature, Automic Vault cannot securely identify the CLI and enforce approval gates for it",
             agent.command, agent.vendor
         ),
         remediation: agent_cli_remediation(agent),
@@ -797,6 +797,11 @@ mod tests {
         assert_eq!(unsigned.issues[0].kind, "agent_cli_signature_invalid");
         assert_eq!(unsigned.issues[0].resolved_path.as_deref(), codex.to_str());
         assert!(unsigned.issues[0].message.contains("OpenAI code signature"));
+        assert!(
+            unsigned.issues[0]
+                .message
+                .contains("cannot securely identify the CLI and enforce approval gates")
+        );
         assert!(
             unsigned.issues[0]
                 .remediation
