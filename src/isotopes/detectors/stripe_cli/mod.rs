@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+const KEYCHAIN_SERVICES: &[&str] = &["StripeCLI"];
+
 pub fn install_is_insecure() -> Result<bool, String> {
     install_insecurity_reasons().map(|reasons| !reasons.is_empty())
 }
@@ -19,6 +21,17 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
                 path.display()
             ));
         }
+    }
+    if super::gh_cli::keychain_services_allow_security_tool(
+        &KEYCHAIN_SERVICES
+            .iter()
+            .map(|service| (*service).to_string())
+            .collect::<Vec<_>>(),
+    )? {
+        reasons.push(
+            "Stripe CLI keychain item allows non-interactive extraction by the security tool"
+                .to_string(),
+        );
     }
     Ok(reasons)
 }
@@ -86,6 +99,11 @@ mod tests {
         assert!(!stripe_config_contains_plaintext_key(
             "[default]\nlive_mode_api_key = \"sk_live_*********0000\"\n"
         ));
+    }
+
+    #[test]
+    fn checks_the_upstream_stripe_cli_keychain_service() {
+        assert_eq!(KEYCHAIN_SERVICES, ["StripeCLI"]);
     }
 }
 

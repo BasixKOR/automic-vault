@@ -20,7 +20,7 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
             ));
         }
     }
-    if keychain_allows_security_tool(&hosts_paths)? {
+    if keychain_services_allow_security_tool(&gh_keychain_services(&hosts_paths))? {
         reasons.push(
             "GitHub CLI keychain item allows non-interactive extraction by the security tool"
                 .to_string(),
@@ -106,12 +106,12 @@ fn gh_keychain_services(hosts_paths: &[PathBuf]) -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn keychain_allows_security_tool(hosts_paths: &[PathBuf]) -> Result<bool, String> {
-    macos_keychain::keychain_allows_security_tool(&gh_keychain_services(hosts_paths))
+pub(crate) fn keychain_services_allow_security_tool(services: &[String]) -> Result<bool, String> {
+    macos_keychain::keychain_allows_security_tool(services)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn keychain_allows_security_tool(_hosts_paths: &[PathBuf]) -> Result<bool, String> {
+pub(crate) fn keychain_services_allow_security_tool(_services: &[String]) -> Result<bool, String> {
     Ok(false)
 }
 
