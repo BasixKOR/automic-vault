@@ -103,7 +103,7 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     }
 }
 
-fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
+pub(super) fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
     if yes {
         writeln!(stdout, "◇ Continue? yes (--yes)").ok();
         return Ok(true);
@@ -267,7 +267,10 @@ fn legacy_token(host: &str, user: Option<&str>) -> Option<String> {
         .or_else(|| security_find_generic_password(&service, None))
 }
 
-fn security_find_generic_password(service: &str, account: Option<&str>) -> Option<String> {
+pub(super) fn security_find_generic_password(
+    service: &str,
+    account: Option<&str>,
+) -> Option<String> {
     let mut command = Command::new(security_path());
     command.args(["find-generic-password", "-s", service]);
     if let Some(account) = account {
@@ -396,7 +399,10 @@ fn delete_legacy_keychain_tokens(host: &str, user: Option<&str>) -> Result<(), S
     security_delete_generic_password(&service, Some(""))
 }
 
-fn security_delete_generic_password(service: &str, account: Option<&str>) -> Result<(), String> {
+pub(super) fn security_delete_generic_password(
+    service: &str,
+    account: Option<&str>,
+) -> Result<(), String> {
     let mut command = Command::new(security_path());
     command.args(["delete-generic-password", "-s", service]);
     if let Some(account) = account {
@@ -415,7 +421,7 @@ fn security_delete_generic_password(service: &str, account: Option<&str>) -> Res
         return Ok(());
     }
     Err(format!(
-        "failed to delete legacy gh keychain item: {}",
+        "failed to delete legacy keychain item: {}",
         stderr.trim()
     ))
 }

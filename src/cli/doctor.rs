@@ -1176,7 +1176,7 @@ mod tests {
                     }
                 } else {
                     assert!(
-                        matches!(hardener.name, "gh" | "supabase"),
+                        matches!(hardener.name, "gh" | "stripe" | "supabase"),
                         "{}:{} needs explicit target-only Doctor coverage review",
                         hardener.name,
                         command.name

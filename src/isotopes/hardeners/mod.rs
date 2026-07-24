@@ -3,6 +3,7 @@ pub(crate) mod env_wrapper;
 pub(crate) mod gh_cli;
 pub(crate) mod homebrew;
 mod migrations;
+pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 
@@ -191,6 +192,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(aws_cli, "aws"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
+        gated_hardener!(stripe_cli, "stripe"),
         ungated_hardener!(sudo, "sudo"),
         gated_hardener!(supabase, "supabase"),
     ];
