@@ -167,6 +167,13 @@ import Testing
     #expect(issues.map(\.kind) == ["hardening_not_applied", "login_shell_path_unavailable"])
 }
 
+@Test func loginShellPATHUsesLastAbsoluteLine() {
+    #expect(loginShellPATH(from: Data("startup noise\n/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
+    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\u{07}/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
+    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh/usr/bin:/bin\n".utf8)) == nil)
+    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\n/usr/bin:/bin\n".utf8)) == nil)
+}
+
 @Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {
     let data = try #require(loadJSON(
         avExecutableURL: URL(fileURLWithPath: "/bin/sh"),
