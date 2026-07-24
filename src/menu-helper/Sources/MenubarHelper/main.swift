@@ -413,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleScan(after delay: TimeInterval) {
-        let delay = boundedScanDelay(
+        let scheduledDelay = boundedScanDelay(
             now: ProcessInfo.processInfo.systemUptime,
             burstStartedAt: &scanBurstStartedAt,
             debounceDelay: delay,
@@ -426,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.runScan()
         }
         scanWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: workItem)
     }
 
     private func runScan() {
