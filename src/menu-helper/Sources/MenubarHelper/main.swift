@@ -2562,20 +2562,45 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
         withIntermediateDirectories: true
     )
     let template = try Data(contentsOf: launchAgent)
-    try configuredLaunchAgent(template: template, executableURL: executableURL)
-        .write(to: installed, options: .atomic)
+    let configured = try configuredLaunchAgent(template: template, executableURL: executableURL)
+    let configurationChanged = !launchAgentConfigurationsMatch(
+        try? Data(contentsOf: installed),
+        configured
+    )
+    try configured.write(to: installed, options: .atomic)
 
     let domain = "gui/\(getuid())"
-    try? runLaunchctl(["bootout", "\(domain)/\(approvalLaunchAgentName)"])
+    let service = "\(domain)/\(approvalLaunchAgentName)"
+    if !configurationChanged {
+        do {
+            try runLaunchctl(["kickstart", "-k", service])
+            return true
+        } catch {
+            // The matching plist may exist while its job is not loaded.
+        }
+    }
+    try? runLaunchctl(["bootout", service])
     do {
         try runLaunchctl(["bootstrap", domain, installed.path])
     } catch {
         usleep(200_000)
         try runLaunchctl(["bootstrap", domain, installed.path])
     }
-    try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
-    try runLaunchctl(["kickstart", "-k", "\(domain)/\(approvalLaunchAgentName)"])
+    try runLaunchctl(["enable", service])
+    try runLaunchctl(["kickstart", "-k", service])
     return true
+}
+
+private func launchAgentConfigurationsMatch(_ lhsData: Data?, _ rhsData: Data) -> Bool {
+    guard let lhsData,
+          let lhs = try? PropertyListSerialization.propertyList(from: lhsData, format: nil)
+            as? NSDictionary,
+          let rhs = try? PropertyListSerialization.propertyList(from: rhsData, format: nil)
+            as? NSDictionary
+    else {
+        return false
+    }
+    return lhs == rhs
 }
 
 private func configuredLaunchAgent(template: Data, executableURL: URL) throws -> Data {
@@ -4423,6 +4448,11 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     let executableURL = URL(fileURLWithPath: "/Users/example/My Apps/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar")
     let configured = try! configuredLaunchAgent(template: template, executableURL: executableURL)
     let plist = try! PropertyListSerialization.propertyList(from: configured, format: nil) as! [String: Any]
+    let binaryConfigured = try! PropertyListSerialization.data(
+        fromPropertyList: plist,
+        format: .binary,
+        options: 0
+    )
     guard !isLaunchAgentInstance(environment: [:]),
           isLaunchAgentInstance(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]),
           shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
@@ -4435,6 +4465,8 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
           requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "../aws"]) == nil,
           secretGateID(from: URL(string: "automic-vault://secret-gate/aws")!) == "aws",
           secretGateID(from: URL(string: "automic-vault://secret-gate/aws/extra")!) == nil,
+          launchAgentConfigurationsMatch(configured, binaryConfigured),
+          !launchAgentConfigurationsMatch(nil, configured),
           plist["ProgramArguments"] as? [String] == [executableURL.path],
           String(decoding: configured, as: UTF8.self).contains("/Applications/") == false
     else {
