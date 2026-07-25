@@ -1435,6 +1435,7 @@ private struct StoredSecretDetailView: View {
     @ObservedObject var model: DashboardModel
     let secret: StoredSecret
     @State private var isAvailableWhileLocked: Bool
+    @State private var isConfirmingDelete = false
 
     init(model: DashboardModel, secret: StoredSecret) {
         self.model = model
@@ -1478,7 +1479,7 @@ private struct StoredSecretDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                Button { model.deleteSelectedSecret() } label: {
+                Button { isConfirmingDelete = true } label: {
                     Label("Delete Secret", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
@@ -1493,6 +1494,14 @@ private struct StoredSecretDetailView: View {
         }
         .onChange(of: secret.accessibility) { _, accessibility in
             isAvailableWhileLocked = accessibility.isAvailableWhileLocked
+        }
+        .alert("Delete \(secret.account)?", isPresented: $isConfirmingDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                model.deleteSelectedSecret()
+            }
+        } message: {
+            Text("This secret will be permanently deleted.")
         }
     }
 
