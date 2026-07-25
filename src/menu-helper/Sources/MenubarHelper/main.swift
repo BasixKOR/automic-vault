@@ -1031,21 +1031,7 @@ private func performApprovedSecretMutation(
 func performInAppSecretMutation(
     _ mutation: SecretMutation
 ) -> (status: OSStatus?, error: String?) {
-    let callerPath = Bundle.main.executableURL?.path ?? CommandLine.arguments[0]
-    var identity = AVProcessIdentity()
-    let launcher = av_process_identity(getpid(), &identity)
-        ? launcherIdentity(pid: getpid(), identity: identity)
-        : nil
-    return performApprovedSecretMutation(
-        mutation,
-        callerPath: callerPath,
-        pid: getpid(),
-        signing: signingInfo(path: callerPath),
-        launcher: launcher,
-        launcherFallbackPath: callerPath,
-        canRequestHumanApproval: { true },
-        onAccessRequest: { appendAccessRequestRecord($0) }
-    )
+    (mutation.perform(), nil)
 }
 
 private let humanApprovalRequiredEvent = "human-approval-required"
