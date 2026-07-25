@@ -2588,7 +2588,7 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
         try runLaunchctl(["bootstrap", domain, installed.path])
     }
     try runLaunchctl(["enable", "\(domain)/\(approvalLaunchAgentName)"])
-    try runLaunchctl(["kickstart", "\(domain)/\(approvalLaunchAgentName)"])
+    try runLaunchctl(["kickstart", "-k", "\(domain)/\(approvalLaunchAgentName)"])
     return true
 }
 
