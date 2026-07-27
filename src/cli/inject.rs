@@ -608,43 +608,69 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
             } else {
                 Err(error)
             }
-        } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
-            let mut secrets = SecretValues::new();
-            let values = xpc_dictionary_get_dictionary(reply, b"secrets\0".as_ptr().cast());
-            if !values.is_null() {
-                for key in &request.keys {
-                    let key_cstr = CString::new(key.as_str())
-                        .map_err(|_| format!("invalid key returned by approval: {key:?}"))?;
-                    let value = xpc_dictionary_get_string(values, key_cstr.as_ptr());
-                    if !value.is_null() {
-                        secrets.insert(
-                            key.clone(),
-                            std::ffi::CStr::from_ptr(value)
-                                .to_string_lossy()
-                                .into_owned(),
-                        );
-                    }
+        } else {
+            let decision =
+                xpc_dictionary_get_string(reply, b"human_approval_decision\0".as_ptr().cast());
+            if !decision.is_null() {
+                if let Some(decision) =
+                    human_approval_message(std::ffi::CStr::from_ptr(decision).to_bytes())
+                {
+                    eprintln!("automic vault: {decision}");
                 }
             }
-            Ok(secrets)
-        } else {
-            let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
-            Err(if error.is_null() {
-                "injection denied".into()
+            if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
+                let mut secrets = SecretValues::new();
+                let values = xpc_dictionary_get_dictionary(reply, b"secrets\0".as_ptr().cast());
+                if !values.is_null() {
+                    for key in &request.keys {
+                        let key_cstr = CString::new(key.as_str())
+                            .map_err(|_| format!("invalid key returned by approval: {key:?}"))?;
+                        let value = xpc_dictionary_get_string(values, key_cstr.as_ptr());
+                        if !value.is_null() {
+                            secrets.insert(
+                                key.clone(),
+                                std::ffi::CStr::from_ptr(value)
+                                    .to_string_lossy()
+                                    .into_owned(),
+                            );
+                        }
+                    }
+                }
+                Ok(secrets)
             } else {
-                std::ffi::CStr::from_ptr(error)
-                    .to_string_lossy()
-                    .into_owned()
-            })
+                let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
+                Err(if error.is_null() {
+                    "injection denied".into()
+                } else {
+                    std::ffi::CStr::from_ptr(error)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+            }
         }
     };
     unsafe { xpc_release(reply) };
     result
 }
 
+fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
+    match decision {
+        b"approved" => Some("approved"),
+        b"denied" => Some("denied"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reports_only_known_human_approval_decisions() {
+        assert_eq!(human_approval_message(b"approved"), Some("approved"));
+        assert_eq!(human_approval_message(b"denied"), Some("denied"));
+        assert_eq!(human_approval_message(b"unexpected"), None);
+    }
 
     fn os(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
