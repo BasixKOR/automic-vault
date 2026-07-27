@@ -26,6 +26,18 @@ import Testing
     #expect(declaration.checksum.count == 64)
 }
 
+@Test func blessedScriptManifestIsOptional() throws {
+    let data = Data("""
+    #!/usr/local/bin/av inject +TOKEN /bin/sh
+    echo ok
+    """.utf8)
+
+    let declaration = try blessedScriptDeclaration(data: data)
+
+    #expect(declaration.keys == ["TOKEN"])
+    #expect(declaration.manifest.capabilities.isEmpty)
+}
+
 @Test(arguments: [
     """
     #!/bin/sh
@@ -37,12 +49,6 @@ import Testing
     """
     #!/bin/sh inject +A /bin/sh
     # --- automic-vault
-    # capabilities:
-    #   gh: read-only
-    # ---
-    """,
-    """
-    #!/usr/local/bin/av inject +A /bin/sh
     # capabilities:
     #   gh: read-only
     # ---

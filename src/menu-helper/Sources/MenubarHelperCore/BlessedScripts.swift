@@ -211,7 +211,7 @@ private func validBlessedSecretKey(_ key: String) -> Bool {
 
 private func parseBlessedScriptManifest(lines: [String]) throws -> BlessedScriptManifest {
     guard lines.count > 1, lines[1] == "# --- automic-vault" else {
-        throw BlessedScriptManifestError.missingManifest
+        return BlessedScriptManifest(capabilities: [:])
     }
     var capabilities: [String: SecretGateProtection] = [:]
     var index = 2

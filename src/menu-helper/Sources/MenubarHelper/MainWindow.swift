@@ -483,8 +483,7 @@ final class DashboardModel: ObservableObject {
         return false
     }
 
-    func deleteSelectedSecret() {
-        guard selectedSection == .allSecrets, let account = selectedItem?.id else { return }
+    func deleteSecret(account: String) {
         let result = performInAppSecretMutation(.delete(account: account))
         guard let status = result.status else {
             errorMessage = result.error
@@ -1498,7 +1497,7 @@ private struct StoredSecretDetailView: View {
         .alert("Delete \(secret.account)?", isPresented: $isConfirmingDelete) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                model.deleteSelectedSecret()
+                model.deleteSecret(account: secret.account)
             }
         } message: {
             Text("This secret will be permanently deleted.")
