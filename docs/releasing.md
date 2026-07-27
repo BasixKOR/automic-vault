@@ -4,13 +4,17 @@
 for it. The DMG is built only by GitHub Actions. Never replace an existing
 release asset; a correction is a new patch release.
 
-The workflow runs from `main`, builds the reviewed commit, signs and notarizes
-the app, staples the notarization ticket, creates SHA-256 checksums and an SPDX
-SBOM, attests the final DMG, and creates a draft GitHub release. After a human
-approves publication in `publish.sh`, the script publishes the draft and updates
-the local Homebrew tap. The website resolves its download URLs directly to the
-latest GitHub release asset. Third-party Actions, the Rust toolchain,
-`create-dmg`, and the Syft SBOM generator are pinned.
+The publishing script uses Codex to choose the next semantic version and draft
+release notes from the changes since the latest release. Codex runs read-only,
+without the caller's environment, and treats repository content as untrusted.
+The script updates `Cargo.toml` and `Cargo.lock`, commits and pushes that exact
+release commit to `main`, then dispatches the workflow. The workflow signs and
+notarizes the app, staples the notarization ticket, creates SHA-256 checksums
+and an SPDX SBOM, attests the final DMG, and creates a draft GitHub release.
+After a human approves publication in `publish.sh`, the script publishes the
+draft and updates the local Homebrew tap. The website resolves its download
+URLs directly to the latest GitHub release asset. Third-party Actions, the Rust
+toolchain, `create-dmg`, and the Syft SBOM generator are pinned.
 
 ## One-time GitHub setup
 
@@ -101,16 +105,18 @@ gh variable set POSTHOG_API_KEY \
 
 ## Publish a release
 
-First merge a reviewed version bump for `Cargo.toml` and `Cargo.lock` to `main`.
-The workflow never edits or commits version metadata.
-
-Then run from that clean, pushed `main` checkout:
+Run from a clean `main` checkout matching `origin/main`:
 
 ```sh
 scripts/publish.sh
 ```
 
-The script dispatches the exact `main` commit, waits for the workflow, verifies
+Pass `--version X.Y.Z` to require a particular version while still using Codex
+to write and validate the release notes.
+
+The script prints Codex's selected version and release notes, updates and pushes
+the Cargo version metadata, then dispatches that exact `main` commit. It waits
+for the workflow and verifies
 that the result is a draft targeting that commit, prints its URL, and asks
 `release y/n?`. Answering `y` publishes the draft, verifies that GitHub made it
 immutable, then updates and pushes the local Homebrew tap. Answering anything
@@ -118,9 +124,9 @@ else leaves the draft unpublished. Draft creation never updates Homebrew. The
 website download redirects to GitHub's latest published release independently
 of this script.
 
-The run fails if local `main` differs from `origin/main`, the version differs
-from `Cargo.toml`, the tag or release already exists, required configuration is
-missing, or immutable releases are disabled.
+The run fails if local `main` differs from `origin/main`, Codex returns an
+invalid or non-increasing version, the tag or release already exists, required
+configuration is missing, or immutable releases are disabled.
 
 ## Verify
 

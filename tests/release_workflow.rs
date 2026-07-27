@@ -7,6 +7,8 @@ const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("workflow_dispatch:"));
     assert!(RELEASE_WORKFLOW.contains("commit:"));
+    assert!(RELEASE_WORKFLOW.contains("notes:"));
+    assert!(RELEASE_WORKFLOW.contains("Release notes must not be empty."));
     assert!(RELEASE_WORKFLOW.contains("refs/heads/main"));
     assert!(RELEASE_WORKFLOW.contains("IMMUTABLE_RELEASES_ENABLED"));
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
@@ -48,6 +50,14 @@ fn release_builds_are_actions_only_and_fail_closed() {
     ));
     assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
     assert!(PUBLISH_SCRIPT.contains("dirname \"${AV_SCRIPT_PATH:-$0}\""));
+    assert!(PUBLISH_SCRIPT.contains("Determining release metadata with Codex"));
+    assert!(PUBLISH_SCRIPT.contains("--sandbox read-only"));
+    assert!(PUBLISH_SCRIPT.contains("approval_policy=\\\"never\\\""));
+    assert!(PUBLISH_SCRIPT.contains("shell_environment_policy.inherit=\\\"none\\\""));
+    assert!(PUBLISH_SCRIPT.contains("git -C \"$ROOT\" commit -m \"Release $VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("-f notes=\"$(<\"$RELEASE_NOTES\")\""));
+    assert!(RELEASE_WORKFLOW.contains("--notes-file \"$notes\""));
+    assert!(!RELEASE_WORKFLOW.contains("--generate-notes"));
     assert!(
         RELEASE_WORKFLOW
             .contains("run: /bin/bash scripts/build.sh --release-artifact --version \"$VERSION\"")

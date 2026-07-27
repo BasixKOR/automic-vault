@@ -6,11 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version already reviewed and merged in Cargo.toml
+        description: Version in the release commit
         required: true
         type: string
       commit:
-        description: Exact reviewed main commit to build
+        description: Exact release commit to build
+        required: true
+        type: string
+      notes:
+        description: Proposed release notes
         required: true
         type: string
 
@@ -38,6 +42,7 @@ jobs:
       IMMUTABLE_RELEASES_ENABLED: ${{ vars.IMMUTABLE_RELEASES_ENABLED }}
       RUST_TOOLCHAIN: 1.96.0
       GH_TOKEN: ${{ github.token }}
+      RELEASE_NOTES: ${{ inputs.notes }}
 
     steps:
       - name: Check out the reviewed commit
@@ -57,6 +62,10 @@ jobs:
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Version must use MAJOR.MINOR.PATCH." >&2
+            exit 64
+          fi
+          if [[ -z "$RELEASE_NOTES" ]]; then
+            echo "Release notes must not be empty." >&2
             exit 64
           fi
           if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ || "$COMMIT" != "$GITHUB_SHA" ]]; then
@@ -233,6 +242,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n' "$RELEASE_NOTES" >"$notes"
           gh release create "$VERSION" \
             "$ASSET_DIR/$DMG_NAME" \
             "$ASSET_DIR/$SBOM_NAME" \
@@ -240,7 +251,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "$VERSION" \
-            --generate-notes \
+            --notes-file "$notes" \
             --fail-on-no-commits \
             --draft
           expected="sha256:$(shasum -a 256 "$ASSET_DIR/$DMG_NAME" | awk '{print $1}')"
