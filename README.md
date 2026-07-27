@@ -80,6 +80,11 @@ signed launcher apps. While that exact script runs, declared tool requests are
 approved up to their listed level; undeclared or broader requests are denied.
 Editing the script requires an explicit re-bless.
 
+Blessed scripts run from a verified `/dev/fd/N` snapshot, so `$0` is not the
+original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path;
+use `${AV_SCRIPT_PATH:-$0}` anywhere the script would normally use `$0` to find
+files relative to itself.
+
 &nbsp;
 
 

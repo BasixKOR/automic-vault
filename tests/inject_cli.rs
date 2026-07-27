@@ -36,7 +36,7 @@ fn av_inject_accepts_shebang_dispatch() {
     fs::write(
         &script,
         format!(
-            "#!{} inject +SOME_SECRET /bin/echo\n",
+            "#!{} inject +SOME_SECRET /bin/sh\nprintf '%s\\n' \"$0\" \"$AV_SCRIPT_PATH\"\n",
             env!("CARGO_BIN_EXE_av")
         ),
     )
@@ -59,6 +59,7 @@ fn av_inject_accepts_shebang_dispatch() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stdout(&output).contains("/dev/fd/"));
+    assert!(stdout(&output).contains(script.canonicalize().unwrap().to_str().unwrap()));
     let _ = fs::remove_dir_all(home);
 }
 
