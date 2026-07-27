@@ -1110,17 +1110,19 @@ private func blessedScriptMatches(
     _ script: BlessedScript,
     request: ApprovalRequest,
     approval: ScriptApproval,
-    launcher: LauncherIdentity
+    launcher: LauncherIdentity?
 ) -> Bool {
     request.op == "inject"
         && request.scriptData != nil
-        && script.path == approval.path
-        && script.checksum == approval.checksum
-        && script.keys == request.keys.sorted()
-        && script.target == request.target
-        && script.replaceExistingEnv == request.replaceExistingEnv
-        && script.allowMissingKeys == request.allowMissingKeys
-        && script.launchers.contains { $0.requirement == launcher.designatedRequirement }
+        && script.matchesExecution(
+            path: approval.path,
+            checksum: approval.checksum,
+            keys: request.keys,
+            target: request.target,
+            replaceExistingEnv: request.replaceExistingEnv,
+            allowMissingKeys: request.allowMissingKeys,
+            launcherRequirement: launcher?.designatedRequirement
+        )
 }
 
 private struct BlessedExecutionKey: Hashable {
@@ -1559,6 +1561,15 @@ private final class ApprovalServer: @unchecked Sendable {
                     )
                     return
                 }
+                if let scriptApproval,
+                   let script = self.matchingBlessedScript(
+                       request: request,
+                       approval: scriptApproval,
+                       launcher: nil
+                   )
+                {
+                    self.registerBlessedExecution(script, pid: pid, identity: identity)
+                }
                 if !requiresFreshApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
@@ -1593,7 +1604,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func matchingBlessedScript(
         request: ApprovalRequest,
         approval: ScriptApproval,
-        launcher: LauncherIdentity
+        launcher: LauncherIdentity?
     ) -> BlessedScript? {
         loadBlessedScripts().first {
             blessedScriptMatches($0, request: request, approval: approval, launcher: launcher)

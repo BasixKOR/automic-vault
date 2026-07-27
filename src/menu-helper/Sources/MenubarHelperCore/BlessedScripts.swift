@@ -88,6 +88,26 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
 
     public var id: String { path }
 
+    public func matchesExecution(
+        path: String,
+        checksum: String,
+        keys: [String],
+        target: String,
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool,
+        launcherRequirement: String?
+    ) -> Bool {
+        self.path == path
+            && self.checksum == checksum
+            && self.keys == keys.sorted()
+            && self.target == target
+            && self.replaceExistingEnv == replaceExistingEnv
+            && self.allowMissingKeys == allowMissingKeys
+            && launcherRequirement.map { requirement in
+                launchers.contains { $0.requirement == requirement }
+            } ?? launchers.isEmpty
+    }
+
     public init(
         path: String,
         checksum: String,

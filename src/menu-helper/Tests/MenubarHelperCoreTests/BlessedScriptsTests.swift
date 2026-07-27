@@ -38,6 +38,50 @@ import Testing
     #expect(declaration.manifest.capabilities.isEmpty)
 }
 
+@Test func launcherlessBlessingRequiresOneManualApprovalPerExecution() {
+    let requirement = #"identifier "com.apple.Terminal""#
+    let script = BlessedScript(
+        path: "/tmp/script",
+        checksum: "checksum",
+        keys: ["TOKEN"],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["gh": .fullExceptSecretDumps],
+        launchers: []
+    )
+    let endorsedScript = BlessedScript(
+        path: script.path,
+        checksum: script.checksum,
+        keys: script.keys,
+        target: script.target,
+        replaceExistingEnv: script.replaceExistingEnv,
+        allowMissingKeys: script.allowMissingKeys,
+        capabilities: script.capabilities,
+        launchers: [BlessedScriptLauncher(
+            bundleIdentifier: "com.apple.Terminal",
+            requirement: requirement
+        )]
+    )
+    func matches(_ script: BlessedScript, launcherRequirement: String?, checksum: String = "checksum") -> Bool {
+        script.matchesExecution(
+            path: "/tmp/script",
+            checksum: checksum,
+            keys: ["TOKEN"],
+            target: "/bin/sh",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            launcherRequirement: launcherRequirement
+        )
+    }
+
+    #expect(matches(script, launcherRequirement: nil))
+    #expect(!matches(script, launcherRequirement: requirement))
+    #expect(matches(endorsedScript, launcherRequirement: requirement))
+    #expect(!matches(endorsedScript, launcherRequirement: nil))
+    #expect(!matches(script, launcherRequirement: nil, checksum: "changed"))
+}
+
 @Test(arguments: [
     """
     #!/bin/sh
