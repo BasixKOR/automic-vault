@@ -23,7 +23,7 @@ Usage:
   av harden
   av open [--secret-gate ID]";
 
-const INSTALL_REVISION: u32 = 4;
+const INSTALL_REVISION: u32 = 5;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -526,7 +526,7 @@ mod tests {
         );
 
         let (code, stdout, stderr) = run_args(&["av", "__version"]);
-        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "4\n", ""));
+        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "5\n", ""));
     }
 
     #[test]
