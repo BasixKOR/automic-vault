@@ -112,7 +112,9 @@ scripts/publish.sh
 ```
 
 Pass `--version X.Y.Z` to require a particular version while still using Codex
-to write and validate the release notes.
+to write and validate the release notes. If a workflow fails after its release
+commit was pushed, fix and push `main`, then pass that same version to retry
+without creating another version bump.
 
 The script prints Codex's selected version and release notes, updates and pushes
 the Cargo version metadata, then dispatches that exact `main` commit. It waits

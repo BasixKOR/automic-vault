@@ -213,7 +213,7 @@ jobs:
           path: target/sbom-input
           format: spdx-json
           output-file: ${{ env.ASSET_DIR }}/${{ env.SBOM_NAME }}
-          syft-version: 1.49.0
+          syft-version: v1.49.0
           dependency-snapshot: false
           upload-artifact: false
           upload-release-assets: false

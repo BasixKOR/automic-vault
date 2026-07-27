@@ -37,6 +37,10 @@ CURRENT_VERSION="$(
 )"
 VERSION="$CURRENT_VERSION"
 RELEASE_NOTES=""
+RESUME_RELEASE=0
+if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" == "$CURRENT_VERSION" ]]; then
+  RESUME_RELEASE=1
+fi
 
 cleanup_release_notes() {
   if [[ -n "$RELEASE_NOTES" ]]; then
@@ -288,7 +292,7 @@ if [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
   exit 64
 fi
 generate_release_metadata "$source_head"
-if ! version_is_greater "$VERSION" "$CURRENT_VERSION"; then
+if [[ "$RESUME_RELEASE" -eq 0 ]] && ! version_is_greater "$VERSION" "$CURRENT_VERSION"; then
   echo "error: release version $VERSION must be newer than $CURRENT_VERSION" >&2
   exit 64
 fi
@@ -297,10 +301,12 @@ if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1 ||
   echo "error: release or tag $VERSION already exists; publish a new version" >&2
   exit 64
 fi
-write_cargo_version "$VERSION"
-git -C "$ROOT" add -- Cargo.toml Cargo.lock
-git -C "$ROOT" commit -m "Release $VERSION" -- Cargo.toml Cargo.lock
-git -C "$ROOT" push origin HEAD:main
+if [[ "$RESUME_RELEASE" -eq 0 ]]; then
+  write_cargo_version "$VERSION"
+  git -C "$ROOT" add -- Cargo.toml Cargo.lock
+  git -C "$ROOT" commit -m "Release $VERSION" -- Cargo.toml Cargo.lock
+  git -C "$ROOT" push origin HEAD:main
+fi
 head="$(git -C "$ROOT" rev-parse HEAD)"
 run_url="$(
   gh workflow run release.yml \
@@ -317,7 +323,10 @@ if [[ ! "$run_url" =~ /actions/runs/([0-9]+)$ ]]; then
 fi
 run_id="${BASH_REMATCH[1]}"
 echo "Release workflow: $run_url"
-gh run watch "$run_id" --repo "$REPOSITORY" --compact --exit-status
+if ! gh run watch "$run_id" --repo "$REPOSITORY" --compact --exit-status; then
+  echo "Release workflow failed; after fixing main, retry with: $0 --version $VERSION" >&2
+  exit 1
+fi
 read -r is_draft target_commitish release_url < <(
   gh release view "$VERSION" \
     --repo "$REPOSITORY" \

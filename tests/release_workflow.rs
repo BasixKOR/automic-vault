@@ -18,6 +18,7 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
     assert!(RELEASE_WORKFLOW.contains("SHA256SUMS"));
     assert!(RELEASE_WORKFLOW.contains("RUST_TOOLCHAIN: 1.96.0"));
+    assert!(RELEASE_WORKFLOW.contains("syft-version: v1.49.0"));
     assert!(
         RELEASE_WORKFLOW
             .contains("c50d2bc97c3d6292642bac55f530d247eaf4bf65ee605f26b4caf339383e381c")
@@ -55,6 +56,8 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(PUBLISH_SCRIPT.contains("approval_policy=\\\"never\\\""));
     assert!(PUBLISH_SCRIPT.contains("shell_environment_policy.inherit=\\\"none\\\""));
     assert!(PUBLISH_SCRIPT.contains("git -C \"$ROOT\" commit -m \"Release $VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("RESUME_RELEASE=1"));
+    assert!(PUBLISH_SCRIPT.contains("retry with: $0 --version $VERSION"));
     assert!(PUBLISH_SCRIPT.contains("-f notes=\"$(<\"$RELEASE_NOTES\")\""));
     assert!(RELEASE_WORKFLOW.contains("--notes-file \"$notes\""));
     assert!(!RELEASE_WORKFLOW.contains("--generate-notes"));
