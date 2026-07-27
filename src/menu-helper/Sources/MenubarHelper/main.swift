@@ -1524,7 +1524,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: "Denied in prompt",
                     launcher: launcher
                 ))
-                self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: "\(request.op) denied",
+                    humanApprovalDecision: "denied"
+                )
                 return
             }
             do {
@@ -1538,11 +1544,24 @@ private final class ApprovalServer: @unchecked Sendable {
                     launcher: launcher
                 )
                 guard self.onAccessRequest(record) else {
-                    self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "approval audit log is unavailable",
+                        humanApprovalDecision: "approved"
+                    )
                     return
                 }
                 self.transientApprovals.remember(.approved, for: transientApproval)
-                self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: true,
+                    error: nil,
+                    secrets: secrets,
+                    humanApprovalDecision: "approved"
+                )
             } catch {
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
@@ -1552,7 +1571,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: error.localizedDescription,
                     launcher: launcher
                 ))
-                self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: error.localizedDescription,
+                    humanApprovalDecision: "approved"
+                )
             }
         }
     }
@@ -1990,7 +2015,8 @@ private final class ApprovalServer: @unchecked Sendable {
         ok: Bool,
         error: String?,
         secrets: [String: String]? = nil,
-        value: String? = nil
+        value: String? = nil,
+        humanApprovalDecision: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
         xpc_dictionary_set_bool(response, "ok", ok)
@@ -2012,6 +2038,11 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if let value {
             value.withCString { xpc_dictionary_set_string(response, "value", $0) }
+        }
+        if let humanApprovalDecision {
+            humanApprovalDecision.withCString {
+                xpc_dictionary_set_string(response, "human_approval_decision", $0)
+            }
         }
         xpc_connection_send_message(peer, response)
     }

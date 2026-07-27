@@ -593,6 +593,16 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
         return Err("Automic Vault approval did not reply".into());
     }
 
+    let human_approval_decision =
+        unsafe { xpc_dictionary_get_string(reply, b"human_approval_decision\0".as_ptr().cast()) };
+    if !human_approval_decision.is_null() {
+        if let Some(decision) = human_approval_message(unsafe {
+            std::ffi::CStr::from_ptr(human_approval_decision).to_bytes()
+        }) {
+            eprintln!("automic vault: {decision}");
+        }
+    }
+
     let result = unsafe {
         if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
             let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
@@ -642,9 +652,24 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
     result
 }
 
+fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
+    match decision {
+        b"approved" => Some("approved"),
+        b"denied" => Some("denied"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reports_only_known_human_approval_decisions() {
+        assert_eq!(human_approval_message(b"approved"), Some("approved"));
+        assert_eq!(human_approval_message(b"denied"), Some("denied"));
+        assert_eq!(human_approval_message(b"unexpected"), None);
+    }
 
     fn os(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
