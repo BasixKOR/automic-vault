@@ -1,5 +1,6 @@
 const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
+const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
 const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 
 #[test]
@@ -24,24 +25,28 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
 #[test]
 fn release_assets_are_immutable_and_never_replaced() {
     assert!(RELEASE_WORKFLOW.contains("--draft"));
-    assert!(BUILD_SCRIPT.contains(".immutable"));
+    assert!(PUBLISH_SCRIPT.contains(".immutable"));
     assert!(RELEASE_WORKFLOW.contains("Release $VERSION already exists; publish a new version."));
     assert!(!RELEASE_WORKFLOW.contains("--clobber"));
-    assert!(BUILD_SCRIPT.contains("--publish"));
+    assert!(!BUILD_SCRIPT.contains("--publish"));
     assert!(!BUILD_SCRIPT.contains("--clobber"));
-    assert!(!BUILD_SCRIPT.contains("gh release create"));
-    assert!(!BUILD_SCRIPT.contains("aws s3"));
+    assert!(!PUBLISH_SCRIPT.contains("--clobber"));
+    assert!(!PUBLISH_SCRIPT.contains("gh release create"));
+    assert!(!PUBLISH_SCRIPT.contains("aws s3"));
 }
 
 #[test]
 fn release_builds_are_actions_only_and_fail_closed() {
-    assert!(BUILD_SCRIPT.starts_with(
-        "#!/usr/local/bin/av inject --allow-missing-keys +APPLE_PASSWORD -- /bin/bash\n\
+    assert!(BUILD_SCRIPT.starts_with("#!/bin/bash\n"));
+    assert!(!BUILD_SCRIPT.contains("av inject"));
+    assert!(PUBLISH_SCRIPT.starts_with(
+        "#!/usr/local/bin/av inject --allow-missing-keys +GH_TOKEN -- /bin/bash\n\
 # --- automic-vault\n\
 # capabilities:\n\
 #   gh: trusted\n\
 # ---\n"
     ));
+    assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
     assert!(
         RELEASE_WORKFLOW
             .contains("run: /bin/bash scripts/build.sh --release-artifact --version \"$VERSION\"")
@@ -83,9 +88,9 @@ fn publication_is_local_and_release_actions_need_no_aws() {
     assert!(!RELEASE_WORKFLOW.contains("AWS_"));
     assert!(!RELEASE_WORKFLOW.contains("homebrew-isotopes"));
     assert!(!RELEASE_WORKFLOW.contains("HOMEBREW_TAP_TOKEN"));
-    assert!(BUILD_SCRIPT.contains("release y/n?"));
-    assert!(BUILD_SCRIPT.contains("gh release edit"));
-    assert!(BUILD_SCRIPT.contains("Update Automic Vault cask to $version"));
-    assert!(BUILD_SCRIPT.contains("Homebrew tap main must match origin/main"));
+    assert!(PUBLISH_SCRIPT.contains("release y/n?"));
+    assert!(PUBLISH_SCRIPT.contains("gh release edit"));
+    assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
+    assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
 }

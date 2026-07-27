@@ -1,13 +1,13 @@
 # Releasing Automic Vault
 
-`scripts/build.sh --publish` starts `.github/workflows/release.yml` and waits
+`scripts/publish.sh` starts `.github/workflows/release.yml` and waits
 for it. The DMG is built only by GitHub Actions. Never replace an existing
 release asset; a correction is a new patch release.
 
 The workflow runs from `main`, builds the reviewed commit, signs and notarizes
 the app, staples the notarization ticket, creates SHA-256 checksums and an SPDX
 SBOM, attests the final DMG, and creates a draft GitHub release. After a human
-approves publication in `build.sh`, the script publishes the draft and updates
+approves publication in `publish.sh`, the script publishes the draft and updates
 the local Homebrew tap. The website resolves its download URLs directly to the
 latest GitHub release asset. Third-party Actions, the Rust toolchain,
 `create-dmg`, and the Syft SBOM generator are pinned.
@@ -107,7 +107,7 @@ The workflow never edits or commits version metadata.
 Then run from that clean, pushed `main` checkout:
 
 ```sh
-scripts/build.sh --publish
+scripts/publish.sh
 ```
 
 The script dispatches the exact `main` commit, waits for the workflow, verifies
