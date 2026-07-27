@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "AutomicVaultMenubar",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("14.0")],
     products: [
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
     ],

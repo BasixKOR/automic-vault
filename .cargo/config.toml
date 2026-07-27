@@ -1,2 +1,5 @@
 [env]
 RUST_TEST_THREADS = "1"
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-mmacosx-version-min=14.0"]
