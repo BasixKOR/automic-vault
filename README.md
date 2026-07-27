@@ -88,6 +88,12 @@ use `${AV_SCRIPT_PATH:-$0}` anywhere the script would normally use `$0` to find
 files relative to itself. This is done to avoid races between our approval and
 potential malicious edits to the script file.
 
+### Blessing Agent Automations
+
+If you have any concept for how to achieve this in a secure fashion, please
+reach out to us. We are actively looking for ways to make this easier and more
+secure.
+
 &nbsp;
 
 
