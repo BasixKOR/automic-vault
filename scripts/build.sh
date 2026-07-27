@@ -17,6 +17,8 @@ CURRENT_VERSION="$(
     package && /^[[:space:]]*version[[:space:]]*=/ { print $2; exit }
   ' "$ROOT/Cargo.toml"
 )"
+MACOSX_DEPLOYMENT_TARGET=14.0
+export MACOSX_DEPLOYMENT_TARGET
 VERSION="$CURRENT_VERSION"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -436,7 +438,7 @@ xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
   --compile "$ICON_BUILD" \
   --platform macosx \
   --target-device mac \
-  --minimum-deployment-target 26.0 \
+  --minimum-deployment-target "$MACOSX_DEPLOYMENT_TARGET" \
   --app-icon AppIcon \
   --include-all-app-icons \
   --enable-on-demand-resources NO \

@@ -1053,7 +1053,6 @@ struct DashboardRootView: View {
                         }
                     }
                 }
-                .scrollEdgeEffectStyle(.soft, for: .top) // doesn't work :(
         } detail: {
             DashboardDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
@@ -2292,7 +2291,9 @@ private struct ProtectionMenu: NSViewRepresentable {
         button.removeAllItems()
         for candidate in gate.availableProtections {
             button.addItem(withTitle: gate.protectionTitle(candidate))
-            button.lastItem?.subtitle = gate.protectionSubtitle(candidate)
+            if #available(macOS 14.4, *) {
+                button.lastItem?.subtitle = gate.protectionSubtitle(candidate)
+            }
             if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
                 let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
                 button.lastItem?.image = candidate == .fullIncludingSecretDumps

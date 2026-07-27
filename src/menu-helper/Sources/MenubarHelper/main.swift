@@ -3366,12 +3366,12 @@ private struct ApprovalPromptView: View {
 
             HStack(spacing: 12) {
                 Button("Deny", role: .cancel) { decide(.denied) }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.bordered)
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
                 Button("Approve Once") { decide(.approved) }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .tint(.blue)
                     .frame(maxWidth: .infinity)
@@ -3415,7 +3415,6 @@ private struct ApprovalPromptCommandView: View {
                     .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
-            .defaultScrollAnchor(.topLeading, for: .alignment)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
