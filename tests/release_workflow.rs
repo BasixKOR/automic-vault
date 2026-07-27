@@ -47,6 +47,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
 # ---\n"
     ));
     assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
+    assert!(PUBLISH_SCRIPT.contains("dirname \"${AV_SCRIPT_PATH:-$0}\""));
     assert!(
         RELEASE_WORKFLOW
             .contains("run: /bin/bash scripts/build.sh --release-artifact --version \"$VERSION\"")

@@ -11,7 +11,7 @@ if [[ $# -ne 0 ]]; then
   exit 64
 fi
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "${AV_SCRIPT_PATH:-$0}")/.." && pwd)"
 REPOSITORY="automic-vault/automic-vault"
 TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../isotopes}/homebrew-isotopes"
 VERSION="$(
