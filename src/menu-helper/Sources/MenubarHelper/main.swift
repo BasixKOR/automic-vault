@@ -1760,17 +1760,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
         }
-        guard let launcher = launcherIdentities(for: identity).first else {
-            reply(peer, to: message, ok: false, error: "calling app identity is unavailable")
-            return
-        }
+        let launcher = launcherIdentities(for: identity).first
         let request = BlessedScriptReviewRequest(
             path: path,
             declaration: declaration,
-            launcher: BlessedScriptLauncher(
-                bundleIdentifier: launcher.identifier,
-                requirement: launcher.designatedRequirement
-            )
+            launcher: launcher.map {
+                BlessedScriptLauncher(
+                    bundleIdentifier: $0.identifier,
+                    requirement: $0.designatedRequirement
+                )
+            }
         )
         DispatchQueue.main.async {
             guard self.canRequestHumanApproval() else {
@@ -4035,6 +4034,16 @@ private func runApprovalSelfCheck() -> Int32 {
             requirement: blockedLauncher.designatedRequirement
         )]
     )
+    let unendorsedBlessedScript = BlessedScript(
+        path: blessedScript.path,
+        checksum: blessedScript.checksum,
+        keys: blessedScript.keys,
+        target: blessedScript.target,
+        replaceExistingEnv: blessedScript.replaceExistingEnv,
+        allowMissingKeys: blessedScript.allowMissingKeys,
+        capabilities: blessedScript.capabilities,
+        launchers: []
+    )
     guard matchingSecretGateDefinition(
         request: readOnlyAws,
         signing: avSigning,
@@ -4053,6 +4062,12 @@ private func runApprovalSelfCheck() -> Int32 {
         !blessedScriptMatches(
             blessedScript,
             request: awsRequest(shebangScript: "/tmp/script"),
+            approval: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
+            launcher: blockedLauncher
+        ),
+        !blessedScriptMatches(
+            unendorsedBlessedScript,
+            request: blessedRequest,
             approval: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
             launcher: blockedLauncher
         )

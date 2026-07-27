@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 struct BlessedScriptReviewRequest: Sendable {
     let path: String
     let declaration: BlessedScriptDeclaration
-    let launcher: BlessedScriptLauncher
+    let launcher: BlessedScriptLauncher?
 }
 
 @MainActor
@@ -286,14 +286,14 @@ final class DashboardModel: ObservableObject {
             return
         }
         pendingBlessing = request
-        pendingBlessingLaunchers = [request.launcher]
+        pendingBlessingLaunchers = request.launcher.map { [$0] } ?? []
         blessingCompletion = completion
         selectedSection = .blessedScripts
         selectedItemID = request.path
     }
 
     func approvePendingBlessing() {
-        guard let request = pendingBlessing, !pendingBlessingLaunchers.isEmpty else { return }
+        guard let request = pendingBlessing else { return }
         let declaration = request.declaration
         let script = BlessedScript(
             path: request.path,
@@ -351,10 +351,6 @@ final class DashboardModel: ObservableObject {
 
     func removeLauncher(_ launcher: BlessedScriptLauncher, from script: BlessedScript) {
         let launchers = script.launchers.filter { $0.requirement != launcher.requirement }
-        guard !launchers.isEmpty else {
-            errorMessage = "A blessed script must allow at least one calling app."
-            return
-        }
         let updated = BlessedScript(
             path: script.path,
             checksum: script.checksum,
@@ -2012,7 +2008,6 @@ private struct BlessedScriptReviewView: View {
                 Spacer()
                 Button("Bless Script") { model.approvePendingBlessing() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.pendingBlessingLaunchers.isEmpty)
             }
             if let error = model.errorMessage {
                 InfoBlock(title: "Error", text: error)
@@ -2092,6 +2087,10 @@ private func launcherList(
     VStack(alignment: .leading, spacing: 10) {
         Text("Calling Apps")
             .font(.system(size: 13, weight: .semibold))
+        if launchers.isEmpty {
+            Text("No calling apps endorsed.")
+                .foregroundStyle(.secondary)
+        }
         ForEach(launchers, id: \.requirement) { launcher in
             HStack {
                 Text(launcher.bundleIdentifier)
