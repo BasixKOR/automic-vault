@@ -9,6 +9,7 @@ publish=0
 clobber=0
 version_supplied=0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../isotopes}/homebrew-isotopes"
 CURRENT_VERSION="$(
   awk -F '"' '
     /^\[package\]/ { package = 1; next }
@@ -310,6 +311,71 @@ publish_dmg() {
     --paths '/av.dmg' '/Automic%20Vault.dmg'
 }
 
+prepare_cask_publish() {
+  local branch origin
+  if [[ ! -d "$TAP_ROOT/.git" ]]; then
+    echo "error: --publish requires the Homebrew tap at $TAP_ROOT" >&2
+    exit 64
+  fi
+  origin="$(git -C "$TAP_ROOT" remote get-url origin)"
+  case "$origin" in
+    git@github.com:automic-vault/homebrew-isotopes.git | https://github.com/automic-vault/homebrew-isotopes.git) ;;
+    *)
+      echo "error: unexpected Homebrew tap origin: $origin" >&2
+      exit 64
+      ;;
+  esac
+  branch="$(git -C "$TAP_ROOT" branch --show-current)"
+  if [[ "$branch" != "main" ]]; then
+    echo "error: Homebrew tap must be on main, found ${branch:-detached HEAD}" >&2
+    exit 64
+  fi
+  if [[ -n "$(git -C "$TAP_ROOT" status --porcelain --untracked-files=all)" ]]; then
+    echo "error: Homebrew tap must have a clean working tree" >&2
+    exit 64
+  fi
+  git -C "$TAP_ROOT" fetch --quiet origin main
+  if [[ "$(git -C "$TAP_ROOT" rev-parse HEAD)" != "$(git -C "$TAP_ROOT" rev-parse origin/main)" ]]; then
+    echo "error: Homebrew tap main must match origin/main" >&2
+    exit 64
+  fi
+}
+
+publish_cask() {
+  local version="$1"
+  local dmg="$2"
+  local cask="Casks/automic-vault.rb"
+  local sha256
+  sha256="$(shasum -a 256 "$dmg" | awk '{print $1}')"
+  if [[ ! "$sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "error: could not determine DMG checksum" >&2
+    exit 1
+  fi
+  git -C "$TAP_ROOT" pull --ff-only --quiet origin main
+  ruby - "$TAP_ROOT/$cask" "$version" "$sha256" <<'RUBY'
+path, version, sha256 = ARGV
+contents = File.read(path)
+replacements = {
+  /^  version "[^"]+"$/ => %(  version "#{version}"),
+  /^  sha256 "[0-9a-f]{64}"$/ => %(  sha256 "#{sha256}")
+}
+replacements.each do |pattern, replacement|
+  abort "#{path}: expected exactly one #{pattern.inspect}" unless contents.scan(pattern).one?
+  contents.sub!(pattern, replacement)
+end
+File.write("#{path}.tmp", contents)
+File.rename("#{path}.tmp", path)
+RUBY
+  ruby -c "$TAP_ROOT/$cask"
+  git -C "$TAP_ROOT" diff --check -- "$cask"
+  if git -C "$TAP_ROOT" diff --quiet -- "$cask"; then
+    return
+  fi
+  git -C "$TAP_ROOT" add -- "$cask"
+  git -C "$TAP_ROOT" commit -m "Update Automic Vault cask to $version"
+  git -C "$TAP_ROOT" push origin HEAD:main
+}
+
 RELEASE_NOTES=""
 cleanup_release_notes() {
   if [[ -n "$RELEASE_NOTES" ]]; then
@@ -318,6 +384,7 @@ cleanup_release_notes() {
 }
 trap cleanup_release_notes EXIT
 if [[ "$publish" -eq 1 ]]; then
+  prepare_cask_publish
   if [[ "$clobber" -eq 1 ]]; then
     prepare_clobber
   else
@@ -439,6 +506,7 @@ if [[ "$dmg" -eq 1 ]]; then
   fi
   if [[ "$publish" -eq 1 ]]; then
     publish_release "$VERSION" "$DMG"
+    publish_cask "$VERSION" "$DMG"
     publish_dmg "$DMG"
   fi
 fi
