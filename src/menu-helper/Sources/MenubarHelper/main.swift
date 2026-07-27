@@ -2567,7 +2567,6 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
         try? Data(contentsOf: installed),
         configured
     )
-    try configured.write(to: installed, options: .atomic)
 
     let domain = "gui/\(getuid())"
     let service = "\(domain)/\(approvalLaunchAgentName)"
@@ -2579,6 +2578,7 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
             // The matching plist may exist while its job is not loaded.
         }
     }
+    try configured.write(to: installed, options: .atomic)
     try? runLaunchctl(["bootout", service])
     do {
         try runLaunchctl(["bootstrap", domain, installed.path])
