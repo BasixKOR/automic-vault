@@ -364,6 +364,7 @@ mod tests {
         assert!(AWS_STUB.contains("--profile=*)"));
         assert!(AWS_STUB.contains("AWS_CONFIG_FILE=/dev/null"));
         assert!(AWS_STUB.contains("/opt/homebrew/bin/aws --no-cli-pager"));
+        assert!(AWS_STUB.contains("needs_long_lived_credentials"));
         assert!(AWS_STUB.contains("mktemp -d"));
         assert!(!AWS_STUB.contains("aws-vault-pass.$$"));
         assert!(AWS_STUB.contains("#!/bin/sh\nset -eu"));
@@ -478,6 +479,54 @@ mod tests {
         assert!(isolated_credentials.starts_with(&temp.display().to_string()));
         assert_eq!(fs::read_dir(&temp).unwrap().count(), 0);
         assert!(!capture.join("zshenv-secret").exists());
+
+        let status = Command::new(&wrapper)
+            .args(["iam", "get-role", "--role-name", "example"])
+            .env("AWS_ACCESS_KEY_ID", "long-term-key")
+            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
+            .env("TMPDIR", &temp)
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+        assert_eq!(
+            fs::read_to_string(capture.join("access-key")).unwrap(),
+            "long-term-key\n"
+        );
+        assert_eq!(fs::read_dir(&temp).unwrap().count(), 0);
+
+        let config = dir.join("config");
+        fs::write(
+            &config,
+            "[profile dev]\nrole_arn = arn:aws:iam::123456789012:role/dev\nsource_profile = default\n",
+        )
+        .unwrap();
+        let status = Command::new(&wrapper)
+            .args([
+                "--profile",
+                "dev",
+                "iam",
+                "get-role",
+                "--role-name",
+                "example",
+            ])
+            .env("AWS_ACCESS_KEY_ID", "long-term-key")
+            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
+            .env("AWS_CONFIG_FILE", &config)
+            .env("TMPDIR", &temp)
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+        assert!(
+            fs::read_to_string(capture.join("vault-args"))
+                .unwrap()
+                .starts_with("exec dev --server -- ")
+        );
+        assert_eq!(
+            fs::read_to_string(capture.join("access-key")).unwrap(),
+            "unset\n"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
