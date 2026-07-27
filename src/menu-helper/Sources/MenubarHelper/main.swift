@@ -2216,7 +2216,7 @@ private func classifySecretGateRequest(
 }
 
 private func awsRequestMayUseLongLivedCredentials(_ request: ApprovalRequest) -> Bool {
-    let words = awsCommandWords(request).map { $0.lowercased() }
+    let words = awsCommandWords(awsCommandWords(request)).map { $0.lowercased() }
     guard words.count >= 2, words[1] != "help" else { return false }
     if words[0] == "iam" { return true }
     return words[0] == "sts"
@@ -4170,6 +4170,10 @@ private func runApprovalSelfCheck() -> Int32 {
           ) == nil,
           classifySecretGateRequest(gateID: "aws", request: readOnlyAws) == .readOnly,
           classifySecretGateRequest(gateID: "aws", request: longLivedAws) == .secretDump,
+          classifySecretGateRequest(
+              gateID: "aws",
+              request: awsRequest(args: ["-f", "/usr/local/bin/aws", "--profile", "dev", "iam", "get-role"])
+          ) == .secretDump,
           contextualLongLivedAws.title == "Use long-lived AWS credentials?",
           contextualLongLivedAws.detail?.contains("retain every IAM permission") == true,
           classifySecretGateRequest(
