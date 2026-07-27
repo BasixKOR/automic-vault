@@ -35,6 +35,13 @@ The real AWS CLI receives an empty home and credential/config files plus
 processes, plugins, cached login credentials, and output pagers from running
 inside the credential-bearing process.
 
+AWS does not permit non-MFA `GetSessionToken` credentials to call IAM or most
+STS operations. For those operations on a base profile without MFA, the wrapper
+marks the credential request as high sensitivity and explains why it must inject
+the original long-lived keys directly into the isolated AWS CLI. Only a Secret
+Gate set to Full Access can approve that request automatically. MFA and role
+profiles keep using short-lived credentials.
+
 ## Caveats
 
 - The import phase only migrates the `default` profile from the shared

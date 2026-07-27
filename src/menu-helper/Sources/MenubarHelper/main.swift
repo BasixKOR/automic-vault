@@ -1279,10 +1279,11 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
-        guard let request = approvalRequest(from: message) else {
+        guard let parsedRequest = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
+        let request = approvalRequestWithCredentialContext(parsedRequest)
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(for: identity)
         let launcherFallbackPath = launcherFallbackPath(for: identity) ?? callerPath
@@ -1440,7 +1441,10 @@ private final class ApprovalServer: @unchecked Sendable {
             tool: request.tool
         )
         DispatchQueue.main.async {
-            let cachedDecision = self.transientApprovals.decision(for: transientApproval)
+            let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
+            let cachedDecision = requiresFreshApproval
+                ? nil
+                : self.transientApprovals.decision(for: transientApproval)
             if let decision = cachedDecision {
                 if decision == .denied {
                     _ = self.onAccessRequest(accessRequestRecord(
@@ -1515,7 +1519,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 automaticApprovalExplanation: automaticApprovalExplanation
             )
             guard decision != .denied else {
-                self.transientApprovals.remember(.denied, for: transientApproval)
+                if !requiresFreshApproval {
+                    self.transientApprovals.remember(.denied, for: transientApproval)
+                }
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
@@ -1553,7 +1559,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     )
                     return
                 }
-                self.transientApprovals.remember(.approved, for: transientApproval)
+                if !requiresFreshApproval {
+                    self.transientApprovals.remember(.approved, for: transientApproval)
+                }
                 self.reply(
                     peer,
                     to: message,
@@ -2198,12 +2206,41 @@ private func classifySecretGateRequest(
     case "gh":
         return ghRequestClassification(request.args)
     case "aws":
+        if awsRequestMayUseLongLivedCredentials(request) { return .secretDump }
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
     case "brew":
         return brewRequestClassification(request.args)
     default:
         return .unknown
     }
+}
+
+private func awsRequestMayUseLongLivedCredentials(_ request: ApprovalRequest) -> Bool {
+    let words = awsCommandWords(request).map { $0.lowercased() }
+    guard words.count >= 2, words[1] != "help" else { return false }
+    if words[0] == "iam" { return true }
+    return words[0] == "sts"
+        && words[1] != "assume-role"
+        && words[1] != "get-caller-identity"
+}
+
+private func approvalRequestWithCredentialContext(_ request: ApprovalRequest) -> ApprovalRequest {
+    guard awsRequestMayUseLongLivedCredentials(request) else { return request }
+    return ApprovalRequest(
+        op: request.op,
+        keys: request.keys,
+        target: request.target,
+        args: request.args,
+        cwd: request.cwd,
+        replaceExistingEnv: request.replaceExistingEnv,
+        allowMissingKeys: request.allowMissingKeys,
+        envConflicts: request.envConflicts,
+        shebangScript: request.shebangScript,
+        scriptData: request.scriptData,
+        tool: request.tool,
+        title: "Use long-lived AWS credentials?",
+        detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will inject your original AWS access keys directly into AWS CLI; they retain every IAM permission assigned to those keys."
+    )
 }
 
 private func brewRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -4033,6 +4070,10 @@ private func runApprovalSelfCheck() -> Int32 {
         )
     }
     let readOnlyAws = awsRequest()
+    let longLivedAws = awsRequest(
+        args: ["-f", "/usr/local/bin/aws", "iam", "get-role", "--role-name", "example"]
+    )
+    let contextualLongLivedAws = approvalRequestWithCredentialContext(longLivedAws)
     let awsMetadata = HardenerMetadata(
         name: "aws",
         hardened: true,
@@ -4104,6 +4145,7 @@ private func runApprovalSelfCheck() -> Int32 {
     else { return 1 }
 
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
+          matchingSecretGate(request: longLivedAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
           missingRequiredSecret(for: readOnlyAws, exists: { $0 == "AWS_SECRET_ACCESS_KEY" }) == "AWS_ACCESS_KEY_ID",
           missingRequiredSecret(for: readOnlyAws, exists: { _ in true }) == nil,
           missingRequiredSecret(for: awsRequest(allowMissingKeys: true), exists: { _ in false }) == nil,
@@ -4127,6 +4169,9 @@ private func runApprovalSelfCheck() -> Int32 {
               hardeners: [awsMetadata]
           ) == nil,
           classifySecretGateRequest(gateID: "aws", request: readOnlyAws) == .readOnly,
+          classifySecretGateRequest(gateID: "aws", request: longLivedAws) == .secretDump,
+          contextualLongLivedAws.title == "Use long-lived AWS credentials?",
+          contextualLongLivedAws.detail?.contains("retain every IAM permission") == true,
           classifySecretGateRequest(
               gateID: "aws",
               request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
