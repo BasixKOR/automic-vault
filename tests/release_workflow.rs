@@ -52,6 +52,10 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
     assert!(PUBLISH_SCRIPT.contains("dirname \"${AV_SCRIPT_PATH:-$0}\""));
     assert!(PUBLISH_SCRIPT.contains("Determining release metadata with Codex"));
+    assert!(PUBLISH_SCRIPT.contains("internalVersionReview"));
+    assert!(PUBLISH_SCRIPT.contains("INSTALL_REVISION in src/cli/mod.rs"));
+    assert!(PUBLISH_SCRIPT.contains("STUB_VERSION in src/isotopes/hardeners/homebrew.rs"));
+    assert!(PUBLISH_SCRIPT.contains("required internal version bumps must be committed"));
     assert!(PUBLISH_SCRIPT.contains("--sandbox read-only"));
     assert!(PUBLISH_SCRIPT.contains("approval_policy=\\\"never\\\""));
     assert!(PUBLISH_SCRIPT.contains("shell_environment_policy.inherit=\\\"none\\\""));
