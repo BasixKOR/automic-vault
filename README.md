@@ -80,10 +80,13 @@ signed launcher apps. While that exact script runs, declared tool requests are
 approved up to their listed level; undeclared or broader requests are denied.
 Editing the script requires an explicit re-bless.
 
-Blessed scripts run from a verified `/dev/fd/N` snapshot, so `$0` is not the
+Blessed scripts run from a verified `/dev/fd/N` snapshot
+(to avoid races between approval and potential file edits),
+so `$0` is not the
 original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path;
 use `${AV_SCRIPT_PATH:-$0}` anywhere the script would normally use `$0` to find
-files relative to itself.
+files relative to itself. This is done to avoid races between our approval and
+potential malicious edits to the script file.
 
 &nbsp;
 
@@ -146,7 +149,7 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
     session tokens for each invocation.
 - We make approval gates rare and smart.
   - By default, secret gates automatically approve read-only commands. Homebrew
-    also automatically approves updates.
+    also automatically approves updates (*not* upgrades).
   - Mutating commands still require approval, keeping side effects explicit.
   - Once you get used to that we recommend playing with the levels, eg.
     disabling access to *everything* but one Terminal and your agent apps.
@@ -158,33 +161,47 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
 
 ## Important Notes When Using Automic Vault With Agents
 
-If you use agents via their `.app` then it’s easier:
-
-- Lock down the TCC protections, ie.
-  - Do not give `Codex.app` “Full Disk Access”
-  - Do not let `Claude.app` “Modify Other Applications”
-
-Computer Use is a problem, but administrator priviledges, code-signing &
-Gate Keeper etc. will protect a good amount of the attack surface. All the same
-ensure your agent is forced to ask before using Computer Use.
+If you use agents via their `.app` then you’re good to go: Automic Vault ties
+approval gates to codesigned bundles.
 
 If you use agents via their CLI, then the simplest solution is to install the
 `.app` version and symlink the CLI that they all bundle to `/usr/local/bin`.
 This way Automic Vault can verify the caller via its bundled, notarized code
-signature.
+signature. Automic Vault *will* then trace the executor chain back to the `.app`
+and apply the approval gates you set for thatm `.app`.
 
-Otherwise you are back to square one where you are approving your terminal to
-have general capabilities in all circumstances.
+It is then vital to ensure the harness for the agents has minimal TCC
+permissions. If you are using them via CLI that will often be your Terminal
 
-> We aim to fix this, but it's not trivial, Apple’s codesigning mechanics give
-> us good security guarantees.
+> [!IMPORTANT]
+> It is time to go into System Settings and turn off everything you let your
+> Terminal do before because it was too tedious not to!
+>
+> Our suggestion is one terminal for things that may have supply chain attacks
+> and one for everything else. The former should be locked down! And yes: this
+> means an entirely different app, not just a different version installed to
+> a different location. **TCC gates apply to bundle IDs!**
+>
+> Especially disable:
+> - Full Disk Access
+> - Modify Other Applications
+
+macOS has come a long way since these OS level permission gates were tedious:
+they are quite granular nowadays. And coupled with Automic Vault, they are a
+powerful tool to protect your secrets, prevent malware having attack
+opportunities and prevent agents from being too dangerous.
+
+> [!NOTE]
+> We believe a route to allowing non-codesigned cli tools to have gates is
+> doable. We will experiment with that in the near future. However, even if
+> possible the code-signed route is more secure and recommended.
 
 ### Computer Use & Automic Vault
 
-Computer Use can be used by agents (or malware!) to approve Automic Vault gates.
+Computer Use could be used by agents (or malware!) to approve Automic Vault gates.
 
 We provide an iPhone app to mitigate this potential attack vector. The iPhone
-app is a companion to Automic Vault that allows you move Automic Vault gates
+app is a companion to Automic Vault that allows you to move Automic Vault gates
 from your Macs to your Phone. This way, even if an agent or malware wanted to
 approve a request itself, they cannot.
 
