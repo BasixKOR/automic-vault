@@ -1,10 +1,11 @@
 # Automic Vault
 
-> The missing command‐line security‐layer for Mac.
+> A new kind of secrets manager for a new era of development.
 
 ## Quickstart
 
-- Direct download: https://github.com/automic-vault/automic-vault/releases/latest
+- Direct download: \
+  https://github.com/automic-vault/automic-vault/releases/latest
 - Homebrew:
   ```sh
   brew install --cask automic-vault/isotopes/automic-vault \
@@ -18,109 +19,43 @@
 
 > [!IMPORTANT]
 >
-> At this time Automic Vault *requires* Homebrew.
-> We will loosen this restriction in future, we’re still a pretty new project.
+> At this time *some* parts of Automic Vault *require* Homebrew to be installed.
+> We intend to loosen this restriction in the future. If you don’t use Homebrew
+> much of Automic Vault will still work, but some hardening features will not be
+> available.
 
 &nbsp;
 
 
 ## What is Automic Vault?
 
-Automic Vault runs in your menu bar detecting existing and emerging
-vulnerabilities in your command line tool stacks.
+Automic Vault is:
 
-We support (optional) “hardening” steps that typically:
+- A secrets manager with granular access controls designed for developers that
+  use agents and who are vulnerable to supply chain attacks.
+- A realtime detector for secret exposure and configurations that may lead to
+  secret exposure.
+- A hardening manager for over 100 tool configurations, including AWS, GitHub,
+  GitLab, and more. We move plaintext secrets into the macOS keychain and ensure
+  the application of those secrets receives granular access control.
 
-- Moves plaintext secrets into the macOS keychain †
-- Installs a `/usr/local/bin` stub as root that federates access to these secrets
+Automic Vault is **not**:
 
-> † Thus becoming encrypted at rest, only available to the tools we bless at
-> runtime and with approval gates *under our control*.
+- Not just guardrails: we’re a security layer underneath agents and all other
+  command line tools†
+- Not invasive. Automic Vault does not replace your shell or terminal and does
+  not transparently intercept every process. It requires no configuration
+  changes to your agents. Hardening is opt-in, minimal and applied per tool.
+- Not protection against `rm -rf $HOME` or other destructive *local* commands.
+  Automic Vault is not a security layer for UNIX.
+  It is an adapter for the macOS GUI security model applied to the command line.
 
-Hardened tools gain granular controls for execution. You can configure them
-to require human approval for specific code-signed application identities or
-for all apps/clis at four levels:
+> † we patch tools to make them more secure and provide a [homebrew tap] to
+> install them. We install stubs in `/usr/local/bin` that federate access to
+> secrets using the full breadth of the macOS security model, including
+> code signing, notarization, XPC, TCC and the keychain.
 
-1. Approval required for all actions (aka “paranoid mode”)
-2. Approval required for actions with side effects (aka “read-only” mode)
-3. Approval required for actions that reveal secrets (ie. everything runs except `gh auth token` which blocks at a prompt)
-4. No approval required (aka “yolo mode”)
-
-&nbsp;
-
-
-## How Does Automic Vault Work?
-
-Automic Vault moves secrets out of plaintext files and into the macOS Data
-Protection Keychain. Hardened commands request only the named secrets they need;
-the menu bar app releases them only when your gate policy allows it or you approve.
-
-For app-specific policy, we walk the process’s launcher chain, validate its code
-signature with macOS and match its designated requirement against the identity
-you approved. If we cannot verify that identity, automatic approval fails closed.
-Code signing proves identity and integrity—not good intentions. You still choose
-which apps to trust.
-
-### Use `av` as a general secrets manager
-
-You don’t need a dedicated hardener. Save any environment secret, then inject it
-only into the command that needs it:
-
-```sh
-$ av save SENTRY_AUTH_TOKEN
-$ av inject +SENTRY_AUTH_TOKEN -- sentry-cli releases list
-```
-
-For a script you don’t intend to bless, keep its normal shebang and re-exec
-through `av` only when the secret is missing:
-
-```sh
-#!/bin/sh
-set -eu
-
-if [ -x /usr/local/bin/av ] && [ -z "${API_TOKEN:-}" ]; then
-  exec /usr/local/bin/av inject --replace-existing-env +API_TOKEN -- /bin/sh "$0" "$@"
-fi
-: "${API_TOKEN:?set API_TOKEN or install Automic Vault}"
-```
-
-This is more portable than an `av inject` shebang: the same script can use an
-already-populated environment on machines without Automic Vault. For durable,
-reviewed automation from specific signed apps, bless the script instead.
-
-### Blessed scripts
-
-A script can declare the tool access it needs next to its `av inject` shebang:
-
-```sh
-#!/usr/local/bin/av inject +TOKEN /bin/sh
-# --- automic-vault
-# capabilities:
-#   gh: read-only
-#   aws: trusted
-# ---
-```
-
-Run `av bless PATH` to review it in the Automic Vault app. Approval is bound to
-that canonical path, exact file contents, injection declaration, and the selected
-signed launcher apps. While that exact script runs, declared tool requests are
-approved up to their listed level; undeclared or broader requests are denied.
-Editing the script requires an explicit re-bless.
-
-Blessed scripts run from a verified `/dev/fd/N` snapshot
-(to avoid races between approval and potential file edits),
-so `$0` is not the
-original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path
-and `AV_SCRIPT_DIR` to its containing directory. Use `AV_SCRIPT_DIR` to find
-files relative to the script, or `${AV_SCRIPT_PATH:-$0}` when compatibility
-with older versions is needed. This avoids races between approval and potential
-malicious edits to the script file.
-
-### Blessing Agent Automations
-
-If you have any concept for how to achieve this in a secure fashion, please
-reach out to us. We are actively looking for ways to make this easier and more
-secure.
+[homebrew tap]: https://github.com/automic-vault/homebrew-isotopes
 
 &nbsp;
 
@@ -170,6 +105,153 @@ secure.
 &nbsp;
 
 
+## How Does Automic Vault Work?
+
+### Detection & Monitoring
+
+```sh
+av scan  # or open the app
+```
+
+Automic Vault detects over hundred developer tools configurations that either
+lead to secret exposure or directly expose secrets. Some of these are well
+known, eg. `gh auth token` or `aws configure list`, while others are more
+subtle, for example many tools that claim to use the keychain are in fact
+misconfigured and allow any tool that can run `/usr/bin/security` to exfiltrate
+keys.
+
+Once detected we provide you mitigation steps. Often you can just run a few
+commands. But some tooling configurations require “hardening”.
+
+### Hardening
+
+```sh
+av harden gh
+```
+
+Hardening varies, but its purpose is:
+
+- Encrypting plaintext secrets in the macOS Data Protection Keychain
+- Provide granular access control for the applied use of those secrets based on
+  the tool and the launcher that is running the tool†
+
+> † This means you can have different access control for eg. your terminal and
+> your agent.
+
+Hardened tools gain a configuration section in the app that allows you to set
+the approval level for each tool *based on the launcher*:
+
+1. Approval required for all actions (aka “paranoid mode”)
+2. Approval required for actions with side effects (aka “read-only” mode)
+3. Approval required for actions that reveal secrets (ie. no approvals except eg.
+   `gh auth token`)
+4. No approval required (aka “yolo mode”—there’s no plaintext secrets so you’re still better off you’re letting callers get them via other means… so it depends on the intelligence of the caller)
+
+Hardened tools request secrets when they need them. Automic Vault releases those
+secrets only when your gate policy allows it or you approve.
+
+> [!NOTE]
+> For app-specific policy, we walk the process’s launcher chain, validate its code
+> signature with macOS and match its designated requirement against the identity
+> you approved. If we cannot verify that identity, automatic approval fails closed.
+> Code signing proves identity and integrity—not good intentions. You still choose
+> which apps to trust.
+
+### Using Automic Vault as a General Secrets Manager
+
+```sh
+$ av save TOKEN_NAME
+# Confirmation window appears
+
+$ av inject +TOKEN_NAME -- /bin/bash
+# Approval window appears
+```
+
+Automic Vault differs from conventional secrets managers in two ways:
+
+- Secrets have granular access control based on each tool and its use
+- Tools have granular access *levels* tuned to each tool’s capabilities
+
+`av inject` as the shebang for scripts creates a script that always shows an
+approval window when run. The script receives the secrets if you approve its
+runtime request.
+
+> [!TIP]
+> #### Portable Scripts
+>
+> ```sh
+> #!/bin/sh
+>
+> if [ -x /usr/local/bin/av ] && [ -z "${API_TOKEN:-}" ]; then
+>   exec /usr/local/bin/av inject --replace-existing-env +API_TOKEN -- /bin/sh "$0" "$@"
+> fi
+> : "${API_TOKEN:?set API_TOKEN or install Automic Vault}"
+> ```
+
+#### Blessed Scripts
+
+In order for a script to have granular execution and access control it must be
+blessed:
+
+```sh
+$ av bless ./scripts/my_script.sh
+# Blessing window appears
+```
+
+Blessed scripts can have capabilities which allows you to compress multiple
+approval prompts for tools into a single approval prompt for the script. For
+example here is a script that needs a token (`$APPLE_PASSWORD`) and to be
+able to run `gh` commands that cause no mutations and `aws` commands that
+perform mutations.
+
+```sh
+#!/usr/local/bin/av inject +APPLE_PASSWORD -- /bin/bash
+# --- automic-vault
+# capabilities:
+#   gh: read-only
+#   aws: trusted
+# ---
+```
+
+Blessing is bound to that canonical path, exact file contents and injection
+declaration. Thus editing scripts invalidates the blessing and requires an
+explicit re-bless.
+
+Execution of blessed scripts *can* be configured to be automatically approved
+for specific launchers.
+
+> [!TIP]
+> Allowing specific launchers (ie. `.app`s) is powerful but requires careful
+> consideration. Potential uses:
+>
+> - Keeping all hardened tools at read-only or lower and only defining use of
+>   those tools via immutable blessing is truly a level of safety developers
+>   have only ever dreamed of.
+> - Having a single terminal app that is the only used for deployments and the
+>   the only `.app` that is endorsed to run them.
+> - Or conversely, trusting your agents more than your terminal where supply
+>   chain attacks are more likely to occur.
+
+> [!NOTE]
+> Blessed scripts run from a verified `/dev/fd/N` snapshot
+> (to avoid races between approval and potential file edits),
+> so `$0` is not the
+> original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path
+> and `AV_SCRIPT_DIR` to its containing directory. Use `AV_SCRIPT_DIR` to find
+> files relative to the script, or `${AV_SCRIPT_PATH:-$0}` when compatibility
+> with systems without `av` is desired.
+
+### Blessing Agent Automations
+
+It would be sweet to enable scripts for specific automations (ie. a specific
+automation and not the *entire* agentic harness).
+If you have any concept for how to achieve this in a secure fashion, please
+reach out to us. We are actively looking for ways to make this easier and more
+secure.
+
+&nbsp;
+
+
 ## How Much Friction is This?
 
 As little as possible!
@@ -178,17 +260,18 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
 
 - How invasive Automic Vault is.
   - Mostly we install wrappers that change as little as possible.
-  - When security requires more, we say so: AWS hardening insists on
+  - Though when security requires more, we say so: AWS hardening insists on
     `aws-vault`, which converts your too-powerful AWS keys into short-lived
     session tokens for each invocation.
+  - Some tools need more, so we patch them and provide a homebrew tap to install
+    them (`gh`, `stripe`, `supabase` etc.). We try to upstream these patches.
 - We make approval gates rare and smart.
-  - By default, secret gates automatically approve read-only commands. Homebrew
-    also automatically approves updates (*not* upgrades).
-  - Mutating commands still require approval, keeping side effects explicit.
+  - By default, secret gates only automatically approve read-only commands.
+  - Mutating commands require explicit, human approval.
   - Once you get used to that we recommend playing with the levels, eg.
-    disabling access to *everything* but one Terminal and your agent apps.
+    requiring human approval for *everything* but one Terminal and your agent apps.
   - We also try to be smart, eg. `gh` even decodes GraphQL queries to determine
-    what safety rating they apply to.
+    what safety rating need to be applied.
 
 &nbsp;
 
@@ -202,7 +285,7 @@ If you use agents via their CLI, then the simplest solution is to install the
 `.app` version and symlink the CLI that they all bundle to `/usr/local/bin`.
 This way Automic Vault can verify the caller via its bundled, notarized code
 signature. Automic Vault *will* then trace the executor chain back to the `.app`
-and apply the approval gates you set for thatm `.app`.
+and apply the approval gates you set for that precise `.app`.
 
 It is then vital to ensure the harness for the agents has minimal TCC
 permissions. If you are using them via CLI that will often be your Terminal
