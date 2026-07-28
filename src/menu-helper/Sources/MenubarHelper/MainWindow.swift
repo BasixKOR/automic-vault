@@ -321,10 +321,12 @@ final class DashboardModel: ObservableObject {
     }
 
     func addAppToPendingBlessing() {
-        guard let launcher = chooseLauncherApp(),
-              !pendingBlessingLaunchers.contains(where: { $0.requirement == launcher.requirement })
-        else { return }
-        pendingBlessingLaunchers.append(launcher)
+        chooseLauncherApp { [weak self] launcher in
+            guard let self, let launcher,
+                  !self.pendingBlessingLaunchers.contains(where: { $0.requirement == launcher.requirement })
+            else { return }
+            self.pendingBlessingLaunchers.append(launcher)
+        }
     }
 
     func removePendingBlessingLauncher(_ launcher: BlessedScriptLauncher) {
@@ -332,21 +334,23 @@ final class DashboardModel: ObservableObject {
     }
 
     func addApp(to script: BlessedScript) {
-        guard let launcher = chooseLauncherApp(),
-              !script.launchers.contains(where: { $0.requirement == launcher.requirement })
-        else { return }
-        let updated = BlessedScript(
-            path: script.path,
-            checksum: script.checksum,
-            keys: script.keys,
-            target: script.target,
-            replaceExistingEnv: script.replaceExistingEnv,
-            allowMissingKeys: script.allowMissingKeys,
-            capabilities: script.capabilities,
-            launchers: script.launchers + [launcher],
-            blessedAt: script.blessedAt
-        )
-        finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+        chooseLauncherApp { [weak self] launcher in
+            guard let self, let launcher,
+                  !script.launchers.contains(where: { $0.requirement == launcher.requirement })
+            else { return }
+            let updated = BlessedScript(
+                path: script.path,
+                checksum: script.checksum,
+                keys: script.keys,
+                target: script.target,
+                replaceExistingEnv: script.replaceExistingEnv,
+                allowMissingKeys: script.allowMissingKeys,
+                capabilities: script.capabilities,
+                launchers: script.launchers + [launcher],
+                blessedAt: script.blessedAt
+            )
+            self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+        }
     }
 
     func removeLauncher(_ launcher: BlessedScriptLauncher, from script: BlessedScript) {
@@ -383,24 +387,17 @@ final class DashboardModel: ObservableObject {
         completion?(error)
     }
 
-    private func chooseLauncherApp() -> BlessedScriptLauncher? {
-        let panel = NSOpenPanel()
-        panel.title = "Allow Calling App"
-        panel.prompt = "Allow"
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url, url.pathExtension == "app",
-              let signing = appBundleSigning(url)
-        else {
-            return nil
+    private func chooseLauncherApp(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {
+        chooseAppBundle { url in
+            guard let url, url.pathExtension == "app", let signing = appBundleSigning(url) else {
+                completion(nil)
+                return
+            }
+            completion(BlessedScriptLauncher(
+                bundleIdentifier: Bundle(url: url)?.bundleIdentifier ?? url.lastPathComponent,
+                requirement: signing.requirement
+            ))
         }
-        return BlessedScriptLauncher(
-            bundleIdentifier: Bundle(url: url)?.bundleIdentifier ?? url.lastPathComponent,
-            requirement: signing.requirement
-        )
     }
 
     func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {
@@ -524,29 +521,23 @@ final class DashboardModel: ObservableObject {
     }
 
     func addApp(to gate: SecretGate) {
-        let panel = NSOpenPanel()
-        panel.title = "Allow Calling App"
-        panel.prompt = "Allow"
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard url.pathExtension == "app" else {
-            errorMessage = "Choose a .app bundle."
-            return
-        }
-        guard let requirement = appBundleSigning(url)?.requirement else {
-            errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
-            return
-        }
-        let status = setSecretGateAppProtection(requirement: requirement, protection: .readOnly, for: gate)
-        if status == errSecSuccess {
-            errorMessage = nil
-            reload()
-        } else {
-            errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
+        chooseAppBundle { [weak self] url in
+            guard let self, let url else { return }
+            guard url.pathExtension == "app" else {
+                self.errorMessage = "Choose a .app bundle."
+                return
+            }
+            guard let requirement = appBundleSigning(url)?.requirement else {
+                self.errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
+                return
+            }
+            let status = setSecretGateAppProtection(requirement: requirement, protection: .readOnly, for: gate)
+            if status == errSecSuccess {
+                self.errorMessage = nil
+                self.reload()
+            } else {
+                self.errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
+            }
         }
     }
 
@@ -2354,6 +2345,21 @@ private struct ApprovedAppDisplay {
 private struct AppBundleSigning {
     let teamIdentifier: String
     let requirement: String
+}
+
+@MainActor
+private func chooseAppBundle(_ completion: @escaping (URL?) -> Void) {
+    let panel = NSOpenPanel()
+    panel.title = "Allow Calling App"
+    panel.prompt = "Allow"
+    panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+    panel.allowedContentTypes = [.applicationBundle]
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.begin { response in
+        completion(response == .OK ? panel.url : nil)
+    }
 }
 
 private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
