@@ -36,7 +36,7 @@ fn av_inject_accepts_shebang_dispatch() {
     fs::write(
         &script,
         format!(
-            "#!{} inject +SOME_SECRET /bin/sh\nprintf '%s\\n' \"$0\" \"$AV_SCRIPT_PATH\"\n",
+            "#!{} inject +SOME_SECRET /bin/sh\nprintf '%s\\n' \"$0\" \"$AV_SCRIPT_PATH\" \"$AV_SCRIPT_DIR\"\n",
             env!("CARGO_BIN_EXE_av")
         ),
     )
@@ -49,6 +49,8 @@ fn av_inject_accepts_shebang_dispatch() {
         .env("HOME", &home)
         .env("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain)
         .env("SOME_SECRET", "expected")
+        .env("AV_SCRIPT_PATH", "untrusted")
+        .env("AV_SCRIPT_DIR", "untrusted")
         .output()
         .unwrap();
 
@@ -58,8 +60,12 @@ fn av_inject_accepts_shebang_dispatch() {
     }
 
     assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stdout(&output).contains("/dev/fd/"));
-    assert!(stdout(&output).contains(script.canonicalize().unwrap().to_str().unwrap()));
+    let path = script.canonicalize().unwrap();
+    let stdout = stdout(&output);
+    let mut lines = stdout.lines();
+    assert!(lines.next().unwrap().starts_with("/dev/fd/"));
+    assert_eq!(lines.next(), path.to_str());
+    assert_eq!(lines.next(), path.parent().unwrap().to_str());
     let _ = fs::remove_dir_all(home);
 }
 

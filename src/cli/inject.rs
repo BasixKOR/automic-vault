@@ -217,6 +217,10 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
             OsString::from("AV_SCRIPT_PATH"),
             script.path.clone().into_os_string(),
         );
+        env.insert(
+            OsString::from("AV_SCRIPT_DIR"),
+            script.path.parent().unwrap().as_os_str().to_os_string(),
+        );
     }
 
     let err = Command::new(&target)

@@ -110,10 +110,11 @@ Editing the script requires an explicit re-bless.
 Blessed scripts run from a verified `/dev/fd/N` snapshot
 (to avoid races between approval and potential file edits),
 so `$0` is not the
-original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path;
-use `${AV_SCRIPT_PATH:-$0}` anywhere the script would normally use `$0` to find
-files relative to itself. This is done to avoid races between our approval and
-potential malicious edits to the script file.
+original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path
+and `AV_SCRIPT_DIR` to its containing directory. Use `AV_SCRIPT_DIR` to find
+files relative to the script, or `${AV_SCRIPT_PATH:-$0}` when compatibility
+with older versions is needed. This avoids races between approval and potential
+malicious edits to the script file.
 
 ### Blessing Agent Automations
 
