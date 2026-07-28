@@ -43,7 +43,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(BUILD_SCRIPT.starts_with("#!/bin/bash\n"));
     assert!(!BUILD_SCRIPT.contains("av inject"));
     assert!(PUBLISH_SCRIPT.starts_with(
-        "#!/usr/local/bin/av inject --allow-missing-keys +GH_TOKEN -- /bin/bash\n\
+        "#!/usr/local/bin/av inject -- /bin/bash\n\
 # --- automic-vault\n\
 # capabilities:\n\
 #   gh: trusted\n\
