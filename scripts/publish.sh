@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject --allow-missing-keys +GH_TOKEN -- /bin/bash
+#!/usr/local/bin/av inject -- /bin/bash
 # --- automic-vault
 # capabilities:
 #   gh: trusted
