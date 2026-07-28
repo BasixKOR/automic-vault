@@ -24,7 +24,7 @@ Usage:
   av harden
   av open [--secret-gate ID]";
 
-const INSTALL_REVISION: u32 = 5;
+const INSTALL_REVISION: u32 = 6;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
