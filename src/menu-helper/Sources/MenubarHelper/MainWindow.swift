@@ -323,9 +323,9 @@ final class DashboardModel: ObservableObject {
     func addAppToPendingBlessing() {
         chooseLauncherApp { [weak self] launcher in
             guard let self, let launcher,
-                  !pendingBlessingLaunchers.contains(where: { $0.requirement == launcher.requirement })
+                  !self.pendingBlessingLaunchers.contains(where: { $0.requirement == launcher.requirement })
             else { return }
-            pendingBlessingLaunchers.append(launcher)
+            self.pendingBlessingLaunchers.append(launcher)
         }
     }
 
@@ -349,7 +349,7 @@ final class DashboardModel: ObservableObject {
                 launchers: script.launchers + [launcher],
                 blessedAt: script.blessedAt
             )
-            finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+            self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
         }
     }
 
@@ -524,19 +524,19 @@ final class DashboardModel: ObservableObject {
         chooseAppBundle { [weak self] url in
             guard let self, let url else { return }
             guard url.pathExtension == "app" else {
-                errorMessage = "Choose a .app bundle."
+                self.errorMessage = "Choose a .app bundle."
                 return
             }
             guard let requirement = appBundleSigning(url)?.requirement else {
-                errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
+                self.errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
                 return
             }
             let status = setSecretGateAppProtection(requirement: requirement, protection: .readOnly, for: gate)
             if status == errSecSuccess {
-                errorMessage = nil
-                reload()
+                self.errorMessage = nil
+                self.reload()
             } else {
-                errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
+                self.errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
             }
         }
     }
