@@ -18,7 +18,8 @@ Usage:
   av detectors --json
   av hardeners --json
   av bless PATH
-  av inject +KEY [--] COMMAND
+  av inject +KEY... [--] COMMAND
+  av inject -- COMMAND
   av save KEY
   av harden
   av open [--secret-gate ID]";

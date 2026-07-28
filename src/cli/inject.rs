@@ -10,6 +10,7 @@ use std::process::Command;
 
 const USAGE: &str = "\
 Usage: av inject [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] [--] COMMAND [args...]
+       av inject [--replace-existing-env] [--allow-missing-keys] -- COMMAND [args...]
 
 Injects named Keychain secrets into COMMAND's environment.";
 
@@ -131,9 +132,6 @@ fn parse(args: Vec<OsString>) -> Result<Options, String> {
         }
 
         if arg == "--" {
-            if keys.is_empty() {
-                return Err("at least one +KEY must be provided before the target".into());
-            }
             let target = iter
                 .next()
                 .ok_or_else(|| "missing target command".to_string())?;
@@ -707,6 +705,10 @@ mod tests {
                 .unwrap()
                 .target,
             OsString::from("env")
+        );
+        assert_eq!(
+            parse(os(&["--", "/bin/echo"])).unwrap().keys,
+            Vec::<String>::new()
         );
     }
 

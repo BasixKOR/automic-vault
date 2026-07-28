@@ -38,6 +38,22 @@ import Testing
     #expect(declaration.manifest.capabilities.isEmpty)
 }
 
+@Test func blessedScriptCanDeclareCapabilitiesWithoutSecrets() throws {
+    let data = Data("""
+    #!/usr/local/bin/av inject -- /bin/sh
+    # --- automic-vault
+    # capabilities:
+    #   gh: read-only
+    # ---
+    echo ok
+    """.utf8)
+
+    let declaration = try blessedScriptDeclaration(data: data)
+
+    #expect(declaration.keys.isEmpty)
+    #expect(declaration.manifest.capabilities == ["gh": .readOnly])
+}
+
 @Test func launcherlessBlessingRequiresOneManualApprovalPerExecution() {
     let requirement = #"identifier "com.apple.Terminal""#
     let script = BlessedScript(
