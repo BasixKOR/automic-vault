@@ -55,7 +55,7 @@ fn finding(
     Finding {
         source,
         homepage: docs_url,
-        severity: "high",
+        severity: "medium",
         explanation: format!("{source} {reason}: {}", display_path(home, &path)),
         solution: solution.to_string(),
         affected: vec![AffectedFile {
@@ -165,6 +165,7 @@ mod tests {
         );
 
         assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, "medium");
         assert!(findings[0].explanation.contains("below 24 hours"));
         std::fs::remove_dir_all(home).unwrap();
     }
