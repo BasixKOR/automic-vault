@@ -61,6 +61,33 @@ you approved. If we cannot verify that identity, automatic approval fails closed
 Code signing proves identity and integrity—not good intentions. You still choose
 which apps to trust.
 
+### Use `av` as a general secrets manager
+
+You don’t need a dedicated hardener. Save any environment secret, then inject it
+only into the command that needs it:
+
+```sh
+$ av save SENTRY_AUTH_TOKEN
+$ av inject +SENTRY_AUTH_TOKEN -- sentry-cli releases list
+```
+
+For a script you don’t intend to bless, keep its normal shebang and re-exec
+through `av` only when the secret is missing:
+
+```sh
+#!/bin/sh
+set -eu
+
+if [ -x /usr/local/bin/av ] && [ -z "${API_TOKEN:-}" ]; then
+  exec /usr/local/bin/av inject --replace-existing-env +API_TOKEN -- /bin/sh "$0" "$@"
+fi
+: "${API_TOKEN:?set API_TOKEN or install Automic Vault}"
+```
+
+This is more portable than an `av inject` shebang: the same script can use an
+already-populated environment on machines without Automic Vault. For durable,
+reviewed automation from specific signed apps, bless the script instead.
+
 ### Blessed scripts
 
 A script can declare the tool access it needs next to its `av inject` shebang:
