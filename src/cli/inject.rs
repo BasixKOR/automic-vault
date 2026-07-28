@@ -662,6 +662,7 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
 fn sandbox_denies_mach_lookup(service: &std::ffi::CStr) -> bool {
     use std::os::raw::{c_char, c_int};
 
+    #[link(name = "sandbox")]
     unsafe extern "C" {
         fn sandbox_check(pid: libc::pid_t, operation: *const c_char, filter: c_int, ...) -> c_int;
     }
