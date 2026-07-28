@@ -527,7 +527,10 @@ mod tests {
         );
 
         let (code, stdout, stderr) = run_args(&["av", "__version"]);
-        assert_eq!((code, stdout.as_str(), stderr.as_str()), (0, "5\n", ""));
+        assert_eq!(
+            (code, stdout, stderr),
+            (0, format!("{INSTALL_REVISION}\n"), String::new())
+        );
     }
 
     #[test]
