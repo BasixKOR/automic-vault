@@ -118,9 +118,14 @@ ensure_codesign_identity() {
 ensure_clone() {
   local repo_name="$1"
   local repo_dir="$clone_root/$repo_name"
+  local origin_url="https://github.com/$org/$repo_name.git"
+
+  if [[ "$(gh config get git_protocol --host github.com 2>/dev/null || true)" == ssh ]]; then
+    origin_url="git@github.com:$org/$repo_name.git"
+  fi
 
   if [[ -d "$repo_dir/.git" ]]; then
-    git -C "$repo_dir" remote set-url origin "https://github.com/$org/$repo_name.git"
+    git -C "$repo_dir" remote set-url origin "$origin_url"
     return 0
   fi
   if [[ -e "$repo_dir" ]]; then
@@ -133,7 +138,7 @@ ensure_clone() {
     echo "Would clone $org/$repo_name to $repo_dir"
   else
     gh repo clone "$org/$repo_name" "$repo_dir"
-    git -C "$repo_dir" remote set-url origin "https://github.com/$org/$repo_name.git"
+    git -C "$repo_dir" remote set-url origin "$origin_url"
   fi
 }
 
