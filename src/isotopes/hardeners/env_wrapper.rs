@@ -11,6 +11,7 @@ use super::{
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
 const STUB_DIR: &str = "/usr/local/bin";
+const TARGET_DIR: &str = "/opt/homebrew/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
 const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those isotope keys. Automic Vault requests elevation only to install the launcher stub. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
@@ -118,6 +119,13 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
                 target.display()
             ));
         }
+        if test_target_dir().is_none() && actual_uid() != 0 && !target_is_protected(&target)? {
+            return Err(format!(
+                "refusing to harden {} because {} is writable by the current user; run `sudo av harden brew` first",
+                wrapper.name,
+                target.display()
+            ));
+        }
         let stub_path = stub_path(stub.command);
         if stub_path.exists() && !is_managed_stub(&stub_path, stub) {
             return Err(format!(
@@ -127,6 +135,16 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn target_is_protected(path: &Path) -> Result<bool, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|err| format!("cannot resolve {}: {err}", path.display()))?;
+    Ok(path
+        .ancestors()
+        .chain(canonical.ancestors())
+        .all(|path| !crate::path_security::is_user_writable(path)))
 }
 
 fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
@@ -316,7 +334,7 @@ fn wrapper(name: &str) -> Option<&'static EnvWrapper> {
 fn target_path(stub: &StubSpec) -> PathBuf {
     test_target_dir()
         .map(|dir| dir.join(stub.command))
-        .unwrap_or_else(|| PathBuf::from(stub.target))
+        .unwrap_or_else(|| Path::new(TARGET_DIR).join(stub.command))
 }
 
 fn stub_path(command: &str) -> PathBuf {
@@ -353,7 +371,6 @@ struct EnvWrapper {
 #[derive(Clone, Copy)]
 struct StubSpec {
     command: &'static str,
-    target: &'static str,
     keys: &'static [&'static str],
     assignment_keys: &'static [&'static str],
 }
@@ -364,7 +381,6 @@ fn stubs(wrapper: &EnvWrapper) -> impl Iterator<Item = &StubSpec> {
 
 const JFROG_EXTRA: &[StubSpec] = &[stub(
     "jfrog",
-    "/opt/jfrog-cli/bin/jfrog",
     &["JFROG_ENV_ASSIGNMENTS"],
     &["JFROG_ENV_ASSIGNMENTS"],
 )];
@@ -373,288 +389,125 @@ const WRAPPERS: &[EnvWrapper] = &[
     one(
         "akamai",
         "akamai",
-        "/opt/akamai/bin/akamai",
         &["AKAMAI_ENV_ASSIGNMENTS"],
         &["AKAMAI_ENV_ASSIGNMENTS"],
     ),
     one(
         "algolia",
         "algolia",
-        "/opt/algolia/bin/algolia",
         &["ALGOLIA_ENV_ASSIGNMENTS"],
         &["ALGOLIA_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "argocd",
-        "argocd",
-        "/opt/argocd/bin/argocd",
-        &["ARGOCD_AUTH_TOKEN"],
-        &[],
-    ),
-    one(
-        "ast-cli",
-        "cx",
-        "/opt/ast-cli/bin/cx",
-        &["CX_APIKEY", "CX_CLIENT_SECRET"],
-        &[],
-    ),
-    one("buf", "buf", "/opt/buf/bin/buf", &["BUF_TOKEN"], &[]),
+    one("argocd", "argocd", &["ARGOCD_AUTH_TOKEN"], &[]),
+    one("ast-cli", "cx", &["CX_APIKEY", "CX_CLIENT_SECRET"], &[]),
+    one("buf", "buf", &["BUF_TOKEN"], &[]),
     one(
         "censys",
         "censys",
-        "/opt/censys/bin/censys",
         &["CENSYS_API_ID", "CENSYS_API_SECRET", "CENSYS_ASM_API_KEY"],
         &[],
     ),
-    one(
-        "checkov",
-        "checkov",
-        "/opt/checkov/bin/checkov",
-        &["BC_API_KEY"],
-        &[],
-    ),
-    one(
-        "circleci",
-        "circleci",
-        "/opt/circleci/bin/circleci",
-        &["CIRCLECI_CLI_TOKEN"],
-        &[],
-    ),
-    one("civo", "civo", "/opt/civo/bin/civo", &["CIVO_TOKEN"], &[]),
-    one(
-        "cloudsmith-cli",
-        "cloudsmith",
-        "/opt/cloudsmith-cli/bin/cloudsmith",
-        &["CLOUDSMITH_API_KEY"],
-        &[],
-    ),
-    one(
-        "composer",
-        "composer",
-        "/opt/composer/bin/composer",
-        &["COMPOSER_AUTH"],
-        &[],
-    ),
-    one(
-        "doctl",
-        "doctl",
-        "/opt/doctl/bin/doctl",
-        &["DIGITALOCEAN_ACCESS_TOKEN"],
-        &[],
-    ),
-    one(
-        "flyctl",
-        "flyctl",
-        "/opt/flyctl/bin/flyctl",
-        &["FLY_ACCESS_TOKEN"],
-        &[],
-    ),
+    one("checkov", "checkov", &["BC_API_KEY"], &[]),
+    one("circleci", "circleci", &["CIRCLECI_CLI_TOKEN"], &[]),
+    one("civo", "civo", &["CIVO_TOKEN"], &[]),
+    one("cloudsmith-cli", "cloudsmith", &["CLOUDSMITH_API_KEY"], &[]),
+    one("composer", "composer", &["COMPOSER_AUTH"], &[]),
+    one("doctl", "doctl", &["DIGITALOCEAN_ACCESS_TOKEN"], &[]),
+    one("flyctl", "flyctl", &["FLY_ACCESS_TOKEN"], &[]),
     one(
         "glab",
         "glab",
-        "/opt/glab/bin/glab",
         &["GLAB_ENV_ASSIGNMENTS"],
         &["GLAB_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "gotify",
-        "gotify",
-        "/opt/gotify/bin/gotify",
-        &["GOTIFY_TOKEN"],
-        &[],
-    ),
+    one("gotify", "gotify", &["GOTIFY_TOKEN"], &[]),
     one(
         "gptcommit",
         "gptcommit",
-        "/opt/gptcommit/bin/gptcommit",
         &["GPTCOMMIT__OPENAI__API_KEY"],
         &[],
     ),
     one(
         "grafanactl",
         "grafanactl",
-        "/opt/grafanactl/bin/grafanactl",
         &["GRAFANACTL_ENV_ASSIGNMENTS"],
         &["GRAFANACTL_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "heroku",
-        "heroku",
-        "/opt/heroku/bin/heroku",
-        &["HEROKU_API_KEY"],
-        &[],
-    ),
-    one(
-        "hcloud",
-        "hcloud",
-        "/opt/hcloud/bin/hcloud",
-        &["HCLOUD_TOKEN"],
-        &[],
-    ),
-    one(
-        "huggingface-cli",
-        "hf",
-        "/opt/hf/bin/hf",
-        &["HF_TOKEN"],
-        &[],
-    ),
+    one("heroku", "heroku", &["HEROKU_API_KEY"], &[]),
+    one("hcloud", "hcloud", &["HCLOUD_TOKEN"], &[]),
+    one("huggingface-cli", "hf", &["HF_TOKEN"], &[]),
     multi(
         "jfrog-cli",
-        stub(
-            "jf",
-            "/opt/jfrog-cli/bin/jf",
-            &["JFROG_ENV_ASSIGNMENTS"],
-            &["JFROG_ENV_ASSIGNMENTS"],
-        ),
+        stub("jf", &["JFROG_ENV_ASSIGNMENTS"], &["JFROG_ENV_ASSIGNMENTS"]),
         JFROG_EXTRA,
     ),
-    one("k6", "k6", "/opt/k6/bin/k6", &["K6_CLOUD_TOKEN"], &[]),
-    one(
-        "luarocks",
-        "luarocks",
-        "/opt/luarocks/bin/luarocks",
-        &["LUAROCKS_API_KEY"],
-        &[],
-    ),
+    one("k6", "k6", &["K6_CLOUD_TOKEN"], &[]),
+    one("luarocks", "luarocks", &["LUAROCKS_API_KEY"], &[]),
     one(
         "minio-mc",
         "mc",
-        "/opt/mc/bin/mc",
         &["MINIO_MC_HOST_ENV"],
         &["MINIO_MC_HOST_ENV"],
     ),
-    one(
-        "netlify-cli",
-        "netlify",
-        "/opt/netlify-cli/bin/netlify",
-        &["NETLIFY_AUTH_TOKEN"],
-        &[],
-    ),
-    one(
-        "node",
-        "npm",
-        "/opt/node/bin/npm",
-        &["NODE_AUTH_TOKEN"],
-        &[],
-    ),
-    one(
-        "pnpm",
-        "pnpm",
-        "/opt/pnpm/bin/pnpm",
-        &["NODE_AUTH_TOKEN"],
-        &[],
-    ),
-    one(
-        "pulumi",
-        "pulumi",
-        "/opt/pulumi/bin/pulumi",
-        &["PULUMI_ACCESS_TOKEN"],
-        &[],
-    ),
+    one("netlify-cli", "netlify", &["NETLIFY_AUTH_TOKEN"], &[]),
+    one("node", "npm", &["NODE_AUTH_TOKEN"], &[]),
+    one("pnpm", "pnpm", &["NODE_AUTH_TOKEN"], &[]),
+    one("pulumi", "pulumi", &["PULUMI_ACCESS_TOKEN"], &[]),
     one(
         "qwen-code",
         "qwen",
-        "/opt/qwen-code/bin/qwen",
         &["QWEN_ENV_ASSIGNMENTS"],
         &["QWEN_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "runpodctl",
-        "runpodctl",
-        "/opt/runpodctl/bin/runpodctl",
-        &["RUNPOD_API_KEY"],
-        &[],
-    ),
+    one("runpodctl", "runpodctl", &["RUNPOD_API_KEY"], &[]),
     one(
         "s3cmd",
         "s3cmd",
-        "/opt/s3cmd/bin/s3cmd",
         &["S3CMD_ENV_ASSIGNMENTS"],
         &["S3CMD_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "sentry-cli",
-        "sentry-cli",
-        "/opt/getsentry/tools/sentry-cli/bin/sentry-cli",
-        &["SENTRY_AUTH_TOKEN"],
-        &[],
-    ),
+    one("sentry-cli", "sentry-cli", &["SENTRY_AUTH_TOKEN"], &[]),
     one(
         "snowflake-cli",
         "snow",
-        "/opt/snowflake-cli/bin/snow",
         &["SNOWFLAKE_ENV_ASSIGNMENTS"],
         &["SNOWFLAKE_ENV_ASSIGNMENTS"],
     ),
     one(
         "snyk",
         "snyk",
-        "/opt/snyk/bin/snyk",
         &["SNYK_ENV_ASSIGNMENTS"],
         &["SNYK_ENV_ASSIGNMENTS"],
     ),
     one(
         "transifex-cli",
         "tx",
-        "/opt/transifex-cli/bin/tx",
         &["TRANSIFEX_ENV_ASSIGNMENTS"],
         &["TRANSIFEX_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "travis",
-        "travis",
-        "/opt/travis/bin/travis",
-        &["TRAVIS_TOKEN"],
-        &[],
-    ),
+    one("travis", "travis", &["TRAVIS_TOKEN"], &[]),
     one(
         "twine",
         "twine",
-        "/opt/twine/bin/twine",
         &["TWINE_ENV_ASSIGNMENTS"],
         &["TWINE_ENV_ASSIGNMENTS"],
     ),
-    one(
-        "vagrant",
-        "vagrant",
-        "/opt/hashicorp/tap/vagrant/bin/vagrant",
-        &["VAGRANT_CLOUD_TOKEN"],
-        &[],
-    ),
-    one(
-        "vault",
-        "vault",
-        "/opt/hashicorp/tap/vault/bin/vault",
-        &["VAULT_TOKEN"],
-        &[],
-    ),
-    one(
-        "virustotal-cli",
-        "vt",
-        "/opt/virustotal-cli/bin/vt",
-        &["VTCLI_APIKEY"],
-        &[],
-    ),
-    one(
-        "vultr",
-        "vultr-cli",
-        "/opt/vultr/bin/vultr-cli",
-        &["VULTR_API_KEY"],
-        &[],
-    ),
-    one("wsk", "wsk", "/opt/wsk/bin/wsk", &["WHISK_AUTH"], &[]),
+    one("vagrant", "vagrant", &["VAGRANT_CLOUD_TOKEN"], &[]),
+    one("vault", "vault", &["VAULT_TOKEN"], &[]),
+    one("virustotal-cli", "vt", &["VTCLI_APIKEY"], &[]),
+    one("vultr", "vultr-cli", &["VULTR_API_KEY"], &[]),
+    one("wsk", "wsk", &["WHISK_AUTH"], &[]),
 ];
 
 const fn one(
     name: &'static str,
     command: &'static str,
-    target: &'static str,
     keys: &'static [&'static str],
     assignment_keys: &'static [&'static str],
 ) -> EnvWrapper {
     EnvWrapper {
         name,
-        primary: stub(command, target, keys, assignment_keys),
+        primary: stub(command, keys, assignment_keys),
         extra: &[],
     }
 }
@@ -669,13 +522,11 @@ const fn multi(name: &'static str, primary: StubSpec, extra: &'static [StubSpec]
 
 const fn stub(
     command: &'static str,
-    target: &'static str,
     keys: &'static [&'static str],
     assignment_keys: &'static [&'static str],
 ) -> StubSpec {
     StubSpec {
         command,
-        target,
         keys,
         assignment_keys,
     }
@@ -685,6 +536,25 @@ const fn stub(
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn flyctl_targets_homebrew() {
+        assert_eq!(
+            target_path(&wrapper("flyctl").unwrap().primary),
+            Path::new("/opt/homebrew/bin/flyctl")
+        );
+    }
+
+    #[test]
+    fn rejects_user_writable_targets() {
+        let path = temp_dir("env-wrapper-writable").join("bin/tool");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "").unwrap();
+
+        assert!(!target_is_protected(&path).unwrap());
+
+        fs::remove_dir_all(path.ancestors().nth(2).unwrap()).unwrap();
+    }
 
     #[test]
     fn installs_simple_env_stub() {
@@ -725,7 +595,6 @@ mod tests {
     fn assignment_keys_are_exported() {
         let script = stub_script(&stub(
             "akamai",
-            "/opt/akamai/bin/akamai",
             &["AKAMAI_ENV_ASSIGNMENTS"],
             &["AKAMAI_ENV_ASSIGNMENTS"],
         ));
@@ -737,7 +606,7 @@ mod tests {
 
     #[test]
     fn current_stub_validation_rejects_marker_preserving_edits() {
-        let spec = stub("tool", "/opt/tool/bin/tool", &["TOOL_TOKEN"], &[]);
+        let spec = stub("tool", &["TOOL_TOKEN"], &[]);
         let path = temp_dir("env-wrapper-exact").join("tool");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, stub_script(&spec)).unwrap();

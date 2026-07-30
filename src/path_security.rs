@@ -47,7 +47,7 @@ fn is_user_writable_or_creatable(path: &Path) -> bool {
     }
 }
 
-fn is_user_writable(path: &Path) -> bool {
+pub(crate) fn is_user_writable(path: &Path) -> bool {
     let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
         return false;
     };
