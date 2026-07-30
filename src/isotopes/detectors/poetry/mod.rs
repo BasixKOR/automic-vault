@@ -52,19 +52,29 @@ fn read_to_string(path: &Path) -> Result<String, String> {
 
 fn poetry_auth_contains_secret(contents: &str) -> bool {
     let mut in_secret_table = false;
+    let mut in_pypi_token_table = false;
     for line in contents.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
         }
         if line.starts_with('[') && line.ends_with(']') {
-            in_secret_table = line.contains("pypi-token") || line.contains("http-basic");
+            let header = &line[1..line.len() - 1];
+            in_secret_table = header.contains("pypi-token") || header.contains("http-basic");
+            // `poetry config pypi-token.<repo> <token>` writes a flat
+            // `[pypi-token]` table keyed by repository name, e.g.
+            // `[pypi-token]\npypi = "..."`, unlike `[http-basic.<repo>]`
+            // which nests `password`/`token` keys per repo.
+            in_pypi_token_table = header == "pypi-token";
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
         let key = key.trim().trim_matches('"').trim_matches('\'');
+        if in_pypi_token_table && secret_value(trim_quotes(value.trim())) {
+            return true;
+        }
         if in_secret_table
             && matches!(key, "password" | "token")
             && secret_value(trim_quotes(value.trim()))
@@ -101,6 +111,17 @@ mod tests {
         ));
         assert!(!poetry_auth_contains_secret(
             "[http-basic.private]\nusername = \"u\"\n"
+        ));
+    }
+
+    #[test]
+    fn detects_pypi_token_in_the_flat_table_shape_poetry_actually_writes() {
+        // `poetry config pypi-token.pypi <token>` writes auth.toml via
+        // Config.auth_config_source.add_property("pypi-token.pypi", token),
+        // which serializes as a flat table keyed by repository name, not a
+        // dotted subtable with a `token =` key.
+        assert!(poetry_auth_contains_secret(
+            "[pypi-token]\npypi = \"pypi-AgEIcHlwaS5vcmc\"\n"
         ));
     }
 }
