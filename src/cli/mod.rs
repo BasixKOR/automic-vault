@@ -34,7 +34,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-const INSTALL_REVISION: u32 = 6;
+const INSTALL_REVISION: u32 = 7;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()

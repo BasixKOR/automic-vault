@@ -9,7 +9,7 @@ use super::{
     SecretGateDescriptor, SecretGateRoute, StubRequirements,
 };
 
-const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V1";
+const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V2";
 const STUB_DIR: &str = "/usr/local/bin";
 const TARGET_DIR: &str = "/opt/homebrew/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
