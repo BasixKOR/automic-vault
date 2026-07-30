@@ -16,10 +16,10 @@ usage:
   av <command> [options]
 
 commands:
-  $ av scan [--show-all|--json]          # audit secrets and configuration
-  $ av doctor [<tool>] [--json]          # verify installed hardening
-  $ av detectors --json                  # print detector metadata
-  $ av hardeners --json                  # print hardener metadata
+  $ av scan [--show-all|--json]           # audit secrets and configuration
+  $ av doctor [<tool>] [--json]           # verify installed hardening
+  $ av detectors --json                   # print detector metadata
+  $ av hardeners --json                   # print hardener metadata
   $ av bless <path>                       # approve a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
@@ -76,7 +76,7 @@ where
         return 2;
     };
     if command == "help" || command == "--help" || command == "-h" {
-        let _ = writeln!(stdout, "{USAGE}");
+        write_help(stdout, style);
         return 0;
     }
     if command == "--version" || command == "-V" {
@@ -221,6 +221,25 @@ where
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
+        }
+    }
+}
+
+fn write_help(stdout: &mut dyn Write, style: scan::Style) {
+    for line in USAGE.lines() {
+        let line = if let Some(rest) = line.strip_prefix("  $") {
+            format!("  {}{rest}", style.paint("2", "$"))
+        } else {
+            line.to_string()
+        };
+        if let Some((command, comment)) = line.split_once('#') {
+            let _ = writeln!(
+                stdout,
+                "{command}{}",
+                style.paint("2", format!("#{comment}"))
+            );
+        } else {
+            let _ = writeln!(stdout, "{line}");
         }
     }
 }
@@ -544,6 +563,19 @@ mod tests {
             assert!(stdout.contains("$ av help"));
             assert!(!stdout.contains("__version"));
         }
+
+        assert!(
+            USAGE
+                .lines()
+                .filter_map(|line| line.find('#'))
+                .all(|column| column == 42)
+        );
+
+        let mut stdout = Vec::new();
+        write_help(&mut stdout, scan::Style { color: true });
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("  \x1b[2m$\x1b[0m av scan"));
+        assert!(stdout.contains("\x1b[2m# audit secrets and configuration\x1b[0m"));
     }
 
     #[test]
