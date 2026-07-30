@@ -384,6 +384,7 @@ const JFROG_EXTRA: &[StubSpec] = &[stub(
     &["JFROG_ENV_ASSIGNMENTS"],
     &["JFROG_ENV_ASSIGNMENTS"],
 )];
+const FLY_EXTRA: &[StubSpec] = &[stub("fly", &["FLY_ACCESS_TOKEN"], &[])];
 
 const WRAPPERS: &[EnvWrapper] = &[
     one(
@@ -413,7 +414,11 @@ const WRAPPERS: &[EnvWrapper] = &[
     one("cloudsmith-cli", "cloudsmith", &["CLOUDSMITH_API_KEY"], &[]),
     one("composer", "composer", &["COMPOSER_AUTH"], &[]),
     one("doctl", "doctl", &["DIGITALOCEAN_ACCESS_TOKEN"], &[]),
-    one("flyctl", "flyctl", &["FLY_ACCESS_TOKEN"], &[]),
+    multi(
+        "flyctl",
+        stub("flyctl", &["FLY_ACCESS_TOKEN"], &[]),
+        FLY_EXTRA,
+    ),
     one(
         "glab",
         "glab",
@@ -538,10 +543,18 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn flyctl_targets_homebrew() {
+    fn flyctl_wraps_both_commands() {
+        let wrapper = wrapper("flyctl").unwrap();
+        let commands = stubs(wrapper)
+            .map(|stub| (stub.command, target_path(stub)))
+            .collect::<Vec<_>>();
+
         assert_eq!(
-            target_path(&wrapper("flyctl").unwrap().primary),
-            Path::new("/opt/homebrew/bin/flyctl")
+            commands,
+            [
+                ("flyctl", PathBuf::from("/opt/homebrew/bin/flyctl")),
+                ("fly", PathBuf::from("/opt/homebrew/bin/fly")),
+            ]
         );
     }
 
