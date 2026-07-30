@@ -227,19 +227,26 @@ where
 
 fn write_help(stdout: &mut dyn Write, style: scan::Style) {
     for line in USAGE.lines() {
-        let line = if let Some(rest) = line.strip_prefix("  $") {
-            format!("  {}{rest}", style.paint("2", "$"))
+        let (command, comment) = line.split_once('#').unwrap_or((line, ""));
+        let command = command
+            .chars()
+            .map(|ch| {
+                if matches!(ch, '[' | ']' | '<' | '>' | '|' | '$') {
+                    style.paint("2", ch.to_string())
+                } else {
+                    ch.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        if comment.is_empty() {
+            let _ = writeln!(stdout, "{command}");
         } else {
-            line.to_string()
-        };
-        if let Some((command, comment)) = line.split_once('#') {
             let _ = writeln!(
                 stdout,
                 "{command}{}",
                 style.paint("2", format!("#{comment}"))
             );
-        } else {
-            let _ = writeln!(stdout, "{line}");
         }
     }
 }
@@ -575,6 +582,8 @@ mod tests {
         write_help(&mut stdout, scan::Style { color: true });
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("  \x1b[2m$\x1b[0m av scan"));
+        assert!(stdout.contains("\x1b[2m[\x1b[0m--show-all\x1b[2m|\x1b[0m--json\x1b[2m]\x1b[0m"));
+        assert!(stdout.contains("\x1b[2m<\x1b[0mtool\x1b[2m>\x1b[0m"));
         assert!(stdout.contains("\x1b[2m# audit secrets and configuration\x1b[0m"));
     }
 
