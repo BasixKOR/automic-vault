@@ -291,6 +291,30 @@ find_output() {
   fi
 }
 
+verify_archive_signatures() {
+  local archive_path="$1"
+  local archive_dir file found=false
+
+  archive_dir="$(mktemp -d "${TMPDIR:-/tmp}/automic-vault-isotope.XXXXXX")"
+  tar -tzf "$archive_path" | awk '
+    $0 !~ /^bin\// || $0 ~ /(^|\/)\.\.?(\/|$)/ { exit 1 }
+  ' || {
+    echo "Release archive must contain only safe bin/ paths: $archive_path" >&2
+    return 1
+  }
+  tar -xzf "$archive_path" -C "$archive_dir"
+  while IFS= read -r -d '' file; do
+    found=true
+    codesign --verify --strict --verbose=2 "$file"
+  done < <(find "$archive_dir/bin" -type f -perm -111 -print0)
+  if [[ "$found" == false ]]; then
+    echo "Release archive contains no executable to verify: $archive_path" >&2
+    rm -rf "$archive_dir"
+    return 1
+  fi
+  rm -rf "$archive_dir"
+}
+
 process_repo() {
   local repo_name="$1"
   local fork_repo="$org/$repo_name"
@@ -377,6 +401,7 @@ process_repo() {
   build_manifest "$repo_dir" "$tag" "$version"
   output="$(find_output "$repo_dir" "$repo_name")"
   mv -f "$output" "$archive_path"
+  verify_archive_signatures "$archive_path"
 
   git -C "$repo_dir" push origin "HEAD:$upstream_default" --force-with-lease
   git -C "$repo_dir" push origin "+refs/tags/$tag:refs/tags/$tag"
