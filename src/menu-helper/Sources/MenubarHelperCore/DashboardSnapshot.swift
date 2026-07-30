@@ -372,7 +372,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         case .readOnlyAndUpdates:
             classification == .readOnly || classification == .update
         case .fullExceptSecretDumps:
-            classification != .secretDump
+            classification != .secretDump && classification != .unknown
         case .fullIncludingSecretDumps:
             true
         }

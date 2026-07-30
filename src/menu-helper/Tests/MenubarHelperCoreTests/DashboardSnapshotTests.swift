@@ -404,7 +404,7 @@ func protectionPolicyMatrix(
     case .readOnly: classification == .readOnly
     case .readOnlyAndLocalWrites: classification == .readOnly || classification == .localWrite
     case .readOnlyAndUpdates: classification == .readOnly || classification == .update
-    case .fullExceptSecretDumps: classification != .secretDump
+    case .fullExceptSecretDumps: classification != .secretDump && classification != .unknown
     case .fullIncludingSecretDumps: true
     }
     #expect(protection.allows(classification) == expected)

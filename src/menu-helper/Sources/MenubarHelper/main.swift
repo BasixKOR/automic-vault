@@ -4204,7 +4204,7 @@ private func runApprovalSelfCheck() -> Int32 {
           secretGateProtectionAllows(.readOnlyAndUpdates, classification: .update),
           !secretGateProtectionAllows(.readOnlyAndUpdates, classification: .mutating),
           !secretGateProtectionAllows(.fullExceptSecretDumps, classification: .secretDump),
-          secretGateProtectionAllows(.fullExceptSecretDumps, classification: .unknown)
+          !secretGateProtectionAllows(.fullExceptSecretDumps, classification: .unknown)
     else { return 1 }
 
     let brewSigning = SigningInfo(identifier: "com.automicvault.av-brew-stub", teamIdentifier: "TEAM")
