@@ -479,7 +479,7 @@ fn caller() -> Result<Caller, String> {
         configured_cask_uid(Path::new(CASK_USER_UID), euid, unsafe { libc::getegid() })?;
     if uid != configured {
         return Err(
-            "casks must be invoked directly by the user configured by `sudo av harden brew`".into(),
+            "ownership transfers must be invoked directly by the user configured by `sudo av harden brew`".into(),
         );
     }
     let entry = unsafe { libc::getpwuid(uid) };
@@ -707,7 +707,7 @@ fn completion_ownership_command(caller: &Caller, paths: &[PathBuf]) -> Command {
     let owner = format!("{}:{}", caller.uid, caller.gid);
     let mut command = Command::new("/usr/bin/sudo");
     command
-        .args(["--", "/usr/sbin/chown", "-P", "-h", "-n", "--", &owner])
+        .args(["--", "/usr/sbin/chown", "-h", "-n", "--", &owner])
         .args(paths)
         .env_clear()
         .envs(stub_env([]));
@@ -1302,7 +1302,6 @@ mod tests {
             [
                 "--",
                 "/usr/sbin/chown",
-                "-P",
                 "-h",
                 "-n",
                 "--",

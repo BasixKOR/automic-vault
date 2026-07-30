@@ -155,7 +155,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     write_cask_user_uid(&prefix.join(CASK_USER_UID_FILE), source_user.uid)?;
     remove_legacy_cask_access(&prefix, &source_user.name)?;
     chown_recursive(&prefix, uid, gid)?;
-    configure_zsh_completion_access(&prefix, &source_user, uid)?;
+    configure_zsh_completion_access(&prefix, &source_user)?;
     migration?;
     install_stub(&source, &stub, uid, gid)?;
     writeln!(
@@ -667,11 +667,7 @@ fn chown_recursive(prefix: &Path, uid: u32, gid: u32) -> Result<(), String> {
     chown_tree(prefix, &skipped, uid, gid)
 }
 
-fn configure_zsh_completion_access(
-    prefix: &Path,
-    source_user: &SourceUser,
-    automic_uid: u32,
-) -> Result<(), String> {
+fn configure_zsh_completion_access(prefix: &Path, source_user: &SourceUser) -> Result<(), String> {
     let acl = format!(
         "user:{AUTOMIC_USER} allow read,write,execute,delete,append,readattr,writeattr,readextattr,writeextattr,readsecurity"
     );
@@ -702,7 +698,7 @@ fn configure_zsh_completion_access(
                 ));
             }
         }
-        if metadata.uid() == automic_uid || metadata.uid() == 0 {
+        if metadata.uid() != source_user.uid || metadata.gid() != source_user.gid {
             lchown(&path, Some(source_user.uid), Some(source_user.gid))
                 .map_err(|err| format!("failed to chown {}: {err}", path.display()))?;
         }

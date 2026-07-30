@@ -2,7 +2,8 @@
 
 ## Summary
 
-- Only `brew` can alter `/opt/homebrew`
+- Only `brew` can alter `/opt/homebrew`, except for the user-owned zsh
+  completions described below.
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
