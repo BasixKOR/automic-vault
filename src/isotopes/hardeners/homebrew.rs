@@ -17,10 +17,11 @@ const BREW_TARGET: &str = "/opt/homebrew/bin/brew";
 const BREW_STUB: &str = "/usr/local/bin/brew";
 const APP_BREW_STUB: &str = "/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub";
 const CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
+const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V4";
-const STUB_VERSION: u32 = 4;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V5";
+const STUB_VERSION: u32 = 5;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -31,6 +32,7 @@ unsafe extern "C" {
 struct SourceUser {
     name: String,
     uid: u32,
+    gid: u32,
     home: PathBuf,
 }
 
@@ -105,6 +107,18 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         source_user.name
     )
     .ok();
+    writeln!(
+        stdout,
+        "├─ keep zsh completions owned by {} for shell compatibility",
+        source_user.name
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "│  warning: software running as {} can modify code loaded by zsh",
+        source_user.name
+    )
+    .ok();
     writeln!(stdout, "├─ install {}", stub.display()).ok();
     writeln!(stdout, "│").ok();
     if !confirm(stdout, yes)? {
@@ -141,6 +155,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     write_cask_user_uid(&prefix.join(CASK_USER_UID_FILE), source_user.uid)?;
     remove_legacy_cask_access(&prefix, &source_user.name)?;
     chown_recursive(&prefix, uid, gid)?;
+    configure_zsh_completion_access(&prefix, &source_user, uid)?;
     migration?;
     install_stub(&source, &stub, uid, gid)?;
     writeln!(
@@ -652,6 +667,89 @@ fn chown_recursive(prefix: &Path, uid: u32, gid: u32) -> Result<(), String> {
     chown_tree(prefix, &skipped, uid, gid)
 }
 
+fn configure_zsh_completion_access(
+    prefix: &Path,
+    source_user: &SourceUser,
+    automic_uid: u32,
+) -> Result<(), String> {
+    let acl = format!(
+        "user:{AUTOMIC_USER} allow read,write,execute,delete,append,readattr,writeattr,readextattr,writeextattr,readsecurity"
+    );
+    let inherited_acl = format!("{acl},file_inherit,directory_inherit");
+    for path in zsh_completion_paths(prefix)? {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if !metadata.file_type().is_symlink() {
+            let entry = if metadata.file_type().is_dir() {
+                &inherited_acl
+            } else {
+                &acl
+            };
+            let _ = Command::new("/bin/chmod")
+                .args(["-a", entry])
+                .arg(&path)
+                .stderr(Stdio::null())
+                .status();
+            let status = Command::new("/bin/chmod")
+                .args(["+a", entry])
+                .arg(&path)
+                .status()
+                .map_err(|err| format!("failed to grant Homebrew zsh completion access: {err}"))?;
+            if !status.success() {
+                return Err(format!(
+                    "failed to grant {AUTOMIC_USER} access to {}",
+                    path.display()
+                ));
+            }
+        }
+        if metadata.uid() == automic_uid || metadata.uid() == 0 {
+            lchown(&path, Some(source_user.uid), Some(source_user.gid))
+                .map_err(|err| format!("failed to chown {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn zsh_completion_paths(prefix: &Path) -> Result<Vec<PathBuf>, String> {
+    let functions = prefix.join(ZSH_COMPLETIONS);
+    if !functions.is_dir() {
+        return Ok(Vec::new());
+    }
+    let canonical_prefix = fs::canonicalize(prefix)
+        .map_err(|err| format!("failed to resolve {}: {err}", prefix.display()))?;
+    let mut paths = std::collections::BTreeSet::from([prefix.join("share/zsh"), functions.clone()]);
+    for entry in fs::read_dir(&functions)
+        .map_err(|err| format!("failed to read {}: {err}", functions.display()))?
+    {
+        let entry =
+            entry.map_err(|err| format!("failed to read {}: {err}", functions.display()))?;
+        if !entry.file_name().as_encoded_bytes().starts_with(b"_") {
+            continue;
+        }
+        let path = entry.path();
+        paths.insert(path.clone());
+        let target = match fs::canonicalize(&path) {
+            Ok(target) => target,
+            Err(err)
+                if err.kind() == io::ErrorKind::NotFound
+                    && entry.file_type().is_ok_and(|kind| kind.is_symlink()) =>
+            {
+                continue;
+            }
+            Err(err) => return Err(format!("failed to resolve {}: {err}", path.display())),
+        };
+        if !target.starts_with(&canonical_prefix) {
+            return Err(format!(
+                "zsh completion {} resolves outside {}",
+                path.display(),
+                prefix.display()
+            ));
+        }
+        paths.insert(target);
+    }
+    Ok(paths.into_iter().collect())
+}
+
 fn chown_tree(path: &Path, skipped: &Path, uid: u32, gid: u32) -> Result<(), String> {
     if path == skipped {
         return Ok(());
@@ -693,6 +791,15 @@ fn source_user() -> Result<SourceUser, String> {
                 .ok()
         })
         .ok_or_else(|| format!("cannot resolve UID for cask user `{user}`"))?;
+    let gid = test_u32("AUTOMIC_VAULT_TEST_BREW_USER_GID")
+        .or_else(|| {
+            dscl_read(&format!("/Users/{user}"), "PrimaryGroupID")
+                .ok()
+                .flatten()?
+                .parse()
+                .ok()
+        })
+        .ok_or_else(|| format!("cannot resolve primary GID for cask user `{user}`"))?;
     let home = crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_USER_HOME")
         .map(PathBuf::from)
         .or_else(|| {
@@ -708,6 +815,7 @@ fn source_user() -> Result<SourceUser, String> {
     Ok(SourceUser {
         name: user,
         uid,
+        gid,
         home,
     })
 }
@@ -1109,7 +1217,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V4 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V6 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
@@ -1265,6 +1373,7 @@ mod tests {
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER", "alice");
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_UID", "501");
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_GID", "20");
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_HOME", "/Users/alice");
         }
 
@@ -1273,6 +1382,7 @@ mod tests {
             SourceUser {
                 name: "alice".into(),
                 uid: 501,
+                gid: 20,
                 home: "/Users/alice".into(),
             }
         );
@@ -1294,8 +1404,45 @@ mod tests {
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_USER");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_USER_UID");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_USER_GID");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_USER_HOME");
         }
+    }
+
+    #[test]
+    fn zsh_completion_paths_include_links_and_in_prefix_targets() {
+        let prefix = temp_path("brew-zsh-completions");
+        let functions = prefix.join(ZSH_COMPLETIONS);
+        let target = prefix.join("Cellar/tool/1/share/zsh/site-functions/_tool");
+        fs::create_dir_all(&functions).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "#compdef tool").unwrap();
+        std::os::unix::fs::symlink(&target, functions.join("_tool")).unwrap();
+        fs::write(functions.join("not-loaded"), "ignored").unwrap();
+
+        let paths = zsh_completion_paths(&prefix).unwrap();
+
+        assert!(paths.contains(&prefix.join("share/zsh")));
+        assert!(paths.contains(&functions));
+        assert!(paths.contains(&prefix.join(ZSH_COMPLETIONS).join("_tool")));
+        assert!(paths.contains(&fs::canonicalize(&target).unwrap()));
+        assert!(!paths.contains(&prefix.join(ZSH_COMPLETIONS).join("not-loaded")));
+        fs::remove_dir_all(prefix).unwrap();
+    }
+
+    #[test]
+    fn zsh_completion_paths_reject_targets_outside_homebrew() {
+        let prefix = temp_path("brew-zsh-completion-escape");
+        let outside = temp_path("brew-zsh-completion-outside");
+        let functions = prefix.join(ZSH_COMPLETIONS);
+        fs::create_dir_all(&functions).unwrap();
+        fs::write(&outside, "unsafe").unwrap();
+        std::os::unix::fs::symlink(&outside, functions.join("_escape")).unwrap();
+
+        assert!(zsh_completion_paths(&prefix).is_err());
+
+        fs::remove_dir_all(prefix).unwrap();
+        fs::remove_file(outside).unwrap();
     }
 
     #[test]
