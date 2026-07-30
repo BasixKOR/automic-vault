@@ -2222,8 +2222,19 @@ private func classifySecretGateRequest(
     case "brew":
         return brewRequestClassification(request.args)
     default:
-        return .unknown
+        return genericSecretGateRequestClassification(
+            gateID: gateID,
+            arguments: secretGateCommandWords(request)
+        )
     }
+}
+
+private func secretGateCommandWords(_ request: ApprovalRequest) -> [String] {
+    guard let scriptPath = resolvedShebangScriptPath(request) else { return request.args }
+    guard let scriptIndex = request.args.firstIndex(where: {
+        standardizedPath($0, cwd: request.cwd) == scriptPath
+    }) else { return [] }
+    return Array(request.args.dropFirst(scriptIndex + 1))
 }
 
 private func awsRequestMayUseLongLivedCredentials(_ request: ApprovalRequest) -> Bool {
@@ -4017,6 +4028,23 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    func flyRequest(_ arguments: [String]) -> ApprovalRequest {
+        ApprovalRequest(
+            op: "inject",
+            keys: ["FLY_ACCESS_TOKEN"],
+            target: "/bin/sh",
+            args: ["/usr/local/bin/fly"] + arguments,
+            cwd: "/tmp",
+            replaceExistingEnv: false,
+            allowMissingKeys: true,
+            envConflicts: [],
+            shebangScript: "/usr/local/bin/fly",
+            scriptData: nil,
+            tool: nil,
+            title: nil,
+            detail: nil
+        )
+    }
     guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
@@ -4041,7 +4069,10 @@ private func runApprovalSelfCheck() -> Int32 {
               signing: SigningInfo(identifier: "gh", teamIdentifier: "TEAM"),
               hardeners: [stripeMetadata]
           ) == nil,
-          classifySecretGateRequest(gateID: "stripe", request: stripeRequest) == .unknown,
+          classifySecretGateRequest(gateID: "stripe", request: stripeRequest) == .readOnly,
+          classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["apps", "list"])) == .readOnly,
+          classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["deploy"])) == .mutating,
+          classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["auth", "token"])) == .secretDump,
           isTrustedStripeCaller(
               path: "/opt/homebrew/opt/stripe-cli/bin/stripe",
               signing: stripeSigning
