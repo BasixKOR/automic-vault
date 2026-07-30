@@ -32,7 +32,7 @@ modes:
   $ av --version                          # print version
 
 more:
-  $ open https://www.automicvault.com";
+  $ open https://www.automicvault.com/docs/";
 
 const INSTALL_REVISION: u32 = 6;
 
