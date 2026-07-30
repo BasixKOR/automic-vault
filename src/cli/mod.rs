@@ -50,7 +50,13 @@ where
     W: Write,
     E: Write,
 {
-    run_with_style(args, stdout, stderr, scan::Style::plain())
+    run_with_style(
+        args,
+        stdout,
+        stderr,
+        scan::Style::plain(),
+        scan::Style::plain(),
+    )
 }
 
 pub fn run_terminal<I>(args: I) -> i32
@@ -59,11 +65,24 @@ where
 {
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
-    let color = stdout.is_terminal() && color_enabled();
-    run_with_style(args, &mut stdout, &mut stderr, scan::Style { color })
+    let terminal = stdout.is_terminal();
+    let color = terminal && color_enabled();
+    run_with_style(
+        args,
+        &mut stdout,
+        &mut stderr,
+        scan::Style { color },
+        scan::Style { color: terminal },
+    )
 }
 
-fn run_with_style<I, W, E>(args: I, stdout: &mut W, stderr: &mut E, style: scan::Style) -> i32
+fn run_with_style<I, W, E>(
+    args: I,
+    stdout: &mut W,
+    stderr: &mut E,
+    style: scan::Style,
+    help_style: scan::Style,
+) -> i32
 where
     I: IntoIterator<Item = OsString>,
     W: Write,
@@ -76,7 +95,7 @@ where
         return 2;
     };
     if command == "help" || command == "--help" || command == "-h" {
-        write_help(stdout, style);
+        write_help(stdout, help_style);
         return 0;
     }
     if command == "--version" || command == "-V" {
@@ -585,6 +604,21 @@ mod tests {
         assert!(stdout.contains("\x1b[2m[\x1b[0m--show-all\x1b[2m|\x1b[0m--json\x1b[2m]\x1b[0m"));
         assert!(stdout.contains("\x1b[2m<\x1b[0mtool\x1b[2m>\x1b[0m"));
         assert!(stdout.contains("\x1b[2m# audit secrets and configuration\x1b[0m"));
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            run_with_style(
+                ["av", "help"].map(OsString::from),
+                &mut stdout,
+                &mut stderr,
+                scan::Style::plain(),
+                scan::Style { color: true },
+            ),
+            0
+        );
+        assert!(stdout.windows(4).any(|bytes| bytes == b"\x1b[2m"));
+        assert!(stderr.is_empty());
     }
 
     #[test]
