@@ -12,17 +12,27 @@ mod shell_secrets;
 use crate::isotopes::hardeners;
 
 const USAGE: &str = "\
-Usage:
-  av scan [--show-all | --json]
-  av doctor [COMMAND] [--json]
-  av detectors --json
-  av hardeners --json
-  av bless PATH
-  av inject +KEY... [--] COMMAND
-  av inject -- COMMAND
-  av save KEY
-  av harden
-  av open [--secret-gate ID]";
+usage:
+  av <command> [options]
+
+commands:
+  $ av scan [--show-all|--json]          # audit secrets and configuration
+  $ av doctor [<tool>] [--json]          # verify installed hardening
+  $ av detectors --json                  # print detector metadata
+  $ av hardeners --json                  # print hardener metadata
+  $ av bless <path>                       # approve a script for secret access
+  $ av inject +KEY... [--] <command>      # inject secrets into a command
+  $ av inject -- <command>                # run an approved script
+  $ av save <key>                         # store a secret
+  $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
+  $ av open [--secret-gate <id>]          # open the Automic Vault app
+
+modes:
+  $ av help                               # show this help
+  $ av --version                          # print version
+
+more:
+  $ open https://www.automicvault.com";
 
 const INSTALL_REVISION: u32 = 6;
 
@@ -124,6 +134,11 @@ where
             let Some((target, yes)) = parse_harden_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");
                 return 2;
+            };
+            let target = if target == "fly" {
+                OsString::from("flyctl")
+            } else {
+                target
             };
             if target == "aws" {
                 let result = hardeners::aws_cli::run_aws(stdout, yes);
@@ -413,6 +428,32 @@ mod tests {
     }
 
     #[test]
+    fn harden_fly_aliases_flyctl() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let targets = std::env::temp_dir().join(format!("av-cli-fly-{}", std::process::id()));
+        std::fs::create_dir_all(&targets).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &targets);
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "fly"]);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR");
+        }
+        std::fs::remove_dir_all(&targets).unwrap();
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            format!(
+                "av harden: flyctl is not installed at {}\n",
+                targets.join("flyctl").display()
+            )
+        );
+    }
+
+    #[test]
     fn harden_sudo_prints_touch_id_command() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let pam = std::env::temp_dir().join(format!("av-cli-sudo-{}", std::process::id()));
@@ -489,17 +530,18 @@ mod tests {
     }
 
     #[test]
-    fn help_prints_one_command_per_line() {
+    fn help_describes_commands_and_required_arguments() {
         for help in ["help", "--help"] {
             let (code, stdout, stderr) = run_args(&["av", help]);
 
             assert_eq!(code, 0);
             assert_eq!(stdout, format!("{USAGE}\n"));
             assert_eq!(stderr, "");
-            assert!(stdout.contains("\n  av harden\n"));
-            assert!(!stdout.contains("av harden [--yes]"));
-            assert!(stdout.contains("\n  av open [--secret-gate ID]\n"));
-            assert!(!stdout.contains("av help"));
+            assert!(stdout.contains("\ncommands:\n"));
+            assert!(stdout.contains("$ av harden <tool> [-y|--yes]"));
+            assert!(stdout.contains("$ av open [--secret-gate <id>]"));
+            assert!(stdout.contains("\nmodes:\n"));
+            assert!(stdout.contains("$ av help"));
             assert!(!stdout.contains("__version"));
         }
     }
