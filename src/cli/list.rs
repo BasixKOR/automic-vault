@@ -7,7 +7,8 @@ pub(super) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn 
         return 2;
     }
     match crate::secrets::list_secret_names() {
-        Ok(names) => {
+        Ok(mut names) => {
+            names.sort();
             for name in names {
                 let _ = writeln!(stdout, "{name}");
             }
