@@ -27,7 +27,7 @@ done
 
 ROOT="$(cd "$(dirname "${AV_SCRIPT_PATH:-$0}")/.." && pwd)"
 REPOSITORY="automic-vault/automic-vault"
-TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../isotopes}/homebrew-isotopes"
+TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../homebrew-isotopes}"
 CURRENT_VERSION="$(
   awk -F '"' '
     /^\[package\]/ { package = 1; next }
