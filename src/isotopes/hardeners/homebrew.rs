@@ -686,15 +686,16 @@ fn configure_zsh_completion_access(prefix: &Path, source_user: &SourceUser) -> R
                 .arg(&path)
                 .stderr(Stdio::null())
                 .status();
-            let status = Command::new("/bin/chmod")
+            let output = Command::new("/bin/chmod")
                 .args(["+a", entry])
                 .arg(&path)
-                .status()
+                .output()
                 .map_err(|err| format!("failed to grant Homebrew zsh completion access: {err}"))?;
-            if !status.success() {
+            if !output.status.success() {
                 return Err(format!(
-                    "failed to grant {AUTOMIC_USER} access to {}",
-                    path.display()
+                    "failed to grant {AUTOMIC_USER} access to {}: {}",
+                    path.display(),
+                    String::from_utf8_lossy(&output.stderr).trim()
                 ));
             }
         }

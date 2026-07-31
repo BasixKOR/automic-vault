@@ -49,7 +49,8 @@ fn main() {
     let status = command
         .status()
         .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
-    let completion_result = repair_zsh_completion_ownership(Path::new(PREFIX));
+    let completion_result =
+        repair_zsh_completion_ownership(Path::new(PREFIX), Path::new(CASK_USER_UID));
     if !status.success() {
         if let Err(err) = completion_result {
             eprintln!("av-brew-stub: {err}");
@@ -590,13 +591,16 @@ fn ownership_command(post_install: &CaskPostInstall) -> Command {
     command
 }
 
-fn repair_zsh_completion_ownership(prefix: &Path) -> Result<(), String> {
+fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Result<(), String> {
+    let paths = zsh_completion_paths(prefix)?;
+    if paths.is_empty() {
+        return Ok(());
+    }
     let automic_uid = unsafe { libc::geteuid() };
-    let configured_uid = configured_cask_uid(Path::new(CASK_USER_UID), automic_uid, unsafe {
-        libc::getegid()
-    })?;
+    let configured_uid =
+        configured_cask_uid(configured_user, automic_uid, unsafe { libc::getegid() })?;
     let mut repair = Vec::new();
-    for path in zsh_completion_paths(prefix)? {
+    for path in paths {
         let metadata = fs::symlink_metadata(&path)
             .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
         if metadata.uid() == configured_uid || metadata.uid() == 0 {
@@ -1283,6 +1287,13 @@ mod tests {
 
         fs::remove_dir_all(prefix).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn missing_zsh_completions_need_no_configured_user() {
+        let prefix = temp_path("no-zsh-completions");
+
+        assert!(repair_zsh_completion_ownership(&prefix, Path::new("/missing")).is_ok());
     }
 
     #[test]
