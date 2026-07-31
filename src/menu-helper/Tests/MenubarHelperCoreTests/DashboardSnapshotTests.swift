@@ -334,6 +334,35 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(loadStoredSecret(account: account, service: service) == "not json")
 }
 
+@Test func secretNameAccessAppsArePersistedSortedAndRevocable() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "name-access.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let zeta = BlessedScriptLauncher(bundleIdentifier: "com.example.zeta", requirement: "zeta")
+    let alpha = BlessedScriptLauncher(bundleIdentifier: "com.example.alpha", requirement: "alpha")
+
+    #expect(allowSecretNameAccess(zeta, service: service, account: account) == errSecSuccess)
+    #expect(allowSecretNameAccess(alpha, service: service, account: account) == errSecSuccess)
+    #expect(loadSecretNameAccessApps(service: service, account: account) == [alpha, zeta])
+    #expect(keychainAccessibility(account: account, service: service) == kSecAttrAccessibleAfterFirstUnlock as String)
+    #expect(removeSecretNameAccess(alpha, service: service, account: account) == errSecSuccess)
+    #expect(loadSecretNameAccessApps(service: service, account: account) == [zeta])
+}
+
+@Test func malformedSecretNameAccessPolicyFailsClosedAndIsNotReplaced() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "name-access.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    #expect(saveStoredSecret(account: account, value: "not json", service: service) == errSecSuccess)
+
+    let app = BlessedScriptLauncher(bundleIdentifier: "com.example.app", requirement: "requirement")
+    #expect(loadSecretNameAccessApps(service: service, account: account).isEmpty)
+    #expect(allowSecretNameAccess(app, service: service, account: account) == errSecDecode)
+    #expect(loadStoredSecret(account: account, service: service) == "not json")
+}
+
 @Test func secretlessGateNormalizesLegacyFullPolicy() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"
