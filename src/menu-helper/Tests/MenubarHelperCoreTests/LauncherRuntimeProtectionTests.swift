@@ -32,3 +32,13 @@ import Testing
         enabledEntitlements: unsafe
     ) == .unsafeEntitlements(unsafe.sorted()))
 }
+
+@Test func signingInformationUsesOnlyEnabledRuntimeExceptions() {
+    #expect(launcherRuntimeProtection(signingInformation: [
+        kSecCodeInfoFlags: SecCodeSignatureFlags.runtime.rawValue,
+        kSecCodeInfoEntitlementsDict: [
+            "com.apple.security.cs.allow-dyld-environment-variables": false,
+            "com.apple.security.cs.disable-library-validation": true,
+        ],
+    ]) == .unsafeEntitlements(["com.apple.security.cs.disable-library-validation"]))
+}

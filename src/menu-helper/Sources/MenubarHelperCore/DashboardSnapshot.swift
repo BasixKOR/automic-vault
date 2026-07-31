@@ -440,6 +440,20 @@ public func launcherRuntimeProtection(
     return unsafe.isEmpty ? .hardened : .unsafeEntitlements(unsafe)
 }
 
+public func launcherRuntimeProtection(
+    signingInformation: [CFString: Any]
+) -> LauncherRuntimeProtection {
+    let signatureFlags = (signingInformation[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
+    let entitlements = signingInformation[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
+    let enabledEntitlements = Set(entitlements.compactMap { key, value in
+        (value as? NSNumber)?.boolValue == true ? key : nil
+    })
+    return launcherRuntimeProtection(
+        signatureFlags: signatureFlags,
+        enabledEntitlements: enabledEntitlements
+    )
+}
+
 public struct SecretGate: Equatable, Identifiable, Sendable {
     public let id: String
     public let keyPatterns: [String]

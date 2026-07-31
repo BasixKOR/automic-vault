@@ -555,7 +555,7 @@ final class DashboardModel: ObservableObject {
                 return
             }
             guard let signing = appBundleSigning(url) else {
-                self.errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
+                self.errorMessage = "Could not securely verify the code signature for \(url.lastPathComponent)."
                 return
             }
             guard signing.runtimeProtection.allowsSecretGateAccess else {
@@ -2492,18 +2492,10 @@ private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
     guard let requirementText = requirementText(requirement) else {
         return nil
     }
-    let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
-    let entitlements = dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
-    let enabledEntitlements = Set(entitlements.compactMap { key, value in
-        (value as? NSNumber)?.boolValue == true ? key : nil
-    })
     return AppBundleSigning(
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         requirement: requirementText,
-        runtimeProtection: launcherRuntimeProtection(
-            signatureFlags: signatureFlags,
-            enabledEntitlements: enabledEntitlements
-        )
+        runtimeProtection: launcherRuntimeProtection(signingInformation: dictionary)
     )
 }
 

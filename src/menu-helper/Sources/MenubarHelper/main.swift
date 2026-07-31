@@ -3080,15 +3080,7 @@ private struct StaticSigningInfo {
 }
 
 private func runtimeProtection(_ dictionary: [CFString: Any]) -> LauncherRuntimeProtection {
-    let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
-    let entitlements = dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
-    let enabledEntitlements = Set(entitlements.compactMap { key, value in
-        (value as? NSNumber)?.boolValue == true ? key : nil
-    })
-    return launcherRuntimeProtection(
-        signatureFlags: signatureFlags,
-        enabledEntitlements: enabledEntitlements
-    )
+    launcherRuntimeProtection(signingInformation: dictionary)
 }
 
 private struct LauncherAppVerificationFailure {
