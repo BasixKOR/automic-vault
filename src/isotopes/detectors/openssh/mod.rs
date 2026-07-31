@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 const MAX_KEY_BYTES: u64 = 1024 * 1024;
 const SECURITY_KEY_REASON: &str = "SSH security-key handle is stored without passphrase encryption";
-const SECURITY_KEY_SOLUTION: &str = "Add a passphrase if the key handle and authenticator need independent protection; the signing key remains on the authenticator.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum UnencryptedPrivateKeyKind {
@@ -368,9 +367,6 @@ pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     let mut findings = super::radioisotope::findings("openssh", install_insecurity_reasons, home);
     for finding in &mut findings {
         finding.severity = finding_severity(&finding.explanation);
-        if finding.severity == "medium" {
-            finding.solution = SECURITY_KEY_SOLUTION.to_string();
-        }
     }
     findings
 }

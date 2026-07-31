@@ -3,7 +3,7 @@
 ## Trigger Conditions
 
 - SSH private key is stored without passphrase encryption.
-- FIDO SSH key handle is stored without passphrase encryption (medium severity).
+- SSH security-key handle is stored without passphrase encryption (medium severity).
 
 ## Sensitive Files
 
@@ -13,10 +13,10 @@
 
 ## Why This is not Yet Hardened
 
-SSH private keys are long-lived identity files used by `ssh`, agents, Git, and
-other clients. Moving them would break those shared paths. Encrypt the key with
-a passphrase and let Apple's OpenSSH integration store the passphrase in the
-macOS Keychain.
+Encrypt software SSH private keys with a passphrase and let Apple's OpenSSH
+integration store it in the macOS Keychain. For FIDO security-key handles, a
+passphrase is optional defense in depth because the signing key remains on the
+authenticator.
 
 FIDO `ecdsa-sk` and `ed25519-sk` files contain a key handle rather than the
 hardware-bound signing key, so an unencrypted handle is reported at medium
