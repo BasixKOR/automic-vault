@@ -6,6 +6,8 @@ import Security
 public let automicVaultKeychainService = "com.automicvault.isotope"
 public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
+public let secretNameAccessKeychainService = "com.automicvault.secret-name-access"
+public let secretNameAccessKeychainAccount = "SecretNameAccessV1"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 public let accessRequestLogKeychainService = "com.automicvault.access-log"
 private let accessRequestLogLock = NSLock()
@@ -18,6 +20,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var hardeners: [HardenerMetadata]
     public var secretGates: [SecretGate]
     public var blessedScripts: [BlessedScript]
+    public var secretNameAccessApps: [BlessedScriptLauncher]
     public var secrets: [StoredSecret]
     public var accessRequests: [AccessRequestRecord]
     public var doctorIssues: [DoctorIssue]
@@ -29,6 +32,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [HardenerMetadata] = [],
         secretGates: [SecretGate],
         blessedScripts: [BlessedScript] = [],
+        secretNameAccessApps: [BlessedScriptLauncher] = [],
         secrets: [StoredSecret],
         accessRequests: [AccessRequestRecord] = [],
         doctorIssues: [DoctorIssue] = []
@@ -39,6 +43,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         self.hardeners = hardeners
         self.secretGates = secretGates
         self.blessedScripts = blessedScripts
+        self.secretNameAccessApps = secretNameAccessApps
         self.secrets = secrets
         self.accessRequests = accessRequests
         self.doctorIssues = doctorIssues
@@ -51,6 +56,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [],
         secretGates: [],
         blessedScripts: [],
+        secretNameAccessApps: [],
         secrets: [],
         accessRequests: [],
         doctorIssues: []
@@ -85,6 +91,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             hardeners: hardenerMetadata,
             secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
             blessedScripts: loadBlessedScripts(),
+            secretNameAccessApps: loadSecretNameAccessApps(),
             secrets: secrets,
             accessRequests: loadAccessRequestRecords(),
             doctorIssues: loadDoctorIssues(avExecutableURL: avExecutableURL)
@@ -906,6 +913,88 @@ private func setSecretGatePolicyRecord(
     return saveSecretGatePolicyRecords(records, service: service, account: account)
 }
 
+public func loadSecretNameAccessApps(
+    service: String = secretNameAccessKeychainService,
+    account: String = secretNameAccessKeychainAccount
+) -> [BlessedScriptLauncher] {
+    guard case .success(let apps) = loadSecretNameAccessAppsResult(service: service, account: account)
+    else { return [] }
+    return apps.sorted { $0.bundleIdentifier.localizedStandardCompare($1.bundleIdentifier) == .orderedAscending }
+}
+
+public func allowSecretNameAccess(
+    _ app: BlessedScriptLauncher,
+    service: String = secretNameAccessKeychainService,
+    account: String = secretNameAccessKeychainAccount
+) -> OSStatus {
+    var apps: [BlessedScriptLauncher]
+    switch loadSecretNameAccessAppsResult(service: service, account: account) {
+    case .success(let loaded): apps = loaded
+    case .failure(let status): return status
+    }
+    apps.removeAll { $0.requirement == app.requirement }
+    apps.append(app)
+    return saveSecretNameAccessApps(apps, service: service, account: account)
+}
+
+public func removeSecretNameAccess(
+    _ app: BlessedScriptLauncher,
+    service: String = secretNameAccessKeychainService,
+    account: String = secretNameAccessKeychainAccount
+) -> OSStatus {
+    let apps: [BlessedScriptLauncher]
+    switch loadSecretNameAccessAppsResult(service: service, account: account) {
+    case .success(let loaded): apps = loaded
+    case .failure(let status): return status
+    }
+    return saveSecretNameAccessApps(
+        apps.filter { $0.requirement != app.requirement },
+        service: service,
+        account: account
+    )
+}
+
+private enum SecretNameAccessAppsLoad {
+    case success([BlessedScriptLauncher])
+    case failure(OSStatus)
+}
+
+private func loadSecretNameAccessAppsResult(
+    service: String,
+    account: String
+) -> SecretNameAccessAppsLoad {
+    switch loadKeychainDataResult(service: service, account: account) {
+    case .notFound:
+        return .success([])
+    case .failure(let status):
+        return .failure(status)
+    case .success(let data):
+        guard let apps = try? JSONDecoder().decode([BlessedScriptLauncher].self, from: data)
+        else { return .failure(errSecDecode) }
+        return .success(apps)
+    }
+}
+
+private func saveSecretNameAccessApps(
+    _ apps: [BlessedScriptLauncher],
+    service: String,
+    account: String
+) -> OSStatus {
+    if apps.isEmpty {
+        let status = deleteStoredSecret(account: account, service: service)
+        return status == errSecItemNotFound ? errSecSuccess : status
+    }
+    guard let data = try? JSONEncoder().encode(apps.sorted {
+        $0.bundleIdentifier.localizedStandardCompare($1.bundleIdentifier) == .orderedAscending
+    }) else { return errSecParam }
+    return saveKeychainData(
+        data,
+        service: service,
+        account: account,
+        accessibility: .afterFirstUnlock
+    )
+}
+
 public func loadAccessRequestRecords(
     defaults: UserDefaults? = nil,
     key: String = accessRequestLogDefaultsKey,
@@ -1138,11 +1227,14 @@ public func migrateBackgroundKeychainItems(
     policyService: String = secretGatePoliciesKeychainService,
     policyAccount: String = secretGatePoliciesKeychainAccount,
     accessLogService: String = accessRequestLogKeychainService,
-    accessLogAccount: String = accessRequestLogDefaultsKey
+    accessLogAccount: String = accessRequestLogDefaultsKey,
+    secretNameAccessService: String = secretNameAccessKeychainService,
+    secretNameAccessAccount: String = secretNameAccessKeychainAccount
 ) -> OSStatus {
     for (service, account) in [
         (policyService, policyAccount),
         (accessLogService, accessLogAccount),
+        (secretNameAccessService, secretNameAccessAccount),
     ] {
         let status = setKeychainAccessibility(.afterFirstUnlock, service: service, account: account)
         if status != errSecSuccess && status != errSecItemNotFound {

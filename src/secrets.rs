@@ -2,6 +2,11 @@ use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 
+struct XpcReply {
+    value: Option<String>,
+    names: Vec<String>,
+}
+
 pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
     if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
@@ -10,7 +15,7 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
         return std::fs::write(&path, value)
             .map_err(|err| format!("failed to write {}: {err}", path.display()));
     }
-    xpc_request("save", b"key\0", account, Some((b"value\0", value))).map(|_| ())
+    xpc_request("save", Some((b"key\0", account)), Some((b"value\0", value))).map(|_| ())
 }
 
 pub(crate) fn load_secret(account: &str) -> Result<String, String> {
@@ -19,21 +24,39 @@ pub(crate) fn load_secret(account: &str) -> Result<String, String> {
         return std::fs::read_to_string(&path)
             .map_err(|err| format!("failed to read {}: {err}", path.display()));
     }
-    xpc_request("load", b"key\0", account, None)?
+    xpc_request("load", Some((b"key\0", account)), None)?
+        .value
         .ok_or_else(|| format!("failed to load isotope key {account}"))
 }
 
 pub(crate) fn bless_script(path: &str) -> Result<(), String> {
-    xpc_request("bless", b"path\0", path, None).map(|_| ())
+    xpc_request("bless", Some((b"path\0", path)), None).map(|_| ())
+}
+
+pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        let mut names = std::fs::read_dir(dir)
+            .map_err(|err| format!("failed to list test keychain: {err}"))?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| entry.file_type().ok()?.is_file().then(|| entry.file_name()))
+            .filter_map(|name| name.into_string().ok())
+            .collect::<Vec<_>>();
+        names.sort();
+        return Ok(names);
+    }
+    let cwd = std::env::current_dir()
+        .map_err(|err| format!("failed to read current directory: {err}"))?
+        .to_string_lossy()
+        .into_owned();
+    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None)?.names)
 }
 
 #[cfg(target_os = "macos")]
 fn xpc_request(
     operation: &str,
-    field: &'static [u8],
-    field_value: &str,
+    field: Option<(&'static [u8], &str)>,
     extra: Option<(&'static [u8], &str)>,
-) -> Result<Option<String>, String> {
+) -> Result<XpcReply, String> {
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int, c_void};
 
@@ -41,6 +64,7 @@ fn xpc_request(
 
     unsafe extern "C" {
         static _xpc_type_error: u8;
+        static _xpc_type_array: u8;
         static _xpc_error_key_description: *const c_char;
 
         fn xpc_connection_create_mach_service(
@@ -59,6 +83,9 @@ fn xpc_request(
         fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
         fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
         fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
+        fn xpc_dictionary_get_value(xdict: XpcObject, key: *const c_char) -> XpcObject;
+        fn xpc_array_get_count(array: XpcObject) -> usize;
+        fn xpc_array_get_string(array: XpcObject, index: usize) -> *const c_char;
         fn xpc_get_type(object: XpcObject) -> *const c_void;
         fn xpc_release(object: XpcObject);
         fn xpc_connection_set_peer_code_signing_requirement(
@@ -105,7 +132,9 @@ fn xpc_request(
 
     unsafe {
         set_string(message, b"op\0", operation)?;
-        set_string(message, field, field_value)?;
+        if let Some((field, value)) = field {
+            set_string(message, field, value)?;
+        }
         if let Some((extra_field, value)) = extra {
             set_string(message, extra_field, value)?;
         }
@@ -139,11 +168,29 @@ fn xpc_request(
             }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
             let value = xpc_dictionary_get_string(reply, b"value\0".as_ptr().cast());
-            Ok((!value.is_null()).then(|| {
+            let value = (!value.is_null()).then(|| {
                 std::ffi::CStr::from_ptr(value)
                     .to_string_lossy()
                     .into_owned()
-            }))
+            });
+            let names = xpc_dictionary_get_value(reply, b"names\0".as_ptr().cast());
+            let names = if names.is_null()
+                || xpc_get_type(names) != std::ptr::addr_of!(_xpc_type_array).cast()
+            {
+                Vec::new()
+            } else {
+                (0..xpc_array_get_count(names))
+                    .filter_map(|index| {
+                        let name = xpc_array_get_string(names, index);
+                        (!name.is_null()).then(|| {
+                            std::ffi::CStr::from_ptr(name)
+                                .to_string_lossy()
+                                .into_owned()
+                        })
+                    })
+                    .collect()
+            };
+            Ok(XpcReply { value, names })
         } else {
             let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
             Err(if error.is_null() {
@@ -162,9 +209,8 @@ fn xpc_request(
 #[cfg(not(target_os = "macos"))]
 fn xpc_request(
     _operation: &str,
-    _field: &'static [u8],
-    _field_value: &str,
+    _field: Option<(&'static [u8], &str)>,
     _extra: Option<(&'static [u8], &str)>,
-) -> Result<Option<String>, String> {
+) -> Result<XpcReply, String> {
     Err("the Automic Vault menu bar approval service is only available on macOS".to_string())
 }

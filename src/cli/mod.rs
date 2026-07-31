@@ -4,6 +4,7 @@ use std::io::{IsTerminal, Write};
 mod bless;
 mod doctor;
 mod inject;
+mod list;
 mod open;
 mod save;
 mod scan;
@@ -23,6 +24,7 @@ commands:
   $ av bless <path>                       # approve a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
+  $ av list                               # list saved secret names
   $ av save <key>                         # store a secret
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
   $ av open [--secret-gate <id>]          # open the Automic Vault app
@@ -228,6 +230,7 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
+        Some("list") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {
             let Some(secret_gate) = parse_open_args(&rest) else {
@@ -584,6 +587,7 @@ mod tests {
             assert_eq!(stderr, "");
             assert!(stdout.contains("\ncommands:\n"));
             assert!(stdout.contains("$ av harden <tool> [-y|--yes]"));
+            assert!(stdout.contains("$ av list"));
             assert!(stdout.contains("$ av open [--secret-gate <id>]"));
             assert!(stdout.contains("\nmodes:\n"));
             assert!(stdout.contains("$ av help"));

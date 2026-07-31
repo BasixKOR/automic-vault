@@ -965,6 +965,7 @@ private struct TransientApprovalKey: Hashable {
 private enum ApprovalDecision: Equatable {
     case denied
     case approved
+    case alwaysApproved
 }
 
 @MainActor
@@ -1071,7 +1072,7 @@ private struct TransientApprovalCache {
         prune(now: now)
         let key = switch decision {
         case .denied: Key.denial(pid: key.pid, startUsec: key.startUsec)
-        case .approved: Key.approval(key)
+        case .approved, .alwaysApproved: Key.approval(key)
         }
         expirations[key] = now.addingTimeInterval(transientApprovalTTL)
     }
@@ -1248,6 +1249,8 @@ private final class ApprovalServer: @unchecked Sendable {
         switch op {
         case "inject", "keys", "authorize":
             handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
+        case "list" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleList(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
         case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, caller: mutationCaller)
         case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -1271,6 +1274,131 @@ private final class ApprovalServer: @unchecked Sendable {
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
+    }
+
+    private func handleList(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) {
+        guard let cwdPointer = xpc_dictionary_get_string(message, "cwd") else {
+            reply(peer, to: message, ok: false, error: "invalid list request")
+            return
+        }
+        let launcher = launcherIdentities(for: identity).first
+            ?? launcherIdentity(pid: pid, identity: identity)
+        let request = ApprovalRequest(
+            op: "list",
+            keys: [],
+            target: callerPath,
+            args: ["list"],
+            cwd: String(cString: cwdPointer),
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "av",
+            title: "List saved secret names?",
+            detail: "Secret values will remain hidden. The requesting app will receive every saved secret name."
+        )
+        if let launcher,
+           loadSecretNameAccessApps().contains(where: { $0.requirement == launcher.designatedRequirement })
+        {
+            discloseSecretNames(
+                request: request,
+                callerPath: callerPath,
+                launcher: launcher,
+                approvalSource: "Auto",
+                reason: "Always allowed in Settings",
+                peer: peer,
+                message: message
+            )
+            return
+        }
+        DispatchQueue.main.async {
+            guard self.canRequestHumanApproval() else {
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    approvalSource: "Auto",
+                    reason: "User session is inactive",
+                    launcher: launcher
+                ))
+                self.reply(peer, to: message, ok: false, error: "list denied while user session is inactive")
+                return
+            }
+            let decision = showApprovalAlert(
+                request: request,
+                callerPath: callerPath,
+                pid: pid,
+                signing: signing,
+                scriptApproval: nil,
+                launcher: launcher,
+                launcherFallbackPath: launcherFallbackPath(for: identity) ?? callerPath,
+                automaticApprovalExplanation: nil,
+                allowsPersistentApproval: launcher != nil
+            )
+            guard decision != .denied else {
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    approvalSource: "Manual",
+                    reason: "Denied in prompt",
+                    launcher: launcher
+                ))
+                self.reply(peer, to: message, ok: false, error: "list denied")
+                return
+            }
+            if decision == .alwaysApproved, let launcher {
+                let status = allowSecretNameAccess(BlessedScriptLauncher(
+                    bundleIdentifier: launcher.identifier,
+                    requirement: launcher.designatedRequirement
+                ))
+                guard status == errSecSuccess else {
+                    self.reply(peer, to: message, ok: false, error: "failed to save list access: \(status)")
+                    return
+                }
+            }
+            self.discloseSecretNames(
+                request: request,
+                callerPath: callerPath,
+                launcher: launcher,
+                approvalSource: "Manual",
+                reason: decision == .alwaysApproved ? "Always allowed in prompt" : "Allowed once in prompt",
+                peer: peer,
+                message: message
+            )
+        }
+    }
+
+    private func discloseSecretNames(
+        request: ApprovalRequest,
+        callerPath: String,
+        launcher: LauncherIdentity?,
+        approvalSource: String,
+        reason: String,
+        peer: xpc_connection_t,
+        message: xpc_object_t
+    ) {
+        let names = loadStoredSecrets().map(\.account)
+        guard onAccessRequest(accessRequestRecord(
+            request: request,
+            callerPath: callerPath,
+            decision: "Approved",
+            approvalSource: approvalSource,
+            reason: reason,
+            launcher: launcher
+        )) else {
+            reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+            return
+        }
+        reply(peer, to: message, ok: true, error: nil, names: names)
     }
 
     private func handleInject(
@@ -2035,6 +2163,7 @@ private final class ApprovalServer: @unchecked Sendable {
         error: String?,
         secrets: [String: String]? = nil,
         value: String? = nil,
+        names: [String]? = nil,
         humanApprovalDecision: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
@@ -2057,6 +2186,13 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if let value {
             value.withCString { xpc_dictionary_set_string(response, "value", $0) }
+        }
+        if let names {
+            let array = xpc_array_create_empty()
+            for name in names {
+                name.withCString { xpc_array_set_string(array, XPC_ARRAY_APPEND, $0) }
+            }
+            xpc_dictionary_set_value(response, "names", array)
         }
         if let humanApprovalDecision {
             humanApprovalDecision.withCString {
@@ -3177,7 +3313,8 @@ private func showApprovalAlert(
     scriptApproval: ScriptApproval?,
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
-    automaticApprovalExplanation: String?
+    automaticApprovalExplanation: String?,
+    allowsPersistentApproval: Bool = false
 ) -> ApprovalDecision {
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
@@ -3221,6 +3358,7 @@ private func showApprovalAlert(
         rootView: ApprovalPromptView(
             content: content,
             maximumHeight: maximumHeight,
+            allowsPersistentApproval: allowsPersistentApproval,
             decide: {
                 decision = $0
                 NSApp.stopModal()
@@ -3377,6 +3515,7 @@ private struct ApprovalPromptContent {
 private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     var maximumHeight: CGFloat? = nil
+    var allowsPersistentApproval = false
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
@@ -3466,9 +3605,18 @@ private struct ApprovalPromptView: View {
                     .tint(.blue)
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.defaultAction)
+                if allowsPersistentApproval {
+                    Button("Always Allow") { decide(.alwaysApproved) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(.blue)
+                        .frame(maxWidth: .infinity)
+                }
             }
 
-            Text("“Always Approve” for apps available in the Automic Vault app")
+            Text(allowsPersistentApproval
+                ? "Always Allow trusts this verified app until removed in Settings"
+                : "“Always Approve” for apps available in the Automic Vault app")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

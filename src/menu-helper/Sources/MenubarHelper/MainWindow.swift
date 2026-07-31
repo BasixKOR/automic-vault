@@ -187,6 +187,13 @@ final class DashboardModel: ObservableObject {
                     date: $0.date
                 )
             }
+        case .settings:
+            [DashboardItem(
+                id: "secret-name-access",
+                title: "Secret Name Access",
+                subtitle: "Apps allowed to run av list",
+                detail: "Manage verified apps that may list saved secret names without prompting."
+            )]
         }
         let query = searchQuery
         guard !query.isEmpty else { return base }
@@ -255,6 +262,7 @@ final class DashboardModel: ObservableObject {
                 } ?? 0)
         case .allSecrets: snapshot.secrets.count
         case .secretUsage: snapshot.accessRequests.count
+        case .settings: 0
         }
     }
 
@@ -353,6 +361,23 @@ final class DashboardModel: ObservableObject {
             )
             self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
         }
+    }
+
+    func addSecretNameAccessApp() {
+        chooseLauncherApp { [weak self] launcher in
+            guard let self, let launcher else { return }
+            self.finishPolicyUpdate(
+                allowSecretNameAccess(launcher),
+                error: "Could not allow \(launcher.bundleIdentifier)"
+            )
+        }
+    }
+
+    func removeSecretNameAccessApp(_ app: BlessedScriptLauncher) {
+        finishPolicyUpdate(
+            removeSecretNameAccess(app),
+            error: "Could not remove \(app.bundleIdentifier)"
+        )
     }
 
     func removeLauncher(_ launcher: BlessedScriptLauncher, from script: BlessedScript) {
@@ -968,6 +993,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case allSecrets
     case secretUsage
     case doctor
+    case settings
 
     var id: String { rawValue }
 
@@ -980,6 +1006,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .blessedScripts: "Blessed Scripts"
         case .allSecrets: "Secrets"
         case .secretUsage: "Secret Usage"
+        case .settings: "Settings"
         }
     }
 
@@ -992,6 +1019,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .blessedScripts: "checkmark.seal"
         case .allSecrets: "key"
         case .secretUsage: "clock.arrow.circlepath"
+        case .settings: "gearshape"
         }
     }
 }
@@ -1079,6 +1107,14 @@ struct DashboardRootView: View {
                             Image(systemName: "plus")
                         }
                         .help("Add Calling App")
+                    }
+                    if model.selectedSection == .settings {
+                        Button {
+                            model.addSecretNameAccessApp()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .help("Allow App to List Secret Names")
                     }
                     Button {
                         model.reload()
@@ -1230,6 +1266,12 @@ private struct DashboardDetailView: View {
                     .padding(.top, 32)
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .settings {
+                SecretNameAccessSettingsView(model: model)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
                 ReferenceDetailView(
                     item: item,
@@ -1370,6 +1412,7 @@ private struct EmptyListView: View {
         case .blessedScripts: "No blessed scripts"
         case .allSecrets: "No stored secrets"
         case .secretUsage: "No secret usage logged"
+        case .settings: "No settings"
         }
     }
 }
@@ -2074,13 +2117,15 @@ private struct BlessedScriptFields: View {
 @MainActor
 private func launcherList(
     _ launchers: [BlessedScriptLauncher],
+    title: String = "Calling Apps",
+    empty: String = "No calling apps endorsed.",
     remove: @escaping (BlessedScriptLauncher) -> Void
 ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-        Text("Calling Apps")
+        Text(title)
             .font(.system(size: 13, weight: .semibold))
         if launchers.isEmpty {
-            Text("No calling apps endorsed.")
+            Text(empty)
                 .foregroundStyle(.secondary)
         }
         ForEach(launchers, id: \.requirement) { launcher in
@@ -2098,6 +2143,32 @@ private func launcherList(
             }
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+private struct SecretNameAccessSettingsView: View {
+    @ObservedObject var model: DashboardModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Secret Name Access")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("These verified apps may run av list without an approval window.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            launcherList(
+                model.snapshot.secretNameAccessApps,
+                title: "Always Allowed Apps",
+                empty: "No apps are always allowed. Other apps must request approval."
+            ) {
+                model.removeSecretNameAccessApp($0)
+            }
+            if let error = model.errorMessage {
+                InfoBlock(title: "Error", text: error)
+            }
         }
     }
 }
