@@ -2253,7 +2253,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 name.withCString { xpc_array_set_string(array, XPC_ARRAY_APPEND, $0) }
             }
             xpc_dictionary_set_value(response, "names", array)
-            xpc_release(array)
         }
         if let humanApprovalDecision {
             humanApprovalDecision.withCString {
