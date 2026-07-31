@@ -2464,12 +2464,16 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     panel.begin { response in
-        defer { panel.url?.stopAccessingSecurityScopedResource() }
         guard response == .OK, let selected = panel.url else {
             completion(nil)
             return
         }
-        guard let signing = launcherSigning(selected.resolvingSymlinksInPath().standardizedFileURL) else {
+        let isAccessing = selected.startAccessingSecurityScopedResource()
+        defer {
+            if isAccessing { selected.stopAccessingSecurityScopedResource() }
+        }
+        let resolved = selected.resolvingSymlinksInPath().standardizedFileURL
+        guard let signing = launcherSigning(resolved) else {
             let alert = NSAlert()
             alert.messageText = "Launcher cannot be allowed"
             alert.informativeText = "Choose a valid Developer ID-signed executable or signed app."

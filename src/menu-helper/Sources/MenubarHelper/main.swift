@@ -3383,9 +3383,8 @@ private func appBundleVerificationFailure(_ url: URL) -> LauncherAppVerification
     )
 }
 
-func satisfiesDeveloperIDRequirement(
-    _ validate: (SecRequirement) -> OSStatus
-) -> Bool {
+// SecRequirement is immutable but is not annotated Sendable by Security.framework.
+nonisolated(unsafe) private let developerIDRequirement: SecRequirement? = {
     var requirement: SecRequirement?
     let source = """
     anchor apple generic and \
@@ -3394,8 +3393,15 @@ func satisfiesDeveloperIDRequirement(
     """
     guard SecRequirementCreateWithString(source as CFString, [], &requirement) == errSecSuccess,
           let requirement
-    else { return false }
-    return validate(requirement) == errSecSuccess
+    else { return nil }
+    return requirement
+}()
+
+func satisfiesDeveloperIDRequirement(
+    _ validate: (SecRequirement) -> OSStatus
+) -> Bool {
+    guard let developerIDRequirement else { return false }
+    return validate(developerIDRequirement) == errSecSuccess
 }
 
 private func requirementString(_ requirement: SecRequirement) -> String? {
@@ -4663,6 +4669,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         designatedRequirement: requirement,
         mainExecutable: "/usr/local/bin/example",
         isAdHoc: false,
+        runtimeProtection: .hardened,
         isDeveloperID: true
     )
     let rejected = LiveSigningInfo(
@@ -4671,6 +4678,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "com.apple.zsh" and anchor apple"#,
         mainExecutable: "/bin/zsh",
         isAdHoc: false,
+        runtimeProtection: .hardened,
         isDeveloperID: false
     )
     let adHoc = LiveSigningInfo(
@@ -4679,6 +4687,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         designatedRequirement: developerID.designatedRequirement,
         mainExecutable: "/usr/local/bin/ad-hoc-example",
         isAdHoc: true,
+        runtimeProtection: .hardened,
         isDeveloperID: true
     )
     guard satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
@@ -4692,6 +4701,15 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
           launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil
     else { return 1 }
+    let unhardenedLauncher = LauncherIdentity(
+        pid: launcher.pid,
+        path: launcher.path,
+        identifier: launcher.identifier,
+        teamIdentifier: launcher.teamIdentifier,
+        designatedRequirement: launcher.designatedRequirement,
+        runtimeProtection: .hardenedRuntimeMissing,
+        isStandalone: true
+    )
 
     let unconfiguredGate = SecretGate(
         id: "test",
@@ -4708,11 +4726,13 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         appPolicies: [SecretGatePolicy(
             bundleIdentifier: developerID.identifier,
             requirement: requirement,
-            protection: .readOnly
+            protection: .readOnly,
+            requiresHardenedRuntime: true
         )]
     )
     guard resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher]) == nil,
-          resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly
+          resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly,
+          resolveSecretGatePolicy(gate: configuredGate, launchers: [unhardenedLauncher])?.protection == .noAccess
     else { return 1 }
     return 0
 }
