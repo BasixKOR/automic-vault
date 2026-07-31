@@ -964,6 +964,45 @@ private struct ApprovalRequest {
     let tool: String?
     let title: String?
     let detail: String?
+    let dotenvPath: String?
+    let dotenvChecksum: String?
+    let dotenvProcesses: [BlessedDotenvProcess]
+
+    init(
+        op: String,
+        keys: [String],
+        target: String,
+        args: [String],
+        cwd: String,
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool,
+        envConflicts: [String],
+        shebangScript: String?,
+        scriptData: Data?,
+        tool: String?,
+        title: String?,
+        detail: String?,
+        dotenvPath: String? = nil,
+        dotenvChecksum: String? = nil,
+        dotenvProcesses: [BlessedDotenvProcess] = []
+    ) {
+        self.op = op
+        self.keys = keys
+        self.target = target
+        self.args = args
+        self.cwd = cwd
+        self.replaceExistingEnv = replaceExistingEnv
+        self.allowMissingKeys = allowMissingKeys
+        self.envConflicts = envConflicts
+        self.shebangScript = shebangScript
+        self.scriptData = scriptData
+        self.tool = tool
+        self.title = title
+        self.detail = detail
+        self.dotenvPath = dotenvPath
+        self.dotenvChecksum = dotenvChecksum
+        self.dotenvProcesses = dotenvProcesses
+    }
 }
 
 enum SecretMutation {
@@ -1238,6 +1277,14 @@ private struct BlessedExecutionKey: Hashable {
     let startUsec: UInt64
 }
 
+private struct DotenvExecutionKey: Hashable {
+    let pid: Int32
+    let startUsec: UInt64
+    let path: String
+    let checksum: String
+    let processes: [BlessedDotenvProcess]
+}
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
@@ -1254,6 +1301,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private var transientApprovals = TransientApprovalCache()
     private let blessedExecutionsLock = NSLock()
     private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
+    private var dotenvExecutions: [DotenvExecutionKey: ApprovalDecision] = [:]
 
     init(
         serviceName: String,
@@ -1364,6 +1412,15 @@ private final class ApprovalServer: @unchecked Sendable {
             handleLoad(message, on: peer)
         case "bless" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleBless(message, on: peer, identity: identity)
+        case "dotenv" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleDotenv(
+                message,
+                on: peer,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
         case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDelete(message, on: peer, caller: mutationCaller)
         case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
@@ -1992,6 +2049,229 @@ private final class ApprovalServer: @unchecked Sendable {
             ))
             reply(peer, to: message, ok: false, error: error.localizedDescription)
         }
+    }
+
+    private func handleDotenv(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) {
+        guard let schemaPointer = xpc_dictionary_get_string(message, "schema"),
+              let itemPointer = xpc_dictionary_get_string(message, "item"),
+              let keyPointer = xpc_dictionary_get_string(message, "key")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid dotenv request")
+            return
+        }
+        let path = String(cString: schemaPointer)
+        let item = String(cString: itemPointer)
+        let key = String(cString: keyPointer)
+        let url = URL(fileURLWithPath: path)
+        guard validSecretKeyName(item), validSecretKeyName(key),
+              path.hasPrefix("/"), url.lastPathComponent == ".env.schema",
+              url.standardizedFileURL.path == path,
+              url.resolvingSymlinksInPath().path == path,
+              let data = try? readBlessedScript(path: path),
+              dotenvSchemaDeclaration(data: data, item: item, secret: key) != nil,
+              storedSecretExists(account: key)
+        else {
+            reply(peer, to: message, ok: false, error: "dotenv request is not declared by a canonical .env.schema")
+            return
+        }
+        guard let launcher = launcherIdentities(startingAt: identity.ppid).first,
+              let parentIdentity = processIdentity(identity.ppid),
+              let processes = dotenvProcessChain(startingAt: parentIdentity, launcherPID: launcher.pid),
+              !processes.isEmpty
+        else {
+            reply(peer, to: message, ok: false, error: "dotenv launcher ancestry could not be verified")
+            return
+        }
+
+        let checksum = dotenvSchemaChecksum(data)
+        let launcherRecord = BlessedScriptLauncher(
+            bundleIdentifier: launcher.identifier,
+            requirement: launcher.designatedRequirement
+        )
+        let existing = loadBlessedDotenvs().first { $0.id == BlessedDotenv(
+            path: path,
+            checksum: checksum,
+            processes: processes,
+            launchers: []
+        ).id }
+        let launchers = (existing?.launchers ?? []).contains(launcherRecord)
+            ? existing!.launchers
+            : (existing?.launchers ?? []) + [launcherRecord]
+        let blessing = BlessedDotenv(
+            path: path,
+            checksum: checksum,
+            processes: processes,
+            launchers: launchers
+        )
+        let request = ApprovalRequest(
+            op: "dotenv",
+            keys: [key],
+            target: processes.last?.path ?? callerPath,
+            args: processes.last?.arguments ?? [],
+            cwd: processes.first?.cwd ?? "",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "Varlock",
+            title: "Allow (item) from this dotenv?",
+            detail: "The verified process tree will receive (key) through Varlock.",
+            dotenvPath: path,
+            dotenvChecksum: checksum,
+            dotenvProcesses: processes
+        )
+        let execution = DotenvExecutionKey(
+            pid: parentIdentity.pid,
+            startUsec: parentIdentity.start_usec,
+            path: path,
+            checksum: checksum,
+            processes: processes
+        )
+        let persistent = loadBlessedDotenvs().contains {
+            $0.matches(
+                path: path,
+                checksum: checksum,
+                processes: processes,
+                launcherRequirement: launcher.designatedRequirement
+            )
+        }
+        blessedExecutionsLock.lock()
+        dotenvExecutions = dotenvExecutions.filter { execution, _ in
+            guard let current = processIdentity(execution.pid) else { return false }
+            return current.start_usec == execution.startUsec
+        }
+        let transient = dotenvExecutions[execution]
+        blessedExecutionsLock.unlock()
+
+        if persistent {
+            discloseDotenvSecret(
+                key: key,
+                request: request,
+                callerPath: callerPath,
+                launcher: launcher,
+                approvalSource: "Auto",
+                reason: "Blessed dotenv (path)",
+                peer: peer,
+                message: message
+            )
+            return
+        }
+        if let transient {
+            guard transient == .approved else {
+                reply(peer, to: message, ok: false, error: "dotenv access denied for this process")
+                return
+            }
+            discloseDotenvSecret(
+                key: key,
+                request: request,
+                callerPath: callerPath,
+                launcher: launcher,
+                approvalSource: "Auto",
+                reason: "Allowed once for this process tree",
+                peer: peer,
+                message: message
+            )
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard self.canRequestHumanApproval() else {
+                self.reply(peer, to: message, ok: false, error: "dotenv approval is unavailable")
+                return
+            }
+            let decision = showApprovalAlert(
+                request: request,
+                callerPath: callerPath,
+                pid: pid,
+                signing: signing,
+                scriptApproval: nil,
+                launcher: launcher,
+                launcherFallbackPath: launcher.path,
+                automaticApprovalExplanation: nil,
+                allowsPersistentApproval: true,
+                persistentApprovalTitle: "Bless for \(approvalPromptRequester(launcher: launcher, fallback: launcher.path).name)"
+            )
+            self.blessedExecutionsLock.lock()
+            self.dotenvExecutions[execution] = decision
+            self.blessedExecutionsLock.unlock()
+            guard decision != .denied else {
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Denied",
+                    approvalSource: "Manual",
+                    reason: "Denied in prompt",
+                    launcher: launcher
+                ))
+                self.reply(peer, to: message, ok: false, error: "dotenv access denied")
+                return
+            }
+            if decision == .alwaysApproved {
+                let status = saveBlessedDotenv(blessing)
+                guard status == errSecSuccess else {
+                    self.reply(peer, to: message, ok: false, error: "failed to save dotenv blessing: \(status)")
+                    return
+                }
+            }
+            self.discloseDotenvSecret(
+                key: key,
+                request: request,
+                callerPath: callerPath,
+                launcher: launcher,
+                approvalSource: "Manual",
+                reason: decision == .alwaysApproved ? "Blessed in prompt" : "Allowed once in prompt",
+                peer: peer,
+                message: message
+            )
+        }
+    }
+
+    private func discloseDotenvSecret(
+        key: String,
+        request: ApprovalRequest,
+        callerPath: String,
+        launcher: LauncherIdentity,
+        approvalSource: String,
+        reason: String,
+        peer: xpc_connection_t,
+        message: xpc_object_t
+    ) {
+        guard let value = loadStoredSecret(account: key) else {
+            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
+            return
+        }
+        let id = UUID()
+        guard onAccessRequest(accessRequestRecord(
+            id: id,
+            request: request,
+            callerPath: callerPath,
+            decision: "Approved",
+            approvalSource: approvalSource,
+            reason: reason,
+            launcher: launcher
+        )) else {
+            reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+            return
+        }
+        if approvalSource == "Auto" {
+            Task { @MainActor in
+                self.onAutoApproval(autoApprovalRecord(
+                    accessRequestID: id,
+                    request: request,
+                    script: nil,
+                    launcher: launcher
+                ))
+            }
+        }
+        reply(peer, to: message, ok: true, error: nil, value: value)
     }
 
     private func handleSave(
@@ -3091,6 +3371,53 @@ private func pathString(_ identity: AVProcessIdentity) -> String {
     }
 }
 
+private func processIdentity(_ pid: pid_t) -> AVProcessIdentity? {
+    var identity = AVProcessIdentity()
+    return av_process_identity(pid, &identity) ? identity : nil
+}
+
+private func dotenvProcessChain(
+    startingAt start: AVProcessIdentity,
+    launcherPID: pid_t
+) -> [BlessedDotenvProcess]? {
+    var identity = start
+    var seen = Set<pid_t>()
+    var processes: [BlessedDotenvProcess] = []
+    for _ in 0..<32 {
+        guard seen.insert(identity.pid).inserted else { return nil }
+        if identity.pid == launcherPID { return processes }
+        guard let arguments = processArguments(identity.pid),
+              let cwd = processCWD(identity.pid),
+              !pathString(identity).isEmpty
+        else {
+            return nil
+        }
+        processes.append(BlessedDotenvProcess(
+            path: pathString(identity),
+            arguments: arguments,
+            cwd: cwd
+        ))
+        guard identity.ppid > 1, let parent = processIdentity(identity.ppid) else { return nil }
+        identity = parent
+    }
+    return nil
+}
+
+private func processArguments(_ pid: pid_t) -> [String]? {
+    var buffer = [CChar](repeating: 0, count: 8192)
+    guard av_process_arguments(pid, &buffer, buffer.count) else { return nil }
+    guard let end = buffer.firstIndex(of: 0) else { return nil }
+    guard let value = String(bytes: buffer[..<end].map(UInt8.init(bitPattern:)), encoding: .utf8) else { return nil }
+    return value.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+}
+
+private func processCWD(_ pid: pid_t) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    guard av_process_cwd(pid, &buffer, buffer.count) else { return nil }
+    guard let end = buffer.firstIndex(of: 0) else { return nil }
+    return String(bytes: buffer[..<end].map(UInt8.init(bitPattern:)), encoding: .utf8)
+}
+
 private func signingInfo(path: String) -> SigningInfo {
     var staticCode: SecStaticCode?
     let url = URL(fileURLWithPath: path) as CFURL
@@ -3542,7 +3869,8 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?,
-    allowsPersistentApproval: Bool = false
+    allowsPersistentApproval: Bool = false,
+    persistentApprovalTitle: String = "Always Allow"
 ) -> ApprovalDecision {
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
@@ -3587,6 +3915,7 @@ private func showApprovalAlert(
             content: content,
             maximumHeight: maximumHeight,
             allowsPersistentApproval: allowsPersistentApproval,
+            persistentApprovalTitle: persistentApprovalTitle,
             decide: {
                 decision = $0
                 NSApp.stopModal()
@@ -3694,6 +4023,20 @@ private func approvalPromptSections(
         ]))
     }
 
+    if let path = request.dotenvPath, let checksum = request.dotenvChecksum {
+        var rows = [
+            ApprovalPromptRow("Path", path),
+            ApprovalPromptRow("SHA-256", checksum),
+        ]
+        rows.append(contentsOf: request.dotenvProcesses.enumerated().map { index, process in
+            ApprovalPromptRow(
+                index == 0 ? "Entrypoint" : "Parent \(index)",
+                ([process.path] + process.arguments.dropFirst()).joined(separator: " ") + "\nwd: \(process.cwd)"
+            )
+        })
+        sections.append(ApprovalPromptSection("Dotenv", "doc.badge.key", rows))
+    }
+
     return sections
 }
 
@@ -3747,6 +4090,7 @@ private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     var maximumHeight: CGFloat? = nil
     var allowsPersistentApproval = false
+    var persistentApprovalTitle = "Always Allow"
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
@@ -3836,7 +4180,7 @@ private struct ApprovalPromptView: View {
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.defaultAction)
                 if allowsPersistentApproval {
-                    Button("Always Allow") { decide(.alwaysApproved) }
+                    Button(persistentApprovalTitle) { decide(.alwaysApproved) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .tint(.blue)
@@ -3845,7 +4189,7 @@ private struct ApprovalPromptView: View {
             }
 
             Text(allowsPersistentApproval
-                ? "Always Allow trusts this verified app until removed in Settings"
+                ? "Persistent access trusts this verified app until removed in Blessings"
                 : "Always Allow is available for verified apps in the Automic Vault app.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)

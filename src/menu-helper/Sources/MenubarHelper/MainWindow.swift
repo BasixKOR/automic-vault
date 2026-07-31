@@ -191,6 +191,7 @@ final class DashboardModel: ObservableObject {
             }
         case .blessedScripts:
             blessedScriptItems(snapshot.blessedScripts, pending: pendingBlessing)
+                + snapshot.blessedDotenvs.map(blessedDotenvItem)
         case .allSecrets:
             snapshot.secrets.map {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: $0.subtitle, detail: "Secret value is hidden.\n\($0.subtitle)")
@@ -246,15 +247,17 @@ final class DashboardModel: ObservableObject {
     }
 
     var selectedBlessedScript: BlessedScript? {
-        if let selectedItemID,
-           let script = snapshot.blessedScripts.first(where: { $0.path == selectedItemID }) {
-            return script
-        }
-        return snapshot.blessedScripts.first
+        guard let id = selectedItem?.id else { return nil }
+        return snapshot.blessedScripts.first { "script:\($0.path)" == id }
+    }
+
+    var selectedBlessedDotenv: BlessedDotenv? {
+        guard let id = selectedItem?.id else { return nil }
+        return snapshot.blessedDotenvs.first { "dotenv:\($0.id)" == id }
     }
 
     var selectedPendingBlessing: BlessedScriptReviewRequest? {
-        guard pendingBlessing?.path == selectedItem?.id else { return nil }
+        guard pendingBlessing.map({ "script:\($0.path)" }) == selectedItem?.id else { return nil }
         return pendingBlessing
     }
 
@@ -282,7 +285,7 @@ final class DashboardModel: ObservableObject {
         case .hardenedTools: snapshot.hardenedTools.count
         case .secretGates: snapshot.secretGates.count
         case .blessedScripts:
-            snapshot.blessedScripts.count
+            snapshot.blessedScripts.count + snapshot.blessedDotenvs.count
                 + (pendingBlessing.map { pending in
                     snapshot.blessedScripts.contains { $0.path == pending.path } ? 0 : 1
                 } ?? 0)
@@ -325,7 +328,7 @@ final class DashboardModel: ObservableObject {
         pendingBlessingLaunchers = request.launcher.map { [$0] } ?? []
         blessingCompletion = completion
         selectedSection = .blessedScripts
-        selectedItemID = request.path
+        selectedItemID = "script:\(request.path)"
     }
 
     func approvePendingBlessing() {
@@ -347,7 +350,7 @@ final class DashboardModel: ObservableObject {
             return
         }
         finishPendingBlessing(nil)
-        selectedItemID = script.path
+        selectedItemID = "script:\(script.path)"
         reload()
     }
 
@@ -389,6 +392,22 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func addApp(to dotenv: BlessedDotenv) {
+        chooseLauncherApp { [weak self] launcher in
+            guard let self, let launcher,
+                  !dotenv.launchers.contains(where: { $0.requirement == launcher.requirement })
+            else { return }
+            let updated = BlessedDotenv(
+                path: dotenv.path,
+                checksum: dotenv.checksum,
+                processes: dotenv.processes,
+                launchers: dotenv.launchers + [launcher],
+                blessedAt: dotenv.blessedAt
+            )
+            self.finishPolicyUpdate(saveBlessedDotenv(updated), error: "Could not add calling app")
+        }
+    }
+
     func addSecretNameAccessApp() {
         chooseLauncherApp { [weak self] launcher in
             guard let self, let launcher else { return }
@@ -422,8 +441,29 @@ final class DashboardModel: ObservableObject {
         finishPolicyUpdate(saveBlessedScript(updated), error: "Could not remove calling app")
     }
 
+    func removeLauncher(_ launcher: BlessedScriptLauncher, from dotenv: BlessedDotenv) {
+        let updated = BlessedDotenv(
+            path: dotenv.path,
+            checksum: dotenv.checksum,
+            processes: dotenv.processes,
+            launchers: dotenv.launchers.filter { $0.requirement != launcher.requirement },
+            blessedAt: dotenv.blessedAt
+        )
+        finishPolicyUpdate(saveBlessedDotenv(updated), error: "Could not remove calling app")
+    }
+
     func revoke(_ script: BlessedScript) {
         let status = removeBlessedScript(path: script.path)
+        if status == errSecSuccess {
+            selectedItemID = nil
+            reload()
+        } else {
+            errorMessage = "Could not revoke blessing: \(status)"
+        }
+    }
+
+    func revoke(_ dotenv: BlessedDotenv) {
+        let status = removeBlessedDotenv(id: dotenv.id)
         if status == errSecSuccess {
             selectedItemID = nil
             reload()
@@ -701,8 +741,9 @@ private func blessedScriptItem(_ script: BlessedScript) -> DashboardItem {
     let currentChecksum = try? blessedScriptDeclaration(data: readBlessedScript(path: script.path)).checksum
     let status = currentChecksum == script.checksum ? "Blessed" : "Changed"
     return DashboardItem(
-        id: script.path,
+        id: "script:\(script.path)",
         title: URL(fileURLWithPath: script.path).lastPathComponent,
+        kind: "Script",
         subtitle: status,
         detail: script.path
     )
@@ -713,15 +754,28 @@ private func blessedScriptItems(
     pending: BlessedScriptReviewRequest?
 ) -> [DashboardItem] {
     let scripts = blessed.map(blessedScriptItem)
-    guard let pending, !scripts.contains(where: { $0.id == pending.path }) else { return scripts }
+    guard let pending, !scripts.contains(where: { $0.id == "script:\(pending.path)" }) else { return scripts }
     return [
         DashboardItem(
-            id: pending.path,
+            id: "script:\(pending.path)",
             title: URL(fileURLWithPath: pending.path).lastPathComponent,
+            kind: "Script",
             subtitle: "Pending review",
             detail: pending.path
         )
     ] + scripts
+}
+
+private func blessedDotenvItem(_ dotenv: BlessedDotenv) -> DashboardItem {
+    let data = try? readBlessedScript(path: dotenv.path)
+    let status = data.map(dotenvSchemaChecksum) == dotenv.checksum ? "Blessed" : "Stale"
+    return DashboardItem(
+        id: "dotenv:\(dotenv.id)",
+        title: URL(fileURLWithPath: dotenv.path).deletingLastPathComponent().lastPathComponent,
+        kind: "Dotenv",
+        subtitle: status,
+        detail: dotenv.path
+    )
 }
 
 private func detectorSeveritySortPriority(_ severity: String?) -> Int {
@@ -1038,7 +1092,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .doctor: "Doctor"
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Secret Gates"
-        case .blessedScripts: "Blessed Scripts"
+        case .blessedScripts: "Blessings"
         case .allSecrets: "Secrets"
         case .secretUsage: "Secret Usage"
         case .settings: "Settings"
@@ -1137,6 +1191,8 @@ struct DashboardRootView: View {
                                 model.addAppToPendingBlessing()
                             } else if let script = model.selectedBlessedScript {
                                 model.addApp(to: script)
+                            } else if let dotenv = model.selectedBlessedDotenv {
+                                model.addApp(to: dotenv)
                             }
                         } label: {
                             Image(systemName: "plus")
@@ -1245,7 +1301,12 @@ private struct DashboardListView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: itemSelection) {
-                    rows(model.items)
+                    if model.selectedSection == .blessedScripts {
+                        Section("Scripts") { rows(model.items.filter { $0.kind == "Script" }) }
+                        Section("Dotenvs") { rows(model.items.filter { $0.kind == "Dotenv" }) }
+                    } else {
+                        rows(model.items)
+                    }
                 }
                 .listStyle(.inset)
             }
@@ -1292,6 +1353,13 @@ private struct DashboardDetailView: View {
             } else if model.selectedSection == .blessedScripts,
                       let script = model.selectedBlessedScript {
                 BlessedScriptDetailView(model: model, script: script)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .blessedScripts,
+                      let dotenv = model.selectedBlessedDotenv {
+                BlessedDotenvDetailView(model: model, dotenv: dotenv)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -1453,7 +1521,7 @@ private struct EmptyListView: View {
         case .doctor: "No doctor issues"
         case .hardenedTools: "No hardened tools"
         case .secretGates: "No configured gates"
-        case .blessedScripts: "No blessed scripts"
+        case .blessedScripts: "No blessings"
         case .allSecrets: "No stored secrets"
         case .secretUsage: "No secret usage logged"
         case .settings: "No settings"
@@ -2141,6 +2209,51 @@ private struct BlessedScriptDetailView: View {
             return "Changed"
         }
         return checksum == script.checksum ? "Blessed" : "Changed"
+    }
+}
+
+private struct BlessedDotenvDetailView: View {
+    @ObservedObject var model: DashboardModel
+    let dotenv: BlessedDotenv
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(URL(fileURLWithPath: dotenv.path).deletingLastPathComponent().lastPathComponent)
+                    .font(.system(size: 24, weight: .semibold))
+                Text(status)
+                    .font(.system(size: 13))
+                    .foregroundStyle(status == "Blessed" ? .green : .orange)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                SecretGateField("Path", dotenv.path)
+                SecretGateField("SHA-256", dotenv.checksum, monospaced: true)
+                SecretGateField("Secrets", declarations.map { "\($0.item) → \($0.secret)" }.joined(separator: ", "))
+                ForEach(Array(dotenv.processes.enumerated()), id: \.offset) { index, process in
+                    SecretGateField(
+                        index == 0 ? "Entrypoint" : "Parent \(index)",
+                        ([process.path] + process.arguments.dropFirst()).joined(separator: " ") + "\nwd: \(process.cwd)",
+                        monospaced: true
+                    )
+                }
+            }
+            launcherList(dotenv.launchers) {
+                model.removeLauncher($0, from: dotenv)
+            }
+            HStack {
+                Spacer()
+                Button("Revoke Blessing", role: .destructive) { model.revoke(dotenv) }
+            }
+            if let error = model.errorMessage {
+                InfoBlock(title: "Error", text: error)
+            }
+        }
+    }
+
+    private var data: Data? { try? readBlessedScript(path: dotenv.path) }
+    private var status: String { data.map(dotenvSchemaChecksum) == dotenv.checksum ? "Blessed" : "Stale" }
+    private var declarations: [DotenvSecretDeclaration] {
+        data.map(dotenvSchemaDeclarations) ?? []
     }
 }
 

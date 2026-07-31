@@ -20,6 +20,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     public var hardeners: [HardenerMetadata]
     public var secretGates: [SecretGate]
     public var blessedScripts: [BlessedScript]
+    public var blessedDotenvs: [BlessedDotenv]
     public var secretNameAccessApps: [BlessedScriptLauncher]
     public var secrets: [StoredSecret]
     public var accessRequests: [AccessRequestRecord]
@@ -32,6 +33,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [HardenerMetadata] = [],
         secretGates: [SecretGate],
         blessedScripts: [BlessedScript] = [],
+        blessedDotenvs: [BlessedDotenv] = [],
         secretNameAccessApps: [BlessedScriptLauncher] = [],
         secrets: [StoredSecret],
         accessRequests: [AccessRequestRecord] = [],
@@ -43,6 +45,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         self.hardeners = hardeners
         self.secretGates = secretGates
         self.blessedScripts = blessedScripts
+        self.blessedDotenvs = blessedDotenvs
         self.secretNameAccessApps = secretNameAccessApps
         self.secrets = secrets
         self.accessRequests = accessRequests
@@ -56,6 +59,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         hardeners: [],
         secretGates: [],
         blessedScripts: [],
+        blessedDotenvs: [],
         secretNameAccessApps: [],
         secrets: [],
         accessRequests: [],
@@ -91,6 +95,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             hardeners: hardenerMetadata,
             secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
             blessedScripts: loadBlessedScripts(),
+            blessedDotenvs: loadBlessedDotenvs(),
             secretNameAccessApps: loadSecretNameAccessApps(),
             secrets: secrets,
             accessRequests: loadAccessRequestRecords(),
