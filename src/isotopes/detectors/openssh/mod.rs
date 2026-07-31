@@ -3,6 +3,13 @@
 use std::path::{Path, PathBuf};
 
 const MAX_KEY_BYTES: u64 = 1024 * 1024;
+const SECURITY_KEY_REASON: &str = "SSH security-key handle is stored without passphrase encryption";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnencryptedPrivateKeyKind {
+    Exportable,
+    SecurityKeyHandle,
+}
 
 pub fn install_is_insecure() -> Result<bool, String> {
     install_insecurity_reasons().map(|reasons| !reasons.is_empty())
@@ -15,11 +22,17 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
 
     let mut reasons = Vec::new();
     for path in paths {
-        if path.exists() && file_contains_unencrypted_private_key(&path)? {
-            reasons.push(format!(
-                "SSH private key is stored without passphrase encryption: {}",
-                path.display()
-            ));
+        if !path.exists() {
+            continue;
+        }
+        if let Some(kind) = file_unencrypted_private_key_kind(&path)? {
+            let reason = match kind {
+                UnencryptedPrivateKeyKind::Exportable => {
+                    "SSH private key is stored without passphrase encryption"
+                }
+                UnencryptedPrivateKeyKind::SecurityKeyHandle => SECURITY_KEY_REASON,
+            };
+            reasons.push(format!("{reason}: {}", path.display()));
         }
     }
     Ok(reasons)
@@ -95,21 +108,23 @@ fn expand_home_path(value: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(value))
 }
 
-fn file_contains_unencrypted_private_key(path: &Path) -> Result<bool, String> {
+fn file_unencrypted_private_key_kind(
+    path: &Path,
+) -> Result<Option<UnencryptedPrivateKeyKind>, String> {
     let metadata = std::fs::metadata(path)
         .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
     if !metadata.is_file() || metadata.len() > MAX_KEY_BYTES {
-        return Ok(false);
+        return Ok(None);
     }
     let bytes =
         std::fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     if !bytes_contain_private_key_marker(&bytes) {
-        return Ok(false);
+        return Ok(None);
     }
     let Ok(contents) = String::from_utf8(bytes) else {
-        return Ok(false);
+        return Ok(None);
     };
-    Ok(private_key_contents_are_unencrypted(&contents))
+    Ok(private_key_contents_unencrypted_kind(&contents))
 }
 
 fn bytes_contain_private_key_marker(bytes: &[u8]) -> bool {
@@ -126,14 +141,18 @@ fn bytes_contain_private_key_marker(bytes: &[u8]) -> bool {
 }
 
 fn private_key_contents_are_unencrypted(contents: &str) -> bool {
+    private_key_contents_unencrypted_kind(contents).is_some()
+}
+
+fn private_key_contents_unencrypted_kind(contents: &str) -> Option<UnencryptedPrivateKeyKind> {
     if contents.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----") {
-        return false;
+        return None;
     }
     if contents.contains("-----BEGIN OPENSSH PRIVATE KEY-----") {
-        return openssh_private_key_is_unencrypted(contents);
+        return openssh_private_key_unencrypted_kind(contents);
     }
     if contents.contains("-----BEGIN PRIVATE KEY-----") {
-        return true;
+        return Some(UnencryptedPrivateKeyKind::Exportable);
     }
     for marker in [
         "-----BEGIN RSA PRIVATE KEY-----",
@@ -141,28 +160,63 @@ fn private_key_contents_are_unencrypted(contents: &str) -> bool {
         "-----BEGIN EC PRIVATE KEY-----",
     ] {
         if contents.contains(marker) {
-            return !contents.contains("ENCRYPTED");
+            return (!contents.contains("ENCRYPTED"))
+                .then_some(UnencryptedPrivateKeyKind::Exportable);
         }
     }
-    false
+    None
 }
 
-fn openssh_private_key_is_unencrypted(contents: &str) -> bool {
+fn openssh_private_key_unencrypted_kind(contents: &str) -> Option<UnencryptedPrivateKeyKind> {
     let Some(body) = pem_body(contents, "OPENSSH PRIVATE KEY") else {
-        return false;
+        return None;
     };
     let Some(bytes) = decode_base64(&body) else {
-        return false;
+        return None;
     };
     let magic = b"openssh-key-v1\0";
     if !bytes.starts_with(magic) {
-        return false;
+        return None;
     }
     let mut offset = magic.len();
     let Some(cipher_name) = read_ssh_string(&bytes, &mut offset) else {
-        return false;
+        return None;
     };
-    cipher_name == b"none"
+    if cipher_name != b"none" {
+        return None;
+    }
+
+    let kind = read_ssh_string(&bytes, &mut offset)
+        .and_then(|_| read_ssh_string(&bytes, &mut offset))
+        .and_then(|_| read_ssh_u32(&bytes, &mut offset))
+        .filter(|key_count| *key_count == 1)
+        .and_then(|_| read_ssh_string(&bytes, &mut offset))
+        .and_then(|public_key| {
+            let mut public_key_offset = 0;
+            read_ssh_string(public_key, &mut public_key_offset)
+        })
+        .and_then(|public_key_type| {
+            let private_keys = read_ssh_string(&bytes, &mut offset)?;
+            let mut private_key_offset = 0;
+            read_ssh_u32(private_keys, &mut private_key_offset)?;
+            read_ssh_u32(private_keys, &mut private_key_offset)?;
+            let private_key_type = read_ssh_string(private_keys, &mut private_key_offset)?;
+            (public_key_type == private_key_type).then_some(private_key_type)
+        })
+        .filter(|key_type| security_key_type(key_type))
+        .map(|_| UnencryptedPrivateKeyKind::SecurityKeyHandle)
+        .unwrap_or(UnencryptedPrivateKeyKind::Exportable);
+    Some(kind)
+}
+
+fn security_key_type(key_type: &[u8]) -> bool {
+    matches!(
+        key_type,
+        b"sk-ecdsa-sha2-nistp256@openssh.com"
+            | b"sk-ssh-ed25519@openssh.com"
+            | b"sk-ecdsa-sha2-nistp256-cert-v01@openssh.com"
+            | b"sk-ssh-ed25519-cert-v01@openssh.com"
+    )
 }
 
 fn pem_body(contents: &str, label: &str) -> Option<String> {
@@ -174,11 +228,15 @@ fn pem_body(contents: &str, label: &str) -> Option<String> {
 }
 
 fn read_ssh_string<'a>(bytes: &'a [u8], offset: &mut usize) -> Option<&'a [u8]> {
-    let len_bytes: [u8; 4] = bytes.get(*offset..*offset + 4)?.try_into().ok()?;
-    *offset += 4;
-    let len = u32::from_be_bytes(len_bytes) as usize;
+    let len = read_ssh_u32(bytes, offset)? as usize;
     let value = bytes.get(*offset..*offset + len)?;
     *offset += len;
+    Some(value)
+}
+
+fn read_ssh_u32(bytes: &[u8], offset: &mut usize) -> Option<u32> {
+    let value = u32::from_be_bytes(bytes.get(*offset..*offset + 4)?.try_into().ok()?);
+    *offset += 4;
     Some(value)
 }
 
@@ -277,8 +335,38 @@ mod tests {
         assert!(reasons.is_empty());
         std::fs::remove_dir_all(home).unwrap();
     }
+
+    #[test]
+    fn classifies_unencrypted_security_key_handles() {
+        for body in [
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAHgAAABpzay1zc2gtZWQyNTUxOUBvcGVuc3NoLmNvbQAAACYAAAAqAAAAKgAAABpzay1zc2gtZWQyNTUxOUBvcGVuc3NoLmNvbQ==",
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAJgAAACJzay1lY2RzYS1zaGEyLW5pc3RwMjU2QG9wZW5zc2guY29tAAAALgAAACoAAAAqAAAAInNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3BlbnNzaC5jb20=",
+        ] {
+            let key = format!(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\n-----END OPENSSH PRIVATE KEY-----"
+            );
+            assert_eq!(
+                private_key_contents_unencrypted_kind(&key),
+                Some(UnencryptedPrivateKeyKind::SecurityKeyHandle)
+            );
+        }
+        assert_eq!(finding_severity(SECURITY_KEY_REASON), "medium");
+        assert_eq!(finding_severity("SSH private key"), "high");
+    }
+}
+
+fn finding_severity(explanation: &str) -> &'static str {
+    if explanation.starts_with(SECURITY_KEY_REASON) {
+        "medium"
+    } else {
+        "high"
+    }
 }
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
-    super::radioisotope::findings("openssh", install_insecurity_reasons, home)
+    let mut findings = super::radioisotope::findings("openssh", install_insecurity_reasons, home);
+    for finding in &mut findings {
+        finding.severity = finding_severity(&finding.explanation);
+    }
+    findings
 }
