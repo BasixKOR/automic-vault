@@ -20,8 +20,8 @@ const CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V6";
-const STUB_VERSION: u32 = 6;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V7";
+const STUB_VERSION: u32 = 7;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -1214,7 +1214,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V6 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V8 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
