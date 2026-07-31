@@ -1356,6 +1356,13 @@ private struct DashboardRow: View {
                         .padding(.horizontal, 6)
                         .frame(height: 18)
                         .outlinedPill(detectorSeverityColor(severity))
+                    if item.id == "homebrew" {
+                        Text("EXPERIMENTAL")
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 6)
+                            .frame(height: 18)
+                            .outlinedPill(.purple)
+                    }
                 }
             }
             Group {
