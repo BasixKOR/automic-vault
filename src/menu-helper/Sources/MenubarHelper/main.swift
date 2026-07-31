@@ -20,41 +20,7 @@ private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
-private let updateOwner = "automic-vault"
-private let updateRepository = "automic-vault"
 private var toastWindows: [NSWindow] = []
-
-private func semanticVersionComponents(_ rawValue: String) -> [UInt]? {
-    let fields = rawValue.split(separator: ".", omittingEmptySubsequences: false)
-    guard fields.count == 3 else { return nil }
-    let components = fields.compactMap { UInt($0) }
-    return components.count == fields.count ? components : nil
-}
-
-private func isNewerVersion(_ candidate: String, than current: String) -> Bool {
-    guard let candidate = semanticVersionComponents(candidate),
-          let current = semanticVersionComponents(current)
-    else { return false }
-    return current.lexicographicallyPrecedes(candidate)
-}
-
-private func updateVersion(fromAssetName assetName: String) -> String? {
-    let baseName = (assetName as NSString).deletingPathExtension
-    let prefix = "\(updateRepository)-"
-    guard baseName.lowercased().hasPrefix(prefix), baseName.count > prefix.count else { return nil }
-    let version = String(baseName.dropFirst(prefix.count))
-    return semanticVersionComponents(version) == nil ? nil : version
-}
-
-private func releaseUpdateVersion(from url: URL, currentVersion: String) -> String? {
-    let pathPrefix = "/\(updateOwner)/\(updateRepository)/releases/tag/"
-    guard url.scheme == "https",
-          url.host == "github.com",
-          url.path.hasPrefix(pathPrefix)
-    else { return nil }
-    let version = String(url.path.dropFirst(pathPrefix.count))
-    return isNewerVersion(version, than: currentVersion) ? version : nil
-}
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -92,9 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
     private var isUserSessionActive = true
     private var areScreensAwake = true
-    private let updater = AppUpdater(owner: updateOwner, repo: updateRepository)
+    private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
     private var automaticUpdateCheckTask: Task<Void, Never>?
-    private var readyUpdateVersion: String?
+    private var readyUpdate: Update?
     private var isCheckingForUpdates = false
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
@@ -343,25 +309,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         do {
-            guard let update = try await updater.check() else {
-                readyUpdateVersion = nil
+            let update = if let readyUpdate {
+                readyUpdate
+            } else {
+                try await updater.check()
+            }
+            guard let update else {
+                readyUpdate = nil
                 let alert = NSAlert()
                 alert.messageText = "Automic Vault is up to date"
                 alert.runModal()
                 return
             }
-            readyUpdateVersion = updateVersion(fromAssetName: update.assetName)
+            readyUpdate = update
 
             let alert = NSAlert()
             alert.messageText = "An update is ready"
             alert.informativeText = "Install \(update.assetName) and relaunch Automic Vault?"
             alert.addButton(withTitle: "Install and Relaunch")
             alert.addButton(withTitle: "Later")
-            guard alert.runModal() == .alertFirstButtonReturn else {
-                await update.discard()
-                return
-            }
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+            readyUpdate = nil
             let prepared = try await update.prepareInstallation()
             stopServices()
             stoppedServices = true
@@ -389,38 +358,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshAvailableUpdate() async {
+        guard !isCheckingForUpdates else { return }
         do {
-            readyUpdateVersion = try await fetchAvailableUpdateVersion()
+            readyUpdate = try await updater.check()
             updateCheckMenuItem()
         } catch {
             // A transient metadata failure must not hide an update already found.
         }
     }
 
-    private func fetchAvailableUpdateVersion() async throws -> String? {
-        let url = URL(string: "https://github.com/\(updateOwner)/\(updateRepository)/releases/latest")!
-        var request = URLRequest(
-            url: url,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: 30
-        )
-        request.httpMethod = "HEAD"
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let response = response as? HTTPURLResponse,
-              response.statusCode == 200,
-              let releaseURL = response.url,
-              let currentVersion = Bundle.main.object(
-                  forInfoDictionaryKey: "CFBundleShortVersionString"
-              ) as? String
-        else { throw URLError(.badServerResponse) }
-        return releaseUpdateVersion(from: releaseURL, currentVersion: currentVersion)
-    }
-
     private func updateCheckMenuItem() {
         checkForUpdatesItem.title = if isCheckingForUpdates {
             "Checking for Updates…"
-        } else if let readyUpdateVersion {
-            "Update to v\(readyUpdateVersion)…"
+        } else if let readyUpdate {
+            "Update to v\(readyUpdate.version)…"
         } else {
             "Check for Updates…"
         }
@@ -5096,20 +5047,6 @@ private func runScanSchedulingSelfCheck() -> Int32 {
     return 0
 }
 
-private func runUpdateCheckerSelfCheck() -> Int32 {
-    let release = URL(string: "https://github.com/automic-vault/automic-vault/releases/tag/2.5.0")!
-    guard releaseUpdateVersion(from: release, currentVersion: "2.3.0") == "2.5.0",
-          releaseUpdateVersion(from: release, currentVersion: "2.5.0") == nil,
-          releaseUpdateVersion(
-              from: URL(string: "https://example.com/automic-vault/automic-vault/releases/tag/9.0.0")!,
-              currentVersion: "2.3.0"
-          ) == nil,
-          updateVersion(fromAssetName: "Automic-Vault-2.5.0.dmg") == "2.5.0",
-          updateVersion(fromAssetName: "Automic-Vault-not-a-version.dmg") == nil
-    else { return 1 }
-    return 0
-}
-
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
@@ -5148,10 +5085,6 @@ if CommandLine.arguments.contains("--self-check-menu-status") {
 
 if CommandLine.arguments.contains("--self-check-scan-scheduling") {
     exit(runScanSchedulingSelfCheck())
-}
-
-if CommandLine.arguments.contains("--self-check-update-checker") {
-    exit(runUpdateCheckerSelfCheck())
 }
 
 let app = NSApplication.shared
