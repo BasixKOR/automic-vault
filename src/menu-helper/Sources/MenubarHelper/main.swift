@@ -3624,7 +3624,7 @@ private struct ApprovalPromptView: View {
 
             Text(allowsPersistentApproval
                 ? "Always Allow trusts this verified app until removed in Settings"
-                : "“Always Approve” for apps available in the Automic Vault app")
+                : "Always Allow is available for verified apps in the Automic Vault app.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
