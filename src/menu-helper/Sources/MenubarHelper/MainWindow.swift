@@ -415,13 +415,13 @@ final class DashboardModel: ObservableObject {
     }
 
     private func chooseLauncherApp(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {
-        chooseAppBundle { url in
-            guard let url, url.pathExtension == "app", let signing = appBundleSigning(url) else {
+        chooseLauncher { signing in
+            guard let signing else {
                 completion(nil)
                 return
             }
             completion(BlessedScriptLauncher(
-                bundleIdentifier: Bundle(url: url)?.bundleIdentifier ?? url.lastPathComponent,
+                bundleIdentifier: signing.identifier,
                 requirement: signing.requirement
             ))
         }
@@ -548,19 +548,11 @@ final class DashboardModel: ObservableObject {
     }
 
     func addApp(to gate: SecretGate) {
-        chooseAppBundle { [weak self] url in
-            guard let self, let url else { return }
-            guard url.pathExtension == "app" else {
-                self.errorMessage = "Choose a .app bundle."
-                return
-            }
-            guard let signing = appBundleSigning(url) else {
-                self.errorMessage = "Could not securely verify the code signature for \(url.lastPathComponent)."
-                return
-            }
+        chooseLauncher { [weak self] signing in
+            guard let self, let signing else { return }
             guard signing.runtimeProtection.allowsSecretGateAccess else {
                 self.errorMessage = secretGateAdmissionError(
-                    appName: url.lastPathComponent,
+                    appName: signing.identifier,
                     protection: signing.runtimeProtection
                 )
                 return
@@ -575,7 +567,7 @@ final class DashboardModel: ObservableObject {
                 self.errorMessage = nil
                 self.reload()
             } else {
-                self.errorMessage = "Could not allow \(url.lastPathComponent): \(status)"
+                self.errorMessage = "Could not allow \(signing.identifier): \(status)"
             }
         }
     }
@@ -2431,7 +2423,7 @@ private struct ApprovedAppDisplay {
             ?? app.bundleIdentifier
         bundleIdentifier = app.bundleIdentifier
         icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
-        if let signing = url.flatMap(appBundleSigning) {
+        if let signing = url.flatMap(launcherSigning) {
             signingSummary = "Team \(signing.teamIdentifier)"
         } else {
             signingSummary = "Signing identity unavailable"
@@ -2439,8 +2431,10 @@ private struct ApprovedAppDisplay {
     }
 }
 
-private struct AppBundleSigning {
+private struct LauncherSigning {
+    let identifier: String
     let teamIdentifier: String
+    let path: String
     let requirement: String
     let runtimeProtection: LauncherRuntimeProtection
 }
@@ -2460,21 +2454,48 @@ private func secretGateAdmissionError(
 }
 
 @MainActor
-private func chooseAppBundle(_ completion: @escaping (URL?) -> Void) {
+private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     let panel = NSOpenPanel()
-    panel.title = "Allow Calling App"
-    panel.prompt = "Allow"
+    panel.title = "Allow Launcher"
+    panel.prompt = "Choose"
     panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-    panel.allowedContentTypes = [.applicationBundle]
+    panel.allowedContentTypes = [.applicationBundle, .unixExecutable]
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     panel.begin { response in
-        completion(response == .OK ? panel.url : nil)
+        defer { panel.url?.stopAccessingSecurityScopedResource() }
+        guard response == .OK, let selected = panel.url else {
+            completion(nil)
+            return
+        }
+        guard let signing = launcherSigning(selected.resolvingSymlinksInPath().standardizedFileURL) else {
+            let alert = NSAlert()
+            alert.messageText = "Launcher cannot be allowed"
+            alert.informativeText = "Choose a valid Developer ID-signed executable or signed app."
+            alert.runModal()
+            completion(nil)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Allow \(signing.identifier)?"
+        alert.informativeText = """
+        Identifier: \(signing.identifier)
+        Team ID: \(signing.teamIdentifier)
+        Path: \(signing.path)
+
+        Designated requirement:
+        \(signing.requirement)
+        """
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Cancel")
+        completion(alert.runModal() == .alertFirstButtonReturn ? signing : nil)
     }
 }
 
-private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
+private func launcherSigning(_ url: URL) -> LauncherSigning? {
+    let isApp = url.pathExtension.caseInsensitiveCompare("app") == .orderedSame
+    guard isApp || FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
           let staticCode,
@@ -2491,16 +2512,24 @@ private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
     let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
     guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
           let dictionary = info as? [CFString: Any],
-          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement]
+          let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement],
+          ((dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0) & secCodeSignatureAdHoc == 0,
+          let identifier = dictionary[kSecCodeInfoIdentifier] as? String
     else {
         return nil
     }
+    let teamIdentifier = dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown"
+    guard isApp || (teamIdentifier != "unknown" && satisfiesDeveloperIDRequirement {
+        SecStaticCodeCheckValidity(staticCode, [], $0)
+    }) else { return nil }
     let requirement = requirementValue as! SecRequirement
     guard let requirementText = requirementText(requirement) else {
         return nil
     }
-    return AppBundleSigning(
-        teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
+    return LauncherSigning(
+        identifier: identifier,
+        teamIdentifier: teamIdentifier,
+        path: url.path,
         requirement: requirementText,
         runtimeProtection: launcherRuntimeProtection(signingInformation: dictionary)
     )
