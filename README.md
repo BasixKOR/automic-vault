@@ -163,6 +163,9 @@ secrets only when your gate policy allows it or you approve.
 $ av save TOKEN_NAME
 # Confirmation window appears
 
+$ av list
+# Approval window appears unless the calling app is allowed in Settings
+
 $ av inject +TOKEN_NAME -- /bin/bash
 # Approval window appears
 ```

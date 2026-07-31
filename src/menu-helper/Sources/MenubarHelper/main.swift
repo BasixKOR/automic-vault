@@ -1361,6 +1361,14 @@ private final class ApprovalServer: @unchecked Sendable {
                     requirement: launcher.designatedRequirement
                 ))
                 guard status == errSecSuccess else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        approvalSource: "Manual",
+                        reason: "Could not save persistent access: \(status)",
+                        launcher: launcher
+                    ))
                     self.reply(peer, to: message, ok: false, error: "failed to save list access: \(status)")
                     return
                 }
