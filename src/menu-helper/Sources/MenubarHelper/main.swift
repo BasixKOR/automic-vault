@@ -1100,6 +1100,7 @@ private struct LauncherIdentity {
     let identifier: String
     let teamIdentifier: String
     let designatedRequirement: String
+    let runtimeProtection: LauncherRuntimeProtection
 }
 
 private struct ScriptApproval {
@@ -2334,7 +2335,10 @@ private func resolveSecretGatePolicy(
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
             return ResolvedSecretGatePolicy(
-                protection: policy.protection,
+                protection: policy.requiresHardenedRuntime
+                    && !launcher.runtimeProtection.allowsSecretGateAccess
+                    ? .noAccess
+                    : policy.protection,
                 source: shortAppName(launcher.identifier),
                 launcher: launcher
             )
@@ -3054,7 +3058,8 @@ private func launcherIdentities(
             path: path,
             identifier: app.identifier,
             teamIdentifier: app.teamIdentifier,
-            designatedRequirement: app.designatedRequirement
+            designatedRequirement: app.designatedRequirement,
+            runtimeProtection: signing.runtimeProtection
         )
     }
 }
@@ -3065,12 +3070,25 @@ private struct LiveSigningInfo {
     let designatedRequirement: String
     let mainExecutable: String
     let isAdHoc: Bool
+    let runtimeProtection: LauncherRuntimeProtection
 }
 
 private struct StaticSigningInfo {
     let identifier: String
     let teamIdentifier: String
     let designatedRequirement: String
+}
+
+private func runtimeProtection(_ dictionary: [CFString: Any]) -> LauncherRuntimeProtection {
+    let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
+    let entitlements = dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
+    let enabledEntitlements = Set(entitlements.compactMap { key, value in
+        (value as? NSNumber)?.boolValue == true ? key : nil
+    })
+    return launcherRuntimeProtection(
+        signatureFlags: signatureFlags,
+        enabledEntitlements: enabledEntitlements
+    )
 }
 
 private struct LauncherAppVerificationFailure {
@@ -3120,7 +3138,8 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         designatedRequirement: requirementText,
         mainExecutable: executable,
-        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0
+        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0,
+        runtimeProtection: runtimeProtection(dictionary)
     )
 }
 
@@ -3151,7 +3170,8 @@ private func executableSigningInfo(path: String) -> LiveSigningInfo? {
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
         designatedRequirement: requirementText,
         mainExecutable: executable,
-        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0
+        isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0,
+        runtimeProtection: runtimeProtection(dictionary)
     )
 }
 
@@ -3933,7 +3953,8 @@ private func runApprovalSelfCheck() -> Int32 {
             path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
             identifier: "com.automicvault.vaultty",
             teamIdentifier: "TEAM",
-            designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#
+            designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#,
+            runtimeProtection: .hardened
         ),
         fallback: "/opt/homebrew/bin/gh"
     )
@@ -4019,14 +4040,16 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "app.vaultty.Vaultty" and anchor apple generic"#,
         mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
-        isAdHoc: false
+        isAdHoc: false,
+        runtimeProtection: .hardened
     )
     let vaulttyBridgeSigning = LiveSigningInfo(
         identifier: "com.automicvault.vaultty.session-bridge",
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.automicvault.vaultty.session-bridge" and anchor apple generic"#,
         mainExecutable: "/Users/mxcl/Library/Application Support/Vaultty/vaultty-session-bridge",
-        isAdHoc: false
+        isAdHoc: false,
+        runtimeProtection: .hardened
     )
     let vaulttyAppSigning = StaticSigningInfo(
         identifier: "com.automicvault.vaultty",
@@ -4038,7 +4061,8 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "dev.mxcl.pmm.menu" and anchor apple generic"#,
         mainExecutable: "/Applications/Package Manager Manager.app/Contents/Library/LoginItems/Package Manager Manager Menu.app/Contents/MacOS/PMMMenuBar",
-        isAdHoc: false
+        isAdHoc: false,
+        runtimeProtection: .hardened
     )
     var detachedCaller = AVProcessIdentity()
     detachedCaller.ppid = 1
@@ -4048,14 +4072,16 @@ private func runApprovalSelfCheck() -> Int32 {
         teamIdentifier: "unknown",
         designatedRequirement: #"identifier "org.python.python" and anchor apple generic"#,
         mainExecutable: "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
-        isAdHoc: true
+        isAdHoc: true,
+        runtimeProtection: .hardenedRuntimeMissing
     )
     let unbundledSigning = LiveSigningInfo(
         identifier: "com.automicvault.av",
         teamIdentifier: "TEAM",
         designatedRequirement: #"identifier "com.automicvault.av" and anchor apple generic"#,
         mainExecutable: "/usr/local/bin/av",
-        isAdHoc: false
+        isAdHoc: false,
+        runtimeProtection: .hardened
     )
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
@@ -4133,7 +4159,39 @@ private func runApprovalSelfCheck() -> Int32 {
         path: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
         identifier: "com.openai.codex",
         teamIdentifier: "TEAM",
-        designatedRequirement: blockedRequirement
+        designatedRequirement: blockedRequirement,
+        runtimeProtection: .hardened
+    )
+    let unhardenedLauncher = LauncherIdentity(
+        pid: blockedLauncher.pid,
+        path: blockedLauncher.path,
+        identifier: blockedLauncher.identifier,
+        teamIdentifier: blockedLauncher.teamIdentifier,
+        designatedRequirement: blockedLauncher.designatedRequirement,
+        runtimeProtection: .hardenedRuntimeMissing
+    )
+    let runtimeProtectedGate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: blockedLauncher.identifier,
+            requirement: blockedRequirement,
+            protection: .readOnly,
+            requiresHardenedRuntime: true
+        )]
+    )
+    let grandfatheredGate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: blockedLauncher.identifier,
+            requirement: blockedRequirement,
+            protection: .readOnly
+        )]
     )
     let ghMetadata = HardenerMetadata(
         name: "gh",
@@ -4204,6 +4262,9 @@ private func runApprovalSelfCheck() -> Int32 {
     }
     guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
+          resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [unhardenedLauncher])?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: grandfatheredGate, launchers: [unhardenedLauncher])?.protection == .readOnly,
           matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
           matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, hardeners: [ghMetadata]) == nil,
           matchingSecretGate(request: ghRequest(keys: []), signing: ghSigning, hardeners: [ghMetadata]) == nil,

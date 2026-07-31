@@ -399,12 +399,46 @@ public struct SecretGatePolicy: Equatable, Sendable {
     public let bundleIdentifier: String
     public let requirement: String
     public let protection: SecretGateProtection
+    public let requiresHardenedRuntime: Bool
 
-    public init(bundleIdentifier: String, requirement: String, protection: SecretGateProtection) {
+    public init(
+        bundleIdentifier: String,
+        requirement: String,
+        protection: SecretGateProtection,
+        requiresHardenedRuntime: Bool = false
+    ) {
         self.bundleIdentifier = bundleIdentifier
         self.requirement = requirement
         self.protection = protection
+        self.requiresHardenedRuntime = requiresHardenedRuntime
     }
+}
+
+public enum LauncherRuntimeProtection: Equatable, Sendable {
+    case hardened
+    case hardenedRuntimeMissing
+    case unsafeEntitlements([String])
+
+    public var allowsSecretGateAccess: Bool { self == .hardened }
+}
+
+private let unsafeLauncherRuntimeEntitlements: Set<String> = [
+    "com.apple.security.cs.allow-dyld-environment-variables",
+    "com.apple.security.cs.allow-unsigned-executable-memory",
+    "com.apple.security.cs.disable-executable-page-protection",
+    "com.apple.security.cs.disable-library-validation",
+    "com.apple.security.get-task-allow",
+]
+
+public func launcherRuntimeProtection(
+    signatureFlags: UInt32,
+    enabledEntitlements: Set<String>
+) -> LauncherRuntimeProtection {
+    guard signatureFlags & SecCodeSignatureFlags.runtime.rawValue != 0 else {
+        return .hardenedRuntimeMissing
+    }
+    let unsafe = enabledEntitlements.intersection(unsafeLauncherRuntimeEntitlements).sorted()
+    return unsafe.isEmpty ? .hardened : .unsafeEntitlements(unsafe)
 }
 
 public struct SecretGate: Equatable, Identifiable, Sendable {
@@ -718,7 +752,8 @@ public func loadSecretGates(
                     SecretGatePolicy(
                         bundleIdentifier: appIdentifier(from: $0) ?? "unknown",
                         requirement: $0,
-                        protection: prototype.normalizedProtection(record.protection)
+                        protection: prototype.normalizedProtection(record.protection),
+                        requiresHardenedRuntime: record.requiresHardenedRuntime == true
                     )
                 }
             }.uniqueSorted()
@@ -785,12 +820,18 @@ public func setSecretGateAppProtection(
     requirement: String,
     protection: SecretGateProtection,
     for gate: SecretGate,
+    requiresHardenedRuntime: Bool = true,
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
     let protection = gate.normalizedProtection(protection)
     return setSecretGatePolicyRecord(
-        SecretGatePolicyRecord(gateID: gate.id, requirement: requirement, protection: protection),
+        SecretGatePolicyRecord(
+            gateID: gate.id,
+            requirement: requirement,
+            protection: protection,
+            requiresHardenedRuntime: requiresHardenedRuntime
+        ),
         service: service,
         account: account
     )
@@ -827,6 +868,19 @@ private struct SecretGatePolicyRecord: Codable, Equatable {
     let gateID: String
     let requirement: String?
     let protection: SecretGateProtection
+    let requiresHardenedRuntime: Bool?
+
+    init(
+        gateID: String,
+        requirement: String?,
+        protection: SecretGateProtection,
+        requiresHardenedRuntime: Bool? = nil
+    ) {
+        self.gateID = gateID
+        self.requirement = requirement
+        self.protection = protection
+        self.requiresHardenedRuntime = requiresHardenedRuntime
+    }
 }
 
 private enum SecretGatePolicyRecordsLoad {
