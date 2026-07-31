@@ -230,7 +230,7 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
-        Some("list") => list::run(rest, stdout, stderr),
+        Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {
             let Some(secret_gate) = parse_open_args(&rest) else {
