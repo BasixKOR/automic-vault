@@ -33,12 +33,12 @@ struct BlessedScriptReviewRequest: Sendable {
 final class AutomicVaultMainWindowController: NSHostingController<DashboardRootView> {
     private let model = DashboardModel()
 
-    init() {
-        super.init(rootView: DashboardRootView(model: model))
+    init(checkForUpdates: @escaping () -> Void) {
+        super.init(rootView: DashboardRootView(model: model, checkForUpdates: checkForUpdates))
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
-        super.init(coder: coder, rootView: DashboardRootView(model: model))
+        super.init(coder: coder, rootView: DashboardRootView(model: model, checkForUpdates: {}))
     }
 
     override func viewDidAppear() {
@@ -52,6 +52,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
 
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
         model.updateDetectorFindings(findings)
+    }
+
+    func setAvailableUpdateVersion(_ version: String?) {
+        model.availableUpdateVersion = version
     }
 
     func showAccessRequest(id: UUID) {
@@ -120,6 +124,7 @@ final class DashboardModel: ObservableObject {
     @Published var selectedItemID: String?
     @Published var searchText = ""
     @Published private(set) var cliInstallState: CLIInstallState?
+    @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
     @Published private(set) var pendingBlessingLaunchers: [BlessedScriptLauncher] = []
 
@@ -882,6 +887,13 @@ private func shellQuoted(_ value: String) -> String {
 }
 
 @MainActor
+func runUpdateToolbarSelfCheck() -> Int32 {
+    let controller = AutomicVaultMainWindowController(checkForUpdates: {})
+    controller.setAvailableUpdateVersion("2.8.0")
+    return controller.rootView.model.availableUpdateVersion == "2.8.0" ? 0 : 1
+}
+
+@MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
     let accessRequest = AccessRequestRecord(
         date: Date(timeIntervalSince1970: 18_900),
@@ -1089,6 +1101,7 @@ struct DashboardItem: Identifiable, Equatable {
 
 struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
+    let checkForUpdates: () -> Void
 
     var body: some View {
         NavigationSplitView() {
@@ -1114,6 +1127,13 @@ struct DashboardRootView: View {
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
                 .toolbar {
                     Spacer()
+                    if let version = model.availableUpdateVersion {
+                        Button(action: checkForUpdates) {
+                            Label("Update to v\(version)", systemImage: "arrow.down.circle")
+                        }
+                        .labelStyle(.titleAndIcon)
+                        .help("Install Automic Vault v\(version)")
+                    }
                     if let cliActionTitle = model.cliInstallState?.actionTitle {
                         Button {
                             model.installCLI()

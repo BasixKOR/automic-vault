@@ -291,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc private func checkForUpdates() {
         guard !isCheckingForUpdates else { return }
         isCheckingForUpdates = true
-        updateCheckMenuItem()
+        updateCheckControls()
 
         Task { @MainActor [weak self] in
             await self?.performUpdateCheck()
@@ -310,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var stoppedServices = false
         defer {
             isCheckingForUpdates = false
-            updateCheckMenuItem()
+            updateCheckControls()
         }
 
         do {
@@ -366,13 +366,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isCheckingForUpdates else { return }
         do {
             readyUpdate = try await updater.check()
-            updateCheckMenuItem()
+            updateCheckControls()
         } catch {
             // A transient metadata failure must not hide an update already found.
         }
     }
 
-    private func updateCheckMenuItem() {
+    private func updateCheckControls() {
         checkForUpdatesItem.title = if isCheckingForUpdates {
             "Checking for Updates…"
         } else if let readyUpdate {
@@ -381,6 +381,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "Check for Updates…"
         }
         checkForUpdatesItem.isEnabled = !isCheckingForUpdates
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?
+            .setAvailableUpdateVersion(readyUpdate?.version)
     }
 
     @MainActor @objc private func openMainWindow() {
@@ -404,7 +406,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let controller = AutomicVaultMainWindowController()
+        let controller = AutomicVaultMainWindowController { [weak self] in
+            self?.checkForUpdates()
+        }
+        controller.setAvailableUpdateVersion(readyUpdate?.version)
         let defaultWindowSize = NSSize(width: 860, height: 578)
         let window = AutomicVaultWindow(
             contentRect: NSRect(origin: .zero, size: defaultWindowSize),
@@ -5358,6 +5363,10 @@ if CommandLine.arguments.contains("--self-check-transient-approvals") {
 
 if CommandLine.arguments.contains("--self-check-dashboard-search") {
     exit(MainActor.assumeIsolated { runDashboardSearchSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-update-toolbar") {
+    exit(MainActor.assumeIsolated { runUpdateToolbarSelfCheck() })
 }
 
 if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
