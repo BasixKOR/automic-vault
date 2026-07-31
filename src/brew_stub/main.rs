@@ -2,10 +2,11 @@ use std::ffi::{CStr, CString, OsString};
 use std::fs;
 use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V5";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V6";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -83,6 +84,9 @@ where
     let (args, post_install) = prepare_args(&request.args, cwd)?;
     let mut command = Command::new(TARGET);
     command.args(args).env_clear().envs(stub_env(source_env));
+    unsafe {
+        command.pre_exec(drop_to_effective_identity);
+    }
     if command
         .get_args()
         .any(|arg| matches!(arg.to_str(), Some("--cask" | "--casks")))
@@ -90,6 +94,15 @@ where
         command.env("HOMEBREW_NO_AUTO_UPDATE", "1");
     }
     Ok((command, post_install))
+}
+
+fn drop_to_effective_identity() -> io::Result<()> {
+    let uid = unsafe { libc::geteuid() };
+    let gid = unsafe { libc::getegid() };
+    if unsafe { libc::setregid(gid, gid) } != 0 || unsafe { libc::setreuid(uid, uid) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 fn prepare_args(
@@ -995,6 +1008,13 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().to_string(), "denied");
+    }
+
+    #[test]
+    fn child_identity_is_normalized() {
+        drop_to_effective_identity().unwrap();
+        assert_eq!(unsafe { libc::getuid() }, unsafe { libc::geteuid() });
+        assert_eq!(unsafe { libc::getgid() }, unsafe { libc::getegid() });
     }
 
     #[test]

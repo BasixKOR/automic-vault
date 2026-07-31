@@ -20,8 +20,8 @@ const CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V5";
-const STUB_VERSION: u32 = 5;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V6";
+const STUB_VERSION: u32 = 6;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
