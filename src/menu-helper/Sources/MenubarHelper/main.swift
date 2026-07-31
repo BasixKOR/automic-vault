@@ -1503,7 +1503,17 @@ private final class ApprovalServer: @unchecked Sendable {
             classifySecretGateRequest(gateID: $0.id, request: request)
         }
         let automaticApprovalExplanation: String?
-        if resolvedPolicy == nil,
+        if let configuredGate,
+           let resolvedPolicy,
+           let classification,
+           !secretGateProtectionAllows(resolvedPolicy.protection, classification: classification),
+           let explanation = secretGateAutomaticApprovalExplanation(
+               gateID: configuredGate.id,
+               request: request
+           )
+        {
+            automaticApprovalExplanation = explanation
+        } else if resolvedPolicy == nil,
            classification == .readOnly,
            let failure = launcherAppVerificationFailure(for: identity)
         {
@@ -2536,7 +2546,9 @@ private func ghRequestIsReadOnly(_ args: [String]) -> Bool {
     guard let firstWord = words.first else { return false }
     let command = ghCanonicalCommand(firstWord.lowercased())
     if words.contains("--show-token") { return false }
-    if command == "api" { return ghApiRequestIsReadOnly(Array(words.dropFirst())) }
+    if command == "api" {
+        return ghApiRequestClassification(Array(words.dropFirst())) == .readOnly
+    }
     if ["alias", "extension", "config", "skill"].contains(command) { return false }
     if ["status", "browse", "search"].contains(command) { return true }
     guard words.count >= 2 else { return false }
@@ -2612,7 +2624,13 @@ private func ghSubcommandIsList(_ subcommand: String) -> Bool {
     subcommand == "list" || subcommand == "ls"
 }
 
-private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
+private enum GhApiRequestClassification {
+    case readOnly
+    case indirectGraphQLInput
+    case other
+}
+
+private func ghApiRequestClassification(_ args: [String]) -> GhApiRequestClassification {
     var index = 0
     var endpoints: [String] = []
     var method: String?
@@ -2622,20 +2640,20 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
         let arg = args[index]
         switch arg {
         case "--":
-            return false
+            return .other
         case "-X", "--method":
-            guard index + 1 < args.count else { return false }
+            guard index + 1 < args.count else { return .other }
             method = args[index + 1].uppercased()
             index += 2
         case "-f", "--raw-field", "-F", "--field":
-            guard index + 1 < args.count else { return false }
+            guard index + 1 < args.count else { return .other }
             hasFields = true
             graphQLArguments.add(field: args[index + 1], readsFile: arg == "-F" || arg == "--field")
             index += 2
         case "--input":
-            return false
+            return .other
         case "-H", "--header", "-p", "--preview", "--cache", "-q", "--jq", "-t", "--template", "--hostname":
-            guard index + 1 < args.count else { return false }
+            guard index + 1 < args.count else { return .other }
             index += 2
         case "-i", "--include", "--paginate", "--slurp", "--silent", "--verbose":
             index += 1
@@ -2649,7 +2667,7 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
                 hasFields = true
                 graphQLArguments.add(field: field, readsFile: false)
             } else if arg.hasPrefix("--input=") {
-                return false
+                return .other
             } else if arg.hasPrefix("--header=")
                 || arg.hasPrefix("--preview=")
                 || arg.hasPrefix("--cache=")
@@ -2666,24 +2684,45 @@ private func ghApiRequestIsReadOnly(_ args: [String]) -> Bool {
                 hasFields = true
                 graphQLArguments.add(field: String(arg.dropFirst(2)), readsFile: true)
             } else if arg.hasPrefix("-") {
-                return false
+                return .other
             } else {
                 endpoints.append(arg)
             }
             index += 1
         }
     }
-    guard endpoints.count == 1 else { return false }
+    guard endpoints.count == 1 else { return .other }
     if endpoints[0] == "graphql" {
-        return graphQLArguments.isReadOnly
+        if graphQLArguments.usesIndirectFieldInput { return .indirectGraphQLInput }
+        return graphQLArguments.isReadOnly ? .readOnly : .other
     }
-    return (method ?? (hasFields ? "POST" : "GET")) == "GET"
+    return (method ?? (hasFields ? "POST" : "GET")) == "GET" ? .readOnly : .other
+}
+
+private func secretGateAutomaticApprovalExplanation(
+    gateID: String,
+    request: ApprovalRequest
+) -> String? {
+    guard gateID == "gh" else { return nil }
+    return ghGraphQLIndirectInputExplanation(request.args)
+}
+
+private func ghGraphQLIndirectInputExplanation(_ args: [String]) -> String? {
+    let words = ghCommandWords(args)
+    guard words.first?.lowercased() == "api",
+          ghApiRequestClassification(Array(words.dropFirst())) == .indirectGraphQLInput
+    else {
+        return nil
+    }
+    return "Automic Vault could not verify this GraphQL request as read-only because gh will read a field value from standard input or a file. That content is not present in the command being approved, so automatic access fails closed. Pass field values inline—for example, use -f query=… for the query—to make them verifiable."
 }
 
 private struct GhGraphQLArguments {
     private var queries: [String] = []
     private var operationNames: [String] = []
     private var hasIndirectFieldInput = false
+
+    var usesIndirectFieldInput: Bool { hasIndirectFieldInput }
 
     mutating func add(field: String, readsFile: Bool) {
         let parts = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -4553,7 +4592,14 @@ private func runGhReadOnlySelfCheck() -> Int32 {
     guard denied.allSatisfy({
         let classification = ghRequestClassification($0)
         return classification != .readOnly && classification != .localWrite
-    }) else { return 1 }
+    }),
+    ghGraphQLIndirectInputExplanation(
+        ["api", "graphql", "-F", "query=@-"]
+    )?.contains("automatic access fails closed") == true,
+    ghGraphQLIndirectInputExplanation(
+        ["api", "graphql", "-f", "query={ viewer { login } }"]
+    ) == nil
+    else { return 1 }
     return 0
 }
 
