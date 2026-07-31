@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V7";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V8";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -44,13 +44,9 @@ fn main() {
         Ok(cwd) => cwd,
         Err(err) => fail(format!("failed to read current directory: {err}")),
     };
-    let (mut command, post_install, changes_completions) =
+    let (mut command, post_install) =
         approved_command(args, std::env::vars_os(), &cwd, xpc_authorize)
             .unwrap_or_else(|err| fail(err));
-    if changes_completions {
-        prepare_zsh_completions_for_homebrew(Path::new(PREFIX), Path::new(CASK_USER_UID))
-            .unwrap_or_else(|err| fail(err));
-    }
     let status = command
         .status()
         .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
@@ -78,7 +74,7 @@ fn approved_command<I, F>(
     source_env: I,
     cwd: &Path,
     approve: F,
-) -> Result<(Command, Option<CaskPostInstall>, bool), String>
+) -> Result<(Command, Option<CaskPostInstall>), String>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
     F: FnOnce(&AuthorizationRequest) -> Result<(), String>,
@@ -97,11 +93,7 @@ where
     {
         command.env("HOMEBREW_NO_AUTO_UPDATE", "1");
     }
-    Ok((
-        command,
-        post_install,
-        changes_zsh_completions(&request.args),
-    ))
+    Ok((command, post_install))
 }
 
 fn drop_to_effective_identity() -> io::Result<()> {
@@ -246,28 +238,6 @@ fn mutation_command(args: &[String]) -> Option<(usize, &str)> {
         "install" | "reinstall" | "upgrade" | "uninstall" | "remove" | "rm"
     )
     .then_some((index, command))
-}
-
-fn changes_zsh_completions(args: &[String]) -> bool {
-    let Some(command) = args
-        .iter()
-        .find(|arg| arg.as_str() == "--" || !arg.starts_with('-'))
-    else {
-        return false;
-    };
-    matches!(
-        command.as_str(),
-        "install"
-            | "reinstall"
-            | "upgrade"
-            | "uninstall"
-            | "remove"
-            | "rm"
-            | "cleanup"
-            | "autoremove"
-            | "link"
-            | "unlink"
-    )
 }
 
 fn named_operands(args: &[String], command_index: usize) -> Vec<String> {
@@ -657,11 +627,7 @@ fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Res
             ));
         }
         if !metadata.file_type().is_symlink() {
-            let acl = if metadata.file_type().is_dir() {
-                format!("{COMPLETION_ACL},file_inherit,directory_inherit")
-            } else {
-                COMPLETION_ACL.into()
-            };
+            let acl = completion_acl(metadata.file_type().is_dir());
             let _ = Command::new("/bin/chmod")
                 .args(["-a", &acl])
                 .arg(&path)
@@ -686,8 +652,7 @@ fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Res
     }
     let caller = caller()?;
     eprintln!("av-brew-stub: sudo is required to make zsh completions compatible with compinit");
-    let owner = format!("{}:{}", caller.uid, caller.gid);
-    let output = completion_ownership_command(&owner, &repair)
+    let output = completion_ownership_command(&caller, &repair)
         .output()
         .map_err(|err| format!("failed to transfer zsh completion ownership: {err}"))?;
     if !output.status.success() {
@@ -711,46 +676,15 @@ fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Res
     Ok(())
 }
 
-fn prepare_zsh_completions_for_homebrew(
-    prefix: &Path,
-    configured_user: &Path,
-) -> Result<(), String> {
-    let automic_uid = unsafe { libc::geteuid() };
-    let automic_gid = unsafe { libc::getegid() };
-    let configured_uid = configured_cask_uid(configured_user, automic_uid, automic_gid)?;
-    let mut transfer = Vec::new();
-    for path in zsh_completion_paths(prefix)? {
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
-        if !metadata.file_type().is_dir() && metadata.uid() == configured_uid {
-            transfer.push(path);
-        } else if metadata.uid() != configured_uid
-            && metadata.uid() != automic_uid
-            && metadata.uid() != 0
-        {
-            return Err(format!(
-                "zsh completion {} has unexpected owner {}",
-                path.display(),
-                metadata.uid()
-            ));
+fn completion_acl(directory: bool) -> String {
+    format!(
+        "{COMPLETION_ACL}{}",
+        if directory {
+            ",delete_child,file_inherit,directory_inherit"
+        } else {
+            ""
         }
-    }
-    if transfer.is_empty() {
-        return Ok(());
-    }
-    caller()?;
-    eprintln!("av-brew-stub: sudo is required to let Homebrew update zsh completions");
-    let owner = format!("{automic_uid}:{automic_gid}");
-    let output = completion_ownership_command(&owner, &transfer)
-        .output()
-        .map_err(|err| format!("failed to prepare zsh completions: {err}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to prepare zsh completions: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(())
+    )
 }
 
 fn zsh_completion_paths(prefix: &Path) -> Result<Vec<PathBuf>, String> {
@@ -793,10 +727,11 @@ fn zsh_completion_paths(prefix: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paths.into_iter().collect())
 }
 
-fn completion_ownership_command(owner: &str, paths: &[PathBuf]) -> Command {
+fn completion_ownership_command(caller: &Caller, paths: &[PathBuf]) -> Command {
+    let owner = format!("{}:{}", caller.uid, caller.gid);
     let mut command = Command::new("/usr/bin/sudo");
     command
-        .args(["--", "/usr/sbin/chown", "-h", "-n", "--", owner])
+        .args(["--", "/usr/sbin/chown", "-h", "-n", "--", &owner])
         .args(paths)
         .env_clear()
         .envs(stub_env([]));
@@ -1091,7 +1026,7 @@ mod tests {
 
     #[test]
     fn approved_command_has_sanitized_env() {
-        let (command, caller, changes_completions) = approved_command(
+        let (command, caller) = approved_command(
             vec!["info".into(), "ack".into()],
             [
                 ("TERM".into(), "xterm-256color".into()),
@@ -1102,7 +1037,6 @@ mod tests {
         )
         .unwrap();
         assert!(caller.is_none());
-        assert!(!changes_completions);
         let env = command
             .get_envs()
             .map(|(key, value)| (key.to_owned(), value.unwrap().to_owned()))
@@ -1390,12 +1324,18 @@ mod tests {
     }
 
     #[test]
+    fn completion_directories_allow_homebrew_to_replace_entries() {
+        assert!(completion_acl(true).contains("delete_child"));
+        assert!(!completion_acl(false).contains("delete_child"));
+    }
+
+    #[test]
     fn completion_ownership_is_narrow_and_non_recursive() {
         let paths = vec![
             PathBuf::from("/opt/homebrew/share/zsh"),
             PathBuf::from("/opt/homebrew/share/zsh/site-functions/_tool"),
         ];
-        let command = completion_ownership_command("501:20", &paths);
+        let command = completion_ownership_command(&Caller { uid: 501, gid: 20 }, &paths);
 
         assert_eq!(command.get_program(), "/usr/bin/sudo");
         assert_eq!(
@@ -1414,22 +1354,5 @@ mod tests {
                 "/opt/homebrew/share/zsh/site-functions/_tool",
             ]
         );
-    }
-
-    #[test]
-    fn install_lifecycle_commands_prepare_zsh_completions() {
-        for command in [
-            "install",
-            "reinstall",
-            "upgrade",
-            "uninstall",
-            "cleanup",
-            "autoremove",
-            "link",
-            "unlink",
-        ] {
-            assert!(changes_zsh_completions(&[command.into()]));
-        }
-        assert!(!changes_zsh_completions(&["info".into()]));
     }
 }

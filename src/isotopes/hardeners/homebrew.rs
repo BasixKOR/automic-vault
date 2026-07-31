@@ -20,8 +20,8 @@ const CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V7";
-const STUB_VERSION: u32 = 7;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V8";
+const STUB_VERSION: u32 = 8;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -671,7 +671,7 @@ fn configure_zsh_completion_access(prefix: &Path, source_user: &SourceUser) -> R
     let acl = format!(
         "user:{AUTOMIC_USER} allow read,write,execute,delete,append,readattr,writeattr,readextattr,writeextattr,readsecurity"
     );
-    let inherited_acl = format!("{acl},file_inherit,directory_inherit");
+    let inherited_acl = format!("{acl},delete_child,file_inherit,directory_inherit");
     for path in zsh_completion_paths(prefix)? {
         let metadata = fs::symlink_metadata(&path)
             .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
@@ -1214,7 +1214,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V8 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V9 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [

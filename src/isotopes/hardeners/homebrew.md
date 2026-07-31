@@ -58,8 +58,8 @@ is that solution.
   and executes `/opt/homebrew/bin/brew` directly.
 - Zsh completion directories and the completion files exposed through them are
   owned by the configured desktop account. The `automic` account receives a
-  narrow ACL so Homebrew can update them. The launcher returns completion files
-  to Homebrew for package transactions, then transfers them back afterward.
+  narrow ACL so Homebrew can update them, and the launcher transfers newly
+  created completion entries after Homebrew runs.
 
 ## Casks
 
