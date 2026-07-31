@@ -224,14 +224,14 @@ Execution of blessed scripts *can* be configured to be automatically approved
 for specific launchers.
 
 > [!TIP]
-> Allowing specific launchers (ie. `.app`s) is powerful but requires careful
+> Allowing specific signed launchers is powerful but requires careful
 > consideration. Potential uses:
 >
 > - Keeping all hardened tools at read-only or lower and only defining use of
 >   those tools via immutable blessing is truly a level of safety developers
 >   have only ever dreamed of.
-> - Having a single terminal app that is the only used for deployments and the
->   the only `.app` that is endorsed to run them.
+> - Having a single terminal app that is the only one used for deployments and
+>   the only launcher that is endorsed to run them.
 > - Or conversely, trusting your agents more than your terminal where supply
 >   chain attacks are more likely to occur.
 
@@ -281,14 +281,21 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
 
 ## Important Notes When Using Automic Vault With Agents
 
-If you use agents via their `.app` then you’re good to go: Automic Vault ties
-approval gates to codesigned bundles.
+Automic Vault ties approval gates to signed launcher identities. This includes
+both app bundles and Developer ID-signed standalone executables.
 
-If you use agents via their CLI, then the simplest solution is to install the
-`.app` version and symlink the CLI that they all bundle to `/usr/local/bin`.
-This way Automic Vault can verify the caller via its bundled, notarized code
-signature. Automic Vault *will* then trace the executor chain back to the `.app`
-and apply the approval gates you set for that precise `.app`.
+The current official macOS installers we checked for
+[Claude Code](https://github.com/anthropics/claude-code) and
+[Codex](https://developers.openai.com/codex/cli/) ship Developer ID-signed
+native executables. This is true of their recommended standalone installers
+and Homebrew casks. Their current npm packages also contain the signed native
+payload: Claude installs it as the command while Codex starts it through a Node
+wrapper. For the clearest process identity and `av doctor` result, prefer the
+standalone installer or Homebrew cask.
+
+Run `av doctor claude` or `av doctor codex` to check the command selected by
+your current `PATH`. Distribution details can change; the doctor verifies the
+live executable rather than trusting how it was installed.
 
 It is then vital to ensure the harness for the agents has minimal TCC
 permissions. If you are using them via CLI that will often be your Terminal
@@ -311,10 +318,31 @@ they are quite granular nowadays. And coupled with Automic Vault, they are a
 powerful tool to protect your secrets, prevent malware having attack
 opportunities and prevent agents from being too dangerous.
 
-> [!NOTE]
-> We believe a route to allowing non-codesigned cli tools to have gates is
-> doable. We will experiment with that in the near future. However, even if
-> possible the code-signed route is more secure and recommended.
+> [!IMPORTANT]
+> Unsigned and ad-hoc signed executables cannot be launcher identities. Ad-hoc
+> signing proves integrity only for that exact build; it provides no vendor or
+> Team identity for Automic Vault to trust.
+
+### Pi
+
+Pi’s official macOS v0.83.0 standalone binary is linker/ad-hoc signed, has no
+Team ID, and fails strict signature verification. Automic Vault rejects it as
+a launcher. Re-signing it ad-hoc or merely placing it in an unsigned `.app`
+does not change that.
+
+The easiest current workaround is the independent, unofficial
+[Pi Launcher](https://github.com/kunchenguid/pi-launcher). Its published app is
+Developer ID-signed and notarized, bundles a checksum-pinned official Pi
+binary, and remains Pi’s parent process. Review that project as an additional
+supply-chain dependency before trusting its identity.
+
+To build your own equivalent, use Pi Launcher’s small launcher and bundle
+recipe (`make app`), then sign the nested Pi executable and app from the inside
+out with your own **Developer ID Application** identity. Enroll the resulting
+app in Automic Vault Settings and invoke its launcher executable rather than
+the original `pi` command. Developer ID certificates require a paid Apple
+Developer Program membership, which is why this is not an ideal general
+solution. Ad-hoc signing is deliberately insufficient.
 
 ### Computer Use & Automic Vault
 

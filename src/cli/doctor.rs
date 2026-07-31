@@ -33,7 +33,8 @@ struct AgentCliDoctor {
     command: &'static str,
     vendor: &'static str,
     team_identifier: &'static str,
-    app_name: &'static str,
+    signing_identifier: &'static str,
+    install_hint: &'static str,
 }
 
 const AGENT_CLIS: [AgentCliDoctor; 2] = [
@@ -41,13 +42,15 @@ const AGENT_CLIS: [AgentCliDoctor; 2] = [
         command: "claude",
         vendor: "Anthropic",
         team_identifier: "Q6L2SF6YDW",
-        app_name: "Claude.app",
+        signing_identifier: "com.anthropic.claude-code",
+        install_hint: "Anthropic's native installer or the Homebrew cask",
     },
     AgentCliDoctor {
         command: "codex",
         vendor: "OpenAI",
         team_identifier: "2DC432GLL2",
-        app_name: "Codex.app",
+        signing_identifier: "codex",
+        install_hint: "OpenAI's standalone installer or the Homebrew cask",
     },
 ];
 
@@ -91,11 +94,15 @@ fn select_agent_cli(selector: Option<&str>) -> Option<&'static AgentCliDoctor> {
 fn diagnose_agent_cli(
     agent: &AgentCliDoctor,
     path: &OsStr,
-    signature_valid: impl Fn(&Path, &str) -> bool,
+    signature_valid: impl Fn(&Path, &str, &str) -> bool,
 ) -> DoctorResult {
     let resolved = resolve(agent.command, path);
     let issues = match resolved.as_deref() {
-        Some(executable) if signature_valid(executable, agent.team_identifier) => Vec::new(),
+        Some(executable)
+            if signature_valid(executable, agent.team_identifier, agent.signing_identifier) =>
+        {
+            Vec::new()
+        }
         Some(executable) => vec![agent_cli_signature_issue(agent, executable)],
         None => vec![agent_cli_missing_issue(agent)],
     };
@@ -137,15 +144,16 @@ fn agent_cli_missing_issue(agent: &AgentCliDoctor) -> DoctorIssue {
 
 fn agent_cli_remediation(agent: &AgentCliDoctor) -> String {
     format!(
-        "Install the full {}, then make /usr/local/bin/{} a root-owned symbolic link to the {} CLI bundled inside the app. Review any existing path before replacing it, ensure /usr/local/bin precedes other CLI locations in PATH, then rerun `av doctor {}`.",
-        agent.app_name, agent.command, agent.command, agent.command
+        "Reinstall {} using {}, ensure that installation precedes other copies in PATH, then rerun `av doctor {}`.",
+        agent.command, agent.install_hint, agent.command
     )
 }
 
 #[cfg(target_os = "macos")]
-fn vendor_signature_valid(path: &Path, team_identifier: &str) -> bool {
-    let requirement =
-        format!("=anchor apple generic and certificate leaf[subject.OU] = \"{team_identifier}\"");
+fn vendor_signature_valid(path: &Path, team_identifier: &str, signing_identifier: &str) -> bool {
+    let requirement = format!(
+        "=identifier \"{signing_identifier}\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"{team_identifier}\""
+    );
     Command::new("/usr/bin/codesign")
         .args(["--verify", "--strict", "-R", &requirement])
         .arg(path)
@@ -157,7 +165,7 @@ fn vendor_signature_valid(path: &Path, team_identifier: &str) -> bool {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn vendor_signature_valid(_path: &Path, _team_identifier: &str) -> bool {
+fn vendor_signature_valid(_path: &Path, _team_identifier: &str, _signing_identifier: &str) -> bool {
     false
 }
 
@@ -788,12 +796,12 @@ mod tests {
         let codex = executable_file(&dir.join("codex"));
         let agent = select_agent_cli(Some("codex")).unwrap();
 
-        let healthy = diagnose_agent_cli(agent, dir.as_os_str(), |path, team| {
-            path == codex && team == "2DC432GLL2"
+        let healthy = diagnose_agent_cli(agent, dir.as_os_str(), |path, team, identifier| {
+            path == codex && team == "2DC432GLL2" && identifier == "codex"
         });
         assert!(healthy.issues.is_empty());
 
-        let unsigned = diagnose_agent_cli(agent, dir.as_os_str(), |_, _| false);
+        let unsigned = diagnose_agent_cli(agent, dir.as_os_str(), |_, _, _| false);
         assert_eq!(unsigned.issues[0].kind, "agent_cli_signature_invalid");
         assert_eq!(unsigned.issues[0].resolved_path.as_deref(), codex.to_str());
         assert!(unsigned.issues[0].message.contains("OpenAI code signature"));
@@ -805,12 +813,12 @@ mod tests {
         assert!(
             unsigned.issues[0]
                 .remediation
-                .contains("Install the full Codex.app")
+                .contains("OpenAI's standalone installer or the Homebrew cask")
         );
         assert!(
             unsigned.issues[0]
                 .remediation
-                .contains("/usr/local/bin/codex")
+                .contains("precedes other copies in PATH")
         );
         let _ = fs::remove_dir_all(dir);
     }
@@ -818,14 +826,14 @@ mod tests {
     #[test]
     fn explicit_agent_cli_doctor_reports_a_missing_command() {
         let agent = select_agent_cli(Some("claude")).unwrap();
-        let result = diagnose_agent_cli(agent, OsStr::new(""), |_, _| true);
+        let result = diagnose_agent_cli(agent, OsStr::new(""), |_, _, _| true);
 
         assert_eq!(result.name, "claude");
         assert_eq!(result.issues[0].kind, "agent_cli_unavailable");
         assert!(
             result.issues[0]
                 .remediation
-                .contains("Install the full Claude.app")
+                .contains("Anthropic's native installer or the Homebrew cask")
         );
     }
 

@@ -4673,6 +4673,14 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         isAdHoc: false,
         isDeveloperID: false
     )
+    let adHoc = LiveSigningInfo(
+        identifier: developerID.identifier,
+        teamIdentifier: developerID.teamIdentifier,
+        designatedRequirement: developerID.designatedRequirement,
+        mainExecutable: "/usr/local/bin/ad-hoc-example",
+        isAdHoc: true,
+        isDeveloperID: true
+    )
     guard satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
           let launcher = launcherIdentity(
               pid: 42,
@@ -4681,6 +4689,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ),
           launcher.isStandalone,
           launcher.designatedRequirement == requirement,
+          launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
           launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil
     else { return 1 }
 
