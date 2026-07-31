@@ -378,6 +378,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     ).first)
     #expect(gate.defaultProtection == .fullExceptSecretDumps)
     #expect(gate.appPolicies.first?.protection == .fullExceptSecretDumps)
+    #expect(gate.appPolicies.first?.requiresHardenedRuntime == false)
 
     #expect(setSecretGateDefaultProtection(
         .readOnly,
@@ -458,15 +459,28 @@ func protectionPolicyMatrix(
         requirement: requirement,
         protection: .noAccess,
         for: gate,
+        requiresHardenedRuntime: true,
         service: service,
         account: account
     ) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     let appPolicy = try #require(gate.appPolicies.first)
     #expect(appPolicy.protection == .noAccess)
+    #expect(appPolicy.requiresHardenedRuntime)
     #expect(gate.defaultPolicyLabel == "All Other Apps")
     #expect(secretGateProtection(for: requirement, in: gate).protection == .noAccess)
     #expect(secretGateProtection(for: #"identifier "com.other.app""#, in: gate).protection == .fullExceptSecretDumps)
+
+    #expect(setSecretGateAppProtection(
+        requirement: appPolicy.requirement,
+        protection: .readOnly,
+        for: gate,
+        requiresHardenedRuntime: appPolicy.requiresHardenedRuntime,
+        service: service,
+        account: account
+    ) == errSecSuccess)
+    gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
+    #expect(gate.appPolicies.first?.requiresHardenedRuntime == true)
 
     #expect(removeSecretGateAppPolicy(appPolicy, from: gate, service: service, account: account) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)

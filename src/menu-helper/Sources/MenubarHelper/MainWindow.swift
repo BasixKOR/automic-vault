@@ -554,11 +554,23 @@ final class DashboardModel: ObservableObject {
                 self.errorMessage = "Choose a .app bundle."
                 return
             }
-            guard let requirement = appBundleSigning(url)?.requirement else {
-                self.errorMessage = "Could not read code signing identity for \(url.lastPathComponent)."
+            guard let signing = appBundleSigning(url) else {
+                self.errorMessage = "Could not securely verify the code signature for \(url.lastPathComponent)."
                 return
             }
-            let status = setSecretGateAppProtection(requirement: requirement, protection: .readOnly, for: gate)
+            guard signing.runtimeProtection.allowsSecretGateAccess else {
+                self.errorMessage = secretGateAdmissionError(
+                    appName: url.lastPathComponent,
+                    protection: signing.runtimeProtection
+                )
+                return
+            }
+            let status = setSecretGateAppProtection(
+                requirement: signing.requirement,
+                protection: .readOnly,
+                for: gate,
+                requiresHardenedRuntime: true
+            )
             if status == errSecSuccess {
                 self.errorMessage = nil
                 self.reload()
@@ -577,7 +589,12 @@ final class DashboardModel: ObservableObject {
 
     func setProtection(_ protection: SecretGateProtection, for app: SecretGatePolicy, in gate: SecretGate) {
         finishPolicyUpdate(
-            setSecretGateAppProtection(requirement: app.requirement, protection: protection, for: gate),
+            setSecretGateAppProtection(
+                requirement: app.requirement,
+                protection: protection,
+                for: gate,
+                requiresHardenedRuntime: app.requiresHardenedRuntime
+            ),
             error: "Could not update \(app.bundleIdentifier)"
         )
     }
@@ -2425,6 +2442,21 @@ private struct ApprovedAppDisplay {
 private struct AppBundleSigning {
     let teamIdentifier: String
     let requirement: String
+    let runtimeProtection: LauncherRuntimeProtection
+}
+
+private func secretGateAdmissionError(
+    appName: String,
+    protection: LauncherRuntimeProtection
+) -> String {
+    switch protection {
+    case .hardened:
+        return ""
+    case .hardenedRuntimeMissing:
+        return "\(appName) does not enable Hardened Runtime and cannot receive secret-gate access."
+    case .unsafeEntitlements(let entitlements):
+        return "\(appName) weakens Hardened Runtime with \(entitlements.joined(separator: ", ")) and cannot receive secret-gate access."
+    }
 }
 
 @MainActor
@@ -2445,7 +2477,12 @@ private func chooseAppBundle(_ completion: @escaping (URL?) -> Void) {
 private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
-          let staticCode
+          let staticCode,
+          SecStaticCodeCheckValidity(
+              staticCode,
+              SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode),
+              nil
+          ) == errSecSuccess
     else {
         return nil
     }
@@ -2464,7 +2501,8 @@ private func appBundleSigning(_ url: URL) -> AppBundleSigning? {
     }
     return AppBundleSigning(
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String ?? "unknown",
-        requirement: requirementText
+        requirement: requirementText,
+        runtimeProtection: launcherRuntimeProtection(signingInformation: dictionary)
     )
 }
 
