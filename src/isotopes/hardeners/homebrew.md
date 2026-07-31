@@ -2,9 +2,15 @@
 
 ## Summary
 
-- Only `brew` can alter `/opt/homebrew`
+- Only `brew` can alter `/opt/homebrew`, except for the user-owned zsh
+  completions described below.
 - Approval gates can be configured to stop agents installing things behind your
   back.
+
+The configured desktop account retains ownership of zsh completion files for
+compatibility with zsh's ownership checks. Software running as that account can
+modify code loaded by zsh; the remainder of the Homebrew installation stays
+protected.
 
 ## What it Does
 
@@ -50,6 +56,10 @@ is that solution.
 - The launcher fails closed when the approval service is unavailable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.
+- Zsh completion directories and the completion files exposed through them are
+  owned by the configured desktop account. The `automic` account receives a
+  narrow ACL so Homebrew can update them, and the launcher transfers newly
+  created completion entries after Homebrew runs.
 
 ## Casks
 

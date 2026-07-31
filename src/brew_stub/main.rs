@@ -1,15 +1,17 @@
 use std::ffi::{CStr, CString, OsString};
 use std::fs;
-use std::io::Read;
+use std::io::{self, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V4";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V5";
 const TARGET: &str = "/opt/homebrew/bin/brew";
+const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const CASK_USER_UID: &str = "/opt/homebrew/var/automic/cask-user-uid";
+const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
+const COMPLETION_ACL: &str = "user:automic allow read,write,execute,delete,append,readattr,writeattr,readextattr,writeextattr,readsecurity";
 
 #[derive(Debug, PartialEq, Eq)]
 struct AuthorizationRequest {
@@ -44,18 +46,21 @@ fn main() {
     let (mut command, post_install) =
         approved_command(args, std::env::vars_os(), &cwd, xpc_authorize)
             .unwrap_or_else(|err| fail(err));
-    if let Some(post_install) = post_install {
-        let status = command
-            .status()
-            .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
-        if !status.success() {
-            std::process::exit(status.code().unwrap_or(1));
+    let status = command
+        .status()
+        .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
+    let completion_result =
+        repair_zsh_completion_ownership(Path::new(PREFIX), Path::new(CASK_USER_UID));
+    if !status.success() {
+        if let Err(err) = completion_result {
+            eprintln!("av-brew-stub: {err}");
         }
-        transfer_app_ownership(&post_install).unwrap_or_else(|err| fail(err));
-        return;
+        std::process::exit(status.code().unwrap_or(1));
     }
-    let err = command.exec();
-    fail(format!("failed to exec {TARGET}: {err}"));
+    if let Some(post_install) = post_install {
+        transfer_app_ownership(&post_install).unwrap_or_else(|err| fail(err));
+    }
+    completion_result.unwrap_or_else(|err| fail(err));
 }
 
 fn fail(message: String) -> ! {
@@ -475,7 +480,7 @@ fn caller() -> Result<Caller, String> {
         configured_cask_uid(Path::new(CASK_USER_UID), euid, unsafe { libc::getegid() })?;
     if uid != configured {
         return Err(
-            "casks must be invoked directly by the user configured by `sudo av harden brew`".into(),
+            "ownership transfers must be invoked directly by the user configured by `sudo av harden brew`".into(),
         );
     }
     let entry = unsafe { libc::getpwuid(uid) };
@@ -581,6 +586,133 @@ fn ownership_command(post_install: &CaskPostInstall) -> Command {
             &owner,
         ])
         .args(&post_install.apps)
+        .env_clear()
+        .envs(stub_env([]));
+    command
+}
+
+fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Result<(), String> {
+    let paths = zsh_completion_paths(prefix)?;
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let automic_uid = unsafe { libc::geteuid() };
+    let configured_uid =
+        configured_cask_uid(configured_user, automic_uid, unsafe { libc::getegid() })?;
+    let mut repair = Vec::new();
+    for path in paths {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if metadata.uid() == configured_uid || metadata.uid() == 0 {
+            continue;
+        }
+        if metadata.uid() != automic_uid {
+            return Err(format!(
+                "zsh completion {} has unexpected owner {}",
+                path.display(),
+                metadata.uid()
+            ));
+        }
+        if !metadata.file_type().is_symlink() {
+            let acl = if metadata.file_type().is_dir() {
+                format!("{COMPLETION_ACL},file_inherit,directory_inherit")
+            } else {
+                COMPLETION_ACL.into()
+            };
+            let _ = Command::new("/bin/chmod")
+                .args(["-a", &acl])
+                .arg(&path)
+                .output();
+            let output = Command::new("/bin/chmod")
+                .args(["+a", &acl])
+                .arg(&path)
+                .output()
+                .map_err(|err| format!("failed to grant Homebrew completion access: {err}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "failed to grant Homebrew access to {}: {}",
+                    path.display(),
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+        }
+        repair.push(path);
+    }
+    if repair.is_empty() {
+        return Ok(());
+    }
+    let caller = caller()?;
+    eprintln!("av-brew-stub: sudo is required to make zsh completions compatible with compinit");
+    let output = completion_ownership_command(&caller, &repair)
+        .output()
+        .map_err(|err| format!("failed to transfer zsh completion ownership: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to transfer zsh completion ownership: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    for path in zsh_completion_paths(prefix)? {
+        let uid = fs::symlink_metadata(&path)
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?
+            .uid();
+        if uid != caller.uid && uid != 0 {
+            return Err(format!(
+                "{} ownership was not transferred to {}",
+                path.display(),
+                caller.uid
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn zsh_completion_paths(prefix: &Path) -> Result<Vec<PathBuf>, String> {
+    let functions = prefix.join(ZSH_COMPLETIONS);
+    if !functions.is_dir() {
+        return Ok(Vec::new());
+    }
+    let canonical_prefix = fs::canonicalize(prefix)
+        .map_err(|err| format!("failed to resolve {}: {err}", prefix.display()))?;
+    let mut paths = std::collections::BTreeSet::from([prefix.join("share/zsh"), functions.clone()]);
+    for entry in fs::read_dir(&functions)
+        .map_err(|err| format!("failed to read {}: {err}", functions.display()))?
+    {
+        let entry =
+            entry.map_err(|err| format!("failed to read {}: {err}", functions.display()))?;
+        if !entry.file_name().as_encoded_bytes().starts_with(b"_") {
+            continue;
+        }
+        let path = entry.path();
+        paths.insert(path.clone());
+        let target = match fs::canonicalize(&path) {
+            Ok(target) => target,
+            Err(err)
+                if err.kind() == io::ErrorKind::NotFound
+                    && entry.file_type().is_ok_and(|kind| kind.is_symlink()) =>
+            {
+                continue;
+            }
+            Err(err) => return Err(format!("failed to resolve {}: {err}", path.display())),
+        };
+        if !target.starts_with(&canonical_prefix) {
+            return Err(format!(
+                "zsh completion {} resolves outside {}",
+                path.display(),
+                prefix.display()
+            ));
+        }
+        paths.insert(target);
+    }
+    Ok(paths.into_iter().collect())
+}
+
+fn completion_ownership_command(caller: &Caller, paths: &[PathBuf]) -> Command {
+    let owner = format!("{}:{}", caller.uid, caller.gid);
+    let mut command = Command::new("/usr/bin/sudo");
+    command
+        .args(["--", "/usr/sbin/chown", "-h", "-n", "--", &owner])
+        .args(paths)
         .env_clear()
         .envs(stub_env([]));
     command
@@ -1117,6 +1249,76 @@ mod tests {
                 "--",
                 "501:20",
                 "/Applications/Spotify.app"
+            ]
+        );
+    }
+
+    #[test]
+    fn zsh_completion_paths_include_links_and_in_prefix_targets() {
+        let prefix = temp_path("zsh-completions");
+        let functions = prefix.join(ZSH_COMPLETIONS);
+        let target = prefix.join("Cellar/tool/1/share/zsh/site-functions/_tool");
+        fs::create_dir_all(&functions).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "#compdef tool").unwrap();
+        std::os::unix::fs::symlink(&target, functions.join("_tool")).unwrap();
+        fs::write(functions.join("not-loaded"), "ignored").unwrap();
+
+        let paths = zsh_completion_paths(&prefix).unwrap();
+
+        assert!(paths.contains(&prefix.join("share/zsh")));
+        assert!(paths.contains(&functions));
+        assert!(paths.contains(&prefix.join(ZSH_COMPLETIONS).join("_tool")));
+        assert!(paths.contains(&fs::canonicalize(&target).unwrap()));
+        assert!(!paths.contains(&prefix.join(ZSH_COMPLETIONS).join("not-loaded")));
+        fs::remove_dir_all(prefix).unwrap();
+    }
+
+    #[test]
+    fn zsh_completion_paths_reject_targets_outside_homebrew() {
+        let prefix = temp_path("zsh-completion-escape");
+        let outside = temp_path("zsh-completion-outside");
+        let functions = prefix.join(ZSH_COMPLETIONS);
+        fs::create_dir_all(&functions).unwrap();
+        fs::write(&outside, "unsafe").unwrap();
+        std::os::unix::fs::symlink(&outside, functions.join("_escape")).unwrap();
+
+        assert!(zsh_completion_paths(&prefix).is_err());
+
+        fs::remove_dir_all(prefix).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn missing_zsh_completions_need_no_configured_user() {
+        let prefix = temp_path("no-zsh-completions");
+
+        assert!(repair_zsh_completion_ownership(&prefix, Path::new("/missing")).is_ok());
+    }
+
+    #[test]
+    fn completion_ownership_is_narrow_and_non_recursive() {
+        let paths = vec![
+            PathBuf::from("/opt/homebrew/share/zsh"),
+            PathBuf::from("/opt/homebrew/share/zsh/site-functions/_tool"),
+        ];
+        let command = completion_ownership_command(&Caller { uid: 501, gid: 20 }, &paths);
+
+        assert_eq!(command.get_program(), "/usr/bin/sudo");
+        assert_eq!(
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [
+                "--",
+                "/usr/sbin/chown",
+                "-h",
+                "-n",
+                "--",
+                "501:20",
+                "/opt/homebrew/share/zsh",
+                "/opt/homebrew/share/zsh/site-functions/_tool",
             ]
         );
     }
