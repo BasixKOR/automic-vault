@@ -8,8 +8,8 @@ The publishing script uses Codex to choose the next semantic version and draft
 release notes from the changes since the latest release. Codex runs read-only,
 without the caller's environment, and treats repository content as untrusted.
 It also reviews installed-artifact, persistence, protocol, and schema revisions,
-including the CLI install and Homebrew stub revisions; publishing stops if a
-required internal bump is missing.
+including the CLI install and Homebrew stub revisions, and applies any missing
+numeric increments before creating the release commit.
 The script updates `Cargo.toml` and `Cargo.lock`, commits and pushes that exact
 release commit to `main`, then dispatches the workflow. The workflow signs and
 notarizes the app, staples the notarization ticket, creates SHA-256 checksums
@@ -119,8 +119,9 @@ to write and validate the release notes. If a workflow fails after its release
 commit was pushed, fix and push `main`, then pass that same version to retry
 without creating another version bump.
 
-The script prints Codex's selected version and release notes, updates and pushes
-the Cargo version metadata, then dispatches that exact `main` commit. It waits
+The script prints Codex's selected version and release notes, updates the Cargo
+version metadata and any required internal revisions, pushes the resulting
+release commit, then dispatches that exact `main` commit. It waits
 for the workflow and verifies
 that the result is a draft targeting that commit, prints its URL, and asks
 `release y/n?`. Answering `y` publishes the draft, verifies that GitHub made it

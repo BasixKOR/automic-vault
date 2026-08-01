@@ -57,7 +57,10 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(PUBLISH_SCRIPT.contains("STUB_VERSION in src/isotopes/hardeners/homebrew.rs"));
     assert!(PUBLISH_SCRIPT.contains("bumps-required)"));
     assert!(PUBLISH_SCRIPT.contains("exit 64"));
-    assert!(PUBLISH_SCRIPT.contains("required internal version bumps must be committed"));
+    assert!(PUBLISH_SCRIPT.contains("update_internal_versions \"$INTERNAL_VERSION_METADATA\""));
+    assert!(PUBLISH_SCRIPT.contains("next != current + 1"));
+    assert!(PUBLISH_SCRIPT.contains("ls-files --error-unmatch"));
+    assert!(PUBLISH_SCRIPT.contains("expected exactly one numeric assignment"));
     assert!(PUBLISH_SCRIPT.contains("--sandbox read-only"));
     assert!(PUBLISH_SCRIPT.contains("approval_policy=\\\"never\\\""));
     assert!(PUBLISH_SCRIPT.contains("shell_environment_policy.inherit=\\\"none\\\""));
