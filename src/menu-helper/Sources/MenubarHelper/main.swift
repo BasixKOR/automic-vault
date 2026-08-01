@@ -354,7 +354,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if stoppedServices {
                 startServices()
             }
+            showUpdateError(error)
+        }
+    }
+
+    private func showUpdateError(_ error: Error) {
+        guard let updaterError = error as? AppUpdaterError,
+              updaterError == .attestationVerificationFailed
+        else {
             NSAlert(error: error).runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = updateVerificationFailureText
+        alert.addButton(withTitle: "Search GitHub Issues")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(updateVerificationIssuesURL)
         }
     }
 
