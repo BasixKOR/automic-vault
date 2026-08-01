@@ -58,7 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
     private var isUserSessionActive = true
     private var areScreensAwake = true
-    private let updater = AppUpdater(owner: "automic-vault", repo: "automic-vault")
+    private let updater = AppUpdater(
+        owner: "automic-vault",
+        repo: "automic-vault",
+        configuration: .init(
+            attestationPolicy: GitHubAttestationPolicy(
+                workflow: ".github/workflows/release.yml",
+                sourceRef: "refs/heads/main"
+            )
+        )
+    )
     private var automaticUpdateCheckTask: Task<Void, Never>?
     private var readyUpdate: Update?
     private var isCheckingForUpdates = false

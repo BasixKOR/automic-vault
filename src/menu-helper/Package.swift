@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/mxcl/AppUpdater.git", from: "4.0.0"),
+        .package(url: "https://github.com/mxcl/AppUpdater.git", from: "4.1.0"),
         .package(url: "https://github.com/GraphQLSwift/GraphQL.git", from: "4.2.0"),
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
     ],
