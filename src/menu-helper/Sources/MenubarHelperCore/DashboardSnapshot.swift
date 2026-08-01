@@ -1374,6 +1374,13 @@ func appIdentifier(from requirement: String) -> String? {
     return identifier.isEmpty ? nil : String(identifier)
 }
 
+public func codeSigningTeamIdentifier(from requirement: String) -> String? {
+    guard let range = requirement.range(of: #"certificate leaf[subject.OU] = ""#) else { return nil }
+    let rest = requirement[range.upperBound...]
+    guard let end = rest.firstIndex(of: "\"") else { return nil }
+    return String(rest[..<end])
+}
+
 private extension Array where Element == HardenedTool {
     func uniquedByName() -> [HardenedTool] {
         var seen = Set<String>()

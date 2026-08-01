@@ -491,7 +491,9 @@ func protectionPolicyMatrix(
 
 @Test func appIdentifierAcceptsCodesignBareIdentifiers() {
     #expect(appIdentifier(from: #"identifier "com.example.app" and anchor apple generic"#) == "com.example.app")
-    #expect(appIdentifier(from: "identifier codex and anchor apple generic") == "codex")
+    let codex = #"identifier codex and anchor apple generic and certificate leaf[subject.OU] = "2DC432GLL2""#
+    #expect(appIdentifier(from: codex) == "codex")
+    #expect(codeSigningTeamIdentifier(from: codex) == "2DC432GLL2")
 }
 
 @Test func noAccessDefaultIsPersisted() throws {
