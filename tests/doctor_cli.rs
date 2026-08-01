@@ -101,7 +101,7 @@ fn av_doctor_reports_unsigned_agent_clis() {
         report["results"][0]["issues"][0]["remediation"]
             .as_str()
             .unwrap()
-            .contains("/usr/local/bin/codex")
+            .contains("OpenAI's standalone installer or the Homebrew cask")
     );
 
     let aggregate = av(&root)

@@ -489,6 +489,13 @@ func protectionPolicyMatrix(
     #expect(secretGateProtection(for: requirement, in: gate).protection == .fullExceptSecretDumps)
 }
 
+@Test func appIdentifierAcceptsCodesignBareIdentifiers() {
+    #expect(appIdentifier(from: #"identifier "com.example.app" and anchor apple generic"#) == "com.example.app")
+    let codex = #"identifier codex and anchor apple generic and certificate leaf[subject.OU] = "2DC432GLL2""#
+    #expect(appIdentifier(from: codex) == "codex")
+    #expect(codeSigningTeamIdentifier(from: codex) == "2DC432GLL2")
+}
+
 @Test func noAccessDefaultIsPersisted() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"

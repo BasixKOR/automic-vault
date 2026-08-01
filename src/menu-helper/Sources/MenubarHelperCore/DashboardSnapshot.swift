@@ -1363,7 +1363,19 @@ private func addCanonicalAccessGroup(to query: inout [String: Any]) {
 }
 
 func appIdentifier(from requirement: String) -> String? {
-    guard let range = requirement.range(of: #"identifier ""#) else { return nil }
+    guard let range = requirement.range(of: "identifier ") else { return nil }
+    let rest = requirement[range.upperBound...]
+    if rest.first == "\"" {
+        let quoted = rest.dropFirst()
+        guard let end = quoted.firstIndex(of: "\"") else { return nil }
+        return String(quoted[..<end])
+    }
+    let identifier = rest.prefix { !$0.isWhitespace }
+    return identifier.isEmpty ? nil : String(identifier)
+}
+
+public func codeSigningTeamIdentifier(from requirement: String) -> String? {
+    guard let range = requirement.range(of: #"certificate leaf[subject.OU] = ""#) else { return nil }
     let rest = requirement[range.upperBound...]
     guard let end = rest.firstIndex(of: "\"") else { return nil }
     return String(rest[..<end])

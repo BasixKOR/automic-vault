@@ -15,7 +15,7 @@ private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let openMainWindowArgument = "--open-main-window"
 private let pendingMainWindowKey = "pendingMainWindow"
 private let pendingSecretGateKey = "pendingSecretGate"
-private let secCodeSignatureAdHoc: UInt32 = 0x2
+let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
@@ -1188,6 +1188,25 @@ private struct LauncherIdentity {
     let teamIdentifier: String
     let designatedRequirement: String
     let runtimeProtection: LauncherRuntimeProtection
+    let isStandalone: Bool
+
+    init(
+        pid: pid_t,
+        path: String,
+        identifier: String,
+        teamIdentifier: String,
+        designatedRequirement: String,
+        runtimeProtection: LauncherRuntimeProtection,
+        isStandalone: Bool = false
+    ) {
+        self.pid = pid
+        self.path = path
+        self.identifier = identifier
+        self.teamIdentifier = teamIdentifier
+        self.designatedRequirement = designatedRequirement
+        self.runtimeProtection = runtimeProtection
+        self.isStandalone = isStandalone
+    }
 }
 
 private struct ScriptApproval {
@@ -1376,7 +1395,11 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid list request")
             return
         }
-        let launcher = launcherIdentities(for: identity).first
+        let launchers = launcherIdentities(for: identity)
+        let allowedApps = loadSecretNameAccessApps()
+        let launcher = launchers.first {
+            candidate in allowedApps.contains { $0.requirement == candidate.designatedRequirement }
+        } ?? launchers.first
             ?? launcherIdentity(pid: pid, identity: identity)
         let request = ApprovalRequest(
             op: "list",
@@ -1394,7 +1417,7 @@ private final class ApprovalServer: @unchecked Sendable {
             detail: "Secret values will remain hidden. The requesting app will receive every saved secret name."
         )
         if let launcher,
-           loadSecretNameAccessApps().contains(where: { $0.requirement == launcher.designatedRequirement })
+           allowedApps.contains(where: { $0.requirement == launcher.designatedRequirement })
         {
             discloseSecretNames(
                 request: request,
@@ -1429,7 +1452,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath(for: identity) ?? callerPath,
                 automaticApprovalExplanation: nil,
-                allowsPersistentApproval: launcher != nil
+                allowsPersistentApproval: launcher.map { !$0.isStandalone } ?? false
             )
             guard decision != .denied else {
                 _ = self.onAccessRequest(accessRequestRecord(
@@ -1531,13 +1554,13 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         if let scriptApproval,
-           let launcher = launchers.first,
-           let script = matchingBlessedScript(
+           let match = matchingBlessedScript(
                request: request,
                approval: scriptApproval,
-               launcher: launcher
+               launchers: launchers
            )
         {
+            let (script, launcher) = match
             do {
                 let secrets = try approvedSecrets(for: request)
                 let accessRequestID = UUID()
@@ -1838,6 +1861,22 @@ private final class ApprovalServer: @unchecked Sendable {
     private func matchingBlessedScript(
         request: ApprovalRequest,
         approval: ScriptApproval,
+        launchers: [LauncherIdentity]
+    ) -> (BlessedScript, LauncherIdentity)? {
+        let scripts = loadBlessedScripts()
+        for launcher in launchers {
+            if let script = scripts.first(where: {
+                blessedScriptMatches($0, request: request, approval: approval, launcher: launcher)
+            }) {
+                return (script, launcher)
+            }
+        }
+        return nil
+    }
+
+    private func matchingBlessedScript(
+        request: ApprovalRequest,
+        approval: ScriptApproval,
         launcher: LauncherIdentity?
     ) -> BlessedScript? {
         loadBlessedScripts().first {
@@ -2038,7 +2077,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
         }
-        let launcher = launcherIdentities(for: identity).first
+        let launcher = launcherIdentities(for: identity).first { !$0.isStandalone }
         let request = BlessedScriptReviewRequest(
             path: path,
             declaration: declaration,
@@ -2427,7 +2466,6 @@ private func resolveSecretGatePolicy(
     gate: SecretGate,
     launchers: [LauncherIdentity]
 ) -> ResolvedSecretGatePolicy? {
-    guard let firstLauncher = launchers.first else { return nil }
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
             return ResolvedSecretGatePolicy(
@@ -2440,6 +2478,7 @@ private func resolveSecretGatePolicy(
             )
         }
     }
+    guard let firstLauncher = launchers.first(where: { !$0.isStandalone }) else { return nil }
     return ResolvedSecretGatePolicy(
         protection: gate.defaultProtection,
         source: gate.defaultPolicyLabel,
@@ -3176,6 +3215,21 @@ private func launcherIdentities(
         + appBundleURLs(containing: signing.mainExecutable)
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
     ).filter { seen.insert($0.path).inserted }
+    if appURLs.isEmpty {
+        guard signing.isDeveloperID,
+              signing.identifier != "unknown",
+              signing.teamIdentifier != "unknown"
+        else { return [] }
+        return [LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: signing.identifier,
+            teamIdentifier: signing.teamIdentifier,
+            designatedRequirement: signing.designatedRequirement,
+            runtimeProtection: signing.runtimeProtection,
+            isStandalone: true
+        )]
+    }
     return appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
@@ -3196,6 +3250,7 @@ private struct LiveSigningInfo {
     let mainExecutable: String
     let isAdHoc: Bool
     let runtimeProtection: LauncherRuntimeProtection
+    let isDeveloperID: Bool
 }
 
 private struct StaticSigningInfo {
@@ -3256,7 +3311,10 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
         designatedRequirement: requirementText,
         mainExecutable: executable,
         isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0,
-        runtimeProtection: runtimeProtection(dictionary)
+        runtimeProtection: runtimeProtection(dictionary),
+        isDeveloperID: satisfiesDeveloperIDRequirement {
+            SecCodeCheckValidity(code, [], $0)
+        }
     )
 }
 
@@ -3288,7 +3346,10 @@ private func executableSigningInfo(path: String) -> LiveSigningInfo? {
         designatedRequirement: requirementText,
         mainExecutable: executable,
         isAdHoc: signatureFlags & secCodeSignatureAdHoc != 0,
-        runtimeProtection: runtimeProtection(dictionary)
+        runtimeProtection: runtimeProtection(dictionary),
+        isDeveloperID: satisfiesDeveloperIDRequirement {
+            SecStaticCodeCheckValidity(staticCode, [], $0)
+        }
     )
 }
 
@@ -3365,6 +3426,27 @@ private func appBundleVerificationFailure(_ url: URL) -> LauncherAppVerification
         appName: name,
         resourcesUnreadable: resourcesUnreadable
     )
+}
+
+// SecRequirement is immutable but is not annotated Sendable by Security.framework.
+nonisolated(unsafe) private let developerIDRequirement: SecRequirement? = {
+    var requirement: SecRequirement?
+    let source = """
+    anchor apple generic and \
+    certificate 1[field.1.2.840.113635.100.6.2.6] exists and \
+    certificate leaf[field.1.2.840.113635.100.6.1.13] exists
+    """
+    guard SecRequirementCreateWithString(source as CFString, [], &requirement) == errSecSuccess,
+          let requirement
+    else { return nil }
+    return requirement
+}()
+
+func satisfiesDeveloperIDRequirement(
+    _ validate: (SecRequirement) -> OSStatus
+) -> Bool {
+    guard let developerIDRequirement else { return false }
+    return validate(developerIDRequirement) == errSecSuccess
 }
 
 private func requirementString(_ requirement: SecRequirement) -> String? {
@@ -4158,7 +4240,8 @@ private func runApprovalSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "app.vaultty.Vaultty" and anchor apple generic"#,
         mainExecutable: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
         isAdHoc: false,
-        runtimeProtection: .hardened
+        runtimeProtection: .hardened,
+        isDeveloperID: true
     )
     let vaulttyBridgeSigning = LiveSigningInfo(
         identifier: "com.automicvault.vaultty.session-bridge",
@@ -4166,7 +4249,8 @@ private func runApprovalSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "com.automicvault.vaultty.session-bridge" and anchor apple generic"#,
         mainExecutable: "/Users/mxcl/Library/Application Support/Vaultty/vaultty-session-bridge",
         isAdHoc: false,
-        runtimeProtection: .hardened
+        runtimeProtection: .hardened,
+        isDeveloperID: true
     )
     let vaulttyAppSigning = StaticSigningInfo(
         identifier: "com.automicvault.vaultty",
@@ -4179,7 +4263,8 @@ private func runApprovalSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "dev.mxcl.pmm.menu" and anchor apple generic"#,
         mainExecutable: "/Applications/Package Manager Manager.app/Contents/Library/LoginItems/Package Manager Manager Menu.app/Contents/MacOS/PMMMenuBar",
         isAdHoc: false,
-        runtimeProtection: .hardened
+        runtimeProtection: .hardened,
+        isDeveloperID: true
     )
     var detachedCaller = AVProcessIdentity()
     detachedCaller.ppid = 1
@@ -4190,7 +4275,8 @@ private func runApprovalSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "org.python.python" and anchor apple generic"#,
         mainExecutable: "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
         isAdHoc: true,
-        runtimeProtection: .hardenedRuntimeMissing
+        runtimeProtection: .hardenedRuntimeMissing,
+        isDeveloperID: false
     )
     let unbundledSigning = LiveSigningInfo(
         identifier: "com.automicvault.av",
@@ -4198,7 +4284,8 @@ private func runApprovalSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "com.automicvault.av" and anchor apple generic"#,
         mainExecutable: "/usr/local/bin/av",
         isAdHoc: false,
-        runtimeProtection: .hardened
+        runtimeProtection: .hardened,
+        isDeveloperID: true
     )
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
@@ -4232,7 +4319,7 @@ private func runApprovalSelfCheck() -> Int32 {
           nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
           launcherIdentity(pid: 46, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
-          launcherIdentity(pid: 47, path: "/usr/local/bin/av", signing: unbundledSigning) == nil
+          launcherIdentity(pid: 47, path: "/usr/local/bin/av", signing: unbundledSigning)?.isStandalone == true
     else {
         return 1
     }
@@ -4616,6 +4703,82 @@ private func runApprovalSelfCheck() -> Int32 {
           !isTrustedBrewStubCaller(path: "/opt/homebrew/bin/brew", signing: avSigning)
     else { return 1 }
 
+    return 0
+}
+
+private func runStandaloneLauncherSelfCheck() -> Int32 {
+    let requirement = #"identifier "com.example.cli" and anchor apple generic"#
+    let developerID = LiveSigningInfo(
+        identifier: "com.example.cli",
+        teamIdentifier: "TEAM",
+        designatedRequirement: requirement,
+        mainExecutable: "/usr/local/bin/example",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let rejected = LiveSigningInfo(
+        identifier: "com.apple.zsh",
+        teamIdentifier: "unknown",
+        designatedRequirement: #"identifier "com.apple.zsh" and anchor apple"#,
+        mainExecutable: "/bin/zsh",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: false
+    )
+    let adHoc = LiveSigningInfo(
+        identifier: developerID.identifier,
+        teamIdentifier: developerID.teamIdentifier,
+        designatedRequirement: developerID.designatedRequirement,
+        mainExecutable: "/usr/local/bin/ad-hoc-example",
+        isAdHoc: true,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    guard satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
+          let launcher = launcherIdentity(
+              pid: 42,
+              path: developerID.mainExecutable,
+              signing: developerID
+          ),
+          launcher.isStandalone,
+          launcher.designatedRequirement == requirement,
+          launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
+          launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil
+    else { return 1 }
+    let unhardenedLauncher = LauncherIdentity(
+        pid: launcher.pid,
+        path: launcher.path,
+        identifier: launcher.identifier,
+        teamIdentifier: launcher.teamIdentifier,
+        designatedRequirement: launcher.designatedRequirement,
+        runtimeProtection: .hardenedRuntimeMissing,
+        isStandalone: true
+    )
+
+    let unconfiguredGate = SecretGate(
+        id: "test",
+        keyPatterns: [],
+        routes: [],
+        defaultProtection: .fullIncludingSecretDumps,
+        appPolicies: []
+    )
+    let configuredGate = SecretGate(
+        id: "test",
+        keyPatterns: [],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: developerID.identifier,
+            requirement: requirement,
+            protection: .readOnly,
+            requiresHardenedRuntime: true
+        )]
+    )
+    guard resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher]) == nil,
+          resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly,
+          resolveSecretGatePolicy(gate: configuredGate, launchers: [unhardenedLauncher])?.protection == .noAccess
+    else { return 1 }
     return 0
 }
 
@@ -5152,6 +5315,10 @@ private func runScanSchedulingSelfCheck() -> Int32 {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-standalone-launchers") {
+    exit(runStandaloneLauncherSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-secret-mutations") {
