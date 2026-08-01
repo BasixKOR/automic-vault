@@ -613,8 +613,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
         recordMenuAccess(record)
-        if automaticApprovalFeedback() == .menuBarFlash {
+        switch automaticApprovalFeedback() {
+        case .notification:
+            showAutomaticAccessToast(record, below: statusItem.button)
+        case .menuBarFlash:
             flashMenuBarForAutomaticApproval()
+        case .none:
+            break
         }
     }
 
@@ -774,7 +779,7 @@ private func shouldShowAutomaticAccessToast(_ record: AccessRequestRecord) -> Bo
 private func automaticApprovalFeedback(rawValue: String? = UserDefaults.standard.string(
     forKey: automaticApprovalFeedbackDefaultsKey
 )) -> AutomaticApprovalFeedback {
-    rawValue.flatMap(AutomaticApprovalFeedback.init(rawValue:)) ?? .menuBarFlash
+    rawValue.flatMap(AutomaticApprovalFeedback.init(rawValue:)) ?? .notification
 }
 
 private func accessRequestRecord(
@@ -4996,10 +5001,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
-          automaticApprovalFeedback(rawValue: nil) == .menuBarFlash,
+          automaticApprovalFeedback(rawValue: nil) == .notification,
+          automaticApprovalFeedback(rawValue: "notification") == .notification,
           automaticApprovalFeedback(rawValue: "menuBarFlash") == .menuBarFlash,
           automaticApprovalFeedback(rawValue: "none") == .none,
-          automaticApprovalFeedback(rawValue: "tampered") == .menuBarFlash,
+          automaticApprovalFeedback(rawValue: "tampered") == .notification,
           autoApprovalToolName(request) == "aws",
           approvalCommandPath(request) == "/usr/local/bin/aws",
           approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",

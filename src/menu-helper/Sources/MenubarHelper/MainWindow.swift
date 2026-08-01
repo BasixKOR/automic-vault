@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
 
 enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
+    case notification
     case none
     case menuBarFlash
 
@@ -15,6 +16,7 @@ enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .notification: "Show Notification"
         case .none: "Show Nothing"
         case .menuBarFlash: "Flash Menu Bar"
         }
@@ -2232,7 +2234,7 @@ private struct SecretNameAccessSettingsView: View {
 
 private struct AutomaticApprovalFeedbackSettingsView: View {
     @AppStorage(automaticApprovalFeedbackDefaultsKey)
-    private var feedback = AutomaticApprovalFeedback.menuBarFlash
+    private var feedback = AutomaticApprovalFeedback.notification
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
