@@ -62,6 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var automaticUpdateCheckTask: Task<Void, Never>?
     private var readyUpdate: Update?
     private var isCheckingForUpdates = false
+    private var automaticApprovalFlashWorkItem: DispatchWorkItem?
+    private var preFlashStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     private var lastTelemetryFindingCount: Int?
@@ -248,6 +250,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopServices() {
+        automaticApprovalFlashWorkItem?.cancel()
+        automaticApprovalFlashWorkItem = nil
+        preFlashStatusImage = nil
         scanWorkItem?.cancel()
         scanWorkItem = nil
         scanBurstStartedAt = nil
@@ -608,7 +613,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func recordAutoApproval(_ record: AutoApprovalRecord) {
         recordMenuAccess(record)
-        showAutomaticAccessToast(record, below: statusItem.button)
+        if automaticApprovalFeedback() == .menuBarFlash {
+            flashMenuBarForAutomaticApproval()
+        }
+    }
+
+    private func flashMenuBarForAutomaticApproval() {
+        guard let button = statusItem.button else { return }
+        if automaticApprovalFlashWorkItem == nil {
+            preFlashStatusImage = button.image
+        }
+        automaticApprovalFlashWorkItem?.cancel()
+
+        let flashImage = brandImage(color: .systemGreen.withAlphaComponent(0.65))
+        button.image = flashImage
+        let workItem = DispatchWorkItem { [weak self, weak button] in
+            guard let self else { return }
+            if button?.image === flashImage {
+                button?.image = self.preFlashStatusImage
+            }
+            self.automaticApprovalFlashWorkItem = nil
+            self.preFlashStatusImage = nil
+        }
+        automaticApprovalFlashWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
     }
 
     private func recordMenuAccess(_ record: AutoApprovalRecord) {
@@ -741,6 +769,12 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
 
 private func shouldShowAutomaticAccessToast(_ record: AccessRequestRecord) -> Bool {
     record.decision == "Denied" && record.approvalSourceLabel == "Auto"
+}
+
+private func automaticApprovalFeedback(rawValue: String? = UserDefaults.standard.string(
+    forKey: automaticApprovalFeedbackDefaultsKey
+)) -> AutomaticApprovalFeedback {
+    rawValue.flatMap(AutomaticApprovalFeedback.init(rawValue:)) ?? .menuBarFlash
 }
 
 private func accessRequestRecord(
@@ -4962,6 +4996,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
+          automaticApprovalFeedback(rawValue: nil) == .menuBarFlash,
+          automaticApprovalFeedback(rawValue: "menuBarFlash") == .menuBarFlash,
+          automaticApprovalFeedback(rawValue: "none") == .none,
+          automaticApprovalFeedback(rawValue: "tampered") == .menuBarFlash,
           autoApprovalToolName(request) == "aws",
           approvalCommandPath(request) == "/usr/local/bin/aws",
           approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",

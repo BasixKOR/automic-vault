@@ -5,6 +5,22 @@ import Security
 import SwiftUI
 import UniformTypeIdentifiers
 
+let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+
+enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
+    case none
+    case menuBarFlash
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .none: "Show Nothing"
+        case .menuBarFlash: "Flash Menu Bar"
+        }
+    }
+}
+
 struct BlessedScriptReviewRequest: Sendable {
     let path: String
     let declaration: BlessedScriptDeclaration
@@ -188,12 +204,20 @@ final class DashboardModel: ObservableObject {
                 )
             }
         case .settings:
-            [DashboardItem(
-                id: "secret-name-access",
-                title: "Secret Name Access",
-                subtitle: "Apps allowed to run av list",
-                detail: "Manage verified apps that may list saved secret names without prompting."
-            )]
+            [
+                DashboardItem(
+                    id: "automatic-approval-feedback",
+                    title: "Automatic Approvals",
+                    subtitle: "Choose subtle feedback or none",
+                    detail: "Control visual feedback after an automatic approval."
+                ),
+                DashboardItem(
+                    id: "secret-name-access",
+                    title: "Secret Name Access",
+                    subtitle: "Apps allowed to run av list",
+                    detail: "Manage verified apps that may list saved secret names without prompting."
+                ),
+            ]
         }
         let query = searchQuery
         guard !query.isEmpty else { return base }
@@ -1125,7 +1149,8 @@ struct DashboardRootView: View {
                         }
                         .help("Add Calling App")
                     }
-                    if model.selectedSection == .settings {
+                    if model.selectedSection == .settings,
+                       model.selectedItem?.id == "secret-name-access" {
                         Button {
                             model.addSecretNameAccessApp()
                         } label: {
@@ -1284,11 +1309,19 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .settings {
-                SecretNameAccessSettingsView(model: model)
-                    .padding(.horizontal, 22)
-                    .padding(.top, 32)
-                    .padding(.bottom, 28)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if model.selectedItem?.id == "automatic-approval-feedback" {
+                    AutomaticApprovalFeedbackSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    SecretNameAccessSettingsView(model: model)
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else if model.selectedSection == .detectors, let item = model.selectedItem {
                 ReferenceDetailView(
                     item: item,
@@ -2193,6 +2226,33 @@ private struct SecretNameAccessSettingsView: View {
             if let error = model.errorMessage {
                 InfoBlock(title: "Error", text: error)
             }
+        }
+    }
+}
+
+private struct AutomaticApprovalFeedbackSettingsView: View {
+    @AppStorage(automaticApprovalFeedbackDefaultsKey)
+    private var feedback = AutomaticApprovalFeedback.menuBarFlash
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Automatic Approvals")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Choose what appears when access is approved automatically.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Picker("Feedback", selection: $feedback) {
+                ForEach(AutomaticApprovalFeedback.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.radioGroup)
+            Text("Automatic approvals are always recorded in Secret Usage. Approval prompts and automatic rejection notifications are unaffected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
