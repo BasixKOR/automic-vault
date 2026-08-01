@@ -9,8 +9,8 @@ let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
 
 enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
     case notification
-    case none
     case menuBarFlash
+    case none
 
     var id: Self { self }
 

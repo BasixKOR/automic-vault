@@ -630,7 +630,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         automaticApprovalFlashWorkItem?.cancel()
 
-        let flashImage = brandImage(color: .systemGreen.withAlphaComponent(0.65))
+        // av.www --site-accent (#BEA9F3)
+        let flashImage = brandImage(color: NSColor(
+            srgbRed: 190.0 / 255,
+            green: 169.0 / 255,
+            blue: 243.0 / 255,
+            alpha: 1
+        ))
         button.image = flashImage
         let workItem = DispatchWorkItem { [weak self, weak button] in
             guard let self else { return }
@@ -5001,6 +5007,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
+          AutomaticApprovalFeedback.allCases == [.notification, .menuBarFlash, .none],
           automaticApprovalFeedback(rawValue: nil) == .notification,
           automaticApprovalFeedback(rawValue: "notification") == .notification,
           automaticApprovalFeedback(rawValue: "menuBarFlash") == .menuBarFlash,
