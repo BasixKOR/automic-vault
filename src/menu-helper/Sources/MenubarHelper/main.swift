@@ -3616,6 +3616,9 @@ private func approvalPromptRequester(
     guard let launcher else {
         return (URL(fileURLWithPath: fallback).lastPathComponent, fallback)
     }
+    if launcher.isStandalone {
+        return ("\(launcher.path) — Team ID: \(launcher.teamIdentifier)", launcher.path)
+    }
     if let appURL = appBundleURL(containing: launcher.path)
         ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: launcher.identifier)
     {
@@ -3759,7 +3762,6 @@ private struct ApprovalPromptView: View {
                     .accessibilityLabel(content.requesterName)
                 Text(content.requesterName)
                     .font(.title2.weight(.bold))
-                    .lineLimit(1)
                 Text("WANTS TO RUN")
                     .font(.caption.weight(.semibold))
                     .tracking(1.6)
@@ -4001,7 +4003,6 @@ private struct AutomaticAccessToastView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(record.launcher)
                         .font(.headline)
-                        .lineLimit(1)
                     Text(automaticAccessDecisionLabel(wasDenied: record.wasDenied))
                         .font(.caption2.weight(.semibold))
                         .tracking(1.2)
@@ -4161,6 +4162,18 @@ private func runApprovalSelfCheck() -> Int32 {
         launcher: nil,
         fallback: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond"
     )
+    let cliRequester = approvalPromptRequester(
+        launcher: LauncherIdentity(
+            pid: 42,
+            path: "/opt/homebrew/bin/gh",
+            identifier: "gh",
+            teamIdentifier: "TEAM",
+            designatedRequirement: #"identifier "gh" and anchor apple generic"#,
+            runtimeProtection: .hardened,
+            isStandalone: true
+        ),
+        fallback: "/opt/homebrew/bin/gh"
+    )
     let automaticApprovalExplanation = LauncherAppVerificationFailure(
         appName: "ChatGPT",
         resourcesUnreadable: true
@@ -4226,6 +4239,8 @@ private func runApprovalSelfCheck() -> Int32 {
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
           unverifiedRequester.iconPath == "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
+          cliRequester.name == "/opt/homebrew/bin/gh — Team ID: TEAM",
+          cliRequester.iconPath == "/opt/homebrew/bin/gh",
           automaticApprovalExplanation.contains("ChatGPT contains signed app resources"),
           automaticApprovalExplanation.contains("Manual approval is required to fail closed"),
           collapsedHeight > 0,
