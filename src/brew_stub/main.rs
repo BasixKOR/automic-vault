@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V8";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V9";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -218,7 +218,7 @@ fn prepare_args(
     } else {
         Vec::new()
     };
-    let post_install = installs.then_some(CaskPostInstall { caller, apps });
+    let post_install = (!apps.is_empty()).then_some(CaskPostInstall { caller, apps });
     Ok((pinned, post_install))
 }
 
@@ -358,6 +358,7 @@ fn reject_unsafe_artifacts(name: &str, info: &serde_json::Value) -> Result<(), S
         "dictionary",
         "fishcompletion",
         "font",
+        "generate_completions_from_executable",
         "generated_completion",
         "generated_script",
         "input_method",
@@ -404,6 +405,7 @@ fn reject_unsafe_artifacts(name: &str, info: &serde_json::Value) -> Result<(), S
             "binary",
             "command_wrapper",
             "fishcompletion",
+            "generate_completions_from_executable",
             "generated_completion",
             "generated_script",
             "service",
@@ -432,6 +434,7 @@ fn app_targets(name: &str, info: &serde_json::Value) -> Result<Vec<PathBuf>, Str
         "binary",
         "command_wrapper",
         "fishcompletion",
+        "generate_completions_from_executable",
         "generated_completion",
         "generated_script",
         "postflight",
@@ -475,11 +478,6 @@ fn app_targets(name: &str, info: &serde_json::Value) -> Result<Vec<PathBuf>, Str
             }
             targets.push(target);
         }
-    }
-    if targets.is_empty() {
-        return Err(format!(
-            "cask `{name}` has no app bundle whose ownership can be transferred safely"
-        ));
     }
     Ok(targets)
 }
@@ -1209,6 +1207,20 @@ mod tests {
             ]
         });
         assert!(reject_unsafe_artifacts("firefox", &firefox).is_ok());
+
+        let codex = serde_json::json!({
+            "artifacts": [
+                {"binary": ["bin/codex"], "target": "/opt/homebrew/bin/codex"},
+                {"generate_completions_from_executable": [
+                    "bin/codex",
+                    "completion",
+                    {"base_name": null, "shell_parameter_format": null, "shells": ["bash", "zsh", "fish"]}
+                ]},
+                {"zap": [{"rmdir": "~/.codex"}]}
+            ]
+        });
+        assert!(reject_unsafe_artifacts("codex", &codex).is_ok());
+        assert!(app_targets("codex", &codex).unwrap().is_empty());
         assert!(
             reject_unsafe_artifacts(
                 "broken",
