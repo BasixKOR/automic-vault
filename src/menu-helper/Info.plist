@@ -31,6 +31,8 @@
   <string>1</string>
   <key>AVCLIRevision</key>
   <integer>0</integer>
+  <key>AVUpdatePreflightVersion</key>
+  <integer>1</integer>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>

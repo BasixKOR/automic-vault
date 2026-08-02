@@ -117,3 +117,19 @@ fn publication_is_local_and_release_actions_need_no_aws() {
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
 }
+
+#[test]
+fn publication_requires_the_previous_app_to_accept_the_draft() {
+    let verify = PUBLISH_SCRIPT
+        .find("verify_draft_update \"$VERSION\" \"$head\"")
+        .unwrap();
+    let prompt = PUBLISH_SCRIPT.find("release y/n?").unwrap();
+    assert!(verify < prompt);
+    assert!(PUBLISH_SCRIPT.contains("gh api \"repos/$REPOSITORY/releases?per_page=30\""));
+    assert!(PUBLISH_SCRIPT.contains("AVUpdatePreflightVersion"));
+    assert!(PUBLISH_SCRIPT.contains("--verify-update \"$version\""));
+    assert!(PUBLISH_SCRIPT.contains("APP_VERSION=2.9.0"));
+    assert!(PUBLISH_SCRIPT.contains("previous_version\" == \"2.9.0"));
+    assert!(PUBLISH_SCRIPT.contains("lacks the updater preflight"));
+    assert!(PUBLISH_SCRIPT.contains("downloaded draft DMG does not match GitHub's digest"));
+}
