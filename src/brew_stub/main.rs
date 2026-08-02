@@ -1,18 +1,22 @@
 use std::ffi::{CStr, CString, OsString};
 use std::fs;
-use std::io::{self, Read};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::io::{self, Read, Write};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V9";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V10";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const CASK_USER_UID: &str = "/opt/homebrew/var/automic/cask-user-uid";
 const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
-const COMPLETION_ACL: &str = "user:automic allow read,write,execute,delete,append,readattr,writeattr,readextattr,writeextattr,readsecurity";
+const ZSH_COMPLETION_MIRROR: &str = ".local/share/automic-vault/homebrew/zsh/site-functions";
+const MAX_COMPLETION_BYTES: usize = 8 * 1024 * 1024;
+const MAX_COMPLETIONS_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 struct AuthorizationRequest {
@@ -25,6 +29,8 @@ struct AuthorizationRequest {
 struct Caller {
     uid: u32,
     gid: u32,
+    home: PathBuf,
+    shell: PathBuf,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,21 +53,60 @@ fn main() {
     let (mut command, post_install) =
         approved_command(args, std::env::vars_os(), &cwd, xpc_authorize)
             .unwrap_or_else(|err| fail(err));
-    let status = command
-        .status()
-        .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
-    let completion_result =
-        repair_zsh_completion_ownership(Path::new(PREFIX), Path::new(CASK_USER_UID));
+    let caller = caller().unwrap_or_else(|err| fail(err));
+    let automic_uid = unsafe { libc::geteuid() };
+    let zsh_shellenv = is_zsh_shellenv(command.get_args(), &caller.shell);
+    let output = zsh_shellenv.then(|| {
+        command
+            .output()
+            .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")))
+    });
+    let status = output.as_ref().map_or_else(
+        || {
+            command
+                .status()
+                .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")))
+        },
+        |output| output.status,
+    );
+    if let Some(output) = &output {
+        io::stderr().write_all(&output.stderr).ok();
+    }
     if !status.success() {
-        if let Err(err) = completion_result {
+        if let Err(err) = drop_to_caller(&caller).and_then(|()| {
+            sync_zsh_completion_mirror(
+                Path::new(PREFIX),
+                &caller.home.join(ZSH_COMPLETION_MIRROR),
+                automic_uid,
+            )
+        }) {
             eprintln!("av-brew-stub: {err}");
+        }
+        if let Some(output) = output {
+            io::stdout().write_all(&output.stdout).ok();
         }
         std::process::exit(status.code().unwrap_or(1));
     }
     if let Some(post_install) = post_install {
         transfer_app_ownership(&post_install).unwrap_or_else(|err| fail(err));
     }
-    completion_result.unwrap_or_else(|err| fail(err));
+    drop_to_caller(&caller).unwrap_or_else(|err| fail(err));
+    let completion_result = sync_zsh_completion_mirror(
+        Path::new(PREFIX),
+        &caller.home.join(ZSH_COMPLETION_MIRROR),
+        automic_uid,
+    );
+    if zsh_shellenv {
+        completion_result.unwrap_or_else(|err| fail(err));
+        if let Some(output) = output {
+            io::stdout().write_all(&output.stdout).ok();
+        }
+        io::stdout()
+            .write_all(zsh_shellenv_override().as_bytes())
+            .ok();
+    } else if let Err(err) = completion_result {
+        eprintln!("av-brew-stub: failed to refresh zsh completions: {err}");
+    }
 }
 
 fn fail(message: String) -> ! {
@@ -101,6 +146,25 @@ fn drop_to_effective_identity() -> io::Result<()> {
     let gid = unsafe { libc::getegid() };
     if unsafe { libc::setregid(gid, gid) } != 0 || unsafe { libc::setreuid(uid, uid) } != 0 {
         return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+fn drop_to_caller(caller: &Caller) -> Result<(), String> {
+    if unsafe { libc::setregid(caller.gid, caller.gid) } != 0
+        || unsafe { libc::setreuid(caller.uid, caller.uid) } != 0
+    {
+        return Err(format!(
+            "failed to drop privileges for zsh completion refresh: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    if unsafe { libc::getuid() } != caller.uid
+        || unsafe { libc::geteuid() } != caller.uid
+        || unsafe { libc::getgid() } != caller.gid
+        || unsafe { libc::getegid() } != caller.gid
+    {
+        return Err("failed to drop all privileges for zsh completion refresh".into());
     }
     Ok(())
 }
@@ -491,7 +555,7 @@ fn caller() -> Result<Caller, String> {
         configured_cask_uid(Path::new(CASK_USER_UID), euid, unsafe { libc::getegid() })?;
     if uid != configured {
         return Err(
-            "ownership transfers must be invoked directly by the user configured by `sudo av harden brew`".into(),
+            "brew must be invoked directly by the user configured by `sudo av harden brew`".into(),
         );
     }
     let entry = unsafe { libc::getpwuid(uid) };
@@ -509,12 +573,29 @@ fn caller() -> Result<Caller, String> {
     {
         return Err("caller's account name is missing".into());
     }
-    Ok(Caller { uid, gid })
+    if entry.pw_dir.is_null() || entry.pw_shell.is_null() {
+        return Err("caller's account home or shell is missing".into());
+    }
+    let home = PathBuf::from(std::ffi::OsStr::from_bytes(
+        unsafe { CStr::from_ptr(entry.pw_dir) }.to_bytes(),
+    ));
+    let shell = PathBuf::from(std::ffi::OsStr::from_bytes(
+        unsafe { CStr::from_ptr(entry.pw_shell) }.to_bytes(),
+    ));
+    if !home.is_absolute() || !shell.is_absolute() {
+        return Err("caller's account home and shell must be absolute paths".into());
+    }
+    Ok(Caller {
+        uid,
+        gid,
+        home,
+        shell,
+    })
 }
 
 fn validate_invoker(uid: u32, euid: u32) -> Result<(), String> {
     if uid == 0 {
-        return Err("casks cannot be invoked as root".into());
+        return Err("brew cannot be invoked as root".into());
     }
     if uid == euid {
         return Err("brew stub is not installed setuid; run `sudo av harden brew`".into());
@@ -602,138 +683,253 @@ fn ownership_command(post_install: &CaskPostInstall) -> Command {
     command
 }
 
-fn repair_zsh_completion_ownership(prefix: &Path, configured_user: &Path) -> Result<(), String> {
-    let paths = zsh_completion_paths(prefix)?;
-    if paths.is_empty() {
-        return Ok(());
-    }
-    let automic_uid = unsafe { libc::geteuid() };
-    let configured_uid =
-        configured_cask_uid(configured_user, automic_uid, unsafe { libc::getegid() })?;
-    let mut repair = Vec::new();
-    for path in paths {
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
-        if metadata.uid() == configured_uid || metadata.uid() == 0 {
-            continue;
-        }
-        if metadata.uid() != automic_uid {
-            return Err(format!(
-                "zsh completion {} has unexpected owner {}",
-                path.display(),
-                metadata.uid()
-            ));
-        }
-        if !metadata.file_type().is_symlink() {
-            let acl = completion_acl(metadata.file_type().is_dir());
-            let _ = Command::new("/bin/chmod")
-                .args(["-a", &acl])
-                .arg(&path)
-                .output();
-            let output = Command::new("/bin/chmod")
-                .args(["+a", &acl])
-                .arg(&path)
-                .output()
-                .map_err(|err| format!("failed to grant Homebrew completion access: {err}"))?;
-            if !output.status.success() {
-                return Err(format!(
-                    "failed to grant Homebrew access to {}: {}",
-                    path.display(),
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ));
-            }
-        }
-        repair.push(path);
-    }
-    if repair.is_empty() {
-        return Ok(());
-    }
-    let caller = caller()?;
-    eprintln!("av-brew-stub: sudo is required to make zsh completions compatible with compinit");
-    let output = completion_ownership_command(&caller, &repair)
-        .output()
-        .map_err(|err| format!("failed to transfer zsh completion ownership: {err}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to transfer zsh completion ownership: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    for path in zsh_completion_paths(prefix)? {
-        let uid = fs::symlink_metadata(&path)
-            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?
-            .uid();
-        if uid != caller.uid && uid != 0 {
-            return Err(format!(
-                "{} ownership was not transferred to {}",
-                path.display(),
-                caller.uid
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn completion_acl(directory: bool) -> String {
-    format!(
-        "{COMPLETION_ACL}{}",
-        if directory {
-            ",delete_child,file_inherit,directory_inherit"
-        } else {
-            ""
-        }
-    )
-}
-
-fn zsh_completion_paths(prefix: &Path) -> Result<Vec<PathBuf>, String> {
+fn sync_zsh_completion_mirror(
+    prefix: &Path,
+    mirror: &Path,
+    trusted_uid: u32,
+) -> Result<(), String> {
     let functions = prefix.join(ZSH_COMPLETIONS);
-    if !functions.is_dir() {
-        return Ok(Vec::new());
-    }
     let canonical_prefix = fs::canonicalize(prefix)
         .map_err(|err| format!("failed to resolve {}: {err}", prefix.display()))?;
-    let mut paths = std::collections::BTreeSet::from([prefix.join("share/zsh"), functions.clone()]);
-    for entry in fs::read_dir(&functions)
-        .map_err(|err| format!("failed to read {}: {err}", functions.display()))?
-    {
-        let entry =
-            entry.map_err(|err| format!("failed to read {}: {err}", functions.display()))?;
-        if !entry.file_name().as_encoded_bytes().starts_with(b"_") {
-            continue;
-        }
-        let path = entry.path();
-        paths.insert(path.clone());
-        let target = match fs::canonicalize(&path) {
-            Ok(target) => target,
-            Err(err)
-                if err.kind() == io::ErrorKind::NotFound
-                    && entry.file_type().is_ok_and(|kind| kind.is_symlink()) =>
-            {
-                continue;
-            }
-            Err(err) => return Err(format!("failed to resolve {}: {err}", path.display())),
-        };
-        if !target.starts_with(&canonical_prefix) {
+    let mut completions = std::collections::BTreeMap::new();
+    let mut total = 0usize;
+    if functions.exists() {
+        let metadata = fs::symlink_metadata(&functions)
+            .map_err(|err| format!("failed to inspect {}: {err}", functions.display()))?;
+        if !metadata.file_type().is_dir()
+            || (metadata.uid() != 0 && metadata.uid() != trusted_uid)
+            || metadata.mode() & 0o022 != 0
+        {
             return Err(format!(
-                "zsh completion {} resolves outside {}",
-                path.display(),
-                prefix.display()
+                "Homebrew zsh completion directory is not protected: {}",
+                functions.display()
             ));
         }
-        paths.insert(target);
+        for entry in fs::read_dir(&functions)
+            .map_err(|err| format!("failed to read {}: {err}", functions.display()))?
+        {
+            let entry =
+                entry.map_err(|err| format!("failed to read {}: {err}", functions.display()))?;
+            let name = entry.file_name();
+            if !name.as_encoded_bytes().starts_with(b"_") {
+                continue;
+            }
+            let target = match fs::canonicalize(entry.path()) {
+                Ok(target) => target,
+                Err(err)
+                    if err.kind() == io::ErrorKind::NotFound
+                        && entry.file_type().is_ok_and(|kind| kind.is_symlink()) =>
+                {
+                    continue;
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "failed to resolve zsh completion {}: {err}",
+                        entry.path().display()
+                    ));
+                }
+            };
+            if !target.starts_with(&canonical_prefix) {
+                return Err(format!(
+                    "zsh completion {} resolves outside {}",
+                    entry.path().display(),
+                    prefix.display()
+                ));
+            }
+            let mut file = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&target)
+                .map_err(|err| format!("failed to open {}: {err}", target.display()))?;
+            let metadata = file
+                .metadata()
+                .map_err(|err| format!("failed to inspect {}: {err}", target.display()))?;
+            if !metadata.file_type().is_file()
+                || (metadata.uid() != 0 && metadata.uid() != trusted_uid)
+                || metadata.mode() & 0o022 != 0
+                || metadata.len() > MAX_COMPLETION_BYTES as u64
+            {
+                return Err(format!(
+                    "Homebrew zsh completion is not a protected regular file: {}",
+                    target.display()
+                ));
+            }
+            let mut contents = Vec::with_capacity(metadata.len() as usize);
+            file.read_to_end(&mut contents)
+                .map_err(|err| format!("failed to read {}: {err}", target.display()))?;
+            if contents.len() > MAX_COMPLETION_BYTES {
+                return Err(format!(
+                    "Homebrew zsh completion exceeds the 8 MiB mirror limit: {}",
+                    target.display()
+                ));
+            }
+            total = total
+                .checked_add(contents.len())
+                .filter(|total| *total <= MAX_COMPLETIONS_BYTES)
+                .ok_or_else(|| {
+                    "Homebrew zsh completions exceed the 64 MiB mirror limit".to_string()
+                })?;
+            completions.insert(name, contents);
+        }
     }
-    Ok(paths.into_iter().collect())
+
+    if completion_mirror_matches(mirror, &completions)? {
+        return Ok(());
+    }
+    let parent = mirror
+        .parent()
+        .ok_or_else(|| format!("completion mirror has no parent: {}", mirror.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    if let Ok(metadata) = fs::symlink_metadata(mirror)
+        && (!metadata.file_type().is_dir()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.mode() & 0o022 != 0)
+    {
+        return Err(format!(
+            "completion mirror is not protected: {}",
+            mirror.display()
+        ));
+    }
+    let staging = parent.join(format!(
+        ".site-functions-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|err| format!("system clock is invalid: {err}"))?
+            .as_nanos()
+    ));
+    fs::create_dir(&staging)
+        .map_err(|err| format!("failed to create completion snapshot: {err}"))?;
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700))
+        .map_err(|err| format!("failed to protect completion snapshot: {err}"))?;
+    let result = (|| {
+        for (name, contents) in &completions {
+            let path = staging.join(name);
+            fs::write(&path, contents)
+                .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+                .map_err(|err| format!("failed to protect {}: {err}", path.display()))?;
+        }
+        replace_completion_mirror(&staging, mirror)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
 }
 
-fn completion_ownership_command(caller: &Caller, paths: &[PathBuf]) -> Command {
-    let owner = format!("{}:{}", caller.uid, caller.gid);
-    let mut command = Command::new("/usr/bin/sudo");
-    command
-        .args(["--", "/usr/sbin/chown", "-h", "-n", "--", &owner])
-        .args(paths)
-        .env_clear()
-        .envs(stub_env([]));
-    command
+fn completion_mirror_matches(
+    mirror: &Path,
+    completions: &std::collections::BTreeMap<OsString, Vec<u8>>,
+) -> Result<bool, String> {
+    let metadata = match fs::symlink_metadata(mirror) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(format!("failed to inspect {}: {err}", mirror.display())),
+    };
+    if !metadata.file_type().is_dir()
+        || metadata.uid() != unsafe { libc::geteuid() }
+        || metadata.mode() & 0o022 != 0
+    {
+        return Ok(false);
+    }
+    let entries = fs::read_dir(mirror)
+        .map_err(|err| format!("failed to read {}: {err}", mirror.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("failed to read {}: {err}", mirror.display()))?;
+    if entries.len() != completions.len() {
+        return Ok(false);
+    }
+    for entry in entries {
+        let Some(expected) = completions.get(&entry.file_name()) else {
+            return Ok(false);
+        };
+        let metadata = fs::symlink_metadata(entry.path())
+            .map_err(|err| format!("failed to inspect {}: {err}", entry.path().display()))?;
+        if !metadata.file_type().is_file()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || metadata.mode() & 0o022 != 0
+            || fs::read(entry.path()).map_err(|err| format!("failed to read mirror: {err}"))?
+                != *expected
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn replace_completion_mirror(staging: &Path, mirror: &Path) -> Result<(), String> {
+    if !mirror.exists() {
+        return fs::rename(staging, mirror)
+            .map_err(|err| format!("failed to publish completion mirror: {err}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let staging_c = CString::new(staging.as_os_str().as_bytes())
+            .map_err(|_| "completion snapshot path contains NUL".to_string())?;
+        let mirror_c = CString::new(mirror.as_os_str().as_bytes())
+            .map_err(|_| "completion mirror path contains NUL".to_string())?;
+        if unsafe {
+            libc::renameatx_np(
+                libc::AT_FDCWD,
+                staging_c.as_ptr(),
+                libc::AT_FDCWD,
+                mirror_c.as_ptr(),
+                libc::RENAME_SWAP,
+            )
+        } != 0
+        {
+            return Err(format!(
+                "failed to publish completion mirror: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        fs::remove_dir_all(staging)
+            .map_err(|err| format!("failed to remove old completion mirror: {err}"))?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let old = mirror.with_extension("old");
+        let _ = fs::remove_dir_all(&old);
+        fs::rename(mirror, &old)
+            .map_err(|err| format!("failed to retire completion mirror: {err}"))?;
+        if let Err(err) = fs::rename(staging, mirror) {
+            let _ = fs::rename(&old, mirror);
+            return Err(format!("failed to publish completion mirror: {err}"));
+        }
+        fs::remove_dir_all(old)
+            .map_err(|err| format!("failed to remove old completion mirror: {err}"))
+    }
+}
+
+fn is_zsh_shellenv<'a>(args: impl IntoIterator<Item = &'a std::ffi::OsStr>, shell: &Path) -> bool {
+    let args = args.into_iter().collect::<Vec<_>>();
+    let Some(command_index) = args
+        .iter()
+        .position(|arg| arg.as_bytes() == b"--" || !arg.as_bytes().starts_with(b"-"))
+    else {
+        return false;
+    };
+    if args[command_index].as_bytes() != b"shellenv" {
+        return false;
+    }
+    args[command_index + 1..]
+        .iter()
+        .find(|arg| !arg.as_bytes().starts_with(b"-"))
+        .map_or_else(
+            || {
+                shell
+                    .file_name()
+                    .is_some_and(|shell| shell.as_bytes() == b"zsh")
+            },
+            |shell| shell.as_bytes() == b"zsh",
+        )
+}
+
+fn zsh_shellenv_override() -> &'static str {
+    "fpath=(\"$HOME/.local/share/automic-vault/homebrew/zsh/site-functions\" ${fpath:#/opt/homebrew/share/zsh/site-functions});\nexport FPATH;\n"
 }
 
 fn validate_installed_app(app: &Path) -> Result<(), String> {
@@ -1173,7 +1369,7 @@ mod tests {
     fn cask_invoker_errors_identify_root_and_missing_setuid() {
         assert_eq!(
             validate_invoker(0, 550).unwrap_err(),
-            "casks cannot be invoked as root"
+            "brew cannot be invoked as root"
         );
         assert_eq!(
             validate_invoker(501, 501).unwrap_err(),
@@ -1268,7 +1464,12 @@ mod tests {
         );
 
         let command = ownership_command(&CaskPostInstall {
-            caller: Caller { uid: 501, gid: 20 },
+            caller: Caller {
+                uid: 501,
+                gid: 20,
+                home: "/Users/example".into(),
+                shell: "/bin/zsh".into(),
+            },
             apps: vec![PathBuf::from("/Applications/Spotify.app")],
         });
         assert_eq!(command.get_program(), "/usr/bin/sudo");
@@ -1293,8 +1494,11 @@ mod tests {
     }
 
     #[test]
-    fn zsh_completion_paths_include_links_and_in_prefix_targets() {
-        let prefix = temp_path("zsh-completions");
+    fn zsh_completion_mirror_copies_only_in_prefix_regular_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let prefix = temp_path("zsh-completion-source");
+        let mirror = temp_path("zsh-completion-mirror");
         let functions = prefix.join(ZSH_COMPLETIONS);
         let target = prefix.join("Cellar/tool/1/share/zsh/site-functions/_tool");
         fs::create_dir_all(&functions).unwrap();
@@ -1303,68 +1507,86 @@ mod tests {
         std::os::unix::fs::symlink(&target, functions.join("_tool")).unwrap();
         fs::write(functions.join("not-loaded"), "ignored").unwrap();
 
-        let paths = zsh_completion_paths(&prefix).unwrap();
+        sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid()).unwrap();
 
-        assert!(paths.contains(&prefix.join("share/zsh")));
-        assert!(paths.contains(&functions));
-        assert!(paths.contains(&prefix.join(ZSH_COMPLETIONS).join("_tool")));
-        assert!(paths.contains(&fs::canonicalize(&target).unwrap()));
-        assert!(!paths.contains(&prefix.join(ZSH_COMPLETIONS).join("not-loaded")));
+        let mirrored = fs::symlink_metadata(mirror.join("_tool")).unwrap();
+        assert!(mirrored.file_type().is_file());
+        assert_eq!(
+            fs::read_to_string(mirror.join("_tool")).unwrap(),
+            "#compdef tool"
+        );
+        assert_eq!(mirrored.permissions().mode() & 0o777, 0o600);
+        assert!(!mirror.join("not-loaded").exists());
+
+        fs::remove_file(mirror.join("_tool")).unwrap();
+        std::os::unix::fs::symlink(&target, mirror.join("_tool")).unwrap();
+        sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid()).unwrap();
+        assert!(
+            fs::symlink_metadata(mirror.join("_tool"))
+                .unwrap()
+                .file_type()
+                .is_file()
+        );
+
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(
+            sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid())
+                .is_err()
+        );
+
         fs::remove_dir_all(prefix).unwrap();
+        fs::remove_dir_all(mirror).unwrap();
     }
 
     #[test]
-    fn zsh_completion_paths_reject_targets_outside_homebrew() {
+    fn zsh_completion_mirror_rejects_escape_without_replacing_snapshot() {
         let prefix = temp_path("zsh-completion-escape");
+        let mirror = temp_path("zsh-completion-existing");
         let outside = temp_path("zsh-completion-outside");
         let functions = prefix.join(ZSH_COMPLETIONS);
         fs::create_dir_all(&functions).unwrap();
+        fs::create_dir_all(&mirror).unwrap();
+        fs::write(mirror.join("_existing"), "safe").unwrap();
         fs::write(&outside, "unsafe").unwrap();
         std::os::unix::fs::symlink(&outside, functions.join("_escape")).unwrap();
 
-        assert!(zsh_completion_paths(&prefix).is_err());
+        assert!(
+            sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&outside).unwrap().uid(),)
+                .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(mirror.join("_existing")).unwrap(),
+            "safe"
+        );
 
         fs::remove_dir_all(prefix).unwrap();
+        fs::remove_dir_all(mirror).unwrap();
         fs::remove_file(outside).unwrap();
     }
 
     #[test]
-    fn missing_zsh_completions_need_no_configured_user() {
-        let prefix = temp_path("no-zsh-completions");
+    fn shellenv_override_uses_only_the_mirror() {
+        let output = zsh_shellenv_override();
 
-        assert!(repair_zsh_completion_ownership(&prefix, Path::new("/missing")).is_ok());
-    }
-
-    #[test]
-    fn completion_directories_allow_homebrew_to_replace_entries() {
-        assert!(completion_acl(true).contains("delete_child"));
-        assert!(!completion_acl(false).contains("delete_child"));
-    }
-
-    #[test]
-    fn completion_ownership_is_narrow_and_non_recursive() {
-        let paths = vec![
-            PathBuf::from("/opt/homebrew/share/zsh"),
-            PathBuf::from("/opt/homebrew/share/zsh/site-functions/_tool"),
-        ];
-        let command = completion_ownership_command(&Caller { uid: 501, gid: 20 }, &paths);
-
-        assert_eq!(command.get_program(), "/usr/bin/sudo");
-        assert_eq!(
-            command
-                .get_args()
-                .map(|arg| arg.to_string_lossy().into_owned())
-                .collect::<Vec<_>>(),
+        assert!(output.contains("$HOME/.local/share/automic-vault/homebrew/zsh/site-functions"));
+        assert!(output.contains("${fpath:#/opt/homebrew/share/zsh/site-functions}"));
+        assert!(is_zsh_shellenv(
+            [std::ffi::OsStr::new("shellenv")],
+            Path::new("/bin/zsh")
+        ));
+        assert!(is_zsh_shellenv(
             [
-                "--",
-                "/usr/sbin/chown",
-                "-h",
-                "-n",
-                "--",
-                "501:20",
-                "/opt/homebrew/share/zsh",
-                "/opt/homebrew/share/zsh/site-functions/_tool",
-            ]
-        );
+                std::ffi::OsStr::new("shellenv"),
+                std::ffi::OsStr::new("zsh")
+            ],
+            Path::new("/bin/bash")
+        ));
+        assert!(!is_zsh_shellenv(
+            [
+                std::ffi::OsStr::new("shellenv"),
+                std::ffi::OsStr::new("fish")
+            ],
+            Path::new("/bin/zsh")
+        ));
     }
 }
