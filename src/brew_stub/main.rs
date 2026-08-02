@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString, OsString};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -76,6 +76,7 @@ fn main() {
         if let Err(err) = drop_to_caller(&caller).and_then(|()| {
             sync_zsh_completion_mirror(
                 Path::new(PREFIX),
+                &caller.home,
                 &caller.home.join(ZSH_COMPLETION_MIRROR),
                 automic_uid,
             )
@@ -93,6 +94,7 @@ fn main() {
     drop_to_caller(&caller).unwrap_or_else(|err| fail(err));
     let completion_result = sync_zsh_completion_mirror(
         Path::new(PREFIX),
+        &caller.home,
         &caller.home.join(ZSH_COMPLETION_MIRROR),
         automic_uid,
     );
@@ -685,6 +687,7 @@ fn ownership_command(post_install: &CaskPostInstall) -> Command {
 
 fn sync_zsh_completion_mirror(
     prefix: &Path,
+    home: &Path,
     mirror: &Path,
     trusted_uid: u32,
 ) -> Result<(), String> {
@@ -773,14 +776,7 @@ fn sync_zsh_completion_mirror(
         }
     }
 
-    if completion_mirror_matches(mirror, &completions)? {
-        return Ok(());
-    }
-    let parent = mirror
-        .parent()
-        .ok_or_else(|| format!("completion mirror has no parent: {}", mirror.display()))?;
-    fs::create_dir_all(parent)
-        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    let parent = prepare_completion_mirror_parent(home, mirror)?;
     if let Ok(metadata) = fs::symlink_metadata(mirror)
         && (!metadata.file_type().is_dir()
             || metadata.uid() != unsafe { libc::geteuid() }
@@ -790,6 +786,9 @@ fn sync_zsh_completion_mirror(
             "completion mirror is not protected: {}",
             mirror.display()
         ));
+    }
+    if completion_mirror_matches(mirror, &completions)? {
+        return Ok(());
     }
     let staging = parent.join(format!(
         ".site-functions-{}-{}",
@@ -817,6 +816,46 @@ fn sync_zsh_completion_mirror(
         let _ = fs::remove_dir_all(&staging);
     }
     result
+}
+
+fn prepare_completion_mirror_parent(home: &Path, mirror: &Path) -> Result<PathBuf, String> {
+    let parent = mirror
+        .parent()
+        .ok_or_else(|| format!("completion mirror has no parent: {}", mirror.display()))?;
+    let relative = parent.strip_prefix(home).map_err(|_| {
+        format!(
+            "completion mirror is outside the caller's home: {}",
+            mirror.display()
+        )
+    })?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true).mode(0o700);
+    builder
+        .create(parent)
+        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+
+    let uid = unsafe { libc::geteuid() };
+    let mut path = home.to_path_buf();
+    for component in std::iter::once(None).chain(relative.components().map(Some)) {
+        if let Some(component) = component {
+            let std::path::Component::Normal(component) = component else {
+                return Err(format!(
+                    "completion mirror path is invalid: {}",
+                    mirror.display()
+                ));
+            };
+            path.push(component);
+        }
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+        if !metadata.file_type().is_dir() || metadata.uid() != uid || metadata.mode() & 0o022 != 0 {
+            return Err(format!(
+                "completion mirror path is not protected: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(parent.to_path_buf())
 }
 
 fn completion_mirror_matches(
@@ -1498,16 +1537,24 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let prefix = temp_path("zsh-completion-source");
-        let mirror = temp_path("zsh-completion-mirror");
+        let home = temp_path("zsh-completion-home");
+        let mirror = home.join(ZSH_COMPLETION_MIRROR);
         let functions = prefix.join(ZSH_COMPLETIONS);
         let target = prefix.join("Cellar/tool/1/share/zsh/site-functions/_tool");
+        fs::create_dir(&home).unwrap();
         fs::create_dir_all(&functions).unwrap();
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, "#compdef tool").unwrap();
         std::os::unix::fs::symlink(&target, functions.join("_tool")).unwrap();
         fs::write(functions.join("not-loaded"), "ignored").unwrap();
 
-        sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid()).unwrap();
+        sync_zsh_completion_mirror(
+            &prefix,
+            &home,
+            &mirror,
+            fs::metadata(&target).unwrap().uid(),
+        )
+        .unwrap();
 
         let mirrored = fs::symlink_metadata(mirror.join("_tool")).unwrap();
         assert!(mirrored.file_type().is_file());
@@ -1518,9 +1565,32 @@ mod tests {
         assert_eq!(mirrored.permissions().mode() & 0o777, 0o600);
         assert!(!mirror.join("not-loaded").exists());
 
+        let unsafe_parent = home.join(".local/share");
+        fs::set_permissions(&unsafe_parent, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(
+            sync_zsh_completion_mirror(
+                &prefix,
+                &home,
+                &mirror,
+                fs::metadata(&target).unwrap().uid(),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(mirror.join("_tool")).unwrap(),
+            "#compdef tool"
+        );
+        fs::set_permissions(&unsafe_parent, fs::Permissions::from_mode(0o700)).unwrap();
+
         fs::remove_file(mirror.join("_tool")).unwrap();
         std::os::unix::fs::symlink(&target, mirror.join("_tool")).unwrap();
-        sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid()).unwrap();
+        sync_zsh_completion_mirror(
+            &prefix,
+            &home,
+            &mirror,
+            fs::metadata(&target).unwrap().uid(),
+        )
+        .unwrap();
         assert!(
             fs::symlink_metadata(mirror.join("_tool"))
                 .unwrap()
@@ -1530,18 +1600,24 @@ mod tests {
 
         fs::set_permissions(&target, fs::Permissions::from_mode(0o664)).unwrap();
         assert!(
-            sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&target).unwrap().uid())
-                .is_err()
+            sync_zsh_completion_mirror(
+                &prefix,
+                &home,
+                &mirror,
+                fs::metadata(&target).unwrap().uid(),
+            )
+            .is_err()
         );
 
         fs::remove_dir_all(prefix).unwrap();
-        fs::remove_dir_all(mirror).unwrap();
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
     fn zsh_completion_mirror_rejects_escape_without_replacing_snapshot() {
         let prefix = temp_path("zsh-completion-escape");
-        let mirror = temp_path("zsh-completion-existing");
+        let home = temp_path("zsh-completion-escape-home");
+        let mirror = home.join(ZSH_COMPLETION_MIRROR);
         let outside = temp_path("zsh-completion-outside");
         let functions = prefix.join(ZSH_COMPLETIONS);
         fs::create_dir_all(&functions).unwrap();
@@ -1551,8 +1627,13 @@ mod tests {
         std::os::unix::fs::symlink(&outside, functions.join("_escape")).unwrap();
 
         assert!(
-            sync_zsh_completion_mirror(&prefix, &mirror, fs::metadata(&outside).unwrap().uid(),)
-                .is_err()
+            sync_zsh_completion_mirror(
+                &prefix,
+                &home,
+                &mirror,
+                fs::metadata(&outside).unwrap().uid(),
+            )
+            .is_err()
         );
         assert_eq!(
             fs::read_to_string(mirror.join("_existing")).unwrap(),
@@ -1560,7 +1641,7 @@ mod tests {
         );
 
         fs::remove_dir_all(prefix).unwrap();
-        fs::remove_dir_all(mirror).unwrap();
+        fs::remove_dir_all(home).unwrap();
         fs::remove_file(outside).unwrap();
     }
 
