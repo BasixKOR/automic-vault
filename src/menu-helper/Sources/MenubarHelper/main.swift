@@ -23,6 +23,23 @@ private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
 private var toastWindows: [NSWindow] = []
 
 @MainActor
+private func makeUpdater(
+    sessionConfiguration: URLSessionConfiguration = .default
+) -> AppUpdater {
+    AppUpdater(
+        owner: "automic-vault",
+        repo: "automic-vault",
+        configuration: .init(
+            attestationPolicy: GitHubAttestationPolicy(
+                workflow: ".github/workflows/release.yml",
+                sourceRef: "refs/heads/main"
+            )
+        ),
+        sessionConfiguration: sessionConfiguration
+    )
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
@@ -58,16 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindow: NSWindow?
     private var isUserSessionActive = true
     private var areScreensAwake = true
-    private let updater = AppUpdater(
-        owner: "automic-vault",
-        repo: "automic-vault",
-        configuration: .init(
-            attestationPolicy: GitHubAttestationPolicy(
-                workflow: ".github/workflows/release.yml",
-                sourceRef: "refs/heads/main"
-            )
-        )
-    )
+    private let updater = makeUpdater()
     private var automaticUpdateCheckTask: Task<Void, Never>?
     private var readyUpdate: Update?
     private var isCheckingForUpdates = false
@@ -5360,6 +5368,90 @@ private func runScanSchedulingSelfCheck() -> Int32 {
     return 0
 }
 
+private final class UpdatePreflightURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let input = try? UpdatePreflightInput(arguments: CommandLine.arguments)
+    private let lock = NSLock()
+    private var stopped = false
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        guard let url = request.url else { return false }
+        return input?.fixture(for: url) != nil
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let url = request.url,
+              let fixture = Self.input?.fixture(for: url),
+              let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: [
+                    "Content-Type": fixture.data == nil
+                        ? "application/octet-stream"
+                        : "application/json",
+                    "Content-Length": String(fixture.size),
+                ]
+              )
+        else {
+            client?.urlProtocol(self, didFailWithError: UpdatePreflightError.invalidDraft)
+            return
+        }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        do {
+            if let data = fixture.data {
+                client?.urlProtocol(self, didLoad: data)
+            } else if let file = fixture.file {
+                let handle = try FileHandle(forReadingFrom: file)
+                defer { try? handle.close() }
+                while !lock.withLock({ stopped }) {
+                    let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
+                    if data.isEmpty { break }
+                    client?.urlProtocol(self, didLoad: data)
+                }
+            }
+            if !lock.withLock({ stopped }) {
+                client?.urlProtocolDidFinishLoading(self)
+            }
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {
+        lock.withLock { stopped = true }
+    }
+}
+
+@MainActor
+private func runUpdatePreflight() async -> Int32 {
+    do {
+        let input = try UpdatePreflightInput(arguments: CommandLine.arguments)
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        if input.releasesData != nil {
+            sessionConfiguration.protocolClasses = [UpdatePreflightURLProtocol.self]
+                + (sessionConfiguration.protocolClasses ?? [])
+        }
+        let updater = makeUpdater(sessionConfiguration: sessionConfiguration)
+        guard let update = try await updater.check(),
+              update.version == input.expectedVersion
+        else {
+            throw UpdatePreflightError.invalidDraft
+        }
+        let prepared = try await update.prepareInstallation()
+        await prepared.discard()
+        print("Verified update to \(update.version) with AppUpdater.")
+        return 0
+    } catch {
+        fputs("update preflight failed: \(error.localizedDescription)\n", stderr)
+        return 1
+    }
+}
+
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
@@ -5406,6 +5498,13 @@ if CommandLine.arguments.contains("--self-check-menu-status") {
 
 if CommandLine.arguments.contains("--self-check-scan-scheduling") {
     exit(runScanSchedulingSelfCheck())
+}
+
+if CommandLine.arguments.contains("--verify-update") {
+    Task { @MainActor in
+        exit(await runUpdatePreflight())
+    }
+    dispatchMain()
 }
 
 let app = NSApplication.shared
