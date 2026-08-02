@@ -10,8 +10,10 @@
 Malware and agents can modify installed packages or Homebrew itself without
 constraint.
 
-Our hardening changes nothing about your workflow: `brew install` as usual, but
-the installed packages are now owned by `automic:vault`.
+After hardening, use `brew install` as usual; installed packages are owned by
+`automic:vault`. Zsh users must initialize Homebrew through the hardened
+launcher before `compinit` so zsh loads its user-owned completion mirror instead
+of files inside the protected Homebrew prefix.
 
 We also add approval gates for sensitive actions like `brew upgrade` and
 `brew install` so if an agent tries to sneakily install a package you can
@@ -32,6 +34,19 @@ hardening is either *much less effective* or potentially *completely useless*.
 ```sh
 sudo av harden brew
 ```
+
+For zsh, replace any direct `/opt/homebrew/bin/brew shellenv` startup command
+with these lines before `compinit`:
+
+```zsh
+eval "$(/usr/local/bin/brew shellenv zsh)"
+autoload -Uz compinit
+compinit
+```
+
+The launcher mirrors protected Homebrew completion files into
+`~/.local/share/automic-vault/homebrew/zsh/site-functions` without `sudo` and
+removes `/opt/homebrew/share/zsh/site-functions` from `fpath`.
 
 ## Sensitive Files
 

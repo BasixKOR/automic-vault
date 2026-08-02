@@ -2,15 +2,13 @@
 
 ## Summary
 
-- Only `brew` can alter `/opt/homebrew`, except for the user-owned zsh
-  completions described below.
+- Only `brew` can alter `/opt/homebrew`.
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
-The configured desktop account retains ownership of zsh completion files for
-compatibility with zsh's ownership checks. Software running as that account can
-modify code loaded by zsh; the remainder of the Homebrew installation stays
-protected.
+Zsh completions are copied into a user-owned mirror after Homebrew runs. This
+keeps `/opt/homebrew` protected, satisfies zsh's ownership checks, and avoids a
+`sudo` prompt when Homebrew regenerates completion files.
 
 ## What it Does
 
@@ -48,6 +46,17 @@ is that solution.
 - `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`. After hardening,
   run `hash -r` or start a new shell so it does not keep using a cached path to
   the original `brew` executable.
+- Zsh startup must evaluate the hardened launcher's shell environment before
+  `compinit`:
+
+  ```zsh
+  eval "$(/usr/local/bin/brew shellenv zsh)"
+  autoload -Uz compinit
+  compinit
+  ```
+
+  Replace any startup invocation of `/opt/homebrew/bin/brew shellenv` with the
+  `/usr/local/bin/brew shellenv zsh` command above.
 - Every launcher invocation is authorized by the menu bar app before Homebrew
   runs. Read Only Access approves known inspection commands automatically and
   prompts for writes or unknown commands; Read & Update Access additionally
@@ -56,10 +65,15 @@ is that solution.
 - The launcher fails closed when the approval service is unavailable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.
-- Zsh completion directories and the completion files exposed through them are
-  owned by the configured desktop account. The `automic` account receives a
-  narrow ACL so Homebrew can update them, and the launcher transfers newly
-  created completion entries after Homebrew runs.
+- Homebrew's zsh completions remain `automic:vault`. After each invocation, the
+  launcher permanently drops to the configured desktop UID and copies protected
+  regular completion files into
+  `~/.local/share/automic-vault/homebrew/zsh/site-functions`. The mirror is
+  replaced atomically and the original Homebrew completion directory is removed
+  from `fpath` by `brew shellenv zsh`.
+- A failed refresh leaves the previous mirror intact. It warns without changing
+  the result of an ordinary Homebrew command; `brew shellenv zsh` fails instead
+  of emitting an unsafe `fpath` when no valid mirror can be published.
 
 ## Casks
 
