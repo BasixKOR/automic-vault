@@ -340,6 +340,100 @@ RUBY
   git -C "$TAP_ROOT" push origin HEAD:main
 }
 
+verify_draft_update() (
+  set -euo pipefail
+  umask 077
+  local version="$1"
+  local head="$2"
+  local tmp previous_mount previous_version previous_dmg previous_app preflight_app
+  local candidate_dmg releases_json expected_digest actual_digest previous_digest marker mounted=0
+  local developer_id_requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13]'
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/av-update-preflight.XXXXXX")"
+  previous_mount="$tmp/previous-mount"
+  mkdir -p "$previous_mount"
+  cleanup() {
+    if [[ "$mounted" -eq 1 ]]; then
+      hdiutil detach "$previous_mount" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$tmp"
+  }
+  trap cleanup EXIT
+
+  releases_json="$tmp/releases.json"
+  candidate_dmg="$tmp/Automic-Vault-$version.dmg"
+  gh api "repos/$REPOSITORY/releases?per_page=30" >"$releases_json"
+  gh release download "$version" \
+    --repo "$REPOSITORY" \
+    --pattern "Automic-Vault-$version.dmg" \
+    --dir "$tmp"
+  expected_digest="$(
+    gh release view "$version" \
+      --repo "$REPOSITORY" \
+      --json assets \
+      --jq ".assets[] | select(.name == \"Automic-Vault-$version.dmg\") | .digest"
+  )"
+  actual_digest="sha256:$(shasum -a 256 "$candidate_dmg" | awk '{print $1}')"
+  if [[ ! "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ || "$actual_digest" != "$expected_digest" ]]; then
+    echo "error: downloaded draft DMG does not match GitHub's digest" >&2
+    exit 1
+  fi
+
+  previous_version="$(
+    gh release list \
+      --repo "$REPOSITORY" \
+      --exclude-drafts \
+      --limit 1 \
+      --json tagName \
+      --jq '.[0].tagName'
+  )"
+  if [[ ! "$previous_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$previous_version" == "$version" ]]; then
+    echo "error: could not determine the previous published version" >&2
+    exit 1
+  fi
+  previous_dmg="$tmp/Automic-Vault-$previous_version.dmg"
+  gh release download "$previous_version" \
+    --repo "$REPOSITORY" \
+    --pattern "Automic-Vault-$previous_version.dmg" \
+    --dir "$tmp"
+  previous_digest="$(
+    gh release view "$previous_version" \
+      --repo "$REPOSITORY" \
+      --json assets \
+      --jq ".assets[] | select(.name == \"Automic-Vault-$previous_version.dmg\") | .digest"
+  )"
+  if [[ ! "$previous_digest" =~ ^sha256:[0-9a-f]{64}$ ||
+    "sha256:$(shasum -a 256 "$previous_dmg" | awk '{print $1}')" != "$previous_digest" ]]; then
+    echo "error: previous release DMG does not match GitHub's digest" >&2
+    exit 1
+  fi
+  xcrun stapler validate "$previous_dmg"
+  hdiutil attach -nobrowse -readonly -mountpoint "$previous_mount" "$previous_dmg" >/dev/null
+  mounted=1
+  previous_app="$previous_mount/Automic Vault.app"
+  codesign --verify --deep --strict -R "$developer_id_requirement" "$previous_app"
+  marker="$(
+    plutil -extract AVUpdatePreflightVersion raw -o - \
+      "$previous_app/Contents/Info.plist" 2>/dev/null || true
+  )"
+  if [[ "$marker" == "1" ]]; then
+    preflight_app="$tmp/previous/Automic Vault.app"
+    mkdir -p "$(dirname "$preflight_app")"
+    ditto "$previous_app" "$preflight_app"
+  elif [[ "$previous_version" == "2.9.0" ]]; then
+    echo "Bootstrapping the updater preflight from code as version 2.9.0." >&2
+    APP_VERSION=2.9.0 "$ROOT/scripts/build.sh"
+    preflight_app="$ROOT/target/swift/Automic Vault.app"
+  else
+    echo "error: Automic Vault $previous_version lacks the updater preflight" >&2
+    exit 1
+  fi
+  codesign --verify --deep --strict -R "$developer_id_requirement" "$preflight_app"
+
+  "$preflight_app/Contents/MacOS/AutomicVaultMenubar" \
+    --verify-update "$version" "$releases_json" "$candidate_dmg"
+  echo "Automic Vault $previous_version accepted draft update $version at $head."
+)
+
 if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ||
   -n "$REQUESTED_VERSION" && ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "error: versions must be in MAJOR.MINOR.PATCH format" >&2
@@ -436,6 +530,7 @@ if [[ "$is_draft" != "true" || "$target_commitish" != "$head" ]]; then
   echo "error: workflow did not create the expected draft release" >&2
   exit 1
 fi
+verify_draft_update "$VERSION" "$head"
 echo "Draft release ready for review and publication:"
 echo "$release_url"
 printf "release y/n? "
