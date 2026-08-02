@@ -91,10 +91,12 @@ Automic Vault is **not**:
 > - Privacy protections
 > - App Sandbox
 >
-> **These security measures do not typically apply to command line tools.**
+> **These security measures apply unevenly to command line tools.**
 >
-> They apply to the `.app` that *runs* the command line tool.
-> Which for a developer typically ends up being your terminal.
+> An unsigned command inherits the security context of the `.app` that runs it,
+> which for a developer is typically a terminal. A Developer ID-signed native
+> executable can also provide its own verifiable launcher identity. TCC permissions
+> still belong to the containing app.
 > Most developers quickly bypass these protections because they
 > are too inconvenient for a general purpose tool like a terminal.
 >
@@ -151,11 +153,11 @@ Hardened tools request secrets when they need them. Automic Vault releases those
 secrets only when your gate policy allows it or you approve.
 
 > [!NOTE]
-> For app-specific policy, we walk the process’s launcher chain, validate its code
+> For launcher-specific policy, we walk the process’s launcher chain, validate its code
 > signature with macOS and match its designated requirement against the identity
 > you approved. If we cannot verify that identity, automatic approval fails closed.
 > Code signing proves identity and integrity—not good intentions. You still choose
-> which apps to trust.
+> which launchers to trust.
 
 ### Using Automic Vault as a General Secrets Manager
 
@@ -296,6 +298,9 @@ standalone installer or Homebrew cask.
 Run `av doctor claude` or `av doctor codex` to check the command selected by
 your current `PATH`. Distribution details can change; the doctor verifies the
 live executable rather than trusting how it was installed.
+
+See [Signed CLI Launchers](docs/signed-cli-launchers.md) for requirements,
+setup, and failure behavior.
 
 It is then vital to ensure the harness for the agents has minimal TCC
 permissions. If you are using them via CLI that will often be your Terminal
