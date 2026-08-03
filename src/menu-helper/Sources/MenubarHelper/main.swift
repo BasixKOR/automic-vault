@@ -1090,9 +1090,25 @@ private struct TransientApprovalKey: Hashable {
 }
 
 private enum ApprovalDecision: Equatable {
+    case canceled
     case denied
     case approved
     case alwaysApproved
+}
+
+private func canceledAccessRequestRecord(
+    request: ApprovalRequest,
+    callerPath: String,
+    launcher: LauncherIdentity?
+) -> AccessRequestRecord {
+    accessRequestRecord(
+        request: request,
+        callerPath: callerPath,
+        decision: "Canceled",
+        approvalSource: "Manual",
+        reason: "Caller exited",
+        launcher: launcher
+    )
 }
 
 @MainActor
@@ -1105,10 +1121,17 @@ private func performApprovedSecretMutation(
     launcherFallbackPath: String,
     canRequestHumanApproval: () -> Bool,
     onAccessRequest: (AccessRequestRecord) -> Bool,
+    cancellation: ApprovalCancellation? = nil,
     decision: ((ApprovalRequest) -> ApprovalDecision)? = nil,
     perform: ((SecretMutation) -> OSStatus)? = nil
 ) -> (status: OSStatus?, error: String?) {
     let request = mutation.approvalRequest(callerPath: callerPath)
+    if cancellation?.isCanceled == true {
+        _ = onAccessRequest(canceledAccessRequestRecord(
+            request: request, callerPath: callerPath, launcher: launcher
+        ))
+        return (nil, "secret mutation canceled")
+    }
     guard canRequestHumanApproval() else {
         _ = onAccessRequest(accessRequestRecord(
             request: request,
@@ -1129,18 +1152,20 @@ private func performApprovedSecretMutation(
         scriptApproval: nil,
         launcher: launcher,
         launcherFallbackPath: launcherFallbackPath,
-        automaticApprovalExplanation: nil
+        automaticApprovalExplanation: nil,
+        cancellation: cancellation
     )
     guard approval == .approved else {
+        let canceled = approval == .canceled
         _ = onAccessRequest(accessRequestRecord(
             request: request,
             callerPath: callerPath,
-            decision: "Denied",
+            decision: canceled ? "Canceled" : "Denied",
             approvalSource: "Manual",
-            reason: "Denied in prompt",
+            reason: canceled ? "Caller exited" : "Denied in prompt",
             launcher: launcher
         ))
-        return (nil, "secret mutation denied")
+        return (nil, canceled ? "secret mutation canceled" : "secret mutation denied")
     }
     guard onAccessRequest(accessRequestRecord(
         request: request,
@@ -1166,6 +1191,47 @@ private let humanApprovalRequiredEvent = "human-approval-required"
 
 private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
     cachedDecision == nil ? humanApprovalRequiredEvent : nil
+}
+
+private final class ApprovalCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var canceled = false
+    private var observer: (@MainActor @Sendable () -> Void)?
+
+    var isCanceled: Bool {
+        lock.withLock { canceled }
+    }
+
+    func cancel() {
+        let observer: (@MainActor @Sendable () -> Void)? = lock.withLock {
+            guard !canceled else { return nil }
+            canceled = true
+            defer { self.observer = nil }
+            return self.observer
+        }
+        if let observer {
+            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+                MainActor.assumeIsolated { observer() }
+            }
+        }
+    }
+
+    func observe(_ observer: @escaping @MainActor @Sendable () -> Void) -> Bool {
+        lock.withLock {
+            guard !canceled else { return false }
+            self.observer = observer
+            return true
+        }
+    }
+
+    func stopObserving() {
+        lock.withLock { observer = nil }
+    }
+}
+
+private func isApprovalCancellationEvent(_ event: xpc_object_t) -> Bool {
+    xpc_equal(event, XPC_ERROR_CONNECTION_INTERRUPTED)
+        || xpc_equal(event, XPC_ERROR_CONNECTION_INVALID)
 }
 
 private func missingRequiredSecret(
@@ -1197,11 +1263,13 @@ private struct TransientApprovalCache {
 
     mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
         prune(now: now)
-        let key = switch decision {
-        case .denied: Key.denial(pid: key.pid, startUsec: key.startUsec)
-        case .approved, .alwaysApproved: Key.approval(key)
+        let cacheKey: Key
+        switch decision {
+        case .canceled: return
+        case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
+        case .approved, .alwaysApproved: cacheKey = .approval(key)
         }
-        expirations[key] = now.addingTimeInterval(transientApprovalTTL)
+        expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
     }
 
     private mutating func prune(now: Date) {
@@ -1387,13 +1455,22 @@ private final class ApprovalServer: @unchecked Sendable {
     private func accept(_ event: xpc_object_t) {
         guard xpc_get_type(event) == XPC_TYPE_CONNECTION else { return }
         let peer = event
+        let cancellation = ApprovalCancellation()
         xpc_connection_set_event_handler(peer) { [weak self] message in
-            self?.handle(message, on: peer)
+            self?.handle(message, on: peer, cancellation: cancellation)
         }
         xpc_connection_activate(peer)
     }
 
-    private func handle(_ message: xpc_object_t, on peer: xpc_connection_t) {
+    private func handle(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation
+    ) {
+        if isApprovalCancellationEvent(message) {
+            cancellation.cancel()
+            return
+        }
         guard xpc_get_type(message) == XPC_TYPE_DICTIONARY else { return }
 
         let pid = xpc_connection_get_pid(peer)
@@ -1425,29 +1502,45 @@ private final class ApprovalServer: @unchecked Sendable {
 
         switch op {
         case "inject", "keys", "authorize":
-            handleInject(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
+            handleInject(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
         case "list" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleList(message, on: peer, pid: pid, identity: identity, callerPath: callerPath, signing: signing)
+            handleList(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
         case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleSave(message, on: peer, caller: mutationCaller)
+            handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleLoad(message, on: peer)
         case "bless" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleBless(message, on: peer, identity: identity)
         case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleDelete(message, on: peer, caller: mutationCaller)
+            handleDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhSave(message, on: peer, caller: mutationCaller)
+            handleGhSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "gh-save" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhSave(message, on: peer, caller: mutationCaller)
+            handleGhSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "delete" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhDelete(message, on: peer, caller: mutationCaller)
+            handleGhDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "gh-delete" where isTrustedGhCaller(path: callerPath, signing: signing):
-            handleGhDelete(message, on: peer, caller: mutationCaller)
+            handleGhDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "stripe-save" where isTrustedStripeCaller(path: callerPath, signing: signing):
-            handleStripeSave(message, on: peer, caller: mutationCaller)
+            handleStripeSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case "stripe-delete" where isTrustedStripeCaller(path: callerPath, signing: signing):
-            handleStripeDelete(message, on: peer, caller: mutationCaller)
+            handleStripeDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
         }
@@ -1456,6 +1549,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func handleList(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         pid: pid_t,
         identity: AVProcessIdentity,
         callerPath: String,
@@ -1501,6 +1595,12 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         DispatchQueue.main.async {
+            if cancellation.isCanceled {
+                _ = self.onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
             guard self.canRequestHumanApproval() else {
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
@@ -1522,8 +1622,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath(for: identity) ?? callerPath,
                 automaticApprovalExplanation: nil,
-                allowsPersistentApproval: launcher.map { !$0.isStandalone } ?? false
+                allowsPersistentApproval: launcher.map { !$0.isStandalone } ?? false,
+                cancellation: cancellation
             )
+            if decision == .canceled {
+                _ = self.onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
             guard decision != .denied else {
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
@@ -1593,6 +1700,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func handleInject(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         pid: pid_t,
         identity: AVProcessIdentity,
         callerPath: String,
@@ -1776,6 +1884,12 @@ private final class ApprovalServer: @unchecked Sendable {
             tool: request.tool
         )
         DispatchQueue.main.async {
+            if cancellation.isCanceled {
+                _ = self.onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
             let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
             let cachedDecision = requiresFreshApproval
                 ? nil
@@ -1852,8 +1966,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath,
                 automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
-                    ?? automaticApprovalExplanation
+                    ?? automaticApprovalExplanation,
+                cancellation: cancellation
             )
+            if decision == .canceled {
+                _ = self.onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
             guard decision != .denied else {
                 if !requiresFreshApproval {
                     self.transientApprovals.remember(.denied, for: transientApproval)
@@ -2059,6 +2180,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func handleSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
@@ -2077,6 +2199,7 @@ private final class ApprovalServer: @unchecked Sendable {
             .save(account: key, value: value, accessibility: .whenUnlocked),
             on: peer,
             message: message,
+            cancellation: cancellation,
             caller: caller
         )
     }
@@ -2164,6 +2287,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func handleGhSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
@@ -2172,12 +2296,13 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid GitHub token key")
             return
         }
-        handleSave(message, on: peer, caller: caller)
+        handleSave(message, on: peer, cancellation: cancellation, caller: caller)
     }
 
     private func handleGhDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
@@ -2186,12 +2311,13 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid GitHub token key")
             return
         }
-        handleDelete(message, on: peer, caller: caller)
+        handleDelete(message, on: peer, cancellation: cancellation, caller: caller)
     }
 
     private func handleStripeSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
@@ -2200,12 +2326,13 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid Stripe credential key")
             return
         }
-        handleSave(message, on: peer, caller: caller)
+        handleSave(message, on: peer, cancellation: cancellation, caller: caller)
     }
 
     private func handleStripeDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
@@ -2214,12 +2341,13 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid Stripe credential key")
             return
         }
-        handleDelete(message, on: peer, caller: caller)
+        handleDelete(message, on: peer, cancellation: cancellation, caller: caller)
     }
 
     private func handleDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
@@ -2235,6 +2363,7 @@ private final class ApprovalServer: @unchecked Sendable {
             .delete(account: key),
             on: peer,
             message: message,
+            cancellation: cancellation,
             caller: caller
         )
     }
@@ -2243,6 +2372,7 @@ private final class ApprovalServer: @unchecked Sendable {
         _ mutation: SecretMutation,
         on peer: xpc_connection_t,
         message: xpc_object_t,
+        cancellation: ApprovalCancellation,
         caller: MutationCaller
     ) {
         let launcher = launcherIdentities(for: caller.identity).first
@@ -2256,7 +2386,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath,
                 canRequestHumanApproval: self.canRequestHumanApproval,
-                onAccessRequest: self.onAccessRequest
+                onAccessRequest: self.onAccessRequest,
+                cancellation: cancellation
             )
             guard let status = result.status else {
                 self.reply(peer, to: message, ok: false, error: result.error)
@@ -3604,8 +3735,10 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?,
-    allowsPersistentApproval: Bool = false
+    allowsPersistentApproval: Bool = false,
+    cancellation: ApprovalCancellation? = nil
 ) -> ApprovalDecision {
+    guard cancellation?.isCanceled != true else { return .canceled }
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let content = ApprovalPromptContent(
@@ -3628,7 +3761,7 @@ private func showApprovalAlert(
             receivedAt: receivedAt
         )
     )
-    var decision = ApprovalDecision.denied
+    var decision = ApprovalDecision.canceled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
@@ -3663,12 +3796,17 @@ private func showApprovalAlert(
             }
         )
     )
+    guard cancellation?.observe({ [weak panel] in
+        guard let panel, NSApp.modalWindow === panel else { return }
+        NSApp.stopModal()
+    }) != false else { return .canceled }
+    defer { cancellation?.stopObserving() }
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
     panel.orderFrontRegardless()
     NSApp.runModal(for: panel)
     panel.orderOut(nil)
-    return decision
+    return cancellation?.isCanceled == true ? .canceled : decision
 }
 
 private func approvalPromptRequester(
@@ -4188,6 +4326,33 @@ private func runSecretMutationSelfCheck() -> Int32 {
         guard result.status == nil, !performed else { return 1 }
     }
 
+    var cancellationRecord: AccessRequestRecord?
+    var performedAfterCancellation = false
+    let canceled = performApprovedSecretMutation(
+        .delete(account: "TEST_SECRET"),
+        callerPath: "/usr/local/bin/av",
+        pid: 42,
+        signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+        launcher: nil,
+        launcherFallbackPath: "/Applications/Terminal.app",
+        canRequestHumanApproval: { true },
+        onAccessRequest: {
+            cancellationRecord = $0
+            return true
+        },
+        decision: { _ in .canceled },
+        perform: { _ in
+            performedAfterCancellation = true
+            return errSecSuccess
+        }
+    )
+    guard canceled.status == nil,
+          canceled.error == "secret mutation canceled",
+          cancellationRecord?.decision == "Canceled",
+          cancellationRecord?.reason == "Caller exited",
+          !performedAfterCancellation
+    else { return 1 }
+
     var performedWithoutAudit = false
     let unaudited = performApprovedSecretMutation(
         .delete(account: "TEST_SECRET"),
@@ -4209,6 +4374,15 @@ private func runSecretMutationSelfCheck() -> Int32 {
 
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
+    let cancellation = ApprovalCancellation()
+    guard isApprovalCancellationEvent(XPC_ERROR_CONNECTION_INTERRUPTED),
+          isApprovalCancellationEvent(XPC_ERROR_CONNECTION_INVALID),
+          cancellation.observe({}),
+          !cancellation.isCanceled
+    else { return 1 }
+    cancellation.cancel()
+    guard cancellation.isCanceled, !cancellation.observe({}) else { return 1 }
+
     let requester = approvalPromptRequester(
         launcher: LauncherIdentity(
             pid: 41,
