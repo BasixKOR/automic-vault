@@ -1273,6 +1273,17 @@ private func blessedScriptMatches(
         )
 }
 
+private func lostBlessingExplanation(
+    for approval: ScriptApproval?,
+    blessedScripts: [BlessedScript]? = nil
+) -> String? {
+    guard let approval else { return nil }
+    guard let script = (blessedScripts ?? loadBlessedScripts()).first(where: { $0.path == approval.path }),
+          script.checksum != approval.checksum
+    else { return nil }
+    return "Blessing lost because the script contents changed."
+}
+
 private func blessedScriptCanAutoApprove(
     _ script: BlessedScript,
     request: ApprovalRequest,
@@ -1840,7 +1851,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 scriptApproval: scriptApproval,
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath,
-                automaticApprovalExplanation: automaticApprovalExplanation
+                automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
+                    ?? automaticApprovalExplanation
             )
             guard decision != .denied else {
                 if !requiresFreshApproval {
@@ -4688,7 +4700,15 @@ private func runApprovalSelfCheck() -> Int32 {
             request: blessedRequest,
             approval: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
             launcher: blockedLauncher
-        )
+        ),
+        lostBlessingExplanation(
+            for: ScriptApproval(path: "/tmp/script", checksum: "changed"),
+            blessedScripts: [blessedScript]
+        ) == "Blessing lost because the script contents changed.",
+        lostBlessingExplanation(
+            for: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
+            blessedScripts: [blessedScript]
+        ) == nil
     else { return 1 }
 
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
