@@ -1273,6 +1273,25 @@ private func blessedScriptMatches(
         )
 }
 
+private func blessedScriptCanAutoApprove(
+    _ script: BlessedScript,
+    request: ApprovalRequest,
+    signing: SigningInfo,
+    metadata: [HardenerMetadata]
+) -> Bool {
+    guard let gate = matchingSecretGateDefinition(
+        request: request,
+        signing: signing,
+        hardeners: metadata
+    ),
+    let protection = script.capabilities[gate.id]
+    else { return false }
+    return secretGateProtectionAllows(
+        protection,
+        classification: classifySecretGateRequest(gateID: gate.id, request: request)
+    )
+}
+
 private struct BlessedExecutionKey: Hashable {
     let pid: Int32
     let startUsec: UInt64
@@ -1580,8 +1599,9 @@ private final class ApprovalServer: @unchecked Sendable {
             launchers.append(launcher)
         }
         let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
+        let blessedCapabilityRequiresApproval: Bool
         if let script = activeBlessedScript(pid: pid, identity: identity) {
-            handleBlessedCapability(
+            if handleBlessedCapability(
                 script,
                 request: request,
                 signing: signing,
@@ -1590,8 +1610,12 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 peer: peer,
                 message: message
-            )
-            return
+            ) {
+                return
+            }
+            blessedCapabilityRequiresApproval = true
+        } else {
+            blessedCapabilityRequiresApproval = false
         }
         if let scriptApproval,
            let match = matchingBlessedScript(
@@ -1673,7 +1697,8 @@ private final class ApprovalServer: @unchecked Sendable {
             automaticApprovalExplanation = nil
         }
         let launcher = resolvedPolicy?.launcher ?? launchers.first
-        if let configuredGate,
+        if !blessedCapabilityRequiresApproval,
+           let configuredGate,
            let resolvedPolicy,
            let classification,
            secretGateProtectionAllows(
@@ -1971,29 +1996,13 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         peer: xpc_connection_t,
         message: xpc_object_t
-    ) {
-        guard let gate = matchingSecretGateDefinition(
+    ) -> Bool {
+        guard blessedScriptCanAutoApprove(
+            script,
             request: request,
             signing: signing,
-            hardeners: metadata
-        ),
-        let protection = script.capabilities[gate.id],
-        secretGateProtectionAllows(
-            protection,
-            classification: classifySecretGateRequest(gateID: gate.id, request: request)
-        )
-        else {
-            _ = onAccessRequest(accessRequestRecord(
-                request: request,
-                callerPath: callerPath,
-                decision: "Denied",
-                approvalSource: "Auto",
-                reason: "Denied by blessed script capability ceiling",
-                launcher: launcher
-            ))
-            reply(peer, to: message, ok: false, error: "\(request.op) denied")
-            return
-        }
+            metadata: metadata
+        ) else { return false }
 
         do {
             let secrets = try approvedSecrets(for: request)
@@ -2008,7 +2017,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher
             )) else {
                 reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
-                return
+                return true
             }
             if let launcher {
                 Task { @MainActor in
@@ -2032,6 +2041,7 @@ private final class ApprovalServer: @unchecked Sendable {
             ))
             reply(peer, to: message, ok: false, error: error.localizedDescription)
         }
+        return true
     }
 
     private func handleSave(
@@ -4634,15 +4644,33 @@ private func runApprovalSelfCheck() -> Int32 {
         capabilities: blessedScript.capabilities,
         launchers: []
     )
-    guard matchingSecretGateDefinition(
+    guard blessedScriptCanAutoApprove(
+        blessedScript,
         request: readOnlyAws,
         signing: avSigning,
-        hardeners: [HardenerMetadata(
-            name: awsMetadata.name,
-            hardened: false,
-            secretGate: awsMetadata.secretGate
-        )]
-    )?.id == "aws",
+        metadata: [awsMetadata]
+    ),
+        !blessedScriptCanAutoApprove(
+            blessedScript,
+            request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"]),
+            signing: avSigning,
+            metadata: [awsMetadata]
+        ),
+        !blessedScriptCanAutoApprove(
+            blessedScript,
+            request: readOnlyGh,
+            signing: ghSigning,
+            metadata: [ghMetadata]
+        ),
+        matchingSecretGateDefinition(
+            request: readOnlyAws,
+            signing: avSigning,
+            hardeners: [HardenerMetadata(
+                name: awsMetadata.name,
+                hardened: false,
+                secretGate: awsMetadata.secretGate
+            )]
+        )?.id == "aws",
         blessedScriptMatches(
             blessedScript,
             request: blessedRequest,
