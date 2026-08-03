@@ -1465,18 +1465,20 @@ private struct EmptyListView: View {
         Text(emptyText)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.tertiary)
+            .multilineTextAlignment(.center)
+            .padding()
     }
 
     private var emptyText: String {
         switch section {
-        case .detectors: "No flagged detectors"
-        case .doctor: "No doctor issues"
-        case .hardenedTools: "No hardened tools"
-        case .secretGates: "No configured gates"
-        case .blessedScripts: "No blessed scripts"
-        case .allSecrets: "No stored secrets"
-        case .secretUsage: "No secret usage logged"
-        case .settings: "No settings"
+        case .detectors: "Detectors identify developer tool configurations that could expose secrets"
+        case .doctor: "Doctor identifies problems with your Automic Vault installation and explains how to fix them"
+        case .hardenedTools: "Hardened Tools secure developer tools with granular access to secrets"
+        case .secretGates: "Secret Gates control how specific apps can access secrets through specific tools"
+        case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
+        case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
+        case .secretUsage: "Secret Usage records when apps request, receive, or are denied access to secrets"
+        case .settings: "Settings control how Automic Vault behaves"
         }
     }
 }
