@@ -88,6 +88,10 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
 
     public var id: String { path }
 
+    public func matchesBlessing(path: String, checksum: String) -> Bool {
+        self.path == path && self.checksum == checksum
+    }
+
     public func matchesExecution(
         path: String,
         checksum: String,

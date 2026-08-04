@@ -2,8 +2,17 @@ use std::ffi::OsString;
 use std::io::Write;
 
 pub(crate) fn run(args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
-    match run_inner(args) {
-        Ok(()) => 0,
+    finish(run_inner(args), stderr)
+}
+
+fn finish(result: Result<bool, String>, stderr: &mut dyn Write) -> i32 {
+    match result {
+        Ok(already_blessed) => {
+            if already_blessed {
+                let _ = writeln!(stderr, "already blessed");
+            }
+            0
+        }
         Err(err) => {
             let _ = writeln!(stderr, "av bless: {err}");
             1
@@ -11,7 +20,7 @@ pub(crate) fn run(args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
     }
 }
 
-fn run_inner(args: Vec<OsString>) -> Result<(), String> {
+fn run_inner(args: Vec<OsString>) -> Result<bool, String> {
     let [path] = args.as_slice() else {
         return Err("usage: av bless PATH".into());
     };
@@ -37,5 +46,13 @@ mod tests {
             run_inner(vec!["a".into(), "b".into()]).unwrap_err(),
             "usage: av bless PATH"
         );
+    }
+
+    #[test]
+    fn already_blessed_is_reported_on_stderr() {
+        let mut stderr = Vec::new();
+
+        assert_eq!(finish(Ok(true), &mut stderr), 0);
+        assert_eq!(stderr, b"already blessed\n");
     }
 }

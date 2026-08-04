@@ -98,6 +98,23 @@ import Testing
     #expect(!matches(script, launcherRequirement: nil, checksum: "changed"))
 }
 
+@Test func blessingIdentityRequiresPathAndChecksum() {
+    let script = BlessedScript(
+        path: "/tmp/script",
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: [:],
+        launchers: []
+    )
+
+    #expect(script.matchesBlessing(path: "/tmp/script", checksum: "checksum"))
+    #expect(!script.matchesBlessing(path: "/tmp/other", checksum: "checksum"))
+    #expect(!script.matchesBlessing(path: "/tmp/script", checksum: "changed"))
+}
+
 @Test(arguments: [
     """
     #!/bin/sh

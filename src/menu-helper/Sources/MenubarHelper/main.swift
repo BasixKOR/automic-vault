@@ -2340,6 +2340,12 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
         }
+        if loadBlessedScripts().contains(where: {
+            $0.matchesBlessing(path: path, checksum: declaration.checksum)
+        }) {
+            reply(peer, to: message, ok: true, error: nil, value: "already blessed")
+            return
+        }
         let launcher = launcherIdentities(for: identity).first { !$0.isStandalone }
         let request = BlessedScriptReviewRequest(
             path: path,

@@ -29,8 +29,9 @@ pub(crate) fn load_secret(account: &str) -> Result<String, String> {
         .ok_or_else(|| format!("failed to load isotope key {account}"))
 }
 
-pub(crate) fn bless_script(path: &str) -> Result<(), String> {
-    xpc_request("bless", Some((b"path\0", path)), None).map(|_| ())
+pub(crate) fn bless_script(path: &str) -> Result<bool, String> {
+    xpc_request("bless", Some((b"path\0", path)), None)
+        .map(|reply| reply.value.as_deref() == Some("already blessed"))
 }
 
 pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
