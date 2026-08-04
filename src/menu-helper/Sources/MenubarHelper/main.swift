@@ -169,6 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(checkForUpdatesItem)
         menu.addItem(.separator())
         let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
+        openItem.attributedTitle = openMenuItemTitle(
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        )
         openItem.target = self
         menu.addItem(openItem)
         installCLIItem.target = self
@@ -821,6 +824,22 @@ private func setStatusMenuItemTitle(_ title: String, on item: NSMenuItem) {
             .foregroundColor: NSColor.disabledControlTextColor,
         ]
     )
+}
+
+private func openMenuItemTitle(appVersion: String?) -> NSAttributedString {
+    let title = NSMutableAttributedString(
+        string: "Open Automic Vault",
+        attributes: [.font: NSFont.menuFont(ofSize: 0)]
+    )
+    guard let appVersion, !appVersion.isEmpty else { return title }
+    title.append(NSAttributedString(
+        string: "  v\(appVersion)",
+        attributes: [
+            .font: NSFont.menuFont(ofSize: 0),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+    ))
+    return title
 }
 
 private struct AutoApprovalRecord {
@@ -5695,6 +5714,7 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 private func runMenuStatusSelfCheck() -> Int32 {
     let statusItem = makeStatusMenuItem(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
+    actionItem.attributedTitle = openMenuItemTitle(appVersion: "1.2.3")
     let quitSeparator = NSMenuItem.separator()
     let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
     let items = [statusItem, NSMenuItem.separator(), actionItem, quitSeparator, quitItem]
@@ -5706,6 +5726,12 @@ private func runMenuStatusSelfCheck() -> Int32 {
     let statusFont = statusItem.attributedTitle?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     guard statusItem.isSectionHeader,
           statusFont == NSFont.menuFont(ofSize: 0),
+          actionItem.attributedTitle?.string == "Open Automic Vault  v1.2.3",
+          actionItem.attributedTitle?.attribute(
+              .foregroundColor,
+              at: "Open Automic Vault  ".count,
+              effectiveRange: nil
+          ) as? NSColor == .secondaryLabelColor,
           !statusItem.isHidden,
           items[1].isHidden,
           actionItem.isHidden,
