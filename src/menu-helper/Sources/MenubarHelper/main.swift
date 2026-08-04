@@ -43,9 +43,9 @@ private func makeUpdater(
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
-    private lazy var scanStatusItem = NSMenuItem.sectionHeader(title: "Scan pending")
+    private lazy var scanStatusItem = makeStatusMenuItem(title: "Scan pending")
     private lazy var doctorStatusItem: NSMenuItem = {
-        let item = NSMenuItem.sectionHeader(title: "")
+        let item = makeStatusMenuItem(title: "")
         item.isHidden = true
         return item
     }()
@@ -183,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isStartingUp = true
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 0.5
-        scanStatusItem.title = "Starting Automic Vault"
+        setStatusMenuItemTitle("Starting Automic Vault", on: scanStatusItem)
         updateMenuVisibility(
             statusItem.menu?.items ?? [],
             startingUp: true,
@@ -534,7 +534,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             1,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
         ) else {
-            scanStatusItem.title = "Scan watcher unavailable"
+            setStatusMenuItemTitle("Scan watcher unavailable", on: scanStatusItem)
             return
         }
         eventStream = stream
@@ -609,8 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setScanStatus(_ title: String, image: NSImage?) {
-        scanStatusItem.attributedTitle = nil
-        scanStatusItem.title = title
+        setStatusMenuItemTitle(title, on: scanStatusItem)
         scanStatusItem.image = image
     }
 
@@ -619,7 +618,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             doctorStatusItem.isHidden = true
             return
         }
-        doctorStatusItem.title = title
+        setStatusMenuItemTitle(title, on: doctorStatusItem)
         doctorStatusItem.image = shieldImage(
             symbolName: "stethoscope",
             accessibilityDescription: "Doctor"
@@ -804,6 +803,23 @@ private func updateMenuVisibility(
     for item in items {
         item.isHidden = startingUp && !visibleDuringStartup.contains { $0 === item }
     }
+}
+
+private func makeStatusMenuItem(title: String) -> NSMenuItem {
+    let item = NSMenuItem.sectionHeader(title: title)
+    setStatusMenuItemTitle(title, on: item)
+    return item
+}
+
+private func setStatusMenuItemTitle(_ title: String, on item: NSMenuItem) {
+    item.title = title
+    item.attributedTitle = NSAttributedString(
+        string: title,
+        attributes: [
+            .font: NSFont.menuFont(ofSize: 0),
+            .foregroundColor: NSColor.disabledControlTextColor,
+        ]
+    )
 }
 
 private struct AutoApprovalRecord {
@@ -5441,7 +5457,7 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 }
 
 private func runMenuStatusSelfCheck() -> Int32 {
-    let statusItem = NSMenuItem.sectionHeader(title: "Starting Automic Vault")
+    let statusItem = makeStatusMenuItem(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
     let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
     let items = [statusItem, NSMenuItem.separator(), actionItem, quitItem]
@@ -5450,7 +5466,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
         startingUp: true,
         visibleDuringStartup: [statusItem, quitItem]
     )
+    let statusFont = statusItem.attributedTitle?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     guard statusItem.isSectionHeader,
+          statusFont == NSFont.menuFont(ofSize: 0),
           !statusItem.isHidden,
           items[1].isHidden,
           actionItem.isHidden,
