@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         action: #selector(installCLI),
         keyEquivalent: ""
     )
+    private lazy var quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
@@ -81,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCheckingForUpdates = false
     private var automaticApprovalFlashWorkItem: DispatchWorkItem?
     private var preFlashStatusImage: NSImage?
+    private var isStartingUp = false
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     private var lastTelemetryFindingCount: Int?
@@ -172,15 +174,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
         menu.addItem(installCLIItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(quitItem)
         menu.delegate = self
         statusItem.menu = menu
     }
 
     private func handOffToLaunchAgent() {
+        isStartingUp = true
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 0.5
         scanStatusItem.title = "Starting Automic Vault"
+        updateMenuVisibility(
+            statusItem.menu?.items ?? [],
+            startingUp: true,
+            visibleDuringStartup: [scanStatusItem, quitItem]
+        )
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try handOffToLaunchAgentIfNeeded() }
             DispatchQueue.main.async {
@@ -221,6 +229,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startServices() {
+        if isStartingUp {
+            isStartingUp = false
+            updateMenuVisibility(
+                statusItem.menu?.items ?? [],
+                startingUp: false,
+                visibleDuringStartup: []
+            )
+            doctorStatusItem.isHidden = doctorStatusItem.title.isEmpty
+            installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
+        }
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
         _ = migrateBackgroundKeychainItems()
@@ -309,6 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func checkForUpdates() {
+        guard !isStartingUp else { return }
         guard !isCheckingForUpdates else { return }
         isCheckingForUpdates = true
         updateCheckControls()
@@ -319,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func installCLI() {
+        guard !isStartingUp else { return }
         do {
             try openCLIInstaller()
         } catch {
@@ -424,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func openMainWindow() {
+        guard !isStartingUp else { return }
         showMainWindow(secretGateID: nil)
     }
 
@@ -769,8 +790,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        guard !isStartingUp else { return }
         refreshAutoApprovalMenuItems()
         refreshDoctorStatus()
+    }
+}
+
+private func updateMenuVisibility(
+    _ items: [NSMenuItem],
+    startingUp: Bool,
+    visibleDuringStartup: [NSMenuItem]
+) {
+    for item in items {
+        item.isHidden = startingUp && !visibleDuringStartup.contains { $0 === item }
     }
 }
 
@@ -5409,6 +5441,23 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 }
 
 private func runMenuStatusSelfCheck() -> Int32 {
+    let statusItem = NSMenuItem(title: "Starting Automic Vault", action: nil, keyEquivalent: "")
+    let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
+    let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
+    let items = [statusItem, NSMenuItem.separator(), actionItem, quitItem]
+    updateMenuVisibility(
+        items,
+        startingUp: true,
+        visibleDuringStartup: [statusItem, quitItem]
+    )
+    guard !statusItem.isHidden,
+          items[1].isHidden,
+          actionItem.isHidden,
+          !quitItem.isHidden
+    else { return 1 }
+    updateMenuVisibility(items, startingUp: false, visibleDuringStartup: [])
+    guard items.allSatisfy({ !$0.isHidden }) else { return 1 }
+
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
