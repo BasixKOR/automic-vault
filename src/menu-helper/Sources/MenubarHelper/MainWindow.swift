@@ -2507,9 +2507,7 @@ private struct ApprovedAppDisplay {
             ?? app.bundleIdentifier
         bundleIdentifier = app.bundleIdentifier
         icon = url.map { NSWorkspace.shared.icon(forFile: $0.path) } ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
-        if let signing = url.flatMap(launcherSigning) {
-            signingSummary = "Team \(signing.teamIdentifier)"
-        } else if let teamIdentifier = codeSigningTeamIdentifier(from: app.requirement) {
+        if let teamIdentifier = codeSigningTeamIdentifier(from: app.requirement) {
             signingSummary = "Team \(teamIdentifier)"
         } else {
             signingSummary = "Signing identity unavailable"
