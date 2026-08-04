@@ -704,8 +704,10 @@ private func detectorItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) ->
 }
 
 private func blessedScriptItem(_ script: BlessedScript) -> DashboardItem {
-    let currentChecksum = try? blessedScriptDeclaration(data: readBlessedScript(path: script.path)).checksum
-    let status = currentChecksum == script.checksum ? "Blessed" : "Changed"
+    var info = stat()
+    let isGone = script.path.withCString { lstat($0, &info) != 0 && errno == ENOENT }
+    let currentChecksum = isGone ? nil : try? blessedScriptDeclaration(data: readBlessedScript(path: script.path)).checksum
+    let status = isGone ? "Gone" : currentChecksum == script.checksum ? "Blessed" : "Changed"
     return DashboardItem(
         id: script.path,
         title: URL(fileURLWithPath: script.path).lastPathComponent,
@@ -1034,9 +1036,20 @@ func runDashboardSearchSelfCheck() -> Int32 {
         capabilities: [:],
         launchers: []
     ))
+    let goneScriptItem = blessedScriptItem(BlessedScript(
+        path: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path,
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/zsh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: [:],
+        launchers: []
+    ))
     guard scriptItem.title == "deploy.sh",
           scriptItem.subtitle == "/dev/null",
           scriptItem.blessingStatus == "Changed",
+          goneScriptItem.blessingStatus == "Gone",
           blessedScriptDirectory("\(NSHomeDirectory())/Scripts/deploy.sh") == "~/Scripts"
     else { return 1 }
     model.searchText = ""
