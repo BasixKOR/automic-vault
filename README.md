@@ -17,7 +17,7 @@
   # ^^ read it first
   ```
 
-> [!INFO]
+> [!NOTE]
 > At this time *some* parts of Automic Vault *require* Homebrew to be installed.
 > We intend to loosen this restriction in the future. If you don’t use Homebrew
 > much of Automic Vault will still work, but some hardening features will not be
