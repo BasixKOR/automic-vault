@@ -754,18 +754,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.removeItem(separator)
             autoApprovalSeparator = nil
         }
-        autoApprovalItems = autoApprovals.prefix(Self.visibleAutoApprovalCount).map(autoApprovalMenuItem)
-        let submenuRecords = autoApprovals.dropFirst(Self.visibleAutoApprovalCount).prefix(
+        let groups = groupedAutoApprovals(autoApprovals)
+        autoApprovalItems = groups.prefix(Self.visibleAutoApprovalCount).map(autoApprovalMenuItem)
+        let submenuGroups = groups.dropFirst(Self.visibleAutoApprovalCount).prefix(
             autoApprovalSubmenuCapacity(
                 visibleHeight: statusItem.button?.window?.screen?.visibleFrame.height
                     ?? NSScreen.main?.visibleFrame.height
                     ?? 0
             )
         )
-        if !submenuRecords.isEmpty {
+        if !submenuGroups.isEmpty {
             let moreItem = NSMenuItem(title: "More", action: nil, keyEquivalent: "")
             let submenu = NSMenu()
-            submenuRecords.map(autoApprovalMenuItem).forEach(submenu.addItem)
+            submenuGroups.map(autoApprovalMenuItem).forEach(submenu.addItem)
             moreItem.submenu = submenu
             autoApprovalItems.append(moreItem)
         }
@@ -779,14 +780,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func autoApprovalMenuItem(_ record: AutoApprovalRecord) -> NSMenuItem {
+    private func autoApprovalMenuItem(_ group: AutoApprovalGroup) -> NSMenuItem {
         let item = NSMenuItem(
-            title: autoApprovalTitle(record, formatter: autoApprovalTimeFormatter),
+            title: autoApprovalTitle(group, formatter: autoApprovalTimeFormatter),
             action: #selector(openAutoApproval),
             keyEquivalent: ""
         )
         item.target = self
-        item.representedObject = record.accessRequestID.uuidString
+        item.representedObject = group.record.accessRequestID.uuidString
         return item
     }
 }
@@ -854,9 +855,48 @@ private struct AutoApprovalRecord {
     let wasDenied: Bool
 }
 
-private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
+private struct AutoApprovalGroup {
+    let record: AutoApprovalRecord
+    var firstDate: Date
+    var lastDate: Date
+    var count = 1
+
+    init(_ record: AutoApprovalRecord) {
+        self.record = record
+        firstDate = record.date
+        lastDate = record.date
+    }
+}
+
+private func autoApprovalText(_ record: AutoApprovalRecord) -> String {
     let action = record.wasCanceled ? "canceled its request to use" : record.wasDenied ? "was denied use of" : "used"
-    return "\(formatter.string(from: record.date)) – \(record.launcher) \(action) \(record.tool)"
+    return "\(record.launcher) \(action) \(record.tool)"
+}
+
+private func groupedAutoApprovals(_ records: [AutoApprovalRecord]) -> [AutoApprovalGroup] {
+    records.reduce(into: []) { groups, record in
+        if let index = groups.indices.last,
+           autoApprovalText(groups[index].record) == autoApprovalText(record)
+        {
+            groups[index].firstDate = min(groups[index].firstDate, record.date)
+            groups[index].lastDate = max(groups[index].lastDate, record.date)
+            groups[index].count += 1
+        } else {
+            groups.append(AutoApprovalGroup(record))
+        }
+    }
+}
+
+private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
+    "\(formatter.string(from: record.date)) – \(autoApprovalText(record))"
+}
+
+private func autoApprovalTitle(_ group: AutoApprovalGroup, formatter: DateFormatter) -> String {
+    let firstTime = formatter.string(from: group.firstDate)
+    guard group.count > 1 else { return autoApprovalTitle(group.record, formatter: formatter) }
+    let lastTime = formatter.string(from: group.lastDate)
+    let time = firstTime == lastTime ? firstTime : "\(firstTime)\u{2013}\(lastTime)"
+    return "\(time) \(autoApprovalText(group.record)) \u{00D7}\(group.count)"
 }
 
 private func autoApprovalSubmenuCapacity(visibleHeight: CGFloat) -> Int {
@@ -5758,6 +5798,25 @@ private func runMenuStatusSelfCheck() -> Int32 {
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "h:mm a"
+    func menuRecord(_ time: TimeInterval, launcher: String = "ChatGPT") -> AutoApprovalRecord {
+        AutoApprovalRecord(
+            accessRequestID: UUID(),
+            date: Date(timeIntervalSince1970: time),
+            launcher: launcher,
+            launcherIconPath: "",
+            tool: "gh",
+            command: "gh repo view",
+            keys: ["GH_TOKEN"],
+            wasCanceled: false,
+            wasDenied: false
+        )
+    }
+    let groupedMenuRecords = groupedAutoApprovals([
+        menuRecord(19_800),
+        menuRecord(18_900),
+        menuRecord(18_000, launcher: "Codex"),
+        menuRecord(17_100),
+    ])
     let request = ApprovalRequest(
         op: "inject",
         keys: ["AWS_SECRET_ACCESS_KEY"],
@@ -5829,6 +5888,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
           doctorStatusTitle(count: 2) == "Two Doctor Reports",
           vulnerabilityStatusTitle(count: 1) == "One Vulnerability Detected",
           vulnerabilityStatusTitle(count: 2) == "Two Vulnerabilities Detected",
+          groupedMenuRecords.map(\.count) == [2, 1, 1],
+          autoApprovalTitle(groupedMenuRecords[0], formatter: formatter)
+              == "5:15 AM\u{2013}5:30 AM ChatGPT used gh \u{00D7}2",
           autoApprovalTitle(
               AutoApprovalRecord(
                   accessRequestID: UUID(),
