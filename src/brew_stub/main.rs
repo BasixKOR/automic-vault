@@ -46,10 +46,7 @@ fn main() {
     }
 
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
-    let cwd = match std::env::current_dir() {
-        Ok(cwd) => cwd,
-        Err(err) => fail(format!("failed to read current directory: {err}")),
-    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let (mut command, post_install) =
         approved_command(args, std::env::vars_os(), &cwd, xpc_authorize)
             .unwrap_or_else(|err| fail(err));
