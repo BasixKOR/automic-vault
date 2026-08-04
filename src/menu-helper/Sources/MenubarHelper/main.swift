@@ -225,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = migrateBackgroundKeychainItems()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
+        refreshCLIInstallState()
         do {
             let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
                 self?.recordAutoApproval(event)
@@ -290,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         if urls.contains(where: isCLIInstallCompletionURL) {
+            refreshCLIInstallState()
             (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
         }
         guard let secretGateID = urls.lazy.compactMap(secretGateID(from:)).first else { return }
@@ -612,6 +614,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func refreshCLIInstallState() {
+        scanQueue.async { [weak self] in
+            let isCurrent = currentCLIInstallState() == .current
+            Task { @MainActor in
+                self?.installCLIItem.isHidden = isCurrent
+            }
+        }
+    }
+
     private func brandImage(color: NSColor? = nil) -> NSImage? {
         let fallback = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
@@ -757,7 +768,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        installCLIItem.isHidden = currentCLIInstallState() == .current
         refreshAutoApprovalMenuItems()
         refreshDoctorStatus()
     }
