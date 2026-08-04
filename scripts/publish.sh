@@ -415,14 +415,14 @@ verify_draft_update() (
     plutil -extract AVUpdatePreflightVersion raw -o - \
       "$previous_app/Contents/Info.plist" 2>/dev/null || true
   )"
-  if [[ "$marker" == "1" ]]; then
+  if [[ "$previous_version" == "2.9.0" || "$previous_version" == "2.10.0" ]]; then
+    echo "Bootstrapping the updater preflight from code as version $previous_version." >&2
+    APP_VERSION="$previous_version" "$ROOT/scripts/build.sh"
+    preflight_app="$ROOT/target/swift/Automic Vault.app"
+  elif [[ "$marker" == "1" ]]; then
     preflight_app="$tmp/previous/Automic Vault.app"
     mkdir -p "$(dirname "$preflight_app")"
     ditto "$previous_app" "$preflight_app"
-  elif [[ "$previous_version" == "2.9.0" ]]; then
-    echo "Bootstrapping the updater preflight from code as version 2.9.0." >&2
-    APP_VERSION=2.9.0 "$ROOT/scripts/build.sh"
-    preflight_app="$ROOT/target/swift/Automic Vault.app"
   else
     echo "error: Automic Vault $previous_version lacks the updater preflight" >&2
     exit 1
