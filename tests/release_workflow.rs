@@ -133,6 +133,7 @@ fn publication_requires_the_previous_app_to_accept_the_draft() {
     let prompt = PUBLISH_SCRIPT.find("release y/n?").unwrap();
     assert!(verify < prompt);
     assert!(PUBLISH_SCRIPT.contains("gh api \"repos/$REPOSITORY/releases?per_page=30\""));
+    assert!(PUBLISH_SCRIPT.contains("tmp=\"$(cd \"$tmp\" && pwd -P)\""));
     assert!(PUBLISH_SCRIPT.contains("AVUpdatePreflightVersion"));
     assert!(PUBLISH_SCRIPT.contains("--verify-update \"$version\""));
     assert!(PUBLISH_SCRIPT.contains("APP_VERSION=\"$previous_version\""));
