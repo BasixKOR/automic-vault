@@ -109,11 +109,11 @@ if [[ ! "$AV_CLI_REVISION" =~ ^[0-9]+$ ]]; then
   echo "error: invalid av install revision: $AV_CLI_REVISION" >&2
   exit 64
 fi
-swift build -c release --disable-automatic-resolution \
+swift build --build-system xcode -c release --disable-automatic-resolution \
   --package-path "$MENU_HELPER" \
   --build-path "$SWIFT_TARGET"
 SWIFT_BIN="$(
-  swift build -c release --disable-automatic-resolution \
+  swift build --build-system xcode -c release --disable-automatic-resolution \
     --package-path "$MENU_HELPER" \
     --build-path "$SWIFT_TARGET" \
     --show-bin-path
@@ -122,6 +122,7 @@ SWIFT_BIN="$(
 rm -rf "$APP" "$ICON_BUILD"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
 cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
+ditto "$SWIFT_BIN/AppUpdater_AppUpdater.bundle" "$RESOURCES/AppUpdater_AppUpdater.bundle"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"
 plutil -replace CFBundleVersion -string "$APP_VERSION" "$CONTENTS/Info.plist"

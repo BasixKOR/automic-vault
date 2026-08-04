@@ -79,6 +79,10 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(BUILD_SCRIPT.contains("release checkout does not match GITHUB_SHA"));
     assert!(BUILD_SCRIPT.contains("cargo build --release --locked"));
     assert!(BUILD_SCRIPT.contains("--disable-automatic-resolution"));
+    assert_eq!(BUILD_SCRIPT.matches("--build-system xcode").count(), 2);
+    assert!(BUILD_SCRIPT.contains(
+        "ditto \"$SWIFT_BIN/AppUpdater_AppUpdater.bundle\" \"$RESOURCES/AppUpdater_AppUpdater.bundle\""
+    ));
     assert!(BUILD_SCRIPT.contains("requires a Developer ID Application identity"));
     assert!(BUILD_SCRIPT.contains("requires the Developer ID provisioning profile"));
     assert!(NOTARIZE_SCRIPT.starts_with("#!/bin/sh\n"));
