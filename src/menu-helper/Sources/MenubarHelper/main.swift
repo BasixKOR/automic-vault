@@ -1795,8 +1795,8 @@ private final class ApprovalServer: @unchecked Sendable {
             ancestorFallbackPath: ancestorFallbackPath
         )
         let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
-        let blessedCapabilityRequiresApproval: Bool
-        if let script = activeBlessedScript(pid: pid, identity: identity) {
+        let activeBlessing = activeBlessedScript(pid: pid, identity: identity)
+        if let script = activeBlessing {
             if handleBlessedCapability(
                 script,
                 request: request,
@@ -1809,9 +1809,6 @@ private final class ApprovalServer: @unchecked Sendable {
             ) {
                 return
             }
-            blessedCapabilityRequiresApproval = true
-        } else {
-            blessedCapabilityRequiresApproval = false
         }
         if let scriptApproval,
            let match = matchingBlessedScript(
@@ -1894,7 +1891,7 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             automaticApprovalExplanation = nil
         }
-        if !blessedCapabilityRequiresApproval,
+        if activeBlessing == nil,
            let configuredGate,
            let resolvedPolicy,
            let classification,
@@ -1961,6 +1958,9 @@ private final class ApprovalServer: @unchecked Sendable {
             shebangScript: request.shebangScript,
             tool: request.tool
         )
+        let promptBlessing = activeBlessing ?? scriptApproval.flatMap {
+            matchingBlessedScript(request: request, approval: $0, launcher: nil)
+        }
         DispatchQueue.main.async {
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
@@ -2041,6 +2041,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 pid: pid,
                 signing: signing,
                 scriptApproval: scriptApproval,
+                blessedScript: promptBlessing,
                 launcher: launcher,
                 launcherFallbackPath: launcherFallbackPath,
                 automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
@@ -3863,6 +3864,7 @@ private func showApprovalAlert(
     pid: pid_t,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
+    blessedScript: BlessedScript? = nil,
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?,
@@ -3883,6 +3885,7 @@ private func showApprovalAlert(
         automaticApprovalExplanation: automaticApprovalExplanation,
         cwd: request.cwd,
         keys: request.keys.joined(separator: ", "),
+        blessedScript: blessedScript,
         sections: approvalPromptSections(
             request: request,
             callerPath: callerPath,
@@ -4075,6 +4078,7 @@ private struct ApprovalPromptContent {
     let automaticApprovalExplanation: String?
     let cwd: String
     let keys: String
+    let blessedScript: BlessedScript?
     let sections: [ApprovalPromptSection]
 }
 
@@ -4222,14 +4226,38 @@ private struct ApprovalPromptCommandView: View {
                     .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) {
+            if let script = content.blessedScript {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label("BLESSED SCRIPT", systemImage: "checkmark.seal.fill")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1)
+                        .foregroundStyle(.green)
+                    Spacer(minLength: 0)
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
-                    ApprovalPromptInlineMeta(label: "keys", value: content.keys)
                 }
-                VStack(alignment: .leading, spacing: 5) {
-                    ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
-                    ApprovalPromptInlineMeta(label: "keys", value: content.keys)
+                VStack(alignment: .leading, spacing: 3) {
+                    if !content.keys.isEmpty,
+                       content.keys != script.keys.joined(separator: ", ")
+                    {
+                        ApprovalPromptInlineMeta(label: "request keys", value: content.keys)
+                    }
+                    ApprovalPromptInlineMeta(label: "secrets", value: script.keys.joined(separator: ", "))
+                    ApprovalPromptInlineMeta(
+                        label: "capabilities",
+                        value: approvalPromptCapabilitySummary(script),
+                        lineLimit: nil
+                    )
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) {
+                        ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
+                        ApprovalPromptInlineMeta(label: "keys", value: content.keys)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
+                        ApprovalPromptInlineMeta(label: "keys", value: content.keys)
+                    }
                 }
             }
         }
@@ -4241,6 +4269,12 @@ private struct ApprovalPromptCommandView: View {
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
     }
+}
+
+private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String {
+    script.capabilities.sorted(by: { $0.key < $1.key })
+        .map { "\($0.key): \($0.value.title)" }
+        .joined(separator: ", ")
 }
 
 private func approvalPromptCommandText(command: String, path: String) -> AttributedString {
@@ -4261,6 +4295,7 @@ private func approvalPromptCommandText(command: String, path: String) -> Attribu
 private struct ApprovalPromptInlineMeta: View {
     let label: String
     let value: String
+    var lineLimit: Int? = 1
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -4270,7 +4305,7 @@ private struct ApprovalPromptInlineMeta: View {
             Text(value.isEmpty ? "(none)" : value)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.82))
-                .lineLimit(1)
+                .lineLimit(lineLimit)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }
@@ -4553,6 +4588,16 @@ private func runApprovalSelfCheck() -> Int32 {
         appName: "ChatGPT",
         resourcesUnreadable: true
     ).explanation
+    let promptBlessedScript = BlessedScript(
+        path: "/tmp/publish.sh",
+        checksum: "checksum",
+        keys: ["PUBLISH_TOKEN"],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["gh": .readOnly, "stripe": .fullExceptSecretDumps],
+        launchers: []
+    )
     let collapsedHeight = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -4566,6 +4611,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 automaticApprovalExplanation: automaticApprovalExplanation,
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
+                blessedScript: promptBlessedScript,
                 sections: []
             ),
             decide: { _ in },
@@ -4585,6 +4631,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 automaticApprovalExplanation: nil,
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
+                blessedScript: nil,
                 sections: []
             ),
             maximumHeight: 500,
@@ -4611,7 +4658,9 @@ private func runApprovalSelfCheck() -> Int32 {
             repo \\
             view
           """,
-          String(commandWithoutArguments.characters) == "gh  # → /opt/homebrew/bin/gh",
+          String(commandWithoutArguments.characters) == "gh    # /opt/homebrew/bin/gh",
+          approvalPromptCapabilitySummary(promptBlessedScript)
+            == "gh: Read Only Access, stripe: Trusted Access",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
