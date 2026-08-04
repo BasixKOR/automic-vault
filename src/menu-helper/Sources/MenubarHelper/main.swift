@@ -43,9 +43,9 @@ private func makeUpdater(
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
-    private lazy var scanStatusItem = NSMenuItem(title: "Scan pending", action: nil, keyEquivalent: "")
+    private lazy var scanStatusItem = NSMenuItem.sectionHeader(title: "Scan pending")
     private lazy var doctorStatusItem: NSMenuItem = {
-        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        let item = NSMenuItem.sectionHeader(title: "")
         item.isHidden = true
         return item
     }()
@@ -5441,7 +5441,7 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 }
 
 private func runMenuStatusSelfCheck() -> Int32 {
-    let statusItem = NSMenuItem(title: "Starting Automic Vault", action: nil, keyEquivalent: "")
+    let statusItem = NSMenuItem.sectionHeader(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
     let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
     let items = [statusItem, NSMenuItem.separator(), actionItem, quitItem]
@@ -5450,7 +5450,8 @@ private func runMenuStatusSelfCheck() -> Int32 {
         startingUp: true,
         visibleDuringStartup: [statusItem, quitItem]
     )
-    guard !statusItem.isHidden,
+    guard statusItem.isSectionHeader,
+          !statusItem.isHidden,
           items[1].isHidden,
           actionItem.isHidden,
           !quitItem.isHidden
