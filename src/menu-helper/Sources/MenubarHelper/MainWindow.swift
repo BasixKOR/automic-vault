@@ -733,7 +733,7 @@ private func detectorSeveritySortPriority(_ severity: String?) -> Int {
     severity.map(isMediumDetectorSeverity) == true ? 1 : 0
 }
 
-private let installedAVCLIPath = "/usr/local/bin/av"
+let installedAVCLIPath = "/usr/local/bin/av"
 
 enum CLIInstallState: Sendable {
     case missing

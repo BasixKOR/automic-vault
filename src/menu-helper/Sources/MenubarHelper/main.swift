@@ -169,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openItem.target = self
         menu.addItem(openItem)
         installCLIItem.target = self
+        installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
         menu.addItem(installCLIItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
