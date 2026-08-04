@@ -1272,8 +1272,11 @@ func performInAppSecretMutation(
 
 private let humanApprovalRequiredEvent = "human-approval-required"
 
-private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
-    cachedDecision == nil ? humanApprovalRequiredEvent : nil
+private func approvalEvent(
+    for cachedDecision: ApprovalDecision?,
+    humanApprovalAvailable: Bool = true
+) -> String? {
+    humanApprovalAvailable && cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
 private final class ApprovalCancellation: @unchecked Sendable {
@@ -1998,6 +2001,20 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             promptBlessing = nil
         }
+        let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
+        RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+            MainActor.assumeIsolated {
+                guard !cancellation.isCanceled,
+                      let event = approvalEvent(
+                          for: requiresFreshApproval
+                              ? nil
+                              : self.transientApprovals.decision(for: transientApproval),
+                          humanApprovalAvailable: self.canRequestHumanApproval()
+                      )
+                else { return }
+                self.sendEvent(event, to: peer)
+            }
+        }
         DispatchQueue.main.async {
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
@@ -2005,7 +2022,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
             let cachedDecision = requiresFreshApproval
                 ? nil
                 : self.transientApprovals.decision(for: transientApproval)
@@ -2057,21 +2073,18 @@ private final class ApprovalServer: @unchecked Sendable {
                     callerPath: callerPath,
                     decision: "Denied",
                     approvalSource: "Auto",
-                    reason: "User session is inactive",
+                    reason: "Human approval unavailable",
                     launcher: launcher
                 ))
                 self.reply(
                     peer,
                     to: message,
                     ok: false,
-                    error: "\(request.op) denied while user session is inactive"
+                    error: "human approval unavailable"
                 )
                 return
             }
 
-            if let event = approvalEvent(for: cachedDecision) {
-                self.sendEvent(event, to: peer)
-            }
             let decision = showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
@@ -5794,6 +5807,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
+          approvalEvent(for: nil, humanApprovalAvailable: false) == nil,
           AutomaticApprovalFeedback.allCases == [.notification, .menuBarFlash, .none],
           automaticApprovalFeedback(rawValue: nil) == .notification,
           automaticApprovalFeedback(rawValue: "notification") == .notification,
