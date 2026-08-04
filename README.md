@@ -197,6 +197,8 @@ runtime request.
 
 #### Blessed Scripts
 
+<img src="./docs/blessed-script.png" style="width: 589px; height: auto" />
+
 In order for a script to have granular execution and access control it must be
 blessed:
 
