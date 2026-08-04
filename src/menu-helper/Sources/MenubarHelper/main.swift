@@ -1328,34 +1328,39 @@ private func missingRequiredSecret(
     }
 }
 
-private struct TransientApprovalCache {
+private final class TransientApprovalCache: @unchecked Sendable {
     private enum Key: Hashable {
         case approval(TransientApprovalKey)
         case denial(pid: Int32, startUsec: UInt64)
     }
 
+    private let lock = NSLock()
     private var expirations: [Key: Date] = [:]
 
-    mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
-        prune(now: now)
-        if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
-            return .denied
+    func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
+        lock.withLock {
+            prune(now: now)
+            if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
+                return .denied
+            }
+            return expirations[.approval(key)] == nil ? nil : .approved
         }
-        return expirations[.approval(key)] == nil ? nil : .approved
     }
 
-    mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
-        prune(now: now)
-        let cacheKey: Key
-        switch decision {
-        case .canceled: return
-        case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
-        case .approved, .alwaysApproved: cacheKey = .approval(key)
+    func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
+        lock.withLock {
+            prune(now: now)
+            let cacheKey: Key
+            switch decision {
+            case .canceled: return
+            case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
+            case .approved, .alwaysApproved: cacheKey = .approval(key)
+            }
+            expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
         }
-        expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
     }
 
-    private mutating func prune(now: Date) {
+    private func prune(now: Date) {
         expirations = expirations.filter { $0.value > now }
     }
 }
@@ -1998,6 +2003,13 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             promptBlessing = nil
         }
+        let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
+        let cachedDecision = requiresFreshApproval
+            ? nil
+            : transientApprovals.decision(for: transientApproval)
+        if let event = approvalEvent(for: cachedDecision) {
+            sendEvent(event, to: peer)
+        }
         DispatchQueue.main.async {
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
@@ -2005,7 +2017,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
             let cachedDecision = requiresFreshApproval
                 ? nil
                 : self.transientApprovals.decision(for: transientApproval)
@@ -2069,9 +2080,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
-            if let event = approvalEvent(for: cachedDecision) {
-                self.sendEvent(event, to: peer)
-            }
             let decision = showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
@@ -5653,7 +5661,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
     let fallbackAfterDenial = key(args: ["auth", "token"])
-    var cache = TransientApprovalCache()
+    let cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
     guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 200)) == nil,
