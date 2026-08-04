@@ -133,9 +133,10 @@ fn publication_requires_the_previous_app_to_accept_the_draft() {
     assert!(PUBLISH_SCRIPT.contains("AVUpdatePreflightVersion"));
     assert!(PUBLISH_SCRIPT.contains("--verify-update \"$version\""));
     assert!(PUBLISH_SCRIPT.contains("APP_VERSION=\"$previous_version\""));
-    assert!(PUBLISH_SCRIPT.contains(
-        "\"$previous_version\" == \"2.9.0\" || \"$previous_version\" == \"2.10.0\""
-    ));
+    assert!(
+        PUBLISH_SCRIPT
+            .contains("\"$previous_version\" == \"2.9.0\" || \"$previous_version\" == \"2.10.0\"")
+    );
     assert!(PUBLISH_SCRIPT.contains("lacks the updater preflight"));
     assert!(PUBLISH_SCRIPT.contains("downloaded draft DMG does not match GitHub's digest"));
 }
