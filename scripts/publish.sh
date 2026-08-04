@@ -348,8 +348,8 @@ verify_draft_update() (
   local tmp previous_mount previous_version previous_dmg previous_app preflight_app
   local candidate_dmg releases_json expected_digest actual_digest previous_digest marker mounted=0
   local developer_id_requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13]'
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/av-update-preflight.XXXXXX")"
-  tmp="$(cd "$tmp" && pwd -P)"
+  mkdir -p "$ROOT/target"
+  tmp="$(mktemp -d "$ROOT/target/av-update-preflight.XXXXXX")"
   previous_mount="$tmp/previous-mount"
   mkdir -p "$previous_mount"
   cleanup() {
