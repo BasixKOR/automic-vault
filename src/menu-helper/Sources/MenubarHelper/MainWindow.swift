@@ -709,7 +709,7 @@ private func blessedScriptItem(_ script: BlessedScript) -> DashboardItem {
     return DashboardItem(
         id: script.path,
         title: URL(fileURLWithPath: script.path).lastPathComponent,
-        subtitle: URL(fileURLWithPath: script.path).deletingLastPathComponent().path,
+        subtitle: blessedScriptDirectory(script.path),
         detail: script.path,
         blessingStatus: status
     )
@@ -725,11 +725,15 @@ private func blessedScriptItems(
         DashboardItem(
             id: pending.path,
             title: URL(fileURLWithPath: pending.path).lastPathComponent,
-            subtitle: URL(fileURLWithPath: pending.path).deletingLastPathComponent().path,
+            subtitle: blessedScriptDirectory(pending.path),
             detail: pending.path,
             blessingStatus: "Pending review"
         )
     ] + scripts
+}
+
+private func blessedScriptDirectory(_ path: String) -> String {
+    NSString(string: URL(fileURLWithPath: path).deletingLastPathComponent().path).abbreviatingWithTildeInPath
 }
 
 private func detectorSeveritySortPriority(_ severity: String?) -> Int {
@@ -1032,7 +1036,8 @@ func runDashboardSearchSelfCheck() -> Int32 {
     ))
     guard scriptItem.title == "deploy.sh",
           scriptItem.subtitle == "/dev/null",
-          scriptItem.blessingStatus == "Changed"
+          scriptItem.blessingStatus == "Changed",
+          blessedScriptDirectory("\(NSHomeDirectory())/Scripts/deploy.sh") == "~/Scripts"
     else { return 1 }
     model.searchText = ""
     model.selectSection(.doctor)
@@ -1733,12 +1738,19 @@ private struct BlessingStatusPill: View {
     let status: String
 
     var body: some View {
-        Text(status)
-            .font(.system(size: 9, weight: .semibold))
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .frame(height: 18)
-            .outlinedPill(color)
+        Group {
+            if status == "Blessed" {
+                Image(systemName: "checkmark")
+                    .accessibilityLabel("Blessed")
+            } else {
+                Text(status)
+            }
+        }
+        .font(.system(size: 9, weight: .semibold))
+        .lineLimit(1)
+        .padding(.horizontal, 7)
+        .frame(height: 18)
+        .outlinedPill(color)
     }
 
     private var color: Color {
