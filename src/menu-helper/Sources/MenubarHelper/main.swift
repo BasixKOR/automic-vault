@@ -1272,8 +1272,11 @@ func performInAppSecretMutation(
 
 private let humanApprovalRequiredEvent = "human-approval-required"
 
-private func approvalEvent(for cachedDecision: ApprovalDecision?) -> String? {
-    cachedDecision == nil ? humanApprovalRequiredEvent : nil
+private func approvalEvent(
+    for cachedDecision: ApprovalDecision?,
+    humanApprovalAvailable: Bool = true
+) -> String? {
+    humanApprovalAvailable && cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
 private final class ApprovalCancellation: @unchecked Sendable {
@@ -1328,39 +1331,34 @@ private func missingRequiredSecret(
     }
 }
 
-private final class TransientApprovalCache: @unchecked Sendable {
+private struct TransientApprovalCache {
     private enum Key: Hashable {
         case approval(TransientApprovalKey)
         case denial(pid: Int32, startUsec: UInt64)
     }
 
-    private let lock = NSLock()
     private var expirations: [Key: Date] = [:]
 
-    func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
-        lock.withLock {
-            prune(now: now)
-            if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
-                return .denied
-            }
-            return expirations[.approval(key)] == nil ? nil : .approved
+    mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
+        prune(now: now)
+        if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
+            return .denied
         }
+        return expirations[.approval(key)] == nil ? nil : .approved
     }
 
-    func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
-        lock.withLock {
-            prune(now: now)
-            let cacheKey: Key
-            switch decision {
-            case .canceled: return
-            case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
-            case .approved, .alwaysApproved: cacheKey = .approval(key)
-            }
-            expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
+    mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
+        prune(now: now)
+        let cacheKey: Key
+        switch decision {
+        case .canceled: return
+        case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
+        case .approved, .alwaysApproved: cacheKey = .approval(key)
         }
+        expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
     }
 
-    private func prune(now: Date) {
+    private mutating func prune(now: Date) {
         expirations = expirations.filter { $0.value > now }
     }
 }
@@ -2004,11 +2002,18 @@ private final class ApprovalServer: @unchecked Sendable {
             promptBlessing = nil
         }
         let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
-        let cachedDecision = requiresFreshApproval
-            ? nil
-            : transientApprovals.decision(for: transientApproval)
-        if let event = approvalEvent(for: cachedDecision) {
-            sendEvent(event, to: peer)
+        RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+            MainActor.assumeIsolated {
+                guard !cancellation.isCanceled,
+                      let event = approvalEvent(
+                          for: requiresFreshApproval
+                              ? nil
+                              : self.transientApprovals.decision(for: transientApproval),
+                          humanApprovalAvailable: self.canRequestHumanApproval()
+                      )
+                else { return }
+                self.sendEvent(event, to: peer)
+            }
         }
         DispatchQueue.main.async {
             if cancellation.isCanceled {
@@ -2068,14 +2073,14 @@ private final class ApprovalServer: @unchecked Sendable {
                     callerPath: callerPath,
                     decision: "Denied",
                     approvalSource: "Auto",
-                    reason: "User session is inactive",
+                    reason: "Human approval unavailable",
                     launcher: launcher
                 ))
                 self.reply(
                     peer,
                     to: message,
                     ok: false,
-                    error: "\(request.op) denied while user session is inactive"
+                    error: "human approval unavailable"
                 )
                 return
             }
@@ -5661,7 +5666,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
     let fallbackAfterDenial = key(args: ["auth", "token"])
-    let cache = TransientApprovalCache()
+    var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
     guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 200)) == nil,
@@ -5802,6 +5807,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
+          approvalEvent(for: nil, humanApprovalAvailable: false) == nil,
           AutomaticApprovalFeedback.allCases == [.notification, .menuBarFlash, .none],
           automaticApprovalFeedback(rawValue: nil) == .notification,
           automaticApprovalFeedback(rawValue: "notification") == .notification,

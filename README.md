@@ -154,6 +154,15 @@ the approval level for each tool *based on the launcher*:
 Hardened tools request secrets when they need them. Automic Vault releases those
 secrets only when your gate policy allows it or you approve.
 
+> [!IMPORTANT]
+> Human approval is available only while your macOS user session is active and
+> the screens are awake. Automic Vault aborts open approval windows and denies
+> requests that still need a human decision when the session becomes inactive
+> or the screens sleep. Retry when you return; stale approvals are not preserved.
+>
+> Requests already allowed by policy may continue without a prompt, subject to
+> each secret’s **Available While Locked** setting.
+
 > [!NOTE]
 > For launcher-specific policy, we walk the process’s launcher chain, validate its code
 > signature with macOS and match its designated requirement against the identity
