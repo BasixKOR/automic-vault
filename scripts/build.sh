@@ -121,7 +121,7 @@ SWIFT_BIN="$(
 
 rm -rf "$APP" "$ICON_BUILD"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
-cp "$SWIFT_BIN/AutomicVaultMenubar" "$MACOS/AutomicVaultMenubar"
+lipo "$SWIFT_BIN/AutomicVaultMenubar" -thin arm64 -output "$MACOS/AutomicVaultMenubar"
 ditto "$SWIFT_BIN/AppUpdater_AppUpdater.bundle" "$RESOURCES/AppUpdater_AppUpdater.bundle"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"

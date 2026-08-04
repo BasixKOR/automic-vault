@@ -81,6 +81,9 @@ fn release_builds_are_actions_only_and_fail_closed() {
     assert!(BUILD_SCRIPT.contains("--disable-automatic-resolution"));
     assert_eq!(BUILD_SCRIPT.matches("--build-system xcode").count(), 2);
     assert!(BUILD_SCRIPT.contains(
+        "lipo \"$SWIFT_BIN/AutomicVaultMenubar\" -thin arm64 -output \"$MACOS/AutomicVaultMenubar\""
+    ));
+    assert!(BUILD_SCRIPT.contains(
         "ditto \"$SWIFT_BIN/AppUpdater_AppUpdater.bundle\" \"$RESOURCES/AppUpdater_AppUpdater.bundle\""
     ));
     assert!(BUILD_SCRIPT.contains("requires a Developer ID Application identity"));
