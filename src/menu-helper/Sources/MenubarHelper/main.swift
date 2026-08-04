@@ -1623,12 +1623,20 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid list request")
             return
         }
-        let launchers = launcherIdentities(for: identity)
+        var launchers = launcherIdentities(for: identity)
+        let ancestorFallbackPath = launcherFallbackPath(for: identity)
+        if launchers.isEmpty, let caller = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(caller)
+        }
         let allowedApps = loadSecretNameAccessApps()
-        let launcher = launchers.first {
+        let allowedLauncher = launchers.first {
             candidate in allowedApps.contains { $0.requirement == candidate.designatedRequirement }
-        } ?? launchers.first
-            ?? launcherIdentity(pid: pid, identity: identity)
+        }
+        let launcher = executionOrigin(
+            among: launchers,
+            callerPID: pid,
+            ancestorFallbackPath: ancestorFallbackPath
+        )
         let request = ApprovalRequest(
             op: "list",
             keys: [],
@@ -1644,8 +1652,7 @@ private final class ApprovalServer: @unchecked Sendable {
             title: "List saved secret names?",
             detail: "Secret values will remain hidden. The requesting app will receive every saved secret name."
         )
-        if let launcher,
-           allowedApps.contains(where: { $0.requirement == launcher.designatedRequirement })
+        if allowedLauncher != nil
         {
             discloseSecretNames(
                 request: request,
@@ -1684,7 +1691,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 scriptApproval: nil,
                 launcher: launcher,
-                launcherFallbackPath: launcherFallbackPath(for: identity) ?? callerPath,
+                launcherFallbackPath: ancestorFallbackPath ?? callerPath,
                 automaticApprovalExplanation: nil,
                 allowsPersistentApproval: launcher.map { !$0.isStandalone } ?? false,
                 cancellation: cancellation
@@ -1777,10 +1784,16 @@ private final class ApprovalServer: @unchecked Sendable {
         let request = approvalRequestWithCredentialContext(parsedRequest)
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(for: identity)
-        let launcherFallbackPath = launcherFallbackPath(for: identity) ?? callerPath
+        let ancestorFallbackPath = launcherFallbackPath(for: identity)
+        let launcherFallbackPath = ancestorFallbackPath ?? callerPath
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
+        let launcher = executionOrigin(
+            among: launchers,
+            callerPID: pid,
+            ancestorFallbackPath: ancestorFallbackPath
+        )
         let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
         let blessedCapabilityRequiresApproval: Bool
         if let script = activeBlessedScript(pid: pid, identity: identity) {
@@ -1789,7 +1802,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 request: request,
                 signing: signing,
                 metadata: metadata,
-                launcher: launchers.first,
+                launcher: launcher,
                 callerPath: callerPath,
                 peer: peer,
                 message: message
@@ -1807,7 +1820,7 @@ private final class ApprovalServer: @unchecked Sendable {
                launchers: launchers
            )
         {
-            let (script, launcher) = match
+            let (script, _) = match
             do {
                 let secrets = try approvedSecrets(for: request)
                 let accessRequestID = UUID()
@@ -1825,13 +1838,15 @@ private final class ApprovalServer: @unchecked Sendable {
                     return
                 }
                 registerBlessedExecution(script, pid: pid, identity: identity)
-                Task { @MainActor in
-                    self.onAutoApproval(autoApprovalRecord(
-                        accessRequestID: accessRequestID,
-                        request: request,
-                        script: scriptApproval,
-                        launcher: launcher
-                    ))
+                if let launcher {
+                    Task { @MainActor in
+                        self.onAutoApproval(autoApprovalRecord(
+                            accessRequestID: accessRequestID,
+                            request: request,
+                            script: scriptApproval,
+                            launcher: launcher
+                        ))
+                    }
                 }
                 reply(peer, to: message, ok: true, error: nil, secrets: secrets)
             } catch {
@@ -1879,7 +1894,6 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             automaticApprovalExplanation = nil
         }
-        let launcher = resolvedPolicy?.launcher ?? launchers.first
         if !blessedCapabilityRequiresApproval,
            let configuredGate,
            let resolvedPolicy,
@@ -3403,11 +3417,48 @@ private func launcherAncestorStartPIDs(_ identity: AVProcessIdentity) -> [pid_t]
     return [identity.ppid, identity.sid].filter { $0 > 1 && seen.insert($0).inserted }
 }
 
+private func executionOrigin(
+    among launchers: [LauncherIdentity],
+    callerPID: pid_t,
+    ancestorFallbackPath: String?
+) -> LauncherIdentity? {
+    launchers.first { $0.pid != callerPID }
+        ?? (ancestorFallbackPath == nil ? launchers.first : nil)
+}
+
 private func launcherFallbackPath(for identity: AVProcessIdentity) -> String? {
     launcherAncestorStartPIDs(identity)
         .compactMap(launcherAncestorPath(startingAt:))
         .max { $0.depth < $1.depth }?
         .path
+}
+
+private func approvalProcessChain(pid: pid_t) -> String? {
+    var caller = AVProcessIdentity()
+    guard av_process_identity(pid, &caller) else { return nil }
+    var longest: [String] = []
+    for startPID in launcherAncestorStartPIDs(caller) {
+        var currentPID = startPID
+        var seen = Set<pid_t>()
+        var paths: [String] = []
+        for _ in 0..<32 {
+            guard currentPID > 1, seen.insert(currentPID).inserted else { break }
+            var identity = AVProcessIdentity()
+            guard av_process_identity(currentPID, &identity) else { break }
+            let path = pathString(identity)
+            if !path.isEmpty { paths.append(path) }
+            currentPID = identity.ppid
+        }
+        if paths.count > longest.count { longest = paths }
+    }
+    let callerPath = pathString(caller)
+    if !callerPath.isEmpty { longest.insert(callerPath, at: 0) }
+    guard !longest.isEmpty else { return nil }
+    return processChainLabel(paths: longest.reversed())
+}
+
+private func processChainLabel<S: Sequence>(paths: S) -> String where S.Element == String {
+    paths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: " → ")
 }
 
 private func launcherAncestorPath(startingAt startPID: pid_t) -> (path: String, depth: Int)? {
@@ -3446,8 +3497,17 @@ private func launcherIdentity(pid: pid_t, identity: AVProcessIdentity) -> Launch
 
 private func launcherIdentities(pid: pid_t, identity: AVProcessIdentity) -> [LauncherIdentity] {
     let path = pathString(identity)
-    guard let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) else { return [] }
-    return launcherIdentities(pid: pid, path: path, signing: signing)
+    if let signing = liveSigningInfo(pid: pid) {
+        return launcherIdentities(pid: pid, path: path, signing: signing)
+    }
+    guard let signing = executableSigningInfo(path: path) else { return [] }
+    // A path may now name a replacement binary, so it cannot prove the running process is standalone.
+    return launcherIdentities(
+        pid: pid,
+        path: path,
+        signing: signing,
+        allowsStandaloneFallback: false
+    )
 }
 
 private func launcherIdentity(
@@ -3463,7 +3523,8 @@ private func launcherIdentities(
     pid: pid_t,
     path: String,
     signing: LiveSigningInfo,
-    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
+    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
+    allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
     guard !signing.isAdHoc else { return [] }
     var seen = Set<String>()
@@ -3472,22 +3533,7 @@ private func launcherIdentities(
         + appBundleURLs(containing: signing.mainExecutable)
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
     ).filter { seen.insert($0.path).inserted }
-    if appURLs.isEmpty {
-        guard signing.isDeveloperID,
-              signing.identifier != "unknown",
-              signing.teamIdentifier != "unknown"
-        else { return [] }
-        return [LauncherIdentity(
-            pid: pid,
-            path: path,
-            identifier: signing.identifier,
-            teamIdentifier: signing.teamIdentifier,
-            designatedRequirement: signing.designatedRequirement,
-            runtimeProtection: signing.runtimeProtection,
-            isStandalone: true
-        )]
-    }
-    return appURLs.compactMap { appURL in
+    let apps: [LauncherIdentity] = appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
             pid: pid,
@@ -3498,6 +3544,21 @@ private func launcherIdentities(
             runtimeProtection: signing.runtimeProtection
         )
     }
+    if !apps.isEmpty { return apps }
+    guard allowsStandaloneFallback,
+          signing.isDeveloperID,
+          signing.identifier != "unknown",
+          signing.teamIdentifier != "unknown"
+    else { return [] }
+    return [LauncherIdentity(
+        pid: pid,
+        path: path,
+        identifier: signing.identifier,
+        teamIdentifier: signing.teamIdentifier,
+        designatedRequirement: signing.designatedRequirement,
+        runtimeProtection: signing.runtimeProtection,
+        isStandalone: true
+    )]
 }
 
 private struct LiveSigningInfo {
@@ -3808,6 +3869,7 @@ private func showApprovalAlert(
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
+        credentialConsumer: autoApprovalToolName(request),
         command: autoApprovalCommand(request),
         commandPath: approvalCommandPath(request),
         title: request.title,
@@ -3936,15 +3998,17 @@ private func approvalPromptSections(
         ]),
     ]
 
-    sections.append(ApprovalPromptSection("Launcher", "app.badge", launcher.map {
+    let chain = approvalProcessChain(pid: pid)
+    let chainRows = chain.map { [ApprovalPromptRow("Process chain", $0)] } ?? []
+    sections.append(ApprovalPromptSection("Execution Origin", "app.badge", launcher.map {
         [
             ApprovalPromptRow("App", "\($0.identifier) (pid \($0.pid))"),
             ApprovalPromptRow("Path", $0.path),
             ApprovalPromptRow("Signed", "\($0.identifier) / \($0.teamIdentifier)"),
-        ]
+        ] + chainRows
     } ?? [
         ApprovalPromptRow("Status", "unavailable; persistent auto-approve disabled"),
-    ]))
+    ] + chainRows))
 
     if let scriptApproval {
         sections.append(ApprovalPromptSection("Script", "doc.text", [
@@ -3997,6 +4061,7 @@ private struct ApprovalPromptRow: Identifiable {
 private struct ApprovalPromptContent {
     let requesterName: String
     let requesterIconPath: String
+    let credentialConsumer: String
     let command: String
     let commandPath: String
     let title: String?
@@ -4034,6 +4099,10 @@ private struct ApprovalPromptView: View {
 
             ApprovalPromptCommandView(content: content)
                 .layoutPriority(-1)
+
+            Text("Credential consumer: \(content.credentialConsumer)")
+                .font(.callout.weight(.medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 5) {
                 if let title = content.title, !title.isEmpty {
@@ -4483,6 +4552,7 @@ private func runApprovalSelfCheck() -> Int32 {
             content: ApprovalPromptContent(
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
+                credentialConsumer: "gh",
                 command: "gh auth token",
                 commandPath: "/opt/homebrew/bin/gh",
                 title: "GitHub token requested",
@@ -4501,6 +4571,7 @@ private func runApprovalSelfCheck() -> Int32 {
             content: ApprovalPromptContent(
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
+                credentialConsumer: "gh",
                 command: Array(repeating: "  --long-option \\", count: 100).joined(separator: "\n"),
                 commandPath: "/opt/homebrew/bin/gh",
                 title: nil,
@@ -5076,6 +5147,28 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .hardened,
         isDeveloperID: true
     )
+    let bundledDeveloperID = LiveSigningInfo(
+        identifier: "com.example.helper",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.example.helper" and anchor apple generic"#,
+        mainExecutable: "/Applications/Example.app/Contents/Helpers/example",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let liveBundleFallback = launcherIdentities(
+        pid: 44,
+        path: bundledDeveloperID.mainExecutable,
+        signing: bundledDeveloperID,
+        appSigning: { _ in nil }
+    ).first
+    let pathOnlyBundleFallback = launcherIdentities(
+        pid: 44,
+        path: bundledDeveloperID.mainExecutable,
+        signing: bundledDeveloperID,
+        appSigning: { _ in nil },
+        allowsStandaloneFallback: false
+    ).first
     guard satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
           let launcher = launcherIdentity(
               pid: 42,
@@ -5084,8 +5177,32 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ),
           launcher.isStandalone,
           launcher.designatedRequirement == requirement,
+          let liveBundleFallback,
+          liveBundleFallback.isStandalone,
+          liveBundleFallback.identifier == bundledDeveloperID.identifier,
+          pathOnlyBundleFallback == nil,
           launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
-          launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil
+          launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil,
+          executionOrigin(
+              among: [liveBundleFallback, launcher],
+              callerPID: launcher.pid,
+              ancestorFallbackPath: "/bin/zsh"
+          )?.pid == liveBundleFallback.pid,
+          executionOrigin(
+              among: [launcher],
+              callerPID: launcher.pid,
+              ancestorFallbackPath: "/bin/zsh"
+          ) == nil,
+          executionOrigin(
+              among: [launcher],
+              callerPID: launcher.pid,
+              ancestorFallbackPath: nil
+          )?.pid == launcher.pid,
+          processChainLabel(paths: [
+              bundledDeveloperID.mainExecutable,
+              "/bin/zsh",
+              "/opt/homebrew/bin/gh",
+          ]) == "example → zsh → gh"
     else { return 1 }
     let unhardenedLauncher = LauncherIdentity(
         pid: launcher.pid,
