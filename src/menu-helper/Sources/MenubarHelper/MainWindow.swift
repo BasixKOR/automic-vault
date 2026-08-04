@@ -1260,9 +1260,15 @@ private struct DashboardListView: View {
 
     var body: some View {
         Group {
-            if model.items.isEmpty && !model.isReloading {
-                EmptyListView(section: model.selectedSection)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.items.isEmpty {
+                if model.isReloading {
+                    ProgressView("Loading \(model.selectedSection.title)…")
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    EmptyListView(section: model.selectedSection)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 List(selection: itemSelection) {
                     rows(model.items)
