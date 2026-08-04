@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyEquivalent: ""
     )
     private lazy var quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
+    private lazy var quitSeparator = NSMenuItem.separator()
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
@@ -173,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installCLIItem.target = self
         installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
         menu.addItem(installCLIItem)
-        menu.addItem(.separator())
+        menu.addItem(quitSeparator)
         menu.addItem(quitItem)
         menu.delegate = self
         statusItem.menu = menu
@@ -187,7 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuVisibility(
             statusItem.menu?.items ?? [],
             startingUp: true,
-            visibleDuringStartup: [scanStatusItem, quitItem]
+            visibleDuringStartup: [scanStatusItem, quitSeparator, quitItem]
         )
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try handOffToLaunchAgentIfNeeded() }
@@ -5459,12 +5460,13 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 private func runMenuStatusSelfCheck() -> Int32 {
     let statusItem = makeStatusMenuItem(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
+    let quitSeparator = NSMenuItem.separator()
     let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
-    let items = [statusItem, NSMenuItem.separator(), actionItem, quitItem]
+    let items = [statusItem, NSMenuItem.separator(), actionItem, quitSeparator, quitItem]
     updateMenuVisibility(
         items,
         startingUp: true,
-        visibleDuringStartup: [statusItem, quitItem]
+        visibleDuringStartup: [statusItem, quitSeparator, quitItem]
     )
     let statusFont = statusItem.attributedTitle?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
     guard statusItem.isSectionHeader,
@@ -5472,6 +5474,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           !statusItem.isHidden,
           items[1].isHidden,
           actionItem.isHidden,
+          !quitSeparator.isHidden,
           !quitItem.isHidden
     else { return 1 }
     updateMenuVisibility(items, startingUp: false, visibleDuringStartup: [])
