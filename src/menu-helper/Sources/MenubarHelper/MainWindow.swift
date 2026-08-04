@@ -232,6 +232,7 @@ final class DashboardModel: ObservableObject {
             $0.title.localizedCaseInsensitiveContains(query)
                 || $0.kind?.localizedCaseInsensitiveContains(query) == true
                 || $0.subtitle.localizedCaseInsensitiveContains(query)
+                || $0.blessingStatus?.localizedCaseInsensitiveContains(query) == true
                 || $0.detail.localizedCaseInsensitiveContains(query)
         }
     }
@@ -708,8 +709,9 @@ private func blessedScriptItem(_ script: BlessedScript) -> DashboardItem {
     return DashboardItem(
         id: script.path,
         title: URL(fileURLWithPath: script.path).lastPathComponent,
-        subtitle: status,
-        detail: script.path
+        subtitle: URL(fileURLWithPath: script.path).deletingLastPathComponent().path,
+        detail: script.path,
+        blessingStatus: status
     )
 }
 
@@ -723,8 +725,9 @@ private func blessedScriptItems(
         DashboardItem(
             id: pending.path,
             title: URL(fileURLWithPath: pending.path).lastPathComponent,
-            subtitle: "Pending review",
-            detail: pending.path
+            subtitle: URL(fileURLWithPath: pending.path).deletingLastPathComponent().path,
+            detail: pending.path,
+            blessingStatus: "Pending review"
         )
     ] + scripts
 }
@@ -961,7 +964,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let secretDetailHeight = model.selectedStoredSecret.map {
         NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
     }
-    guard DashboardSection.allCases.last == .doctor,
+    guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 2,
@@ -1017,6 +1020,20 @@ func runDashboardSearchSelfCheck() -> Int32 {
         DashboardItem(id: "high", title: "zulu", subtitle: "", detail: "", severity: "HIGH", isTriggered: true),
     ].sorted(by: detectorItemPrecedes)
     guard severitySortedItems.map(\.id) == ["high", "medium", "clean"] else { return 1 }
+    let scriptItem = blessedScriptItem(BlessedScript(
+        path: "/dev/null/deploy.sh",
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/zsh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: [:],
+        launchers: []
+    ))
+    guard scriptItem.title == "deploy.sh",
+          scriptItem.subtitle == "/dev/null",
+          scriptItem.blessingStatus == "Changed"
+    else { return 1 }
     model.searchText = ""
     model.selectSection(.doctor)
     guard model.selectedItem?.title == "aws",
@@ -1080,11 +1097,12 @@ struct DashboardItem: Identifiable, Equatable {
     let documentation: String
     let hardenerDocumentation: String?
     let severity: String?
+    let blessingStatus: String?
     let isTriggered: Bool
     let isHardened: Bool
     let date: Date?
 
-    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, isTriggered: Bool = false, isHardened: Bool = false, date: Date? = nil) {
+    init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, blessingStatus: String? = nil, isTriggered: Bool = false, isHardened: Bool = false, date: Date? = nil) {
         self.id = id
         self.title = title
         self.kind = kind
@@ -1093,6 +1111,7 @@ struct DashboardItem: Identifiable, Equatable {
         self.documentation = documentation
         self.hardenerDocumentation = hardenerDocumentation
         self.severity = severity
+        self.blessingStatus = blessingStatus
         self.isTriggered = isTriggered
         self.isHardened = isHardened
         self.date = date
@@ -1412,6 +1431,10 @@ private struct DashboardRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                if let status = item.blessingStatus {
+                    BlessingStatusPill(status: status)
+                        .fixedSize()
+                }
                 if let kind = item.kind {
                     DetectorKindPill(kind: kind)
                         .fixedSize()
@@ -1703,6 +1726,27 @@ private struct DetectorKindPill: View {
             .padding(.horizontal, 7)
             .frame(height: 18)
             .background(Color.gray.opacity(0.18), in: Capsule())
+    }
+}
+
+private struct BlessingStatusPill: View {
+    let status: String
+
+    var body: some View {
+        Text(status)
+            .font(.system(size: 9, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .outlinedPill(color)
+    }
+
+    private var color: Color {
+        switch status {
+        case "Blessed": .green
+        case "Pending review": .blue
+        default: .orange
+        }
     }
 }
 
