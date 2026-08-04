@@ -700,7 +700,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func didRecordAccessRequest(_ record: AccessRequestRecord) {
-        if record.decision == "Denied", let menuRecord = autoApprovalRecord(record) {
+        if ["Canceled", "Denied"].contains(record.decision), let menuRecord = autoApprovalRecord(record) {
             recordMenuAccess(menuRecord)
             if shouldShowAutomaticAccessToast(record) {
                 showAutomaticAccessToast(menuRecord, below: statusItem.button)
@@ -771,11 +771,12 @@ private struct AutoApprovalRecord {
     let tool: String
     let command: String
     let keys: [String]
+    let wasCanceled: Bool
     let wasDenied: Bool
 }
 
 private func autoApprovalTitle(_ record: AutoApprovalRecord, formatter: DateFormatter) -> String {
-    let action = record.wasDenied ? "was denied use of" : "used"
+    let action = record.wasCanceled ? "canceled its request to use" : record.wasDenied ? "was denied use of" : "used"
     return "\(formatter.string(from: record.date)) – \(record.launcher) \(action) \(record.tool)"
 }
 
@@ -799,13 +800,15 @@ private func autoApprovalRecord(
         tool: autoApprovalToolName(request, scriptPath: script?.path),
         command: autoApprovalCommand(request, scriptPath: script?.path),
         keys: request.keys,
+        wasCanceled: false,
         wasDenied: false
     )
 }
 
 private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord? {
+    let wasCanceled = record.decision == "Canceled"
     let wasDenied = record.decision == "Denied"
-    guard wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Auto") else { return nil }
+    guard wasCanceled || wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Auto") else { return nil }
     return AutoApprovalRecord(
         accessRequestID: record.id,
         date: record.date,
@@ -814,6 +817,7 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
         tool: record.tool,
         command: record.command,
         keys: record.keys,
+        wasCanceled: wasCanceled,
         wasDenied: wasDenied
     )
 }
@@ -5477,6 +5481,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
                   tool: "aws",
                   command: "aws s3 ls",
                   keys: ["AWS_SECRET_ACCESS_KEY"],
+                  wasCanceled: false,
                   wasDenied: false
               ),
               formatter: formatter
@@ -5495,6 +5500,21 @@ private func runMenuStatusSelfCheck() -> Int32 {
               decision: "Denied",
               approvalSource: "Manual",
               reason: "Denied in prompt",
+              launcher: recordedApproval.launcher,
+              callerPath: recordedApproval.callerPath,
+              target: recordedApproval.target,
+              cwd: recordedApproval.cwd,
+              keys: recordedApproval.keys,
+              detail: recordedApproval.detail
+          )),
+          let restoredCancellation = autoApprovalRecord(AccessRequestRecord(
+              id: recordedApproval.id,
+              date: recordedApproval.date,
+              tool: "gh",
+              command: "gh pr create",
+              decision: "Canceled",
+              approvalSource: "Manual",
+              reason: "Caller exited",
               launcher: recordedApproval.launcher,
               callerPath: recordedApproval.callerPath,
               target: recordedApproval.target,
@@ -5531,6 +5551,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
               detail: recordedApproval.detail
           )),
           restoredDenial.wasDenied,
+          restoredCancellation.wasCanceled,
+          autoApprovalTitle(restoredCancellation, formatter: formatter)
+              == "5:15 AM – Codex canceled its request to use gh",
           automaticAccessDecisionLabel(wasDenied: restoredDenial.wasDenied) == "AUTO REJECTED",
           automaticAccessDecisionSymbol(wasDenied: restoredDenial.wasDenied) == "xmark.shield.fill",
           automaticAccessDecisionLabel(wasDenied: restoredApproval.wasDenied) == "AUTO APPROVED",
