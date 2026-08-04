@@ -90,7 +90,19 @@ import Testing
             launcherRequirement: launcherRequirement
         )
     }
+    func executionMatches(_ script: BlessedScript, checksum: String = "checksum") -> Bool {
+        script.matchesExecution(
+            path: "/tmp/script",
+            checksum: checksum,
+            keys: ["TOKEN"],
+            target: "/bin/sh",
+            replaceExistingEnv: false,
+            allowMissingKeys: false
+        )
+    }
 
+    #expect(executionMatches(endorsedScript))
+    #expect(!executionMatches(endorsedScript, checksum: "changed"))
     #expect(matches(script, launcherRequirement: nil))
     #expect(!matches(script, launcherRequirement: requirement))
     #expect(matches(endorsedScript, launcherRequirement: requirement))
