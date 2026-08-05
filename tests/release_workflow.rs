@@ -17,7 +17,7 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
-    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 3);
+    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 2);
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
     assert!(RELEASE_WORKFLOW.contains("SHA256SUMS"));
     assert!(RELEASE_WORKFLOW.contains("RUST_TOOLCHAIN: 1.96.0"));
@@ -38,11 +38,8 @@ fn release_assets_are_immutable_and_never_replaced() {
     assert!(!BUILD_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("gh release create"));
-    assert!(RELEASE_WORKFLOW.contains("SCANNER_NAME: scanner.tgz"));
-    assert!(
-        RELEASE_WORKFLOW
-            .contains("codesign --verify --strict -R \"$requirement\" \"$scanner_dir/scanner\"")
-    );
+    assert!(!RELEASE_WORKFLOW.contains("SCANNER_NAME"));
+    assert!(!RELEASE_WORKFLOW.contains("scanner.tgz"));
 }
 
 #[test]
@@ -96,7 +93,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
     ));
     assert!(BUILD_SCRIPT.contains("requires a Developer ID Application identity"));
     assert!(BUILD_SCRIPT.contains("requires the Developer ID provisioning profile"));
-    assert!(BUILD_SCRIPT.contains("SCANNER_CODESIGN_IDENTITY=\"$identity\""));
+    assert!(!BUILD_SCRIPT.contains("build-scanner.sh"));
     assert!(NOTARIZE_SCRIPT.starts_with("#!/bin/sh\n"));
     assert!(!NOTARIZE_SCRIPT.contains("/usr/local/bin/av"));
     for secret in ["APPLE_USERNAME", "APPLE_PASSWORD", "APPLE_TEAM_ID"] {
@@ -131,16 +128,31 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("gh release edit"));
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
-    assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$head\""));
     assert!(PUBLISH_SCRIPT.contains("contains(Aliases.Items, '$WEBSITE_ALIAS')"));
     assert!(!PUBLISH_SCRIPT.contains("contains(join(',', Aliases.Items)"));
+    assert!(PUBLISH_SCRIPT.contains("SCANNER_RUST_TOOLCHAIN=\"1.96.0\""));
+    assert!(
+        PUBLISH_SCRIPT.contains("exactly one Developer ID Application identity for ZU76A67LGU")
+    );
+    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/build-scanner.sh"));
+    assert!(PUBLISH_SCRIPT.contains("scanner must be built from the clean release commit"));
+    assert!(!PUBLISH_SCRIPT.contains("--pattern scanner.tgz"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/scanner.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/scanner.tgz"));
-    assert!(PUBLISH_SCRIPT.contains("scanner archive does not match GitHub's digest"));
+    assert!(PUBLISH_SCRIPT.contains("scanner archive has unexpected contents"));
     assert!(PUBLISH_SCRIPT.contains("codesign --verify --strict -R \"$requirement\" \"$scanner\""));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
+    let build = PUBLISH_SCRIPT
+        .find("$ROOT/scripts/build-scanner.sh")
+        .unwrap();
+    let verify = PUBLISH_SCRIPT
+        .find("codesign --verify --strict -R \"$requirement\" \"$scanner\"")
+        .unwrap();
+    let upload = PUBLISH_SCRIPT.find("aws s3 cp \"$archive\"").unwrap();
+    assert!(build < verify && verify < upload);
 }
 
 #[test]
@@ -174,6 +186,7 @@ fn scanner_is_small_signed_and_read_only() {
     ] {
         assert!(BUILD_SCANNER_SCRIPT.contains(setting));
     }
+    assert!(BUILD_SCANNER_SCRIPT.contains("rustup run \"$SCANNER_RUST_TOOLCHAIN\" cargo"));
     assert!(SCANNER_SCRIPT.contains("https://www.automicvault.com/scanner.tgz"));
     assert!(SCANNER_SCRIPT.contains("--proto '=https'"));
     assert!(SCANNER_SCRIPT.contains("--proto-redir '=https'"));

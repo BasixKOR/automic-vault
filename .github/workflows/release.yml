@@ -38,7 +38,6 @@ jobs:
       COMMIT: ${{ inputs.commit }}
       ASSET_DIR: target/release-assets
       DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg
-      SCANNER_NAME: scanner.tgz
       SBOM_NAME: Automic-Vault-${{ inputs.version }}.spdx.json
       IMMUTABLE_RELEASES_ENABLED: ${{ vars.IMMUTABLE_RELEASES_ENABLED }}
       RUST_TOOLCHAIN: 1.96.0
@@ -196,11 +195,6 @@ jobs:
           codesign --verify --deep --strict "target/swift/Automic Vault.app"
           codesign --verify "$dmg"
           xcrun stapler validate "$dmg"
-          scanner_dir="$RUNNER_TEMP/scanner"
-          mkdir "$scanner_dir"
-          tar -xzf "target/$SCANNER_NAME" -C "$scanner_dir"
-          requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "ZU76A67LGU" and identifier "com.automicvault.scanner"'
-          codesign --verify --strict -R "$requirement" "$scanner_dir/scanner"
 
       - name: Stage release inputs
         shell: bash
@@ -208,7 +202,6 @@ jobs:
           set -euo pipefail
           mkdir -p "$ASSET_DIR" target/sbom-input
           cp "target/swift/$DMG_NAME" "$ASSET_DIR/$DMG_NAME"
-          cp "target/$SCANNER_NAME" "$ASSET_DIR/$SCANNER_NAME"
           cp Cargo.toml Cargo.lock target/sbom-input/
           cp src/menu-helper/Package.swift \
             src/menu-helper/Package.resolved \
@@ -231,18 +224,13 @@ jobs:
           set -euo pipefail
           (
             cd "$ASSET_DIR"
-            shasum -a 256 "$DMG_NAME" "$SCANNER_NAME" "$SBOM_NAME" >SHA256SUMS
+            shasum -a 256 "$DMG_NAME" "$SBOM_NAME" >SHA256SUMS
           )
 
       - name: Attest build provenance
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: ${{ env.ASSET_DIR }}/${{ env.DMG_NAME }}
-
-      - name: Attest scanner build provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/${{ env.SCANNER_NAME }}
 
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
@@ -258,7 +246,6 @@ jobs:
           printf '%s\n' "$RELEASE_NOTES" >"$notes"
           gh release create "$VERSION" \
             "$ASSET_DIR/$DMG_NAME" \
-            "$ASSET_DIR/$SCANNER_NAME" \
             "$ASSET_DIR/$SBOM_NAME" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
