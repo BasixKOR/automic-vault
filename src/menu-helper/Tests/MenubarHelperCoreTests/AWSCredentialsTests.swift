@@ -23,6 +23,30 @@ import Testing
     #expect(throws: AWSCredentialError.self) {
         try AWSProfileChain.parse("[profile dev]\nregion=us-east-1\n", selectedProfile: "dev")
     }
+    #expect(throws: AWSCredentialError.self) {
+        try AWSProfileChain.parse("[default]\nmfa_process = unsafe\n", selectedProfile: "default")
+    }
+}
+
+@Test func runtimeBindingRequiresInterpreterAndExactArguments() {
+    let interpreter = "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/bin/python3.14"
+    let process = "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python"
+    let target = "/opt/homebrew/bin/aws"
+    let arguments = ["s3", "ls"]
+    #expect(awsRuntimeMatches(
+        interpreter: interpreter,
+        processPath: process,
+        processArguments: [process, target] + arguments,
+        target: target,
+        approvedArguments: arguments
+    ))
+    #expect(!awsRuntimeMatches(
+        interpreter: interpreter,
+        processPath: process,
+        processArguments: [process, target, "iam", "list-users"],
+        target: target,
+        approvedArguments: arguments
+    ))
 }
 
 @Test func signsSTSRequestsDeterministically() throws {

@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
 
+mod aws;
 mod bless;
 mod doctor;
 mod inject;
@@ -36,7 +37,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-const INSTALL_REVISION: u32 = 12;
+const INSTALL_REVISION: u32 = 13;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -279,6 +280,8 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
+        Some("aws") => aws::run(rest, stderr),
+        Some("aws-credentials") if rest.is_empty() => aws::credentials(stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

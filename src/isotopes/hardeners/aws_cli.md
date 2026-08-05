@@ -2,65 +2,67 @@
 
 `av harden aws` moves the default AWS access key pair out of
 `~/.aws/credentials` and into the macOS login keychain, then installs
-`/usr/local/bin/aws` as an Automic Vault wrapper for the Homebrew AWS CLI.
+`/usr/local/bin/aws` as a one-line Automic Vault launcher for the Homebrew AWS
+CLI.
 
-The non-root phase reads the `default` profile from
-`${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}`. If it finds both
-`aws_access_key_id` and `aws_secret_access_key`, it stores them as
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` under the
-`com.automicvault.isotope` keychain service and removes those two plaintext
-lines from the credentials file.
+The launcher registers the exact AWS arguments, selected profile, process ID,
+process start time, and a snapshot of the AWS config with the menu app before
+replacing itself with `/opt/homebrew/bin/aws`. The AWS CLI receives a minimal
+config containing Automic Vault's `credential_process`; that helper only works
+as an immediate child of the registered, still-running AWS process.
 
-The root phase writes `/usr/local/bin/aws`. That wrapper uses `av inject` to
-provide the keychain-backed AWS keys only for the command run, creates a
-temporary `pass` backend shim for `aws-vault`, and executes
-`/opt/homebrew/bin/aws-vault exec PROFILE --server -- /opt/homebrew/bin/aws` in
-an isolated runtime environment. `PROFILE` comes from the command's
-`--profile`, then `AWS_PROFILE`, then `AWS_DEFAULT_PROFILE`, and finally
-`default`.
+The menu app implements STS `GetSessionToken` and `AssumeRole` directly. It
+caches resulting credentials only for the lifetime of that registered AWS
+process. Nothing is written to disk and credentials are not shared between AWS
+invocations.
 
 ## How It Protects You
 
-The hardener removes long-lived AWS keys from the ordinary shared credentials
-file and keeps them in Keychain instead. The installed wrapper feeds those keys
-to `aws-vault` at runtime so the actual AWS CLI runs with short-lived session
-credentials rather than reading persistent secrets from disk.
+The real AWS CLI runs with an empty home, no shared credentials file, disabled
+instance metadata, no pager, and a generated config held in an unlinked file
+descriptor. Ambient AWS credentials, credential processes, SSO/login state,
+web identity, container credentials, plugins, aliases, and pager hooks are not
+available inside the credential-bearing process.
 
-The temporary `pass` shim discards `aws-vault` session-cache writes, so the
-wrapper does not leave the generated AWS session material in the temporary
-password store after the command exits.
+The helper verifies all of the following before returning credentials:
 
-The real AWS CLI receives an empty home and credential/config files plus
-`--no-cli-pager`. This prevents user-controlled AWS aliases, credential
-processes, plugins, cached login credentials, and output pagers from running
-inside the credential-bearing process.
+- its immediate parent has the registered PID and process start time;
+- the parent executable is the interpreter declared by the approved Homebrew
+  AWS CLI;
+- the live parent arguments exactly match the approved snapshot.
 
-AWS does not permit non-MFA `GetSessionToken` credentials to call IAM or most
-STS operations. For those operations on a base profile without MFA, the wrapper
-marks the credential request as high sensitivity and explains why it must inject
-the original long-lived keys directly into the isolated AWS CLI. Only a Secret
-Gate set to Full Access can approve that request automatically. MFA and role
-profiles keep using short-lived credentials.
+Normal commands receive temporary credentials. AWS does not permit non-MFA
+`GetSessionToken` credentials to call IAM or most STS operations, so a base
+profile without MFA or a role receives the original long-lived keys for those
+operations. The approval window warns prominently and classifies the request
+as a secret dump: Trusted Access still prompts, while explicitly selected Full
+Access means everything and may auto-approve it.
+
+## Supported Profiles
+
+Automic Vault intentionally supports one narrow profile model:
+
+- the imported `default` keys;
+- `region`;
+- `mfa_serial`, entered in Automic Vault's own prompt;
+- role profiles using `role_arn` and `source_profile`, ultimately rooted at
+  `default`.
+
+`mfa_process`, SSO, web identity, `credential_process`, `credential_source`,
+independent named static keys, incomplete roles, and source-profile cycles fail
+closed with a precise error.
 
 ## Caveats
 
-- The import phase only migrates the `default` profile from the shared
-  credentials file. Named runtime profiles must derive from that imported
-  profile through `source_profile`; independent named access keys are not
-  migrated.
-- This assumes Homebrew paths: `/opt/homebrew/bin/aws-vault`,
-  `/opt/homebrew/bin/aws`, and `/usr/local/bin/aws`.
-- `/usr/local/bin` must come before the real AWS CLI in `PATH`; otherwise the
-  wrapper will not be used.
-- The root phase must be run with `sudo av harden aws` because it writes
+- This assumes `/opt/homebrew/bin/aws`, `/usr/local/bin/av`, and
   `/usr/local/bin/aws`.
-- During a command run, the keychain values are injected into the wrapper
-  process environment so the temporary `pass` shim can hand them to `aws-vault`.
-- The menu helper creates an AWS Secret Gate for the hardened wrapper. Its Read
-  Only level uses a conservative allow-list covering `aws s3 ls`, `sts
-  get-caller-identity`, `s3api list-*`,
-  `s3api head-*`, and service operations named `list-*` or `describe-*`.
-  Mutating commands, token-printing commands, manual `av inject`, and unknown
-  commands still prompt.
-- `aws-vault --server` avoids longer-lived cached credentials but is slower and
-  has more runtime overhead.
+- `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`; an absolute call
+  to the real AWS CLI bypasses the wrapper but cannot access Vault-managed
+  credentials.
+- The root phase needs `sudo av harden aws` to write `/usr/local/bin/aws`.
+- The AWS process can use any credential it receives for the lifetime and IAM
+  scope of that credential. Automic Vault confines issuance to the approved
+  invocation; it cannot harden the upstream AWS CLI process itself.
+- End-to-end runtime integrity depends on protecting the Homebrew AWS
+  distribution from the desktop user. `av harden brew` is optional, but without
+  it the interpreter and source checks can be modified by a same-user attacker.

@@ -62,7 +62,7 @@ public struct AWSProfileChain: Equatable, Sendable {
             }
             let values = sections[name] ?? [:]
             let unsupported = [
-                "credential_process", "credential_source", "sso_session", "sso_start_url",
+                "credential_process", "credential_source", "mfa_process", "sso_session", "sso_start_url",
                 "sso_region", "sso_account_id", "sso_role_name", "web_identity_token_file",
                 "aws_access_key_id", "aws_secret_access_key", "aws_session_token",
             ].first { values[$0] != nil }
@@ -134,7 +134,11 @@ public func awsSTSRequest(
     credentials: AWSCredentials,
     date: Date = Date()
 ) throws -> AWSSignedRequest {
-    guard !region.isEmpty, let url = URL(string: "https://sts.\(region).amazonaws.com/") else {
+    guard !region.isEmpty,
+          region.utf8.allSatisfy({ $0 == 45 || 48...57 ~= $0 || 97...122 ~= $0 }),
+          let url = URL(string: "https://sts.\(region).amazonaws.com/"),
+          url.host == "sts.\(region).amazonaws.com"
+    else {
         throw AWSCredentialError.invalidConfig("invalid region")
     }
     let body = parameters.sorted { $0.key < $1.key }
@@ -187,9 +191,41 @@ public func parseAWSTSCredentials(_ data: Data) throws -> AWSCredentials {
           let secret = delegate.values["SecretAccessKey"], !secret.isEmpty,
           let token = delegate.values["SessionToken"], !token.isEmpty,
           let expirationText = delegate.values["Expiration"],
-          let expiration = ISO8601DateFormatter().date(from: expirationText.trimmingCharacters(in: .whitespacesAndNewlines))
+          let expiration = awsExpirationDate(expirationText.trimmingCharacters(in: .whitespacesAndNewlines))
     else { throw AWSCredentialError.invalidResponse("credentials are incomplete") }
-    return AWSCredentials(accessKeyID: access, secretAccessKey: secret, sessionToken: token, expiration: expiration)
+    return AWSCredentials(
+        accessKeyID: access.trimmingCharacters(in: .whitespacesAndNewlines),
+        secretAccessKey: secret.trimmingCharacters(in: .whitespacesAndNewlines),
+        sessionToken: token.trimmingCharacters(in: .whitespacesAndNewlines),
+        expiration: expiration
+    )
+}
+
+public func awsRuntimeMatches(
+    interpreter: String,
+    processPath: String,
+    processArguments: [String],
+    target: String,
+    approvedArguments: [String]
+) -> Bool {
+    let resolved = URL(fileURLWithPath: interpreter).resolvingSymlinksInPath().path
+    let executableMatches: Bool
+    if resolved == processPath {
+        executableMatches = true
+    } else if let marker = resolved.range(of: "/bin/", options: .backwards) {
+        executableMatches = resolved[..<marker.lowerBound]
+            + "/Resources/Python.app/Contents/MacOS/Python" == processPath
+    } else {
+        executableMatches = false
+    }
+    return executableMatches && processArguments == [processPath, target] + approvedArguments
+}
+
+private func awsExpirationDate(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions.insert(.withFractionalSeconds)
+    return formatter.date(from: value)
 }
 
 private func awsPercentEncode(_ value: String) -> String {

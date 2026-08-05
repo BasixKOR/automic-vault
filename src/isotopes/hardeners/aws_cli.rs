@@ -13,17 +13,12 @@ const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
 const AWS_HARDEN_PROFILE: &str = "default";
 const AWS_STUB: &str = include_str!("aws");
 const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
-const AWS_VAULT_PATH: &str = "/opt/homebrew/bin/aws-vault";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
 }
 
 pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    let aws_vault = aws_vault_path();
-    if !aws_vault.exists() {
-        return Err("aws-vault is not installed; run `brew install aws-vault`".to_string());
-    }
     let is_root = effective_uid() == 0;
     let has_test_keychain = crate::test_keychain_dir().is_some();
     let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
@@ -40,7 +35,11 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     writeln!(stdout, "╭─ harden aws").ok();
     writeln!(stdout, "│").ok();
-    writeln!(stdout, "◆ This will use aws-vault for AWS credentials.").ok();
+    writeln!(
+        stdout,
+        "◆ This will use Automic Vault for temporary AWS credentials."
+    )
+    .ok();
     writeln!(stdout, "│").ok();
     if let Some(credentials_path) = &credentials_path {
         if credentials.is_some() {
@@ -109,12 +108,6 @@ pub(crate) fn detect() -> HardenerDetection {
         Some(path.display().to_string()),
         "/opt/homebrew/bin/aws".to_string(),
     );
-    detection.commands[0]
-        .required_paths
-        .push(RequiredExecutable {
-            name: "aws-vault",
-            path: aws_vault_path().display().to_string(),
-        });
     if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
         detection.commands[0]
             .required_paths
@@ -160,7 +153,6 @@ fn root_stub_requirements(path: &Path) -> StubRequirements {
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
-    let script_path = aws_stub_path().display().to_string();
     let keys = vec![
         AWS_ACCESS_KEY_ID.to_string(),
         AWS_SECRET_ACCESS_KEY.to_string(),
@@ -170,8 +162,8 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
         key_patterns: keys.clone(),
         routes: vec![SecretGateRoute {
             operation: "inject",
-            script_path: Some(script_path),
-            target_path: "/bin/zsh".to_string(),
+            script_path: None,
+            target_path: "/opt/homebrew/bin/aws".to_string(),
             caller_identifiers: vec!["com.automicvault.av"],
             key_patterns: keys,
             replace_existing_env: false,
@@ -215,12 +207,6 @@ fn effective_uid() -> u32 {
 
 fn is_aws_stub(path: &Path) -> bool {
     fs::read_to_string(path).is_ok_and(|contents| contents == AWS_STUB)
-}
-
-fn aws_vault_path() -> PathBuf {
-    crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(AWS_VAULT_PATH))
 }
 
 fn aws_stub_path() -> PathBuf {
@@ -348,32 +334,15 @@ pub(crate) fn store_keychain_secret(account: &str, value: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn aws_stub_uses_aws_vault_profile_env() {
+    fn aws_stub_delegates_directly_to_av() {
         let path = temp_path("aws-stub");
         install_aws_stub(&path).unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
-        assert!(AWS_STUB.starts_with(
-            "#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh -f\n"
-        ));
-        assert!(AWS_STUB.contains("${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}"));
-        assert!(AWS_STUB.contains("--profile=*)"));
-        assert!(AWS_STUB.contains("AWS_CONFIG_FILE=/dev/null"));
-        assert!(AWS_STUB.contains("/opt/homebrew/bin/aws --no-cli-pager"));
-        assert!(AWS_STUB.contains("needs_long_lived_credentials"));
-        assert!(AWS_STUB.contains("mktemp -d"));
-        assert!(!AWS_STUB.contains("aws-vault-pass.$$"));
-        assert!(AWS_STUB.contains("#!/bin/sh\nset -eu"));
-
-        let status = std::process::Command::new("/bin/zsh")
-            .args(["-n", path.to_str().unwrap()])
-            .status()
-            .unwrap();
-        assert!(status.success());
+        assert_eq!(AWS_STUB, "#!/usr/local/bin/av aws\n");
 
         let _ = fs::remove_file(path);
     }
@@ -390,167 +359,6 @@ mod tests {
     }
 
     #[test]
-    fn aws_stub_isolates_the_real_cli_and_uses_the_command_profile() {
-        let dir = temp_path("aws-stub-runtime");
-        let capture = dir.join("capture");
-        let temp = dir.join("tmp");
-        let wrapper = dir.join("aws");
-        let aws_vault = dir.join("aws-vault");
-        let aws = dir.join("real-aws");
-        let zdotdir = dir.join("zdotdir");
-        fs::create_dir_all(&capture).unwrap();
-        fs::create_dir_all(&temp).unwrap();
-        fs::create_dir_all(&zdotdir).unwrap();
-        fs::write(
-            zdotdir.join(".zshenv"),
-            format!(
-                "print -r -- \"${{AWS_SECRET_ACCESS_KEY-unset}}\" > {}/zshenv-secret\n",
-                capture.display()
-            ),
-        )
-        .unwrap();
-
-        fs::write(
-            &aws_vault,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" > {}/vault-args\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
-                capture.display()
-            ),
-        )
-        .unwrap();
-        fs::write(
-            &aws,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" > {0}/aws-args\nprintf '%s\\n' \"${{HOME-}}\" > {0}/home\nprintf '%s\\n' \"${{AWS_CONFIG_FILE-}}\" > {0}/config\nprintf '%s\\n' \"${{AWS_SHARED_CREDENTIALS_FILE-}}\" > {0}/credentials\nprintf '%s\\n' \"${{AWS_PAGER-unset}}\" > {0}/pager\nprintf '%s\\n' \"${{AWS_ACCESS_KEY_ID-unset}}\" > {0}/access-key\n",
-                capture.display()
-            ),
-        )
-        .unwrap();
-        for path in [&aws_vault, &aws] {
-            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-
-        let script = AWS_STUB
-            .replacen(
-                "#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh -f",
-                "#!/bin/zsh -f",
-                1,
-            )
-            .replace(
-                "/opt/homebrew/bin/aws-vault",
-                &aws_vault.display().to_string(),
-            )
-            .replace("/opt/homebrew/bin/aws", &aws.display().to_string());
-        fs::write(&wrapper, script).unwrap();
-        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
-
-        let status = Command::new(&wrapper)
-            .args(["--profile", "dev", "s3", "ls"])
-            .env("AWS_PROFILE", "wrong-profile")
-            .env("AWS_ACCESS_KEY_ID", "long-term-key")
-            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
-            .env("ZDOTDIR", &zdotdir)
-            .env("TMPDIR", &temp)
-            .status()
-            .unwrap();
-
-        assert!(status.success());
-        assert!(
-            fs::read_to_string(capture.join("vault-args"))
-                .unwrap()
-                .starts_with("exec dev --server -- ")
-        );
-        assert_eq!(
-            fs::read_to_string(capture.join("aws-args")).unwrap(),
-            "--no-cli-pager s3 ls\n"
-        );
-        assert_eq!(
-            fs::read_to_string(capture.join("config")).unwrap(),
-            "/dev/null\n"
-        );
-        assert_eq!(fs::read_to_string(capture.join("pager")).unwrap(), "\n");
-        assert_eq!(
-            fs::read_to_string(capture.join("access-key")).unwrap(),
-            "unset\n"
-        );
-        let isolated_home = fs::read_to_string(capture.join("home")).unwrap();
-        let isolated_credentials = fs::read_to_string(capture.join("credentials")).unwrap();
-        assert!(isolated_home.starts_with(&temp.display().to_string()));
-        assert!(isolated_credentials.starts_with(&temp.display().to_string()));
-        assert_eq!(fs::read_dir(&temp).unwrap().count(), 0);
-        assert!(!capture.join("zshenv-secret").exists());
-
-        let status = Command::new(&wrapper)
-            .args(["iam", "get-role", "--role-name", "example"])
-            .env("AWS_ACCESS_KEY_ID", "long-term-key")
-            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
-            .env("TMPDIR", &temp)
-            .status()
-            .unwrap();
-
-        assert!(status.success());
-        assert_eq!(
-            fs::read_to_string(capture.join("access-key")).unwrap(),
-            "long-term-key\n"
-        );
-        assert_eq!(fs::read_dir(&temp).unwrap().count(), 0);
-
-        let config = dir.join("config");
-        fs::write(
-            &config,
-            "[profile dev]\nrole_arn = arn:aws:iam::123456789012:role/dev\nsource_profile = default\n",
-        )
-        .unwrap();
-        let status = Command::new(&wrapper)
-            .args([
-                "--profile",
-                "dev",
-                "iam",
-                "get-role",
-                "--role-name",
-                "example",
-            ])
-            .env("AWS_ACCESS_KEY_ID", "long-term-key")
-            .env("AWS_SECRET_ACCESS_KEY", "long-term-secret")
-            .env("AWS_CONFIG_FILE", &config)
-            .env("TMPDIR", &temp)
-            .status()
-            .unwrap();
-
-        assert!(status.success());
-        assert!(
-            fs::read_to_string(capture.join("vault-args"))
-                .unwrap()
-                .starts_with("exec dev --server -- ")
-        );
-        assert_eq!(
-            fs::read_to_string(capture.join("access-key")).unwrap(),
-            "unset\n"
-        );
-
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn missing_aws_vault_tells_user_to_install_it() {
-        let _guard = crate::global_test_env_lock().lock().unwrap();
-        let missing = temp_path("missing-aws-vault");
-        unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH", &missing);
-        }
-
-        let err = run_aws(&mut Vec::new(), true).unwrap_err();
-
-        unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH");
-        }
-        assert_eq!(
-            err,
-            "aws-vault is not installed; run `brew install aws-vault`"
-        );
-    }
-
-    #[test]
     fn root_skips_aws_credential_import_without_test_keychain() {
         assert!(!should_import_aws_credentials(true, false));
         assert!(should_import_aws_credentials(true, true));
@@ -561,13 +369,10 @@ mod tests {
     fn root_hardening_skips_credentials_and_installs_stub() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = temp_path("aws-root");
-        let aws_vault = dir.join("aws-vault");
         let aws_stub = dir.join("aws");
         fs::create_dir_all(&dir).unwrap();
-        fs::write(&aws_vault, "").unwrap();
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
-            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH", &aws_vault);
             std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub);
         }
 
@@ -576,7 +381,6 @@ mod tests {
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
-            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_VAULT_PATH");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
         }
         assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);

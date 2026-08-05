@@ -1616,6 +1616,28 @@ private struct BlessedExecutionKey: Hashable {
     let startUsec: UInt64
 }
 
+private struct AWSRegistrationCandidate {
+    let chain: AWSProfileChain
+    let args: [String]
+    let target: String
+    let interpreter: String
+    let useLongLivedCredentials: Bool
+}
+
+private struct AWSRegistration {
+    let chain: AWSProfileChain
+    let args: [String]
+    let target: String
+    let interpreter: String
+    let useLongLivedCredentials: Bool
+    var credentials: AWSCredentials?
+}
+
+private struct ApprovedPayload {
+    let secrets: [String: String]
+    let value: String?
+}
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
@@ -1632,6 +1654,8 @@ private final class ApprovalServer: @unchecked Sendable {
     private var transientApprovals = TransientApprovalCache()
     private let blessedExecutionsLock = NSLock()
     private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
+    private let awsRegistrationsLock = NSLock()
+    private var awsRegistrations: [BlessedExecutionKey: AWSRegistration] = [:]
 
     init(
         serviceName: String,
@@ -1751,6 +1775,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
+        case "aws-credentials" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleAWSCredentials(message, on: peer, pid: pid, identity: identity)
         case "list" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleList(
                 message,
@@ -1958,6 +1984,13 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let request = approvalRequestWithCredentialContext(parsedRequest)
+        let awsRegistration: AWSRegistrationCandidate?
+        do {
+            awsRegistration = try awsRegistrationCandidate(from: message, request: request)
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+            return
+        }
         let scriptApproval = scriptApproval(for: request)
         var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
@@ -1980,6 +2013,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 metadata: metadata,
                 launcher: launcher,
                 callerPath: callerPath,
+                awsRegistration: awsRegistration,
+                pid: pid,
+                identity: identity,
                 peer: peer,
                 message: message
             ) {
@@ -1995,7 +2031,9 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             let (script, _) = match
             do {
-                let secrets = try approvedSecrets(for: request)
+                let payload = try approvedPayload(
+                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                )
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
                     id: accessRequestID,
@@ -2021,7 +2059,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         ))
                     }
                 }
-                reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
                     request: request,
@@ -2077,7 +2115,9 @@ private final class ApprovalServer: @unchecked Sendable {
            )
         {
             do {
-                let secrets = try approvedSecrets(for: request)
+                let payload = try approvedPayload(
+                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                )
                 let reason = "\(configuredGate.protectionTitle(resolvedPolicy.protection)) from \(resolvedPolicy.source)"
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
@@ -2103,7 +2143,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         ))
                     }
                 }
-                reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
                     request: request,
@@ -2193,7 +2233,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     return
                 }
                 do {
-                    let secrets = try self.approvedSecrets(for: request)
+                    let payload = try self.approvedPayload(
+                        for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                    )
                     let record = accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
@@ -2206,7 +2248,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                         return
                     }
-                    self.reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+                    self.reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -2280,7 +2322,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             do {
-                let secrets = try self.approvedSecrets(for: request)
+                let payload = try self.approvedPayload(
+                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                )
                 let record = accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
@@ -2316,7 +2360,8 @@ private final class ApprovalServer: @unchecked Sendable {
                     to: message,
                     ok: true,
                     error: nil,
-                    secrets: secrets,
+                    secrets: payload.secrets,
+                    value: payload.value,
                     humanApprovalDecision: "approved"
                 )
             } catch {
@@ -2427,6 +2472,9 @@ private final class ApprovalServer: @unchecked Sendable {
         metadata: [HardenerMetadata],
         launcher: LauncherIdentity?,
         callerPath: String,
+        awsRegistration: AWSRegistrationCandidate?,
+        pid: pid_t,
+        identity: AVProcessIdentity,
         peer: xpc_connection_t,
         message: xpc_object_t
     ) -> Bool {
@@ -2438,7 +2486,9 @@ private final class ApprovalServer: @unchecked Sendable {
         ) else { return false }
 
         do {
-            let secrets = try approvedSecrets(for: request)
+            let payload = try approvedPayload(
+                for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+            )
             let accessRequestID = UUID()
             guard onAccessRequest(accessRequestRecord(
                 id: accessRequestID,
@@ -2462,7 +2512,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     ))
                 }
             }
-            reply(peer, to: message, ok: true, error: nil, secrets: secrets)
+            reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
         } catch {
             _ = onAccessRequest(accessRequestRecord(
                 request: request,
@@ -2742,6 +2792,264 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         return secrets
     }
+
+    private func awsRegistrationCandidate(
+        from message: xpc_object_t,
+        request: ApprovalRequest
+    ) throws -> AWSRegistrationCandidate? {
+        guard request.tool == "aws" else { return nil }
+        guard let profilePointer = xpc_dictionary_get_string(message, "aws_profile"),
+              let config = xpcData(message, key: "aws_config"),
+              let configText = String(data: config, encoding: .utf8)
+        else { throw AWSCredentialError.invalidConfig("registration is incomplete") }
+        let chain = try AWSProfileChain.parse(
+            configText,
+            selectedProfile: String(cString: profilePointer)
+        )
+        let firstLine = try String(contentsOfFile: request.target, encoding: .utf8)
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)[0]
+        guard firstLine.hasPrefix("#!/"),
+              let interpreter = firstLine.dropFirst(2).split(separator: " ").first
+        else { throw AWSCredentialError.unsupportedProfile("AWS CLI does not have an absolute interpreter") }
+        return AWSRegistrationCandidate(
+            chain: chain,
+            args: request.args,
+            target: request.target,
+            interpreter: String(interpreter),
+            useLongLivedCredentials: awsRequestMayUseLongLivedCredentials(request)
+                && chain.selected.roleARN == nil
+                && chain.selected.mfaSerial == nil
+        )
+    }
+
+    private func approvedPayload(
+        for request: ApprovalRequest,
+        awsRegistration: AWSRegistrationCandidate?,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) throws -> ApprovedPayload {
+        let secrets = try approvedSecrets(for: request)
+        guard let awsRegistration else { return ApprovedPayload(secrets: secrets, value: nil) }
+        let key = BlessedExecutionKey(pid: pid, startUsec: identity.start_usec)
+        awsRegistrationsLock.lock()
+        awsRegistrations = awsRegistrations.filter { key, _ in
+            var current = AVProcessIdentity()
+            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
+        }
+        awsRegistrations[key] = AWSRegistration(
+            chain: awsRegistration.chain,
+            args: awsRegistration.args,
+            target: awsRegistration.target,
+            interpreter: awsRegistration.interpreter,
+            useLongLivedCredentials: awsRegistration.useLongLivedCredentials,
+            credentials: nil
+        )
+        awsRegistrationsLock.unlock()
+        let section = awsRegistration.chain.selected.name == "default"
+            ? "default"
+            : "profile \(awsRegistration.chain.selected.name)"
+        let config = """
+        [\(section)]
+        credential_process = /usr/local/bin/av aws-credentials
+        region = \(awsRegistration.chain.region)
+
+        """
+        return ApprovedPayload(secrets: [:], value: config)
+    }
+
+    private func handleAWSCredentials(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) {
+        let parentPID = identity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity) else {
+            reply(peer, to: message, ok: false, error: "AWS credential helper has no live parent")
+            return
+        }
+        let key = BlessedExecutionKey(pid: parentPID, startUsec: parentIdentity.start_usec)
+        awsRegistrationsLock.lock()
+        awsRegistrations = awsRegistrations.filter { key, _ in
+            var current = AVProcessIdentity()
+            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
+        }
+        let registration = awsRegistrations[key]
+        awsRegistrationsLock.unlock()
+        guard let registration else {
+            reply(peer, to: message, ok: false, error: "AWS credential helper is not a direct child of a registered AWS process")
+            return
+        }
+        let parentPath = pathString(parentIdentity)
+        guard let arguments = processArguments(parentPID),
+              awsRuntimeMatches(
+                  interpreter: registration.interpreter,
+                  processPath: parentPath,
+                  processArguments: arguments,
+                  target: registration.target,
+                  approvedArguments: registration.args
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "registered AWS process runtime does not match its approved executable and arguments")
+            return
+        }
+        if let credentials = registration.credentials,
+           credentials.expiration.map({ $0.timeIntervalSinceNow > 5 * 60 }) ?? true
+        {
+            do {
+                reply(peer, to: message, ok: true, error: nil, value: String(decoding: try credentials.credentialProcessJSON(), as: UTF8.self))
+            } catch {
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                let credentials = try await self.resolveAWSCredentials(
+                    registration,
+                    parentPID: parentPID
+                )
+                var liveIdentity = AVProcessIdentity()
+                guard av_process_identity(parentPID, &liveIdentity),
+                      liveIdentity.start_usec == key.startUsec
+                else { throw AppError("registered AWS process exited before credentials were ready") }
+                self.awsRegistrationsLock.withLock {
+                    self.awsRegistrations[key]?.credentials = credentials
+                }
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: true,
+                    error: nil,
+                    value: String(decoding: try credentials.credentialProcessJSON(), as: UTF8.self)
+                )
+            } catch {
+                self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+        }
+    }
+
+    @MainActor
+    private func resolveAWSCredentials(
+        _ registration: AWSRegistration,
+        parentPID: pid_t
+    ) async throws -> AWSCredentials {
+        guard let accessKey = loadStoredSecret(account: "AWS_ACCESS_KEY_ID"),
+              let secretKey = loadStoredSecret(account: "AWS_SECRET_ACCESS_KEY")
+        else { throw AppError("AWS access keys are missing from Automic Vault") }
+        var credentials = AWSCredentials(accessKeyID: accessKey, secretAccessKey: secretKey)
+        if registration.useLongLivedCredentials { return credentials }
+
+        let profiles = registration.chain.profiles
+        let base = profiles[0]
+        if let serial = base.mfaSerial {
+            credentials = try await requestSTSCredentials(
+                region: registration.chain.region,
+                parameters: [
+                    "Action": "GetSessionToken",
+                    "Version": "2011-06-15",
+                    "DurationSeconds": "3600",
+                    "SerialNumber": serial,
+                    "TokenCode": try requestMFACode(serial: serial),
+                ],
+                credentials: credentials
+            )
+        } else if profiles.count == 1 {
+            credentials = try await requestSTSCredentials(
+                region: registration.chain.region,
+                parameters: [
+                    "Action": "GetSessionToken",
+                    "Version": "2011-06-15",
+                    "DurationSeconds": "3600",
+                ],
+                credentials: credentials
+            )
+        }
+        for profile in profiles.dropFirst() {
+            guard let roleARN = profile.roleARN else {
+                throw AWSCredentialError.unsupportedProfile("\(profile.name) does not define role_arn")
+            }
+            var parameters = [
+                "Action": "AssumeRole",
+                "Version": "2011-06-15",
+                "DurationSeconds": "3600",
+                "RoleArn": roleARN,
+                "RoleSessionName": "automic-vault-\(parentPID)",
+            ]
+            if let serial = profile.mfaSerial {
+                parameters["SerialNumber"] = serial
+                parameters["TokenCode"] = try requestMFACode(serial: serial)
+            }
+            credentials = try await requestSTSCredentials(
+                region: registration.chain.region,
+                parameters: parameters,
+                credentials: credentials
+            )
+        }
+        return credentials
+    }
+
+    @MainActor
+    private func requestMFACode(serial: String) throws -> String {
+        guard canRequestHumanApproval() else { throw AppError("AWS MFA unavailable while the user session is inactive") }
+        let alert = NSAlert()
+        alert.messageText = "AWS MFA required"
+        alert.informativeText = "Enter the current code for \(serial). Automic Vault does not run mfa_process commands."
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "123456"
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { throw AppError("AWS MFA canceled") }
+        let code = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard code.count >= 6, code.count <= 8, code.allSatisfy(\.isNumber) else {
+            throw AppError("AWS MFA code must contain 6 to 8 digits")
+        }
+        return code
+    }
+
+    private func requestSTSCredentials(
+        region: String,
+        parameters: [String: String],
+        credentials: AWSCredentials
+    ) async throws -> AWSCredentials {
+        let signed = try awsSTSRequest(
+            region: region,
+            parameters: parameters,
+            credentials: credentials
+        )
+        var request = URLRequest(url: signed.url)
+        request.httpMethod = "POST"
+        request.httpBody = signed.body
+        request.timeoutInterval = 30
+        for (name, value) in signed.headers { request.setValue(value, forHTTPHeaderField: name) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        guard data.count <= 1024 * 1024 else {
+            throw AWSCredentialError.invalidResponse("STS response exceeds 1 MiB")
+        }
+        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+            do {
+                _ = try parseAWSTSCredentials(data)
+            } catch {
+                throw error
+            }
+            throw AWSCredentialError.invalidResponse("STS returned HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        }
+        return try parseAWSTSCredentials(data)
+    }
+
+    private func processArguments(_ pid: pid_t) -> [String]? {
+        var buffer = [CChar](repeating: 0, count: 64 * 1024)
+        guard av_process_arguments(pid, &buffer, buffer.count) else { return nil }
+        let end = buffer.firstIndex(of: 0) ?? buffer.endIndex
+        let text = String(decoding: buffer[..<end].map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
 
     private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
         guard let opPointer = xpc_dictionary_get_string(message, "op"),
@@ -3046,7 +3354,7 @@ private func approvalRequestWithCredentialContext(_ request: ApprovalRequest) ->
         scriptData: request.scriptData,
         tool: request.tool,
         title: "Use long-lived AWS credentials?",
-        detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will inject your original AWS access keys directly into AWS CLI; they retain every IAM permission assigned to those keys."
+        detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will provide your original AWS access keys directly to AWS CLI; they retain every IAM permission assigned to those keys."
     )
 }
 
@@ -3102,6 +3410,7 @@ private func awsRequestIsReadOnly(_ args: [String]) -> Bool {
 }
 
 private func awsCommandWords(_ request: ApprovalRequest) -> [String] {
+    if request.tool == "aws" { return request.args }
     guard let scriptPath = resolvedShebangScriptPath(request),
           let scriptIndex = request.args.firstIndex(where: {
               standardizedPath($0, cwd: request.cwd) == scriptPath
@@ -5200,8 +5509,8 @@ private func runApprovalSelfCheck() -> Int32 {
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-        args: [String] = ["-f", "/usr/local/bin/aws", "s3", "ls"],
-        shebangScript: String? = "/usr/local/bin/aws",
+        args: [String] = ["s3", "ls"],
+        shebangScript: String? = nil,
         scriptData: Data? = nil,
         replaceExistingEnv: Bool = false,
         allowMissingKeys: Bool = false,
@@ -5210,7 +5519,7 @@ private func runApprovalSelfCheck() -> Int32 {
         ApprovalRequest(
             op: "inject",
             keys: keys,
-            target: "/bin/zsh",
+            target: "/opt/homebrew/bin/aws",
             args: args,
             cwd: "/tmp",
             replaceExistingEnv: replaceExistingEnv,
@@ -5218,14 +5527,14 @@ private func runApprovalSelfCheck() -> Int32 {
             envConflicts: envConflicts,
             shebangScript: shebangScript,
             scriptData: scriptData,
-            tool: nil,
+            tool: "aws",
             title: nil,
             detail: nil
         )
     }
     let readOnlyAws = awsRequest()
     let longLivedAws = awsRequest(
-        args: ["-f", "/usr/local/bin/aws", "iam", "get-role", "--role-name", "example"]
+        args: ["iam", "get-role", "--role-name", "example"]
     )
     let contextualLongLivedAws = approvalRequestWithCredentialContext(longLivedAws)
     let awsMetadata = HardenerMetadata(
@@ -5236,8 +5545,8 @@ private func runApprovalSelfCheck() -> Int32 {
             keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
             routes: [SecretGateRoute(
                 operation: "inject",
-                scriptPath: "/usr/local/bin/aws",
-                targetPath: "/bin/zsh",
+                scriptPath: nil,
+                targetPath: "/opt/homebrew/bin/aws",
                 callerIdentifiers: ["com.automicvault.av"],
                 keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
                 replaceExistingEnv: false,
@@ -5277,7 +5586,7 @@ private func runApprovalSelfCheck() -> Int32 {
     ),
         !blessedScriptCanAutoApprove(
             blessedScript,
-            request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"]),
+            request: awsRequest(args: ["s3", "rm", "s3://bucket/key"]),
             signing: avSigning,
             metadata: [awsMetadata]
         ),

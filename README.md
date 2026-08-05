@@ -286,8 +286,8 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
 
 - How invasive Automic Vault is.
   - Mostly we install wrappers that change as little as possible.
-  - Though when security requires more, we say so: AWS hardening insists on
-    `aws-vault`, which converts your too-powerful AWS keys into short-lived
+  - Though when security requires more, we say so: AWS hardening uses a native
+    credential helper to convert your too-powerful AWS keys into short-lived
     session tokens for each invocation.
   - Some tools need more, so we patch them and provide a homebrew tap to install
     them (`gh`, `stripe`, `supabase` etc.). We try to upstream these patches.
