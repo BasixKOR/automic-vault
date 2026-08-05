@@ -66,6 +66,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
         model.showSecretGate(id: id)
     }
 
+    func showSettings() {
+        model.showSettings()
+    }
+
     func reviewBlessing(
         _ request: BlessedScriptReviewRequest,
         completion: @escaping (String?) -> Void
@@ -95,6 +99,13 @@ final class AutomicVaultWindow: NSWindow {
             return true
         case "h":
             NSApp.hide(nil)
+            return true
+        case ",":
+            guard let controller = contentViewController as? AutomicVaultMainWindowController
+            else {
+                return super.performKeyEquivalent(with: event)
+            }
+            controller.showSettings()
             return true
         default:
             return super.performKeyEquivalent(with: event)
@@ -317,6 +328,11 @@ final class DashboardModel: ObservableObject {
     func showSecretGate(id: String) {
         selectedSection = .secretGates
         selectedItemID = id
+    }
+
+    func showSettings() {
+        selectedSection = .settings
+        selectedItemID = nil
     }
 
     func reviewBlessing(
