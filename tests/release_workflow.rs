@@ -131,14 +131,21 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("gh release edit"));
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
-    assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$head\""));
     assert!(PUBLISH_SCRIPT.contains("contains(Aliases.Items, '$WEBSITE_ALIAS')"));
     assert!(!PUBLISH_SCRIPT.contains("contains(join(',', Aliases.Items)"));
+    assert!(PUBLISH_SCRIPT.contains("SCANNER_RUST_TOOLCHAIN=\"1.96.0\""));
+    assert!(
+        PUBLISH_SCRIPT.contains("exactly one Developer ID Application identity for ZU76A67LGU")
+    );
+    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/build-scanner.sh"));
+    assert!(PUBLISH_SCRIPT.contains("scanner must be built from the clean release commit"));
+    assert!(!PUBLISH_SCRIPT.contains("--pattern scanner.tgz"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/scanner.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/scanner.tgz"));
-    assert!(PUBLISH_SCRIPT.contains("scanner archive does not match GitHub's digest"));
+    assert!(PUBLISH_SCRIPT.contains("scanner archive has unexpected contents"));
     assert!(PUBLISH_SCRIPT.contains("codesign --verify --strict -R \"$requirement\" \"$scanner\""));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
 }
@@ -174,6 +181,7 @@ fn scanner_is_small_signed_and_read_only() {
     ] {
         assert!(BUILD_SCANNER_SCRIPT.contains(setting));
     }
+    assert!(BUILD_SCANNER_SCRIPT.contains("rustup run \"$SCANNER_RUST_TOOLCHAIN\" cargo"));
     assert!(SCANNER_SCRIPT.contains("https://www.automicvault.com/scanner.tgz"));
     assert!(SCANNER_SCRIPT.contains("--proto '=https'"));
     assert!(SCANNER_SCRIPT.contains("--proto-redir '=https'"));

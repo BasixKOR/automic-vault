@@ -32,6 +32,8 @@ TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../homebrew-isotopes}"
 WEBSITE_BUCKET="${AUTOMIC_VAULT_WEBSITE_BUCKET:-automicvault.com}"
 WEBSITE_ALIAS="${AUTOMIC_VAULT_WEBSITE_DOMAIN:-automicvault.com}"
 WEBSITE_DISTRIBUTION_ID="${AUTOMIC_VAULT_CLOUDFRONT_DISTRIBUTION_ID:-}"
+SCANNER_RUST_TOOLCHAIN="1.96.0"
+SCANNER_CODESIGN_IDENTITY=""
 CURRENT_VERSION="$(
   awk -F '"' '
     /^\[package\]/ { package = 1; next }
@@ -315,8 +317,26 @@ prepare_cask_publish() {
 }
 
 prepare_website_publish() {
+  local rustc_version
   if ! command -v aws >/dev/null 2>&1; then
     echo "error: publish requires aws" >&2
+    exit 64
+  fi
+  if ! command -v rustup >/dev/null 2>&1; then
+    echo "error: publishing the scanner requires rustup" >&2
+    exit 64
+  fi
+  rustc_version="$(rustup run "$SCANNER_RUST_TOOLCHAIN" rustc --version 2>/dev/null || true)"
+  if [[ "$rustc_version" != "rustc $SCANNER_RUST_TOOLCHAIN "* ]]; then
+    echo "error: install Rust $SCANNER_RUST_TOOLCHAIN before publishing the scanner" >&2
+    exit 64
+  fi
+  SCANNER_CODESIGN_IDENTITY="$(
+    security find-identity -v -p codesigning |
+      awk -F '"' '$2 ~ /^Developer ID Application:/ && $2 ~ /\(ZU76A67LGU\)$/ { print $2 }'
+  )"
+  if [[ -z "$SCANNER_CODESIGN_IDENTITY" || "$SCANNER_CODESIGN_IDENTITY" == *$'\n'* ]]; then
+    echo "error: publishing the scanner requires exactly one Developer ID Application identity for ZU76A67LGU" >&2
     exit 64
   fi
   if [[ ! "$WEBSITE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ||
@@ -344,28 +364,21 @@ prepare_website_publish() {
 publish_website_assets() (
   set -euo pipefail
   umask 077
-  local version="$1"
-  local tmp archive expected actual scanner requirement
+  local expected_head="$1"
+  local tmp archive scanner requirement
+  if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$expected_head" ||
+    -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
+    echo "error: scanner must be built from the clean release commit" >&2
+    exit 1
+  fi
   tmp="$(mktemp -d "$ROOT/target/av-website-publish.XXXXXX")"
   trap 'rm -rf "$tmp"' EXIT
   archive="$tmp/scanner.tgz"
   scanner="$tmp/scanner"
 
-  gh release download "$version" \
-    --repo "$REPOSITORY" \
-    --pattern scanner.tgz \
-    --dir "$tmp"
-  expected="$(
-    gh release view "$version" \
-      --repo "$REPOSITORY" \
-      --json assets \
-      --jq '.assets[] | select(.name == "scanner.tgz") | .digest'
-  )"
-  actual="sha256:$(shasum -a 256 "$archive" | awk '{print $1}')"
-  if [[ ! "$expected" =~ ^sha256:[0-9a-f]{64}$ || "$actual" != "$expected" ]]; then
-    echo "error: scanner archive does not match GitHub's digest" >&2
-    exit 1
-  fi
+  SCANNER_RUST_TOOLCHAIN="$SCANNER_RUST_TOOLCHAIN" \
+    SCANNER_CODESIGN_IDENTITY="$SCANNER_CODESIGN_IDENTITY" \
+    "$ROOT/scripts/build-scanner.sh" "$archive"
   if [[ "$(tar -tzf "$archive")" != scanner ]]; then
     echo "error: scanner archive has unexpected contents" >&2
     exit 1
@@ -636,7 +649,7 @@ if [[ "$is_draft" != "false" || "$is_immutable" != "true" || "$target_commitish"
   echo "error: published release is not immutable or targets the wrong commit" >&2
   exit 1
 fi
-publish_website_assets "$VERSION"
+publish_website_assets "$head"
 digest="$(
   gh release view "$VERSION" \
     --repo "$REPOSITORY" \

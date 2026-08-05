@@ -7,6 +7,10 @@ IDENTITY="${SCANNER_CODESIGN_IDENTITY:--}"
 TARGET="$ROOT/target/scanner-build"
 SCANNER="$TARGET/release/scanner"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/av-scanner-package.XXXXXX")"
+CARGO=(cargo)
+if [[ -n "${SCANNER_RUST_TOOLCHAIN:-}" ]]; then
+  CARGO=(rustup run "$SCANNER_RUST_TOOLCHAIN" cargo)
+fi
 trap 'rm -rf "$TMP"' EXIT
 
 MACOSX_DEPLOYMENT_TARGET=14.0 \
@@ -17,7 +21,7 @@ CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
 CARGO_PROFILE_RELEASE_STRIP=symbols \
 CARGO_PROFILE_RELEASE_PANIC=abort \
 RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-dead_strip" \
-  cargo build --release --locked --bin scanner --manifest-path "$ROOT/Cargo.toml"
+  "${CARGO[@]}" build --release --locked --bin scanner --manifest-path "$ROOT/Cargo.toml"
 
 codesign_args=(--force --sign "$IDENTITY" --options runtime)
 if [[ "$IDENTITY" != "-" ]]; then
