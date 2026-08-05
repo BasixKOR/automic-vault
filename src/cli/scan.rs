@@ -28,17 +28,14 @@ impl Style {
 
 pub(crate) fn run<W: Write>(stdout: &mut W, style: Style, show_all: bool) -> i32 {
     let findings = scan_home(home());
-    let gui_path = isotopes::macos_gui_path();
-    print_report(stdout, &findings, gui_path.as_deref(), style, show_all);
+    print_report(stdout, &findings, style, show_all);
     0
 }
 
 pub(crate) fn run_json<W: Write>(stdout: &mut W) -> i32 {
     let findings = scan_home(home());
-    let gui_path = isotopes::macos_gui_path();
     let report = serde_json::json!({
         "findings": findings.iter().map(json_finding).collect::<Vec<_>>(),
-        "gui_path": gui_path.as_deref().map(|path| path.to_string_lossy()),
     });
     let _ = writeln!(stdout, "{report}");
     0
@@ -107,16 +104,10 @@ fn scan_home(home: impl AsRef<Path>) -> Vec<Finding> {
 
 #[cfg(test)]
 fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all: bool) {
-    print_report(stdout, findings, None, style, show_all);
+    print_report(stdout, findings, style, show_all);
 }
 
-fn print_report<W: Write>(
-    stdout: &mut W,
-    findings: &[Finding],
-    gui_path: Option<&std::ffi::OsStr>,
-    style: Style,
-    show_all: bool,
-) {
+fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all: bool) {
     let visible = findings
         .iter()
         .filter(|finding| show_all || !is_hidden(finding))
@@ -128,16 +119,6 @@ fn print_report<W: Write>(
 
     let _ = writeln!(stdout, "╭─ {}", style.paint("36", "system exposure audit"));
     let _ = writeln!(stdout, "│");
-    if let Some(gui_path) = gui_path {
-        let gui_path = if gui_path.is_empty() {
-            "<unset>".into()
-        } else {
-            gui_path.to_string_lossy()
-        };
-        let _ = writeln!(stdout, "◇ {}", style.paint("2", "GUI PATH (before shells)"));
-        write_wrapped(stdout, "│  ", &gui_path, style, Some("36"));
-        let _ = writeln!(stdout, "│");
-    }
     if findings.is_empty() {
         let _ = writeln!(stdout, "◇ {}", style.paint("32", "No problems found"));
         let _ = writeln!(stdout, "│");
@@ -401,23 +382,6 @@ mod tests {
             String::from_utf8(stdout).unwrap(),
             "╭─ system exposure audit\n│\n◆ 1 finding requires attention\n│\n└─ 1. example\n│  severity HIGH\n│\n│  problem\n│  Example detector found a risky setting.\n│\n│  solution\n│  Run `examplectl fix` or edit the affected file.\n│\n│  full details & caveats\n│  https://example.test/docs/example.md\n│\n│  affected files\n│  • /tmp/example.conf:7\n│\n╰─ scan complete\n"
         );
-    }
-
-    #[test]
-    fn print_displays_the_gui_path_as_information() {
-        let mut stdout = Vec::new();
-
-        print_report(
-            &mut stdout,
-            &[],
-            Some(std::ffi::OsStr::new("/usr/bin:/bin")),
-            Style::plain(),
-            false,
-        );
-
-        let output = String::from_utf8(stdout).unwrap();
-        assert!(output.contains("◇ GUI PATH (before shells)\n│  /usr/bin:/bin\n"));
-        assert!(output.contains("◇ No problems found\n"));
     }
 
     #[test]

@@ -10,9 +10,6 @@ fn av_scan_reports_clean_home() {
     assert!(output.status.success());
     let stdout = stdout(&output);
     assert!(stdout.starts_with("╭─ system exposure audit\n│\n"));
-    #[cfg(target_os = "macos")]
-    assert!(stdout.contains("◇ GUI PATH (before shells)\n"));
-    #[cfg(not(target_os = "macos"))]
     assert!(!stdout.contains("GUI PATH"));
     assert!(stdout.contains("◇ No problems found\n"));
     assert!(stdout.ends_with("╰─ vault sealed\n"));
@@ -76,6 +73,7 @@ fn av_scan_json_reports_findings() {
 
     assert!(output.status.success());
     assert!(stdout.starts_with(r#"{"findings":[{"#));
+    assert!(!stdout.contains(r#""gui_path""#));
     assert!(stdout.contains(r#""source":"git-credentials-file""#));
     assert!(stdout.contains(".git-credentials"));
     assert_eq!(stderr(&output), "");

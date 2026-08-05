@@ -382,10 +382,6 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
     findings
 }
 
-pub(crate) fn macos_gui_path() -> Option<std::ffi::OsString> {
-    macos::gui_path()
-}
-
 pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
     if let Some(mitigation) = documentation
         .split_once("## Mitigation")

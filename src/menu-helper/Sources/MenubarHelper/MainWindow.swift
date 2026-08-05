@@ -235,6 +235,12 @@ final class DashboardModel: ObservableObject {
                     subtitle: "Apps allowed to run av list",
                     detail: "Manage verified apps that may list saved secret names without prompting."
                 ),
+                DashboardItem(
+                    id: "about",
+                    title: "About",
+                    subtitle: "GUI environment details",
+                    detail: "View details about the running Automic Vault app."
+                ),
             ]
         }
         let query = searchQuery
@@ -986,6 +992,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let secretDetailHeight = model.selectedStoredSecret.map {
         NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
     }
+    let aboutHeight = NSHostingView(rootView: AboutSettingsView(guiPath: "/usr/bin:/bin")).fittingSize.height
     guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
@@ -995,6 +1002,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.selectedStoredSecret?.accessibility == .afterFirstUnlock,
           gateHeight > 0,
           secretDetailHeight.map({ $0 > 0 }) == true,
+          aboutHeight > 0,
           appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
@@ -1069,6 +1077,11 @@ func runDashboardSearchSelfCheck() -> Int32 {
           blessedScriptDirectory("\(NSHomeDirectory())/Scripts/deploy.sh") == "~/Scripts"
     else { return 1 }
     model.searchText = ""
+    model.selectSection(.settings)
+    guard model.items.map(\.id) == ["automatic-approval-feedback", "secret-name-access", "about"],
+          guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
+          guiPATH(environment: [:]) == "<unset>"
+    else { return 1 }
     model.selectSection(.doctor)
     guard model.selectedItem?.title == "aws",
           model.selectedItem?.kind == nil,
@@ -1384,6 +1397,12 @@ private struct DashboardDetailView: View {
             } else if model.selectedSection == .settings {
                 if model.selectedItem?.id == "automatic-approval-feedback" {
                     AutomaticApprovalFeedbackSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "about" {
+                    AboutSettingsView()
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -2362,6 +2381,35 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
+
+private struct AboutSettingsView: View {
+    let guiPath: String
+
+    init(guiPath: String = guiPATH()) {
+        self.guiPath = guiPath
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("About")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Details about the running Automic Vault app.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            SecretGateField("GUI PATH (before shells)", guiPath, monospaced: true)
+            Text("This is the PATH inherited by the app before shell startup files run.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private func guiPATH(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    environment["PATH"].flatMap { $0.isEmpty ? nil : $0 } ?? "<unset>"
 }
 
 private struct SecretGateDetailView: View {
