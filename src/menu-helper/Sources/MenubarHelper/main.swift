@@ -2975,6 +2975,7 @@ private func ghRequestIsSecretDump(_ args: [String]) -> Bool {
 }
 
 private func awsRequestIsReadOnly(_ args: [String]) -> Bool {
+    if args == ["--version"] { return true }
     let words = awsCommandWords(args).map { $0.lowercased() }
     guard let service = words.first else { return false }
     if service == "help" { return true }
@@ -5552,6 +5553,7 @@ private func runGhReadOnlySelfCheck() -> Int32 {
 
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
+        ["--version"],
         ["s3", "ls"],
         ["--profile", "dev", "s3", "ls"],
         ["--region=us-east-1", "ec2", "describe-instances"],
