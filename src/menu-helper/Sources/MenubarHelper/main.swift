@@ -796,14 +796,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func autoApprovalMenuItem(_ group: AutoApprovalGroup) -> NSMenuItem {
+    fileprivate func autoApprovalMenuItem(_ group: AutoApprovalGroup) -> NSMenuItem {
+        guard group.count > 1 else { return autoApprovalMenuItem(group.record) }
         let item = NSMenuItem(
             title: autoApprovalTitle(group, formatter: autoApprovalTimeFormatter),
+            action: nil,
+            keyEquivalent: ""
+        )
+        let submenu = NSMenu()
+        group.records.map(autoApprovalMenuItem).forEach(submenu.addItem)
+        item.submenu = submenu
+        return item
+    }
+
+    private func autoApprovalMenuItem(_ record: AutoApprovalRecord) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: autoApprovalTitle(record, formatter: autoApprovalTimeFormatter),
             action: #selector(openAutoApproval),
             keyEquivalent: ""
         )
         item.target = self
-        item.representedObject = group.record.accessRequestID.uuidString
+        item.representedObject = record.accessRequestID.uuidString
         return item
     }
 }
@@ -872,13 +885,15 @@ private struct AutoApprovalRecord {
 }
 
 private struct AutoApprovalGroup {
-    let record: AutoApprovalRecord
+    var records: [AutoApprovalRecord]
     var firstDate: Date
     var lastDate: Date
-    var count = 1
+
+    var count: Int { records.count }
+    var record: AutoApprovalRecord { records[0] }
 
     init(_ record: AutoApprovalRecord) {
-        self.record = record
+        records = [record]
         firstDate = record.date
         lastDate = record.date
     }
@@ -892,11 +907,14 @@ private func autoApprovalText(_ record: AutoApprovalRecord) -> String {
 private func groupedAutoApprovals(_ records: [AutoApprovalRecord]) -> [AutoApprovalGroup] {
     records.reduce(into: []) { groups, record in
         if let index = groups.indices.last,
-           autoApprovalText(groups[index].record) == autoApprovalText(record)
+           groups[index].record.launcher == record.launcher,
+           groups[index].record.tool == record.tool,
+           groups[index].record.wasCanceled == record.wasCanceled,
+           groups[index].record.wasDenied == record.wasDenied
         {
+            groups[index].records.append(record)
             groups[index].firstDate = min(groups[index].firstDate, record.date)
             groups[index].lastDate = max(groups[index].lastDate, record.date)
-            groups[index].count += 1
         } else {
             groups.append(AutoApprovalGroup(record))
         }
@@ -5783,6 +5801,7 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     return 0
 }
 
+@MainActor
 private func runMenuStatusSelfCheck() -> Int32 {
     let statusItem = makeStatusMenuItem(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
@@ -5817,14 +5836,18 @@ private func runMenuStatusSelfCheck() -> Int32 {
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     formatter.dateFormat = "h:mm a"
-    func menuRecord(_ time: TimeInterval, launcher: String = "ChatGPT") -> AutoApprovalRecord {
+    func menuRecord(
+        _ time: TimeInterval,
+        launcher: String = "ChatGPT",
+        command: String = "gh repo view"
+    ) -> AutoApprovalRecord {
         AutoApprovalRecord(
             accessRequestID: UUID(),
             date: Date(timeIntervalSince1970: time),
             launcher: launcher,
             launcherIconPath: "",
             tool: "gh",
-            command: "gh repo view",
+            command: command,
             keys: ["GH_TOKEN"],
             wasCanceled: false,
             wasDenied: false
@@ -5832,10 +5855,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
     }
     let groupedMenuRecords = groupedAutoApprovals([
         menuRecord(19_800),
-        menuRecord(18_900),
+        menuRecord(18_900, command: "gh issue list"),
         menuRecord(18_000, launcher: "Codex"),
         menuRecord(17_100),
     ])
+    let groupedMenuItem = AppDelegate().autoApprovalMenuItem(groupedMenuRecords[0])
     let request = ApprovalRequest(
         op: "inject",
         keys: ["AWS_SECRET_ACCESS_KEY"],
@@ -5910,6 +5934,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
           vulnerabilityStatusTitle(count: 1) == "One Vulnerability Detected",
           vulnerabilityStatusTitle(count: 2) == "Two Vulnerabilities Detected",
           groupedMenuRecords.map(\.count) == [2, 1, 1],
+          groupedMenuRecords[0].records.map(\.command) == ["gh repo view", "gh issue list"],
+          groupedMenuItem.representedObject == nil,
+          groupedMenuItem.submenu?.items.compactMap({ $0.representedObject as? String })
+              == groupedMenuRecords[0].records.map({ $0.accessRequestID.uuidString }),
           autoApprovalTitle(groupedMenuRecords[0], formatter: formatter)
               == "5:15 AM\u{2013}5:30 AM ChatGPT used gh \u{00D7}2",
           autoApprovalTitle(
@@ -6178,7 +6206,7 @@ if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
 }
 
 if CommandLine.arguments.contains("--self-check-menu-status") {
-    exit(runMenuStatusSelfCheck())
+    exit(MainActor.assumeIsolated { runMenuStatusSelfCheck() })
 }
 
 if CommandLine.arguments.contains("--self-check-scan-scheduling") {
