@@ -37,7 +37,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-const INSTALL_REVISION: u32 = 13;
+pub(crate) const INSTALL_REVISION: u32 = 13;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -45,6 +45,10 @@ pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, Stri
 
 pub(crate) fn zsh_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::zsh_reasons()
+}
+
+pub(crate) fn ensure_aws_helper_ready() -> Result<(), String> {
+    aws::ensure_helper_ready()
 }
 
 pub fn run<I, W, E>(args: I, stdout: &mut W, stderr: &mut E) -> i32
@@ -170,6 +174,15 @@ where
     };
 
     match command.to_str() {
+        Some("__install-aws-wrapper") if rest.is_empty() => {
+            match hardeners::aws_cli::install_aws_wrapper() {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
         Some("__install-env-wrapper") if rest.len() == 1 => {
             let Some(target) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");

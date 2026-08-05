@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const LEGACY_AWS_STUB: &str = include_str!("../src/isotopes/hardeners/aws.legacy");
+
 #[test]
 fn av_doctor_omits_unhardened_tools_and_reports_hardened_stubs() {
     let root = temp_dir();
@@ -120,6 +122,39 @@ fn av_doctor_reports_unsigned_agent_clis() {
                 result["name"] == "codex"
                     && result["issues"][0]["kind"] == "agent_cli_signature_invalid"
             })
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn av_doctor_requires_rehardening_for_the_exact_legacy_aws_launcher() {
+    let root = temp_dir();
+    let stub = root.join("aws");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(&stub, LEGACY_AWS_STUB).unwrap();
+    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+        .args(["doctor", "aws", "--json"])
+        .env("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &stub)
+        .env("PATH", &root)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let issue = report["results"][0]["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|issue| issue["kind"] == "stub_upgrade_required")
+        .unwrap();
+    assert!(
+        issue["remediation"]
+            .as_str()
+            .unwrap()
+            .starts_with("Run `av harden aws`")
     );
 
     let _ = fs::remove_dir_all(root);

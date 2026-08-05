@@ -1638,6 +1638,8 @@ private struct ApprovedPayload {
     let value: String?
 }
 
+private let awsHelperProtocolVersion = 1
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
@@ -1765,6 +1767,8 @@ private final class ApprovalServer: @unchecked Sendable {
         )
 
         switch op {
+        case "aws-helper-version" where isTrustedAvCaller(path: callerPath, signing: signing):
+            reply(peer, to: message, ok: true, error: nil, value: String(awsHelperProtocolVersion))
         case "inject", "keys", "authorize":
             handleInject(
                 message,

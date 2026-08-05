@@ -1,7 +1,9 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Write};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
     HardenerDetection, RequiredExecutable, RequiredIdentity, SecretGateDescriptor, SecretGateRoute,
@@ -12,7 +14,12 @@ const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
 const AWS_HARDEN_PROFILE: &str = "default";
 const AWS_STUB: &str = include_str!("aws");
+// Exact previously released launcher: any edit must remain an invalid stub.
+const LEGACY_AWS_STUB: &str = include_str!("aws.legacy");
 const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
+const AWS_TARGET_PATH: &str = "/opt/homebrew/bin/aws";
+const AV_PATH: &str = "/usr/local/bin/av";
+const SUDO_PATH: &str = "/usr/bin/sudo";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -20,6 +27,18 @@ unsafe extern "C" {
 
 pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let is_root = effective_uid() == 0;
+    let has_test_stub = crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some();
+    if is_root && !has_test_stub {
+        return Err(
+            "run `av harden aws` without sudo; av will request elevation when needed".into(),
+        );
+    }
+    if !has_test_stub {
+        crate::cli::ensure_aws_helper_ready()?;
+        if !Path::new(AWS_TARGET_PATH).is_file() {
+            return Err(format!("AWS CLI is not installed at {AWS_TARGET_PATH}"));
+        }
+    }
     let has_test_keychain = crate::test_keychain_dir().is_some();
     let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
     let credentials_path = if should_import_credentials {
@@ -65,12 +84,14 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         }
     }
 
+    writeln!(stdout, "├─ install the native AWS credential helper").ok();
+    writeln!(stdout, "│").ok();
+    if !confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
+        return Ok(());
+    }
+
     if let Some(credentials) = credentials {
-        writeln!(stdout, "│").ok();
-        if !confirm(stdout, yes)? {
-            writeln!(stdout, "╰─ cancelled").ok();
-            return Ok(());
-        }
         import_aws_credentials(&credentials)?;
         let credentials_path = credentials_path.as_ref().unwrap();
         delete_aws_credentials(credentials_path, AWS_HARDEN_PROFILE)?;
@@ -78,36 +99,41 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         writeln!(stdout, "├─ deleted plaintext keys").ok();
     }
 
-    if !is_root {
-        writeln!(stdout, "╰─ finish with `sudo av harden aws`").ok();
-        return Ok(());
+    install_privileged()?;
+    if !is_aws_stub(&aws_stub_path()) {
+        return Err(format!(
+            "installed AWS launcher at {AWS_STUB_PATH} failed verification"
+        ));
     }
-
-    writeln!(stdout, "├─ write {AWS_STUB_PATH}").ok();
-    writeln!(stdout, "│").ok();
-    if !confirm(stdout, yes)? {
-        writeln!(stdout, "╰─ cancelled").ok();
-        return Ok(());
-    }
-    install_aws_stub(&aws_stub_path())?;
-    if should_import_credentials {
-        writeln!(stdout, "╰─ wrote {AWS_STUB_PATH}").ok();
-    } else {
-        writeln!(stdout, "├─ wrote {AWS_STUB_PATH}").ok();
-        writeln!(stdout, "╰─ next: run `av harden aws` to import credentials").ok();
-    }
+    writeln!(stdout, "╰─ hardened aws").ok();
     super::write_secret_gate_notice(stdout, "aws");
     Ok(())
 }
 
+pub(crate) fn install_aws_wrapper() -> Result<(), String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some() {
+        return Err("test path overrides are forbidden during privileged installation".into());
+    }
+    if actual_uid() != 0 {
+        return Err("AWS launcher installation requires root".into());
+    }
+    if !Path::new(AWS_TARGET_PATH).is_file() {
+        return Err(format!("AWS CLI is not installed at {AWS_TARGET_PATH}"));
+    }
+    install_aws_stub(Path::new(AWS_STUB_PATH))
+}
+
 pub(crate) fn detect() -> HardenerDetection {
     let path = aws_stub_path();
+    let state = aws_stub_state(&path);
     let mut detection = HardenerDetection::command(
-        is_aws_stub(&path),
+        state == AwsStubState::Current,
         "aws",
         Some(path.display().to_string()),
-        "/opt/homebrew/bin/aws".to_string(),
+        AWS_TARGET_PATH.to_string(),
     );
+    detection.commands[0].hardened = state != AwsStubState::Unknown;
+    detection.commands[0].stub_valid = state == AwsStubState::Current;
     if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
         detection.commands[0]
             .required_paths
@@ -202,11 +228,30 @@ fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool
 fn effective_uid() -> u32 {
     crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| unsafe { geteuid() })
+        .unwrap_or_else(actual_uid)
 }
 
 fn is_aws_stub(path: &Path) -> bool {
-    fs::read_to_string(path).is_ok_and(|contents| contents == AWS_STUB)
+    aws_stub_state(path) == AwsStubState::Current
+}
+
+fn actual_uid() -> u32 {
+    unsafe { geteuid() }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AwsStubState {
+    Current,
+    Legacy,
+    Unknown,
+}
+
+fn aws_stub_state(path: &Path) -> AwsStubState {
+    match fs::read_to_string(path).as_deref() {
+        Ok(AWS_STUB) => AwsStubState::Current,
+        Ok(LEGACY_AWS_STUB) => AwsStubState::Legacy,
+        _ => AwsStubState::Unknown,
+    }
 }
 
 fn aws_stub_path() -> PathBuf {
@@ -216,10 +261,65 @@ fn aws_stub_path() -> PathBuf {
 }
 
 fn install_aws_stub(path: &Path) -> Result<(), String> {
-    fs::write(path, AWS_STUB)
-        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
-        .map_err(|err| format!("failed to chmod {}: {err}", path.display()))
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("AWS launcher has no parent directory: {}", path.display()))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let staging = parent.join(format!(
+        ".aws.automic-vault.{}.{nonce}.tmp",
+        std::process::id()
+    ));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&staging)
+            .map_err(|err| format!("failed to create {}: {err}", staging.display()))?;
+        file.write_all(AWS_STUB.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|err| format!("failed to write {}: {err}", staging.display()))?;
+        file.set_permissions(fs::Permissions::from_mode(0o755))
+            .map_err(|err| format!("failed to chmod {}: {err}", staging.display()))?;
+        fs::rename(&staging, path)
+            .map_err(|err| format!("failed to replace {}: {err}", path.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(staging);
+    }
+    result
+}
+
+fn install_privileged() -> Result<(), String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some() {
+        return install_aws_stub(&aws_stub_path());
+    }
+    super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
+    let installed_revision = Command::new(AV_PATH)
+        .arg("__version")
+        .output()
+        .map_err(|err| format!("failed to check {AV_PATH}: {err}"))?;
+    if !installed_revision.status.success()
+        || parse_cli_revision(&installed_revision.stdout) != Some(crate::cli::INSTALL_REVISION)
+    {
+        return Err("update the av CLI from the Automic Vault app before rehardening AWS".into());
+    }
+    let status = Command::new(SUDO_PATH)
+        .args([AV_PATH, "__install-aws-wrapper"])
+        .status()
+        .map_err(|err| format!("failed to run sudo: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("AWS launcher installation failed: {status}"))
+    }
+}
+
+fn parse_cli_revision(output: &[u8]) -> Option<u32> {
+    std::str::from_utf8(output).ok()?.trim().parse().ok()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -334,7 +434,7 @@ pub(crate) fn store_keychain_secret(account: &str, value: &str) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::os::unix::fs::symlink;
 
     #[test]
     fn aws_stub_delegates_directly_to_av() {
@@ -348,14 +448,95 @@ mod tests {
     }
 
     #[test]
+    fn aws_stub_install_replaces_a_symlink_without_following_it() {
+        let dir = temp_path("aws-stub-symlink");
+        let victim = dir.join("victim");
+        let path = dir.join("aws");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&victim, "do not overwrite").unwrap();
+        symlink(&victim, &path).unwrap();
+
+        install_aws_stub(&path).unwrap();
+
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "do not overwrite");
+        assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_file());
+        assert_eq!(
+            path.metadata().unwrap().permissions().mode() & 0o7777,
+            0o755
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn aws_stub_validation_requires_exact_contents() {
         let path = temp_path("aws-stub-exact");
         fs::write(&path, AWS_STUB).unwrap();
         assert!(is_aws_stub(&path));
+        assert!(aws_stub_state(&path) == AwsStubState::Current);
+
+        fs::write(&path, LEGACY_AWS_STUB).unwrap();
+        assert!(aws_stub_state(&path) == AwsStubState::Legacy);
+        assert!(!is_aws_stub(&path));
 
         fs::write(&path, format!("{AWS_STUB}\n# modified\n")).unwrap();
+        assert!(aws_stub_state(&path) == AwsStubState::Unknown);
         assert!(!is_aws_stub(&path));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn legacy_aws_stub_is_hardened_but_requires_upgrade() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("aws-legacy-detection");
+        let aws_stub = dir.join("aws");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&aws_stub, LEGACY_AWS_STUB).unwrap();
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub) };
+
+        let detection = detect();
+
+        assert!(!detection.hardened);
+        assert!(detection.commands[0].hardened);
+        assert!(!detection.commands[0].stub_valid);
+
+        fs::write(&aws_stub, format!("{LEGACY_AWS_STUB}\n# modified\n")).unwrap();
+        let modified = detect();
+        assert!(!modified.commands[0].hardened);
+        assert!(!modified.commands[0].stub_valid);
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH") };
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn harden_replaces_the_exact_legacy_stub() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("aws-legacy-upgrade");
+        let aws_stub = dir.join("aws");
+        let credentials = dir.join("credentials");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&aws_stub, LEGACY_AWS_STUB).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
+            std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub);
+            std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", &credentials);
+        }
+
+        let mut stdout = Vec::new();
+        run_aws(&mut stdout, true).unwrap();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
+            std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
+        }
+        assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
+        assert!(
+            String::from_utf8(stdout)
+                .unwrap()
+                .contains("╰─ hardened aws")
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -363,6 +544,13 @@ mod tests {
         assert!(!should_import_aws_credentials(true, false));
         assert!(should_import_aws_credentials(true, true));
         assert!(should_import_aws_credentials(false, false));
+    }
+
+    #[test]
+    fn installed_cli_revision_must_be_an_exact_integer() {
+        assert_eq!(parse_cli_revision(b"13\n"), Some(13));
+        assert_eq!(parse_cli_revision(b"av 13\n"), None);
+        assert_eq!(parse_cli_revision(b"13 extra\n"), None);
     }
 
     #[test]

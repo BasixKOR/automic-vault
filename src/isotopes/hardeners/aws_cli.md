@@ -5,6 +5,11 @@
 `/usr/local/bin/aws` as a one-line Automic Vault launcher for the Homebrew AWS
 CLI.
 
+`av doctor aws` recognizes the exact previously released `aws-vault` launcher
+as needing rehardening. Modified launchers remain invalid rather than being
+treated as an upgrade. `av harden aws` preserves existing Keychain credentials
+and gate policy while replacing that launcher.
+
 The launcher registers the exact AWS arguments, selected profile, process ID,
 process start time, and a snapshot of the AWS config with the menu app before
 replacing itself with `/opt/homebrew/bin/aws`. The AWS CLI receives a minimal
@@ -59,7 +64,8 @@ closed with a precise error.
 - `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`; an absolute call
   to the real AWS CLI bypasses the wrapper but cannot access Vault-managed
   credentials.
-- The root phase needs `sudo av harden aws` to write `/usr/local/bin/aws`.
+- `av harden aws` verifies the running app and installed CLI, then requests
+  elevation only to atomically replace `/usr/local/bin/aws`.
 - The AWS process can use any credential it receives for the lifetime and IAM
   scope of that credential. Automic Vault confines issuance to the approved
   invocation; it cannot harden the upstream AWS CLI process itself.

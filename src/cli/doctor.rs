@@ -508,7 +508,12 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
             command: Some(command.name.clone()),
             message,
             remediation: format!(
-                "Run `sudo av harden {hardener}` to replace it. Manual repair: {}",
+                "Run `{}` to replace it. Manual repair: {}",
+                if hardener == "aws" {
+                    "av harden aws".to_string()
+                } else {
+                    format!("sudo av harden {hardener}")
+                },
                 manual_stub_repair(hardener, command, stub)
             ),
             stub_path: Some(stub.to_string()),
@@ -571,7 +576,7 @@ fn manual_stub_repair(hardener: &str, command: &HardenerCommand, stub: &str) -> 
     }
     if hardener == "aws" {
         return format!(
-            "install the exact `src/isotopes/hardeners/aws` launcher from this Automic Vault release at {stub}, preserve its `/opt/homebrew/bin/aws-vault` and `/opt/homebrew/bin/aws` paths, then run `sudo chown root:wheel {stub} && sudo chmod 0755 {stub}`"
+            "install the exact `src/isotopes/hardeners/aws` launcher from this Automic Vault release at {stub}, ensure `/usr/local/bin/av` is the current root-owned signed CLI, then run `sudo chown root:wheel {stub} && sudo chmod 0755 {stub}`"
         );
     }
     let keys = command
@@ -1031,6 +1036,35 @@ mod tests {
             results[0].issues[0]
                 .remediation
                 .contains("sudo av harden brew")
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn outdated_aws_stub_points_to_the_unprivileged_hardener() {
+        let dir = temp_dir("aws-stub-upgrade");
+        let stub = executable_file(&dir.join("aws"));
+        let target = executable_file(&dir.join("aws-target"));
+        let mut outdated = command(
+            "aws",
+            true,
+            stub.to_str().unwrap(),
+            target.to_str().unwrap(),
+        );
+        outdated.stub_valid = false;
+
+        let results = diagnose(
+            vec![hardener("aws", false, outdated)],
+            Some("aws"),
+            dir.as_os_str(),
+        )
+        .unwrap();
+
+        assert_eq!(results[0].issues[0].kind, "stub_upgrade_required");
+        assert!(
+            results[0].issues[0]
+                .remediation
+                .starts_with("Run `av harden aws`")
         );
         let _ = fs::remove_dir_all(dir);
     }

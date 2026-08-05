@@ -9,6 +9,7 @@ use std::process::Command;
 const REAL_AWS: &str = "/opt/homebrew/bin/aws";
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
+const AWS_HELPER_PROTOCOL_VERSION: u32 = 1;
 
 pub(crate) fn run(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
     if args.first().is_some_and(is_stub_arg) {
@@ -46,6 +47,25 @@ pub(crate) fn credentials(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
             let _ = writeln!(stderr, "aws credential helper: {error}");
             1
         }
+    }
+}
+
+pub(crate) fn ensure_helper_ready() -> Result<(), String> {
+    let version = xpc_request("aws-helper-version", |_| Ok(())).map_err(|error| {
+        format!(
+            "the running Automic Vault app does not support native AWS credentials; update and reopen the app before rehardening AWS ({error})"
+        )
+    })?;
+    validate_helper_version(&version)
+}
+
+fn validate_helper_version(version: &str) -> Result<(), String> {
+    if version == AWS_HELPER_PROTOCOL_VERSION.to_string() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the running Automic Vault app reported unsupported AWS helper version {version}"
+        ))
     }
 }
 
@@ -386,6 +406,15 @@ mod tests {
             "prod"
         );
         unsafe { std::env::remove_var("AWS_PROFILE") };
+    }
+
+    #[test]
+    fn native_helper_requires_the_supported_server_version() {
+        assert_eq!(validate_helper_version("1"), Ok(()));
+        assert_eq!(
+            validate_helper_version("2"),
+            Err("the running Automic Vault app reported unsupported AWS helper version 2".into())
+        );
     }
 
     #[test]
