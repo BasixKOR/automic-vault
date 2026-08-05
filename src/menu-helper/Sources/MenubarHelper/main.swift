@@ -3001,6 +3001,7 @@ private final class ApprovalServer: @unchecked Sendable {
         alert.addButton(withTitle: "Cancel")
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.placeholderString = "123456"
+        field.setAccessibilityLabel("AWS MFA code")
         alert.accessoryView = field
         guard alert.runModal() == .alertFirstButtonReturn else { throw AppError("AWS MFA canceled") }
         let code = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
