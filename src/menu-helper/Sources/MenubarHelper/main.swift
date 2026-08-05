@@ -88,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var automaticUpdateCheckTask: Task<Void, Never>?
     private var readyUpdate: Update?
     private var isCheckingForUpdates = false
+    private var isUpdating = false
+    private var menuBeforeUpdate: NSMenu?
     private var automaticApprovalFlashWorkItem: DispatchWorkItem?
     private var preFlashStatusImage: NSImage?
     private var lastAutomaticApprovalFlashSide = AutomaticApprovalFlashSide.right
@@ -271,6 +273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     completion("Automic Vault is unavailable")
                     return
                 }
+                guard !self.isUpdating else {
+                    completion("Automic Vault is updating")
+                    return
+                }
                 self.showMainWindow(secretGateID: nil)
                 guard let controller = self.mainWindow?.contentViewController
                     as? AutomicVaultMainWindowController
@@ -360,7 +366,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func performUpdateCheck() async {
         var stoppedServices = false
+        var updatingAlert: NSAlert?
         defer {
+            if let updatingAlert {
+                finishUpdating(with: updatingAlert)
+            }
             isCheckingForUpdates = false
             updateCheckControls()
         }
@@ -388,17 +398,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
 
             readyUpdate = nil
+            beginUpdating(with: alert)
+            updatingAlert = alert
             let prepared = try await update.prepareInstallation()
             stopServices()
             stoppedServices = true
             scanQueue.sync {}
             try await prepared.installAndRelaunch()
         } catch {
+            if let alert = updatingAlert {
+                finishUpdating(with: alert)
+                updatingAlert = nil
+            }
             if stoppedServices {
                 startServices()
             }
             showUpdateError(error)
         }
+    }
+
+    private func beginUpdating(with alert: NSAlert) {
+        isUpdating = true
+        statusItem.button?.alphaValue = 0.5
+        menuBeforeUpdate = statusItem.menu
+        statusItem.menu = makeUpdatingMenu()
+
+        alert.messageText = "Updating…"
+        alert.informativeText = "Automic Vault will relaunch when the update is complete."
+        alert.buttons.forEach { $0.isHidden = true }
+        let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+        progress.style = .spinning
+        progress.setAccessibilityLabel("Updating Automic Vault")
+        progress.startAnimation(nil)
+        alert.accessoryView = progress
+        if let mainWindow, mainWindow.isVisible {
+            alert.beginSheetModal(for: mainWindow)
+        } else {
+            alert.window.center()
+            alert.window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func finishUpdating(with alert: NSAlert) {
+        if let parent = alert.window.sheetParent {
+            parent.endSheet(alert.window)
+        } else {
+            alert.window.orderOut(nil)
+        }
+        statusItem.menu = menuBeforeUpdate
+        menuBeforeUpdate = nil
+        statusItem.button?.alphaValue = 1
+        isUpdating = false
     }
 
     private func showUpdateError(_ error: Error) {
@@ -456,11 +506,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor @objc private func openMainWindow() {
-        guard !isStartingUp else { return }
+        guard !isStartingUp, !isUpdating else { return }
         showMainWindow(secretGateID: nil)
     }
 
     @MainActor private func showMainWindow(secretGateID: String?) {
+        guard !isUpdating else { return }
         let wasVisible = mainWindow?.isVisible ?? false
         if let mainWindow {
             mainWindow.makeKeyAndOrderFront(nil)
@@ -762,6 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshAutoApprovalMenuItems() {
+        guard !isUpdating else { return }
         guard let menu = statusItem.menu else { return }
         for item in autoApprovalItems {
             menu.removeItem(item)
@@ -841,7 +893,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        guard !isStartingUp else { return }
+        guard !isStartingUp, !isUpdating else { return }
         refreshAutoApprovalMenuItems()
         refreshDoctorStatus()
     }
@@ -861,6 +913,16 @@ private func makeStatusMenuItem(title: String) -> NSMenuItem {
     let item = NSMenuItem.sectionHeader(title: title)
     setStatusMenuItemTitle(title, on: item)
     return item
+}
+
+private func makeUpdatingMenu() -> NSMenu {
+    let menu = NSMenu()
+    menu.addItem(makeStatusMenuItem(title: "Updating…"))
+    menu.addItem(.separator())
+    let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
+    quitItem.isEnabled = false
+    menu.addItem(quitItem)
+    return menu
 }
 
 private func setStatusMenuItemTitle(_ title: String, on item: NSMenuItem) {
@@ -5849,6 +5911,12 @@ private func runMenuStatusSelfCheck() -> Int32 {
     else { return 1 }
     updateMenuVisibility(items, startingUp: false, visibleDuringStartup: [])
     guard items.allSatisfy({ !$0.isHidden }) else { return 1 }
+
+    let updatingItems = makeUpdatingMenu().items
+    guard updatingItems.map(\.title) == ["Updating…", "", "Quit"],
+          updatingItems[0].isSectionHeader,
+          !updatingItems[2].isEnabled
+    else { return 1 }
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
