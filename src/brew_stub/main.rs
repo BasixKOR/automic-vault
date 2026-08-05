@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V10";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V11";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
