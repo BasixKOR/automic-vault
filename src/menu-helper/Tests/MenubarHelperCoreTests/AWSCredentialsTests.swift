@@ -1,0 +1,50 @@
+import Foundation
+import Testing
+@testable import MenubarHelperCore
+
+@Test func parsesOnlyDefaultBackedRoleChains() throws {
+    let chain = try AWSProfileChain.parse("""
+    [default]
+    region = us-west-2
+    [profile dev]
+    source_profile = default
+    role_arn = arn:aws:iam::123456789012:role/dev
+    mfa_serial = arn:aws:iam::123456789012:mfa/max
+    """, selectedProfile: "dev")
+    #expect(chain.profiles.map(\.name) == ["default", "dev"])
+    #expect(chain.region == "us-west-2")
+    #expect(chain.selected.roleARN == "arn:aws:iam::123456789012:role/dev")
+}
+
+@Test func rejectsAmbientCredentialProviders() {
+    #expect(throws: AWSCredentialError.self) {
+        try AWSProfileChain.parse("[default]\ncredential_process = steal\n", selectedProfile: "default")
+    }
+    #expect(throws: AWSCredentialError.self) {
+        try AWSProfileChain.parse("[profile dev]\nregion=us-east-1\n", selectedProfile: "dev")
+    }
+}
+
+@Test func signsSTSRequestsDeterministically() throws {
+    let date = try #require(ISO8601DateFormatter().date(from: "2015-08-30T12:36:00Z"))
+    let request = try awsSTSRequest(
+        region: "us-east-1",
+        parameters: ["Action": "GetSessionToken", "Version": "2011-06-15"],
+        credentials: AWSCredentials(accessKeyID: "AKIDEXAMPLE", secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"),
+        date: date
+    )
+    #expect(String(decoding: request.body, as: UTF8.self) == "Action=GetSessionToken&Version=2011-06-15")
+    #expect(request.headers["authorization"]?.contains("Credential=AKIDEXAMPLE/20150830/us-east-1/sts/aws4_request") == true)
+    #expect(request.headers["authorization"]?.hasSuffix("Signature=90632c13626f68af39ea69ccb0f339aa612c376059d1593c15b4a621da547efa") == true)
+}
+
+@Test func parsesSTSCredentials() throws {
+    let credentials = try parseAWSTSCredentials(Data("""
+    <GetSessionTokenResponse><GetSessionTokenResult><Credentials>
+    <AccessKeyId>ASIAEXAMPLE</AccessKeyId><SecretAccessKey>secret</SecretAccessKey>
+    <SessionToken>token</SessionToken><Expiration>2026-08-05T18:00:00Z</Expiration>
+    </Credentials></GetSessionTokenResult></GetSessionTokenResponse>
+    """.utf8))
+    #expect(credentials.accessKeyID == "ASIAEXAMPLE")
+    #expect(credentials.sessionToken == "token")
+}
