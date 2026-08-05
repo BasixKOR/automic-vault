@@ -3,8 +3,8 @@ const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
 const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
 const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 const BUILD_SCANNER_SCRIPT: &str = include_str!("../scripts/build-scanner.sh");
-const INSTALL_SCRIPT: &str = include_str!("../scripts/install.sh");
-const SCANNER_SCRIPT: &str = include_str!("../scripts/scanner.sh");
+const INSTALL_SCRIPT: &str = include_str!("../scripts/dist/install.sh");
+const SCANNER_SCRIPT: &str = include_str!("../scripts/dist/scanner.sh");
 
 #[test]
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
@@ -132,6 +132,8 @@ fn publication_is_local_and_release_actions_need_no_aws() {
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/install.sh"));
+    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/scanner.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/scanner.tgz"));
     assert!(PUBLISH_SCRIPT.contains("scanner archive does not match GitHub's digest"));

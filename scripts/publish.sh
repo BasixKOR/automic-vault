@@ -373,16 +373,16 @@ publish_website_assets() (
   tar -xOzf "$archive" scanner >"$scanner"
   requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "ZU76A67LGU" and identifier "com.automicvault.scanner"'
   codesign --verify --strict -R "$requirement" "$scanner"
-  /bin/sh -n "$ROOT/scripts/install.sh"
-  /bin/bash -n "$ROOT/scripts/scanner.sh"
+  /bin/sh -n "$ROOT/scripts/dist/install.sh"
+  /bin/bash -n "$ROOT/scripts/dist/scanner.sh"
 
   aws s3 cp "$archive" "s3://$WEBSITE_BUCKET/scanner.tgz" \
     --content-type application/gzip \
     --cache-control no-cache
-  aws s3 cp "$ROOT/scripts/scanner.sh" "s3://$WEBSITE_BUCKET/scanner.sh" \
+  aws s3 cp "$ROOT/scripts/dist/scanner.sh" "s3://$WEBSITE_BUCKET/scanner.sh" \
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control no-cache
-  aws s3 cp "$ROOT/scripts/install.sh" "s3://$WEBSITE_BUCKET/install.sh" \
+  aws s3 cp "$ROOT/scripts/dist/install.sh" "s3://$WEBSITE_BUCKET/install.sh" \
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control no-cache
   aws cloudfront create-invalidation \
