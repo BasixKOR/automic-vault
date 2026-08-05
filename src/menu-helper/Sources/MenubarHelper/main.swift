@@ -656,24 +656,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func brandImage(
-        color: NSColor? = nil,
-        dimmedSide: AutomaticApprovalFlashSide? = nil
-    ) -> NSImage? {
+    private func brandImage(color: NSColor? = nil) -> NSImage? {
         let fallback = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
             .flatMap(NSImage.init(contentsOf:)) ?? fallback else { return nil }
         image.size = NSSize(width: 15, height: 18)
-        let tintedImage = tinted(image, color: color)
-        guard let dimmedSide else { return tintedImage }
-        let result = NSImage(size: tintedImage.size, flipped: false) { rect in
+        return tinted(image, color: color)
+    }
+
+    private func dimmed(_ image: NSImage, side: AutomaticApprovalFlashSide) -> NSImage {
+        let result = NSImage(size: image.size, flipped: false) { rect in
             let left = NSRect(x: rect.minX, y: rect.minY, width: rect.width / 2, height: rect.height)
             let right = NSRect(x: left.maxX, y: rect.minY, width: rect.width / 2, height: rect.height)
-            tintedImage.draw(in: left, from: left, operation: .sourceOver, fraction: dimmedSide == .left ? 0.5 : 1)
-            tintedImage.draw(in: right, from: right, operation: .sourceOver, fraction: dimmedSide == .right ? 0.5 : 1)
+            image.draw(in: left, from: left, operation: .sourceOver, fraction: side == .left ? 0.5 : 1)
+            image.draw(in: right, from: right, operation: .sourceOver, fraction: side == .right ? 0.5 : 1)
             return true
         }
-        result.isTemplate = tintedImage.isTemplate
+        result.isTemplate = image.isTemplate
         return result
     }
 
@@ -728,13 +727,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         automaticApprovalFlashWorkItem?.cancel()
         lastAutomaticApprovalFlashSide = lastAutomaticApprovalFlashSide.next
 
-        // av.www --site-accent (#BEA9F3)
-        let flashImage = brandImage(color: NSColor(
-            srgbRed: 190.0 / 255,
-            green: 169.0 / 255,
-            blue: 243.0 / 255,
-            alpha: 1
-        ), dimmedSide: lastAutomaticApprovalFlashSide)
+        guard let baseImage = preFlashStatusImage ?? button.image else { return }
+        let flashImage = dimmed(baseImage, side: lastAutomaticApprovalFlashSide)
         button.image = flashImage
         let workItem = DispatchWorkItem { [weak self, weak button] in
             guard let self else { return }
