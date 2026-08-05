@@ -730,11 +730,13 @@ fn sync_zsh_completion_mirror(
                 }
             };
             if !target.starts_with(&canonical_prefix) {
-                return Err(format!(
-                    "zsh completion {} resolves outside {}",
+                eprintln!(
+                    "av-brew-stub: skipping zsh completion {} (resolves to {}) because it resolves outside {}",
                     entry.path().display(),
+                    target.display(),
                     prefix.display()
-                ));
+                );
+                continue;
             }
             let mut file = fs::OpenOptions::new()
                 .read(true)
@@ -1611,7 +1613,7 @@ mod tests {
     }
 
     #[test]
-    fn zsh_completion_mirror_rejects_escape_without_replacing_snapshot() {
+    fn zsh_completion_mirror_omits_escape_and_publishes_safe_files() {
         let prefix = temp_path("zsh-completion-escape");
         let home = temp_path("zsh-completion-escape-home");
         let mirror = home.join(ZSH_COMPLETION_MIRROR);
@@ -1620,22 +1622,23 @@ mod tests {
         fs::create_dir_all(&functions).unwrap();
         fs::create_dir_all(&mirror).unwrap();
         fs::write(mirror.join("_existing"), "safe").unwrap();
+        fs::write(functions.join("_protected"), "#compdef protected").unwrap();
         fs::write(&outside, "unsafe").unwrap();
         std::os::unix::fs::symlink(&outside, functions.join("_escape")).unwrap();
 
-        assert!(
-            sync_zsh_completion_mirror(
-                &prefix,
-                &home,
-                &mirror,
-                fs::metadata(&outside).unwrap().uid(),
-            )
-            .is_err()
-        );
+        sync_zsh_completion_mirror(
+            &prefix,
+            &home,
+            &mirror,
+            fs::metadata(&outside).unwrap().uid(),
+        )
+        .unwrap();
         assert_eq!(
-            fs::read_to_string(mirror.join("_existing")).unwrap(),
-            "safe"
+            fs::read_to_string(mirror.join("_protected")).unwrap(),
+            "#compdef protected"
         );
+        assert!(!mirror.join("_escape").exists());
+        assert!(!mirror.join("_existing").exists());
 
         fs::remove_dir_all(prefix).unwrap();
         fs::remove_dir_all(home).unwrap();
