@@ -121,7 +121,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
 }
 
 #[test]
-fn publication_is_local_and_release_actions_need_no_aws() {
+fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(!RELEASE_WORKFLOW.contains("aws-actions/"));
     assert!(!RELEASE_WORKFLOW.contains("aws "));
     assert!(!RELEASE_WORKFLOW.contains("AWS_"));
@@ -132,6 +132,8 @@ fn publication_is_local_and_release_actions_need_no_aws() {
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("contains(Aliases.Items, '$WEBSITE_ALIAS')"));
+    assert!(!PUBLISH_SCRIPT.contains("contains(join(',', Aliases.Items)"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/scanner.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));

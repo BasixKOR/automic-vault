@@ -331,7 +331,7 @@ prepare_website_publish() {
   if [[ -z "$WEBSITE_DISTRIBUTION_ID" ]]; then
     WEBSITE_DISTRIBUTION_ID="$(
       aws cloudfront list-distributions \
-        --query "DistributionList.Items[?Aliases.Items && contains(join(',', Aliases.Items), '$WEBSITE_ALIAS')].Id | [0]" \
+        --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$WEBSITE_ALIAS')].Id | [0]" \
         --output text
     )"
   fi
