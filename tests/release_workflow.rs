@@ -171,9 +171,13 @@ fn scanner_is_small_signed_and_read_only() {
         assert!(BUILD_SCANNER_SCRIPT.contains(setting));
     }
     assert!(SCANNER_SCRIPT.contains("https://www.automicvault.com/scanner.tgz"));
-    assert!(SCANNER_SCRIPT.contains("--proto '=https' --proto-redir '=https' --tlsv1.2"));
-    assert!(SCANNER_SCRIPT.contains("certificate leaf[subject.OU] = \"ZU76A67LGU\""));
-    assert!(SCANNER_SCRIPT.contains("identifier \"com.automicvault.scanner\""));
+    assert!(SCANNER_SCRIPT.contains("--proto '=https'"));
+    assert!(SCANNER_SCRIPT.contains("--proto-redir '=https'"));
+    assert!(SCANNER_SCRIPT.contains("--tlsv1.2"));
+    assert!(SCANNER_SCRIPT.contains("team_id=\"ZU76A67LGU\""));
+    assert!(SCANNER_SCRIPT.contains("identifier=\"com.automicvault.scanner\""));
+    assert!(SCANNER_SCRIPT.contains("certificate leaf[subject.OU] = \\\"$team_id\\\""));
+    assert!(SCANNER_SCRIPT.contains("and identifier \\\"$identifier\\\""));
     assert!(SCANNER_SCRIPT.contains("(deny default)"));
     assert!(SCANNER_SCRIPT.contains("(allow file-read*)"));
     assert!(SCANNER_SCRIPT.contains("(allow process-info*)"));
@@ -182,6 +186,9 @@ fn scanner_is_small_signed_and_read_only() {
         SCANNER_SCRIPT.find("codesign --verify").unwrap()
             < SCANNER_SCRIPT.rfind("/usr/bin/sandbox-exec").unwrap()
     );
+    assert!(SCANNER_SCRIPT.contains("set +x"));
+    assert!(SCANNER_SCRIPT.contains("set -x"));
+    assert!(SCANNER_SCRIPT.find("set -x").unwrap() < SCANNER_SCRIPT.find("/usr/bin/curl").unwrap());
 }
 
 #[test]
