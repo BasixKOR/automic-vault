@@ -46,8 +46,7 @@ use crate::{AffectedFile, Finding};
 use super::config::{self, git_config_paths, read_to_string};
 
 const NAME: &str = "git-credentials-file";
-const DOCS_URL: &str =
-    "https://github.com/automic-vault/radioisotopes/tree/main/git-credentials-file";
+const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/git/credentials_file.md";
 
 pub(crate) const PLAINTEXT_GIT_CREDENTIALS: &str =
     "Git credential store contains plaintext credentials";
