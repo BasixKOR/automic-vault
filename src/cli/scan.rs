@@ -569,6 +569,7 @@ mod tests {
         let output = String::from_utf8(stdout).unwrap();
 
         assert!(output.contains(r#""name":"aws""#));
+        assert!(output.contains(r#""name":"codex""#));
         assert!(output.contains(r#""name":"gh""#));
         assert!(output.contains(r#""name":"sudo""#));
         assert!(output.contains(r#""hardened":"#));
@@ -591,6 +592,7 @@ mod tests {
         assert_eq!(gate("brew")["routes"][0]["operation"], "authorize");
         assert_eq!(gate("brew")["key_patterns"], serde_json::json!([]));
         assert!(gate("sudo").is_null());
+        assert!(gate("codex").is_null());
         assert_eq!(gate("jfrog-cli")["routes"].as_array().unwrap().len(), 2);
     }
 

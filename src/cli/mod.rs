@@ -276,6 +276,15 @@ where
                 let result = hardeners::homebrew::run(stdout, yes);
                 return finish_hardening(result, "brew", stdout, stderr);
             }
+            if target == "codex" {
+                return match hardeners::codex::run(stdout) {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
+            }
             if target == "sudo" {
                 let result = hardeners::sudo::run(stdout, style.color);
                 return finish_hardening(result, "sudo", stdout, stderr);
@@ -619,6 +628,31 @@ mod tests {
             stdout,
             "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n◇ verify with `av doctor sudo`\n"
         );
+        assert_eq!(stderr, "");
+    }
+
+    #[test]
+    fn harden_codex_prints_the_safe_migration_order() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let home = std::env::temp_dir().join(format!("av-cli-codex-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        unsafe {
+            std::env::set_var("CODEX_HOME", &home);
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "codex"]);
+
+        unsafe {
+            std::env::remove_var("CODEX_HOME");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+        assert_eq!(code, 0);
+        assert!(stdout.contains(&home.join("config.toml").display().to_string()));
+        assert!(stdout.contains("`codex login`"));
+        assert!(stdout.contains("`codex login status`"));
+        assert!(stdout.contains("only after confirmation"));
+        assert!(stdout.contains("ChatGPT desktop's Codex surface"));
         assert_eq!(stderr, "");
     }
 

@@ -17,12 +17,19 @@ including macOS. The file is created mode `0600`, which stops other users but no
 anything running as you. It holds a refresh token alongside any API key, so a
 copy keeps working after the access token expires.
 
-## Why This is not Yet Hardened
+## Hardening
+
+Run the configuration-only hardener:
+
+```sh
+av harden codex
+```
 
 Codex can store credentials in the system keyring itself, so the fix belongs in
-its configuration rather than in a wrapper. Set `cli_auth_credentials_store` to
-`keyring` in `${CODEX_HOME:-$HOME/.codex}/config.toml`, run `codex login` again,
-then delete the plaintext file left behind.
+its configuration rather than in a wrapper. The hardener guides you to set
+`cli_auth_credentials_store` to `keyring` in
+`${CODEX_HOME:-$HOME/.codex}/config.toml`, run `codex login` again, confirm the
+new login, and only then delete the plaintext file left behind.
 
 ```toml
 cli_auth_credentials_store = "keyring"
@@ -39,4 +46,8 @@ already on disk, so the plaintext copy survives until you delete it.
 Prefer `keyring` over `auto` on a workstation. `auto` falls back to the plaintext
 file when no keyring is available, while `keyring` fails loudly.
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+## ChatGPT Desktop Impact
+
+Codex CLI, the IDE extension, and Codex inside the ChatGPT desktop app share
+Codex configuration layers. The desktop app's Codex surface may ask you to sign
+in again after this change. Ordinary non-Codex ChatGPT chats are unaffected.

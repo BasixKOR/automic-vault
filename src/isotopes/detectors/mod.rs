@@ -28,7 +28,7 @@ mod civo;
 mod cloudflare_wrangler;
 mod cloudflared;
 mod cloudsmith_cli;
-mod codex;
+pub(crate) mod codex;
 mod composer;
 mod curl;
 mod databricks;

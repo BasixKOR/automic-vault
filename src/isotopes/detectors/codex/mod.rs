@@ -40,11 +40,19 @@ fn insecurity_reasons_for(path: &Path) -> Vec<String> {
     }
 }
 
-fn auth_path() -> Result<PathBuf, String> {
+pub(crate) fn auth_path() -> Result<PathBuf, String> {
     auth_path_in(
         std::env::var_os("CODEX_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
     )
+}
+
+pub(crate) fn config_path() -> Result<PathBuf, String> {
+    auth_path().and_then(|path| {
+        path.parent()
+            .map(|parent| parent.join("config.toml"))
+            .ok_or_else(|| "Codex auth path has no parent directory".to_string())
+    })
 }
 
 fn auth_path_in(codex_home: Option<&OsStr>, home: Option<&OsStr>) -> Result<PathBuf, String> {
@@ -115,6 +123,12 @@ fn is_nonempty_string(value: Option<&serde_json::Value>) -> bool {
 
 pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     super::radioisotope::findings("codex", install_insecurity_reasons, home)
+        .into_iter()
+        .map(|mut finding| {
+            finding.solution = "Run `av harden codex`. Codex inside the ChatGPT desktop app shares this configuration and may require sign-in again; ordinary non-Codex chats are unaffected.".to_string();
+            finding
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -275,6 +289,7 @@ mod tests {
         let findings = findings(&home);
 
         assert_eq!(findings.len(), 1);
+        assert!(findings[0].solution.contains("ChatGPT desktop app"));
         std::fs::remove_dir_all(home).unwrap();
     }
 

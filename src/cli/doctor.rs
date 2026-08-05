@@ -1195,8 +1195,8 @@ mod tests {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         for hardener in hardeners::metadata() {
             if hardener.detection.commands.is_empty() {
-                assert_eq!(
-                    hardener.name, "sudo",
+                assert!(
+                    matches!(hardener.name, "codex" | "sudo"),
                     "{} needs Doctor checks or an explicit Scan-owned exemption",
                     hardener.name
                 );
