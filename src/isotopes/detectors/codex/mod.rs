@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 pub fn install_is_insecure() -> Result<bool, String> {
@@ -7,56 +8,103 @@ pub fn install_is_insecure() -> Result<bool, String> {
 }
 
 pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
-    let path = auth_path()?;
-    if path.exists() && auth_file_has_credentials(&read_to_string(&path)?)? {
-        return Ok(vec![format!(
-            "Codex CLI auth file contains plaintext credentials: {}",
-            path.display()
-        )]);
-    }
-    Ok(Vec::new())
+    Ok(insecurity_reasons_for(&auth_path()?))
 }
 
-fn codex_home() -> Result<PathBuf, String> {
-    if let Some(dir) = std::env::var_os("CODEX_HOME").filter(|dir| !dir.is_empty()) {
-        return Ok(PathBuf::from(dir));
+/// Reports the auth file when it holds credentials, and also when it cannot be
+/// read or parsed.
+///
+/// An unreadable credential file is not evidence of safety, and detector errors
+/// are dropped by the scan, so returning `Err` here would silently hide a file
+/// that may well be full of plaintext tokens.
+fn insecurity_reasons_for(path: &Path) -> Vec<String> {
+    if !path.exists() {
+        return Vec::new();
     }
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".codex"))
-        .ok_or_else(|| "HOME is not set".to_string())
+    match std::fs::read_to_string(path) {
+        Ok(contents) => match auth_file_has_credentials(&contents) {
+            Ok(true) => vec![format!(
+                "Codex CLI auth file contains plaintext credentials: {}",
+                path.display()
+            )],
+            Ok(false) => Vec::new(),
+            Err(_) => vec![format!(
+                "Codex CLI auth file could not be parsed and may contain plaintext credentials: {}",
+                path.display()
+            )],
+        },
+        Err(_) => vec![format!(
+            "Codex CLI auth file could not be read and may contain plaintext credentials: {}",
+            path.display()
+        )],
+    }
 }
 
 fn auth_path() -> Result<PathBuf, String> {
-    codex_home().map(|home| home.join("auth.json"))
+    auth_path_in(
+        std::env::var_os("CODEX_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
 }
 
-fn read_to_string(path: &Path) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))
+fn auth_path_in(codex_home: Option<&OsStr>, home: Option<&OsStr>) -> Result<PathBuf, String> {
+    if let Some(codex_home) = codex_home.filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(codex_home).join("auth.json"));
+    }
+    home.filter(|value| !value.is_empty())
+        .map(|home| PathBuf::from(home).join(".codex/auth.json"))
+        .ok_or_else(|| "HOME is not set".to_string())
 }
 
-/// Codex writes an API key, a ChatGPT token set, or both, depending on how the
-/// user signed in. Any of them is a long-lived credential: the token set
-/// carries a refresh token, so a stolen copy keeps working after the access
-/// token expires.
+/// Codex stores whichever credentials the chosen sign-in produced, and not all
+/// of them are plain strings: `bedrock_api_key` is an object, and
+/// `agent_identity` is either a bare JWT or a record holding a private key.
 fn auth_file_has_credentials(contents: &str) -> Result<bool, String> {
     let value: serde_json::Value = serde_json::from_str(contents)
         .map_err(|err| format!("failed to parse Codex auth JSON: {err}"))?;
     let Some(object) = value.as_object() else {
         return Ok(false);
     };
-    let has_api_key = ["OPENAI_API_KEY", "personal_access_token", "bedrock_api_key"]
+
+    if ["OPENAI_API_KEY", "personal_access_token"]
         .iter()
-        .any(|field| is_nonempty_string(object.get(*field)));
-    let has_tokens = object
+        .any(|field| is_nonempty_string(object.get(*field)))
+    {
+        return Ok(true);
+    }
+
+    if object
         .get("tokens")
         .and_then(serde_json::Value::as_object)
         .is_some_and(|tokens| {
             ["access_token", "refresh_token", "id_token"]
                 .iter()
-                .any(|field| is_nonempty_string(tokens.get(*field)))
-        });
-    Ok(has_api_key || has_tokens)
+                .any(|field| holds_secret_material(tokens.get(*field)))
+        })
+    {
+        return Ok(true);
+    }
+
+    Ok(["bedrock_api_key", "agent_identity"]
+        .iter()
+        .any(|field| holds_secret_material(object.get(*field))))
+}
+
+/// True when the value is a non-empty string, or a structure containing one.
+///
+/// Codex has changed these shapes before, so this walks whatever is there
+/// rather than assuming a particular layout.
+fn holds_secret_material(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        Some(serde_json::Value::String(text)) => !text.trim().is_empty(),
+        Some(serde_json::Value::Object(fields)) => fields
+            .values()
+            .any(|value| holds_secret_material(Some(value))),
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .any(|value| holds_secret_material(Some(value))),
+        _ => false,
+    }
 }
 
 fn is_nonempty_string(value: Option<&serde_json::Value>) -> bool {
@@ -73,9 +121,26 @@ pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
 mod tests {
     use super::*;
 
+    fn temporary_directory(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "{}-{label}-{}",
+            module_path!().replace(':', "_"),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
     #[test]
     fn detects_an_api_key() {
         let contents = r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-proj-example"}"#;
+        assert!(auth_file_has_credentials(contents).unwrap());
+    }
+
+    #[test]
+    fn detects_a_personal_access_token() {
+        let contents = r#"{"personal_access_token":"example-pat"}"#;
         assert!(auth_file_has_credentials(contents).unwrap());
     }
 
@@ -87,8 +152,10 @@ mod tests {
             "tokens": {
                 "id_token": "eyJexample",
                 "access_token": "example-access",
-                "refresh_token": "example-refresh"
-            }
+                "refresh_token": "example-refresh",
+                "account_id": "acct_example"
+            },
+            "last_refresh": "2026-08-05T00:00:00Z"
         }"#;
         assert!(auth_file_has_credentials(contents).unwrap());
     }
@@ -100,11 +167,42 @@ mod tests {
     }
 
     #[test]
+    fn detects_a_structured_bedrock_api_key() {
+        let contents = r#"{"bedrock_api_key":{"api_key":"example-bedrock-key"}}"#;
+        assert!(auth_file_has_credentials(contents).unwrap());
+    }
+
+    #[test]
+    fn detects_an_agent_identity_jwt() {
+        let contents = r#"{"agent_identity":"eyJexample.agent.jwt"}"#;
+        assert!(auth_file_has_credentials(contents).unwrap());
+    }
+
+    #[test]
+    fn detects_an_agent_identity_record() {
+        let contents = r#"{
+            "agent_identity": {
+                "agent_runtime_id": "runtime-example",
+                "agent_private_key": "example-private-key",
+                "account_id": "acct_example",
+                "chatgpt_user_id": "user-example",
+                "email": null,
+                "plan_type": "pro",
+                "chatgpt_account_is_fedramp": false,
+                "task_id": null
+            }
+        }"#;
+        assert!(auth_file_has_credentials(contents).unwrap());
+    }
+
+    #[test]
     fn ignores_an_auth_file_holding_no_credentials() {
         let contents = r#"{
             "auth_mode": "chatgpt",
             "OPENAI_API_KEY": null,
-            "tokens": {"id_token": "", "access_token": "   "},
+            "tokens": {"id_token": "", "access_token": "   ", "refresh_token": ""},
+            "bedrock_api_key": {"api_key": ""},
+            "agent_identity": null,
             "last_refresh": "2026-08-05T00:00:00Z"
         }"#;
         assert!(!auth_file_has_credentials(contents).unwrap());
@@ -121,66 +219,89 @@ mod tests {
     }
 
     #[test]
-    fn reports_unparseable_json_rather_than_staying_silent() {
-        assert!(auth_file_has_credentials("not json").is_err());
+    fn reports_a_credential_file_it_cannot_parse() {
+        let directory = temporary_directory("unparseable");
+        let path = directory.join("auth.json");
+        std::fs::write(&path, "not json").unwrap();
+
+        let reasons = insecurity_reasons_for(&path);
+
+        assert_eq!(reasons.len(), 1);
+        assert!(reasons[0].contains("could not be parsed"));
+        assert!(reasons[0].ends_with(&path.display().to_string()));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn top_level_install_is_insecure_returns_false_when_the_auth_file_is_missing() {
-        let home = std::env::temp_dir().join(format!(
-            "{}-detect-missing-{}",
-            module_path!().replace(':', "_"),
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&home);
-        std::fs::create_dir_all(&home).unwrap();
+    fn reports_a_credential_file_it_cannot_read() {
+        let directory = temporary_directory("unreadable");
+        let path = directory.join("auth.json");
+        std::fs::create_dir(&path).unwrap();
 
-        let previous_home = std::env::var_os("HOME");
-        let previous_codex_home = std::env::var_os("CODEX_HOME");
-        unsafe {
-            std::env::set_var("HOME", &home);
-            std::env::remove_var("CODEX_HOME");
-        }
+        let reasons = insecurity_reasons_for(&path);
 
-        let result = install_is_insecure().unwrap();
+        assert_eq!(reasons.len(), 1);
+        assert!(reasons[0].contains("could not be read"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
-        unsafe {
-            match previous_home {
-                Some(value) => std::env::set_var("HOME", value),
-                None => std::env::remove_var("HOME"),
-            }
-            match previous_codex_home {
-                Some(value) => std::env::set_var("CODEX_HOME", value),
-                None => std::env::remove_var("CODEX_HOME"),
-            }
-        }
+    #[test]
+    fn stays_quiet_when_there_is_no_auth_file() {
+        let directory = temporary_directory("missing");
+        let reasons = insecurity_reasons_for(&directory.join("auth.json"));
+        assert!(reasons.is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
-        assert!(!result);
+    #[test]
+    fn reports_a_credential_file_holding_secrets() {
+        let directory = temporary_directory("credentials");
+        let path = directory.join("auth.json");
+        std::fs::write(&path, r#"{"OPENAI_API_KEY":"sk-proj-example"}"#).unwrap();
+
+        let reasons = insecurity_reasons_for(&path);
+
+        assert_eq!(reasons.len(), 1);
+        assert!(reasons[0].contains("contains plaintext credentials"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn the_scan_reports_a_credential_file_it_cannot_parse() {
+        let home = temporary_directory("scan-unparseable");
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::write(home.join(".codex/auth.json"), "not json").unwrap();
+
+        let findings = findings(&home);
+
+        assert_eq!(findings.len(), 1);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn the_scan_stays_quiet_without_an_auth_file() {
+        let home = temporary_directory("scan-missing");
+        assert!(findings(&home).is_empty());
         std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
     fn codex_home_overrides_the_default_location() {
-        let directory = std::env::temp_dir().join(format!(
-            "{}-codex-home-{}",
-            module_path!().replace(':', "_"),
-            std::process::id()
-        ));
+        let path = auth_path_in(
+            Some(OsStr::new("/example/codex")),
+            Some(OsStr::new("/example")),
+        );
+        assert_eq!(path.unwrap(), PathBuf::from("/example/codex/auth.json"));
+    }
 
-        let previous_codex_home = std::env::var_os("CODEX_HOME");
-        unsafe {
-            std::env::set_var("CODEX_HOME", &directory);
-        }
+    #[test]
+    fn an_empty_codex_home_falls_back_to_the_home_directory() {
+        let path = auth_path_in(Some(OsStr::new("")), Some(OsStr::new("/example")));
+        assert_eq!(path.unwrap(), PathBuf::from("/example/.codex/auth.json"));
+    }
 
-        let path = auth_path();
-
-        unsafe {
-            match previous_codex_home {
-                Some(value) => std::env::set_var("CODEX_HOME", value),
-                None => std::env::remove_var("CODEX_HOME"),
-            }
-        }
-
-        assert_eq!(path.unwrap(), directory.join("auth.json"));
+    #[test]
+    fn resolution_fails_without_a_home_directory() {
+        assert!(auth_path_in(None, None).is_err());
     }
 }

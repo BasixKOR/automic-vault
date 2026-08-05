@@ -2,7 +2,9 @@
 
 ## Trigger Conditions
 
-- Codex CLI auth file contains a plaintext API key or ChatGPT token set.
+- Codex CLI auth file contains a plaintext API key, personal access token,
+  ChatGPT token set, Bedrock API key, or agent identity.
+- Codex CLI auth file exists but cannot be read or parsed.
 
 ## Sensitive Files
 
@@ -28,7 +30,7 @@ cli_auth_credentials_store = "keyring"
 
 ```sh
 codex login
-rm ~/.codex/auth.json
+rm "${CODEX_HOME:-$HOME/.codex}/auth.json"
 ```
 
 The last step matters. Changing the setting neither migrates nor removes the file
