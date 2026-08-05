@@ -5,11 +5,6 @@
 `/usr/local/bin/aws` as a one-line Automic Vault launcher for the Homebrew AWS
 CLI.
 
-`av doctor aws` recognizes the exact previously released `aws-vault` launcher
-as needing rehardening. Modified launchers remain invalid rather than being
-treated as an upgrade. `av harden aws` preserves existing Keychain credentials
-and gate policy while replacing that launcher.
-
 The launcher registers the exact AWS arguments, selected profile, process ID,
 process start time, and a snapshot of the AWS config with the menu app before
 replacing itself with `/opt/homebrew/bin/aws`. The AWS CLI receives a minimal
@@ -72,3 +67,10 @@ closed with a precise error.
 - End-to-end runtime integrity depends on protecting the Homebrew AWS
   distribution from the desktop user. `av harden brew` is optional, but without
   it the interpreter and source checks can be modified by a same-user attacker.
+
+## Hardener Migration Notes
+
+`av doctor aws` recognizes the exact previously released `aws-vault` launcher
+as needing rehardening. Modified launchers remain invalid rather than being
+treated as an upgrade. `av harden aws` preserves existing Keychain credentials
+and gate policy while replacing that launcher.

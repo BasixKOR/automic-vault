@@ -508,7 +508,12 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
             command: Some(command.name.clone()),
             message,
             remediation: format!(
-                "Run `{}` to replace it. Manual repair: {}",
+                "{}Run `{}` to replace it. Manual repair: {}",
+                if hardener == "aws" && command.hardened {
+                    "If you depend heavily on AWS, consider waiting a few point releases before migrating to the new hardener. "
+                } else {
+                    ""
+                },
                 if hardener == "aws" {
                     "av harden aws".to_string()
                 } else {
@@ -966,6 +971,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(unhardened[0].issues[0].kind, "stub_content_invalid");
+        assert!(
+            !unhardened[0].issues[0]
+                .remediation
+                .contains("waiting a few point releases")
+        );
 
         let shadowed_path = std::env::join_paths([&target_dir, &stub_dir]).unwrap();
         let shadowed = diagnose(
@@ -1064,7 +1074,12 @@ mod tests {
         assert!(
             results[0].issues[0]
                 .remediation
-                .starts_with("Run `av harden aws`")
+                .contains("waiting a few point releases before migrating")
+        );
+        assert!(
+            results[0].issues[0]
+                .remediation
+                .contains("Run `av harden aws`")
         );
         let _ = fs::remove_dir_all(dir);
     }

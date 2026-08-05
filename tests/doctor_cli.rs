@@ -150,12 +150,9 @@ fn av_doctor_requires_rehardening_for_the_exact_legacy_aws_launcher() {
         .iter()
         .find(|issue| issue["kind"] == "stub_upgrade_required")
         .unwrap();
-    assert!(
-        issue["remediation"]
-            .as_str()
-            .unwrap()
-            .starts_with("Run `av harden aws`")
-    );
+    let remediation = issue["remediation"].as_str().unwrap();
+    assert!(remediation.contains("waiting a few point releases before migrating"));
+    assert!(remediation.contains("Run `av harden aws`"));
 
     let _ = fs::remove_dir_all(root);
 }
