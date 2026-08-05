@@ -49,6 +49,17 @@ import Testing
     ))
 }
 
+@Test func parsesOnlyArgumentFreeAWSInterpreters() throws {
+    #expect(try awsInterpreter(fromShebang: "#!/opt/homebrew/bin/python3") == "/opt/homebrew/bin/python3")
+    for shebang in ["python3", "#!/usr/bin/env python3", "#!/opt/homebrew/bin/python3 -S"] {
+        #expect(throws: AWSCredentialError.unsupportedRuntime(
+            "the AWS CLI shebang must contain one absolute interpreter without arguments"
+        )) {
+            try awsInterpreter(fromShebang: shebang)
+        }
+    }
+}
+
 @Test func signsSTSRequestsDeterministically() throws {
     let date = try #require(ISO8601DateFormatter().date(from: "2015-08-30T12:36:00Z"))
     let request = try awsSTSRequest(

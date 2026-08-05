@@ -4,12 +4,14 @@ import Foundation
 public enum AWSCredentialError: Error, Equatable, LocalizedError, Sendable {
     case invalidConfig(String)
     case unsupportedProfile(String)
+    case unsupportedRuntime(String)
     case invalidResponse(String)
 
     public var errorDescription: String? {
         switch self {
         case .invalidConfig(let detail): "Invalid AWS config: \(detail)"
         case .unsupportedProfile(let detail): "Unsupported AWS profile: \(detail)"
+        case .unsupportedRuntime(let detail): "Unsupported AWS runtime: \(detail)"
         case .invalidResponse(let detail): "Invalid AWS STS response: \(detail)"
         }
     }
@@ -219,6 +221,18 @@ public func awsRuntimeMatches(
         executableMatches = false
     }
     return executableMatches && processArguments == [processPath, target] + approvedArguments
+}
+
+public func awsInterpreter(fromShebang shebang: String) throws -> String {
+    let words = shebang.dropFirst(2).split(whereSeparator: \.isWhitespace)
+    guard shebang.hasPrefix("#!/"), words.count == 1, let interpreter = words.first,
+          interpreter.hasPrefix("/")
+    else {
+        throw AWSCredentialError.unsupportedRuntime(
+            "the AWS CLI shebang must contain one absolute interpreter without arguments"
+        )
+    }
+    return String(interpreter)
 }
 
 private func awsExpirationDate(_ value: String) -> Date? {

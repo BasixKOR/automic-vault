@@ -2812,14 +2812,12 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         let firstLine = try String(contentsOfFile: request.target, encoding: .utf8)
             .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)[0]
-        guard firstLine.hasPrefix("#!/"),
-              let interpreter = firstLine.dropFirst(2).split(separator: " ").first
-        else { throw AWSCredentialError.unsupportedProfile("AWS CLI does not have an absolute interpreter") }
+        let interpreter = try awsInterpreter(fromShebang: String(firstLine))
         return AWSRegistrationCandidate(
             chain: chain,
             args: request.args,
             target: request.target,
-            interpreter: String(interpreter),
+            interpreter: interpreter,
             useLongLivedCredentials: awsRequestMayUseLongLivedCredentials(request)
                 && chain.selected.roleARN == nil
                 && chain.selected.mfaSerial == nil
