@@ -377,3 +377,11 @@ approve a request itself, they cannot.
 ## User Manual
 
 https://www.automicvault.com/docs/
+
+## Discord
+
+For more ephemeral discussion,
+[join our Discord server](https://discord.gg/NQJDMhcrCU).
+
+> We provide a Discord server as a more convenient way to engage in
+> *ephemeral* discussion. Hardly anybody is there and that is *fine*.
