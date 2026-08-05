@@ -28,6 +28,7 @@ mod civo;
 mod cloudflare_wrangler;
 mod cloudflared;
 mod cloudsmith_cli;
+mod codex;
 mod composer;
 mod curl;
 mod databricks;
@@ -234,6 +235,7 @@ const DETECTORS: &[Detector] = &[
     detector!(cloudflare_wrangler),
     detector!(cloudflared),
     detector!(cloudsmith_cli),
+    detector!(codex),
     detector!(composer),
     detector!(curl),
     detector!(databricks),
@@ -448,7 +450,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 157);
+        assert_eq!(DETECTORS.len(), 158);
     }
 
     #[test]
