@@ -28,7 +28,7 @@ The available evidence rules out the approval cache and confirms a helper bypass
 | Installed CLI test hooks | Release/copy could use test Keychain and path overrides | Accept test overrides only from debug binaries inside their Cargo profile |
 | XPC server identity | Rust, GH, and Supabase clients checked an identifier only | Pin Apple anchor, team ID, and current app identifier |
 | Keychain item group | Wildcard entitlement was first, so omitted `kSecAttrAccessGroup` stored items there | Write/query the private app-ID group and migrate verified legacy items |
-| AWS profile selection | `aws-vault` and AWS CLI could use different profiles | Parse the command profile once and use it for both |
+| AWS profile selection | The credential helper and AWS CLI could use different profiles | Parse the command profile once and bind it to the registered process |
 | AWS config/provider chain | Real AWS inherited HOME, config, credential process, SSO/login cache, metadata, and pager hooks | Run it with an empty HOME/config/credentials file, disabled metadata and pager, and scrubbed provider variables |
 | AWS aliases and pager | Read-only argv could invoke a shell alias or external pager with credentials | Isolate config and force `--no-cli-pager` |
 | AWS temporary files | Predictable PID-based pass path | Use a mode-0700 random directory and remove it on exit |

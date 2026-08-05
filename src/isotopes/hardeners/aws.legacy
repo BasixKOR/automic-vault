@@ -1,0 +1,185 @@
+#!/usr/local/bin/av inject +AWS_ACCESS_KEY_ID +AWS_SECRET_ACCESS_KEY /bin/zsh -f
+set -euo pipefail
+
+profile=${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-default}}
+aws_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    --profile)
+      shift
+      (( $# > 0 )) || { print -u2 'aws: --profile requires a value'; exit 2; }
+      profile=$1
+      ;;
+    --profile=*)
+      profile=${1#--profile=}
+      [[ -n $profile ]] || { print -u2 'aws: --profile requires a value'; exit 2; }
+      ;;
+    *)
+      aws_args+=("$1")
+      ;;
+  esac
+  shift
+done
+
+umask 077
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/automic-vault-aws.XXXXXXXX")
+store=$tmp/store
+shim=$tmp/pass
+prefix=aws-vault
+aws_config=${AWS_CONFIG_FILE:-$HOME/.aws/config}
+
+cleanup() { rm -rf "$tmp" }
+trap cleanup EXIT INT TERM
+mkdir -p "$tmp/home"
+: > "$tmp/credentials"
+
+# Read one setting without allowing the user's AWS config to enter the
+# credential-bearing AWS CLI process.
+profile_value_for() {
+  [[ -r $aws_config ]] || return 0
+  awk -v wanted="$1" -v key="$2" '
+    /^\[[^]]+\]$/ {
+      section = $0
+      sub(/^\[/, "", section)
+      sub(/\]$/, "", section)
+      sub(/^profile /, "", section)
+      in_section = section == wanted
+      next
+    }
+    in_section && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+      sub(/^[^=]*=/, "")
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$aws_config"
+}
+
+# aws-vault checks for stored credentials by profile name before invoking pass.
+master_profile=$profile
+while source_profile=$(profile_value_for "$master_profile" source_profile); [[ -n $source_profile && $source_profile != "$master_profile" ]]; do
+  master_profile=$source_profile
+done
+
+needs_long_lived_credentials() {
+  local index=1 service operation arg
+  while (( index <= ${#aws_args} )); do
+    arg=${aws_args[index]}
+    case "$arg" in
+      --ca-bundle|--cli-binary-format|--cli-input-json|--cli-input-yaml|--color|--endpoint-url|--max-items|--output|--page-size|--query|--region|--starting-token)
+        (( index += 2 ))
+        ;;
+      --ca-bundle=*|--cli-binary-format=*|--cli-input-json=*|--cli-input-yaml=*|--color=*|--endpoint-url=*|--max-items=*|--output=*|--page-size=*|--query=*|--region=*|--starting-token=*|--debug|--no-cli-auto-prompt|--no-cli-pager|--no-paginate|--no-sign-request|--no-verify-ssl|--only-show-errors|--version)
+        (( index += 1 ))
+        ;;
+      --*|-*)
+        return 1
+        ;;
+      *)
+        service=${arg:l}
+        operation=${aws_args[index + 1]:-}
+        operation=${operation:l}
+        [[ $operation != help ]] || return 1
+        [[ $service == iam ]] && return 0
+        [[ $service == sts && $operation != assume-role && $operation != get-caller-identity ]] && return 0
+        return 1
+        ;;
+    esac
+  done
+  return 1
+}
+
+# GetSessionToken credentials cannot call IAM or most STS operations without
+# MFA. Role and MFA-backed profiles retain the safer short-lived path.
+if needs_long_lived_credentials \
+  && [[ -z $(profile_value_for "$profile" role_arn) ]] \
+  && [[ -z $(profile_value_for "$profile" mfa_serial) ]]; then
+  /usr/bin/env \
+    -u AWS_PROFILE \
+    -u AWS_DEFAULT_PROFILE \
+    -u AWS_SESSION_TOKEN \
+    -u AWS_SECURITY_TOKEN \
+    -u AWS_CREDENTIAL_EXPIRATION \
+    -u AWS_WEB_IDENTITY_TOKEN_FILE \
+    -u AWS_ROLE_ARN \
+    -u AWS_ROLE_SESSION_NAME \
+    -u AWS_CONTAINER_CREDENTIALS_FULL_URI \
+    -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI \
+    -u AWS_CONTAINER_AUTHORIZATION_TOKEN \
+    -u AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE \
+    HOME="$tmp/home" \
+    AWS_CONFIG_FILE=/dev/null \
+    AWS_SHARED_CREDENTIALS_FILE="$tmp/credentials" \
+    AWS_EC2_METADATA_DISABLED=true \
+    AWS_PAGER= \
+    PAGER=cat \
+    AWS_CLI_AUTO_PROMPT=off \
+    /opt/homebrew/bin/aws --no-cli-pager "${aws_args[@]}"
+  exit
+fi
+
+# This marker satisfies pass backend discovery; it contains no credentials.
+marker=$store/$prefix/$master_profile.gpg
+mkdir -p "$marker:h"
+: > "$marker"
+
+# The shim exposes av-injected keys only through pass stdout, never disk.
+cat > "$shim" <<'EOF'
+#!/bin/sh
+set -eu
+
+case "$1" in
+  show)
+    creds=$(printf '{"AccessKeyID":"%s","SecretAccessKey":"%s"}' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY")
+    data=$(printf '%s' "$creds" | base64 | tr -d '\n')
+    printf '{"Key":"aws-vault","Data":"%s"}\n' "$data"
+    ;;
+  insert)
+    # Discard aws-vault session cache writes so temp credentials do not persist.
+    cat >/dev/null
+    ;;
+  rm)
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+EOF
+chmod 700 "$shim"
+
+AWS_VAULT_BACKEND=pass \
+AWS_VAULT_PASS_CMD="$shim" \
+AWS_VAULT_PASS_PASSWORD_STORE_DIR="$store" \
+AWS_VAULT_PASS_PREFIX="$prefix" \
+  /usr/bin/env \
+    -u AWS_PROFILE \
+    -u AWS_DEFAULT_PROFILE \
+    -u AWS_CONTAINER_CREDENTIALS_FULL_URI \
+    -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI \
+    -u AWS_CONTAINER_AUTHORIZATION_TOKEN \
+    -u AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE \
+    /opt/homebrew/bin/aws-vault \
+    exec "$profile" \
+    --server \
+    -- \
+    /usr/bin/env \
+      -u AWS_PROFILE \
+      -u AWS_DEFAULT_PROFILE \
+      -u AWS_ACCESS_KEY_ID \
+      -u AWS_SECRET_ACCESS_KEY \
+      -u AWS_SESSION_TOKEN \
+      -u AWS_SECURITY_TOKEN \
+      -u AWS_CREDENTIAL_EXPIRATION \
+      -u AWS_WEB_IDENTITY_TOKEN_FILE \
+      -u AWS_ROLE_ARN \
+      -u AWS_ROLE_SESSION_NAME \
+      HOME="$tmp/home" \
+      AWS_CONFIG_FILE=/dev/null \
+      AWS_SHARED_CREDENTIALS_FILE="$tmp/credentials" \
+      AWS_EC2_METADATA_DISABLED=true \
+      AWS_PAGER= \
+      PAGER=cat \
+      AWS_CLI_AUTO_PROMPT=off \
+      /opt/homebrew/bin/aws --no-cli-pager "${aws_args[@]}"
+
+# ^^ --server allows extremely short lived creds but is slower and more overhead

@@ -166,7 +166,7 @@ fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
     }
 }
 
-fn validate_privileged_av(path: &Path) -> Result<(), String> {
+pub(crate) fn validate_privileged_av(path: &Path) -> Result<(), String> {
     for trusted in path.ancestors() {
         let metadata = trusted
             .metadata()
