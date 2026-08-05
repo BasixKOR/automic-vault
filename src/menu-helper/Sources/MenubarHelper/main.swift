@@ -367,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func performUpdateCheck() async {
         var stoppedServices = false
         var updatingAlert: NSAlert?
+        var restoreMainWindow = false
         defer {
             if let updatingAlert {
                 finishUpdating(with: updatingAlert)
@@ -398,7 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
 
             readyUpdate = nil
-            beginUpdating(with: alert)
+            restoreMainWindow = beginUpdating(with: alert)
             updatingAlert = alert
             let prepared = try await update.prepareInstallation()
             stopServices()
@@ -413,38 +414,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if stoppedServices {
                 startServices()
             }
+            if restoreMainWindow {
+                showMainWindow(secretGateID: nil)
+            }
             showUpdateError(error)
         }
     }
 
-    private func beginUpdating(with alert: NSAlert) {
+    private func beginUpdating(with alert: NSAlert) -> Bool {
+        let mainWindowWasVisible = mainWindow?.isVisible == true
+        mainWindow?.orderOut(nil)
         isUpdating = true
         statusItem.button?.alphaValue = 0.5
         menuBeforeUpdate = statusItem.menu
         statusItem.menu = makeUpdatingMenu()
 
-        alert.messageText = "Updating…"
-        alert.informativeText = "Automic Vault will relaunch when the update is complete."
-        alert.buttons.forEach { $0.isHidden = true }
-        let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
-        progress.style = .spinning
-        progress.setAccessibilityLabel("Updating Automic Vault")
-        progress.startAnimation(nil)
-        alert.accessoryView = progress
-        if let mainWindow, mainWindow.isVisible {
-            alert.beginSheetModal(for: mainWindow)
-        } else {
-            alert.window.center()
-            alert.window.makeKeyAndOrderFront(nil)
-        }
+        configureUpdatingAlert(alert)
+        alert.window.center()
+        alert.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return mainWindowWasVisible
     }
 
     private func finishUpdating(with alert: NSAlert) {
-        if let parent = alert.window.sheetParent {
-            parent.endSheet(alert.window)
-        } else {
-            alert.window.orderOut(nil)
-        }
+        alert.window.orderOut(nil)
         statusItem.menu = menuBeforeUpdate
         menuBeforeUpdate = nil
         statusItem.button?.alphaValue = 1
@@ -923,6 +916,20 @@ private func makeUpdatingMenu() -> NSMenu {
     quitItem.isEnabled = false
     menu.addItem(quitItem)
     return menu
+}
+
+@MainActor
+private func configureUpdatingAlert(_ alert: NSAlert) {
+    alert.messageText = "Updating…"
+    alert.informativeText = "Automic Vault will relaunch when the update is complete."
+    alert.buttons.forEach { $0.isHidden = true }
+    let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+    progress.style = .spinning
+    progress.isIndeterminate = true
+    progress.setAccessibilityLabel("Updating Automic Vault")
+    progress.startAnimation(nil)
+    alert.accessoryView = progress
+    alert.layout()
 }
 
 private func setStatusMenuItemTitle(_ title: String, on item: NSMenuItem) {
@@ -6230,6 +6237,16 @@ private func runMenuStatusSelfCheck() -> Int32 {
     guard updatingItems.map(\.title) == ["Updating…", "", "Quit"],
           updatingItems[0].isSectionHeader,
           !updatingItems[2].isEnabled
+    else { return 1 }
+
+    let updatingAlert = NSAlert()
+    updatingAlert.addButton(withTitle: "Install and Relaunch")
+    configureUpdatingAlert(updatingAlert)
+    guard updatingAlert.messageText == "Updating…",
+          updatingAlert.buttons.allSatisfy(\.isHidden),
+          let progress = updatingAlert.accessoryView as? NSProgressIndicator,
+          progress.style == .spinning,
+          progress.isIndeterminate
     else { return 1 }
 
     let formatter = DateFormatter()
