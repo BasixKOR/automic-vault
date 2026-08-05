@@ -22,6 +22,13 @@ private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
 private var toastWindows: [NSWindow] = []
 
+private enum AutomaticApprovalFlashSide {
+    case left
+    case right
+
+    var next: Self { self == .left ? .right : .left }
+}
+
 @MainActor
 private func makeUpdater(
     sessionConfiguration: URLSessionConfiguration = .default
@@ -83,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isCheckingForUpdates = false
     private var automaticApprovalFlashWorkItem: DispatchWorkItem?
     private var preFlashStatusImage: NSImage?
+    private var lastAutomaticApprovalFlashSide = AutomaticApprovalFlashSide.right
     private var isStartingUp = false
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
@@ -648,12 +656,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func brandImage(color: NSColor? = nil) -> NSImage? {
+    private func brandImage(
+        color: NSColor? = nil,
+        dimmedSide: AutomaticApprovalFlashSide? = nil
+    ) -> NSImage? {
         let fallback = NSImage(systemSymbolName: "shield.fill", accessibilityDescription: "Automic Vault")
         guard let image = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png")
             .flatMap(NSImage.init(contentsOf:)) ?? fallback else { return nil }
         image.size = NSSize(width: 15, height: 18)
-        return tinted(image, color: color)
+        let tintedImage = tinted(image, color: color)
+        guard let dimmedSide else { return tintedImage }
+        let result = NSImage(size: tintedImage.size, flipped: false) { rect in
+            let left = NSRect(x: rect.minX, y: rect.minY, width: rect.width / 2, height: rect.height)
+            let right = NSRect(x: left.maxX, y: rect.minY, width: rect.width / 2, height: rect.height)
+            tintedImage.draw(in: left, from: left, operation: .sourceOver, fraction: dimmedSide == .left ? 0.5 : 1)
+            tintedImage.draw(in: right, from: right, operation: .sourceOver, fraction: dimmedSide == .right ? 0.5 : 1)
+            return true
+        }
+        result.isTemplate = tintedImage.isTemplate
+        return result
     }
 
     private func shieldImage(
@@ -705,6 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preFlashStatusImage = button.image
         }
         automaticApprovalFlashWorkItem?.cancel()
+        lastAutomaticApprovalFlashSide = lastAutomaticApprovalFlashSide.next
 
         // av.www --site-accent (#BEA9F3)
         let flashImage = brandImage(color: NSColor(
@@ -712,7 +734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             green: 169.0 / 255,
             blue: 243.0 / 255,
             alpha: 1
-        ))
+        ), dimmedSide: lastAutomaticApprovalFlashSide)
         button.image = flashImage
         let workItem = DispatchWorkItem { [weak self, weak button] in
             guard let self else { return }
@@ -5876,6 +5898,8 @@ private func runMenuStatusSelfCheck() -> Int32 {
           automaticApprovalFeedback(rawValue: "menuBarFlash") == .menuBarFlash,
           automaticApprovalFeedback(rawValue: "none") == .none,
           automaticApprovalFeedback(rawValue: "tampered") == .notification,
+          AutomaticApprovalFlashSide.left.next == .right,
+          AutomaticApprovalFlashSide.right.next == .left,
           autoApprovalToolName(request) == "aws",
           approvalCommandPath(request) == "/usr/local/bin/aws",
           approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",
