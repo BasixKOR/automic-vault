@@ -125,7 +125,7 @@ pub(crate) fn findings(home: &std::path::Path) -> Vec<crate::Finding> {
     super::radioisotope::findings("codex", install_insecurity_reasons, home)
         .into_iter()
         .map(|mut finding| {
-            finding.solution = "Run `av harden codex`. Codex inside the ChatGPT desktop app shares this configuration and may require sign-in again; ordinary non-Codex chats are unaffected.".to_string();
+            finding.solution = "Run `av harden codex`. Codex inside the ChatGPT desktop app shares this configuration and may require sign-in again; OpenAI does not document whether this CLI setting affects its existing session.".to_string();
             finding
         })
         .collect()

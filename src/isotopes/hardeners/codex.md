@@ -18,8 +18,9 @@ for the user to remove after a verified login.
 
 Codex CLI, the IDE extension, and Codex inside the ChatGPT desktop app share
 Codex configuration layers. The desktop app's Codex surface may therefore ask
-you to sign in again after this change. Ordinary non-Codex ChatGPT chats are not
-changed by these steps.
+you to sign in again after this change. OpenAI's documentation does not specify
+whether this CLI credential-storage setting affects the desktop app's existing
+session, so close the app before changing it and expect to reauthenticate.
 
 ## Caveats
 

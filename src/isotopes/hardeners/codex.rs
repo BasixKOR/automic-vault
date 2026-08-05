@@ -16,7 +16,7 @@ pub(crate) fn run(stdout: &mut dyn Write) -> Result<(), String> {
         "◇ stores future Codex credentials in the macOS Keychain"
     )
     .ok();
-    writeln!(stdout, "◇ ChatGPT desktop's Codex surface shares this configuration and may require sign-in again; ordinary non-Codex chats are unaffected").ok();
+    writeln!(stdout, "◇ ChatGPT desktop's Codex surface shares this configuration and may require sign-in again; OpenAI does not document whether this CLI setting affects its existing session").ok();
     writeln!(stdout, "│").ok();
 
     if keyring_configured(&config)? && !auth.exists() {
