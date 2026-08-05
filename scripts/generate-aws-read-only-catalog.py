@@ -268,7 +268,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     catalog, excluded_sensitive = generate_catalog()
-    args.output.write_text(render(catalog))
+    args.output.write_text(render(catalog), encoding="utf-8", newline="\n")
     print(
         f"wrote {sum(map(len, catalog.values()))} commands across {len(catalog)} services; "
         f"kept {excluded_sensitive} sensitive candidates gated",
