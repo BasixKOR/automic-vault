@@ -731,8 +731,9 @@ fn sync_zsh_completion_mirror(
             };
             if !target.starts_with(&canonical_prefix) {
                 eprintln!(
-                    "av-brew-stub: skipping zsh completion {} because it resolves outside {}",
+                    "av-brew-stub: skipping zsh completion {} (resolves to {}) because it resolves outside {}",
                     entry.path().display(),
+                    target.display(),
                     prefix.display()
                 );
                 continue;
