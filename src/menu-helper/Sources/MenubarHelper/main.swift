@@ -2975,16 +2975,14 @@ private func ghRequestIsSecretDump(_ args: [String]) -> Bool {
 }
 
 private func awsRequestIsReadOnly(_ args: [String]) -> Bool {
+    if args == ["--version"] { return true }
     let words = awsCommandWords(args).map { $0.lowercased() }
     guard let service = words.first else { return false }
     if service == "help" { return true }
     guard words.count >= 2 else { return false }
     let operation = words[1]
     if operation == "help" { return true }
-    if service == "s3", operation == "ls" { return true }
-    if service == "sts", operation == "get-caller-identity" { return true }
-    if service == "s3api", operation.hasPrefix("head-") { return true }
-    return operation.hasPrefix("list-") || operation.hasPrefix("describe-")
+    return awsCommandIsReadOnly(service: service, operation: operation)
 }
 
 private func awsCommandWords(_ request: ApprovalRequest) -> [String] {
@@ -5555,6 +5553,7 @@ private func runGhReadOnlySelfCheck() -> Int32 {
 
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
+        ["--version"],
         ["s3", "ls"],
         ["--profile", "dev", "s3", "ls"],
         ["--region=us-east-1", "ec2", "describe-instances"],
@@ -5563,6 +5562,9 @@ private func runAwsReadOnlySelfCheck() -> Int32 {
         ["s3api", "list-objects-v2"],
         ["s3api", "head-object"],
         ["sts", "get-caller-identity"],
+        ["cloudfront", "get-distribution", "--id", "example"],
+        ["dynamodb", "get-item", "--table-name", "example", "--key", "{}"],
+        ["dynamodb", "query", "--table-name", "example"],
         ["help"],
     ]
     guard allowed.allSatisfy(awsRequestIsReadOnly) else { return 1 }
@@ -5577,6 +5579,7 @@ private func runAwsReadOnlySelfCheck() -> Int32 {
         ["secretsmanager", "get-secret-value"],
         ["ssm", "get-parameter", "--with-decryption"],
         ["configure", "get", "aws_secret_access_key"],
+        ["cloudfront", "future-get-operation"],
         ["--unknown", "s3", "ls"],
         [],
     ]
