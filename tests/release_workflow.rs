@@ -162,7 +162,9 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(build < verify && verify < upload);
     assert!(PUBLISH_SCRIPT.contains("RECOVERED_RELEASE=1"));
     assert!(!PUBLISH_SCRIPT.contains("if resume_published_release; then"));
-    let resume = PUBLISH_SCRIPT.rfind("\nresume_published_release\n").unwrap();
+    let resume = PUBLISH_SCRIPT
+        .rfind("\nresume_published_release\n")
+        .unwrap();
     let codex = PUBLISH_SCRIPT.rfind("if ! command -v codex").unwrap();
     assert!(resume < codex);
 }
