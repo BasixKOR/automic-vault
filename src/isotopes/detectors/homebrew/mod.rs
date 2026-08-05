@@ -6,7 +6,7 @@ use std::{ffi::CString, os::unix::ffi::OsStrExt};
 use crate::{AffectedFile, Finding};
 
 const NAME: &str = "homebrew";
-const DOCS_URL: &str = "https://github.com/automic-vault/radioisotopes/tree/main/homebrew";
+const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/homebrew/detector.md";
 
 pub(crate) fn findings(_home: &Path) -> Vec<Finding> {
     let affected = writable_homebrew_paths()

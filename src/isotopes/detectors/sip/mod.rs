@@ -3,7 +3,7 @@ use std::process::Command;
 
 use crate::Finding;
 
-const DOCS_URL: &str = "https://github.com/automic-vault/radioisotopes/tree/main/sip";
+const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/sip/detector.md";
 const ENABLED: &str = "System Integrity Protection status: enabled.";
 
 pub(crate) fn findings(_home: &Path) -> Vec<Finding> {

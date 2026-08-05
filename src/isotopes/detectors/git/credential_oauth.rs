@@ -43,8 +43,7 @@ use crate::{AffectedFile, Finding};
 use super::config::{self, git_config_paths, read_to_string};
 
 const NAME: &str = "git-credential-oauth";
-const DOCS_URL: &str =
-    "https://github.com/automic-vault/radioisotopes/tree/main/git-credential-oauth";
+const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/git/credential_oauth.md";
 const OAUTH_HELPER_SOLUTION: &str = "Edit the affected Git config and remove the `helper = oauth ...` line; then use SSH remotes instead of OAuth-backed HTTPS credentials.";
 const OAUTH_CLIENT_SECRET_SOLUTION: &str = "Edit the affected Git config and remove the `oauthClientSecret` value; revoke that OAuth client secret if it was real.";
 

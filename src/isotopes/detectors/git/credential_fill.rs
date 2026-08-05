@@ -59,8 +59,7 @@ use crate::{AffectedFile, Finding};
 use super::config::{self, git_config_paths, read_to_string};
 
 const NAME: &str = "git-credential-fill";
-const DOCS_URL: &str =
-    "https://github.com/automic-vault/radioisotopes/tree/main/git-credential-fill";
+const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/git/credential_fill.md";
 const GITHUB_CREDENTIAL_FILL_INPUT: &[u8] = b"protocol=https\nhost=github.com\n\n";
 const GITHUB_CREDENTIAL_FILL_TIMEOUT: Duration = Duration::from_secs(3);
 const GH_HELPER_MESSAGE: &str = "Git credential helper delegates github.com credentials to `gh auth git-credential`, exposing the GitHub CLI token through `git credential fill`. Click Learn More to learn how to fix it.";

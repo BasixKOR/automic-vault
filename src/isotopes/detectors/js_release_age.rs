@@ -51,7 +51,7 @@ fn finding(
     reason: &str,
     solution: &'static str,
 ) -> Finding {
-    let docs_url = super::radioisotope::docs_url(source);
+    let docs_url = super::radioisotope::DETECTORS_URL;
     Finding {
         source,
         homepage: docs_url,
