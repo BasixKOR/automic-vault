@@ -804,8 +804,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         let submenu = NSMenu()
-        group.records.map(autoApprovalMenuItem).forEach(submenu.addItem)
+        group.records.map(autoApprovalSubmenuItem).forEach(submenu.addItem)
         item.submenu = submenu
+        return item
+    }
+
+    private func autoApprovalSubmenuItem(_ record: AutoApprovalRecord) -> NSMenuItem {
+        let item = autoApprovalMenuItem(record)
+        let time = "\(autoApprovalTimeFormatter.string(from: record.date))  "
+        let title = NSMutableAttributedString(
+            string: time,
+            attributes: [
+                .font: NSFont.menuFont(ofSize: 0),
+                .foregroundColor: NSColor.disabledControlTextColor,
+            ]
+        )
+        title.append(NSAttributedString(
+            string: record.command,
+            attributes: [.font: NSFont.menuFont(ofSize: 0)]
+        ))
+        item.attributedTitle = title
         return item
     }
 
@@ -5839,7 +5857,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
     func menuRecord(
         _ time: TimeInterval,
         launcher: String = "ChatGPT",
-        command: String = "gh repo view"
+        command: String = """
+        gh \\
+          repo \\
+          view
+        """
     ) -> AutoApprovalRecord {
         AutoApprovalRecord(
             accessRequestID: UUID(),
@@ -5860,6 +5882,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
         menuRecord(17_100),
     ])
     let groupedMenuItem = AppDelegate().autoApprovalMenuItem(groupedMenuRecords[0])
+    guard let groupedSubmenuTitle = groupedMenuItem.submenu?.items.first?.attributedTitle else {
+        return 1
+    }
+    let groupedCommand = groupedMenuRecords[0].record.command
+    let groupedCommandStart = groupedSubmenuTitle.length - (groupedCommand as NSString).length
     let request = ApprovalRequest(
         op: "inject",
         keys: ["AWS_SECRET_ACCESS_KEY"],
@@ -5934,10 +5961,20 @@ private func runMenuStatusSelfCheck() -> Int32 {
           vulnerabilityStatusTitle(count: 1) == "One Vulnerability Detected",
           vulnerabilityStatusTitle(count: 2) == "Two Vulnerabilities Detected",
           groupedMenuRecords.map(\.count) == [2, 1, 1],
-          groupedMenuRecords[0].records.map(\.command) == ["gh repo view", "gh issue list"],
+          groupedMenuRecords[0].records[1].command == "gh issue list",
           groupedMenuItem.representedObject == nil,
           groupedMenuItem.submenu?.items.compactMap({ $0.representedObject as? String })
               == groupedMenuRecords[0].records.map({ $0.accessRequestID.uuidString }),
+          groupedCommandStart > 0,
+          groupedSubmenuTitle.string.hasSuffix(groupedCommand),
+          !groupedSubmenuTitle.string.contains(groupedMenuRecords[0].record.launcher),
+          groupedSubmenuTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+              == .disabledControlTextColor,
+          groupedSubmenuTitle.attribute(
+              .foregroundColor,
+              at: groupedCommandStart,
+              effectiveRange: nil
+          ) == nil,
           autoApprovalTitle(groupedMenuRecords[0], formatter: formatter)
               == "5:15 AM\u{2013}5:30 AM ChatGPT used gh \u{00D7}2",
           autoApprovalTitle(
