@@ -145,6 +145,14 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("scanner archive has unexpected contents"));
     assert!(PUBLISH_SCRIPT.contains("codesign --verify --strict -R \"$requirement\" \"$scanner\""));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
+    let build = PUBLISH_SCRIPT
+        .find("$ROOT/scripts/build-scanner.sh")
+        .unwrap();
+    let verify = PUBLISH_SCRIPT
+        .find("codesign --verify --strict -R \"$requirement\" \"$scanner\"")
+        .unwrap();
+    let upload = PUBLISH_SCRIPT.find("aws s3 cp \"$archive\"").unwrap();
+    assert!(build < verify && verify < upload);
 }
 
 #[test]
