@@ -78,6 +78,55 @@ where
     )
 }
 
+pub fn run_scanner_terminal<I>(args: I) -> i32
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut stdout = std::io::stdout();
+    let mut stderr = std::io::stderr();
+    let terminal = stdout.is_terminal();
+    run_scanner_with_style(
+        args,
+        &mut stdout,
+        &mut stderr,
+        scan::Style {
+            color: terminal && color_enabled(),
+        },
+    )
+}
+
+fn run_scanner_with_style<I, W, E>(
+    args: I,
+    stdout: &mut W,
+    stderr: &mut E,
+    style: scan::Style,
+) -> i32
+where
+    I: IntoIterator<Item = OsString>,
+    W: Write,
+    E: Write,
+{
+    let mut args = args.into_iter();
+    let _program = args.next();
+    match args.collect::<Vec<_>>().as_slice() {
+        [] => scan::run(stdout, style, false),
+        [arg] if arg == "--show-all" => scan::run(stdout, style, true),
+        [arg] if arg == "--json" => scan::run_json(stdout),
+        [arg] if arg == "--version" || arg == "-V" => {
+            let _ = writeln!(stdout, "scanner {}", env!("CARGO_PKG_VERSION"));
+            0
+        }
+        [arg] if arg == "--help" || arg == "-h" => {
+            let _ = writeln!(stdout, "usage: scanner [--show-all|--json]");
+            0
+        }
+        _ => {
+            let _ = writeln!(stderr, "usage: scanner [--show-all|--json]");
+            2
+        }
+    }
+}
+
 fn run_with_style<I, W, E>(
     args: I,
     stdout: &mut W,
@@ -387,6 +436,37 @@ mod tests {
             String::from_utf8(stdout).unwrap(),
             String::from_utf8(stderr).unwrap(),
         )
+    }
+
+    fn run_scanner_args(args: &[&str]) -> (i32, String, String) {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = run_scanner_with_style(
+            args.iter().map(OsString::from),
+            &mut stdout,
+            &mut stderr,
+            scan::Style::plain(),
+        );
+        (
+            code,
+            String::from_utf8(stdout).unwrap(),
+            String::from_utf8(stderr).unwrap(),
+        )
+    }
+
+    #[test]
+    fn scanner_only_accepts_scan_options() {
+        let (code, stdout, stderr) = run_scanner_args(&["scanner", "--help"]);
+        assert_eq!(
+            (code, stdout.as_str(), stderr.as_str()),
+            (0, "usage: scanner [--show-all|--json]\n", "")
+        );
+
+        let (code, stdout, stderr) = run_scanner_args(&["scanner", "doctor"]);
+        assert_eq!(
+            (code, stdout.as_str(), stderr.as_str()),
+            (2, "", "usage: scanner [--show-all|--json]\n")
+        );
     }
 
     #[test]
