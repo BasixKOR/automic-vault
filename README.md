@@ -40,6 +40,11 @@ Automic Vault is:
 - A hardening manager for over 100 tool configurations, including AWS, GitHub,
   GitLab, and more. We move plaintext secrets into the macOS keychain and ensure
   the application of those secrets receives granular access control.
+- Execution controls for tools that perform sensitive actions granular to the
+  tool & caller basis. Callers can be apps, CLIs or even scripts with capability
+  YAML front matter.
+- Agent and harness agnostic: we operate at a layer beneath them. Thus we are
+  also **zeroconf**. Automic Vault “just works”.
 
 Automic Vault is **not**:
 
