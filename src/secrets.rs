@@ -15,7 +15,13 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
         return std::fs::write(&path, value)
             .map_err(|err| format!("failed to write {}: {err}", path.display()));
     }
-    xpc_request("save", Some((b"key\0", account)), Some((b"value\0", value))).map(|_| ())
+    xpc_request(
+        "save",
+        Some((b"key\0", account)),
+        Some((b"value\0", value)),
+        None,
+    )
+    .map(|_| ())
 }
 
 pub(crate) fn load_secret(account: &str) -> Result<String, String> {
@@ -24,14 +30,19 @@ pub(crate) fn load_secret(account: &str) -> Result<String, String> {
         return std::fs::read_to_string(&path)
             .map_err(|err| format!("failed to read {}: {err}", path.display()));
     }
-    xpc_request("load", Some((b"key\0", account)), None)?
+    xpc_request("load", Some((b"key\0", account)), None, None)?
         .value
         .ok_or_else(|| format!("failed to load isotope key {account}"))
 }
 
-pub(crate) fn bless_script(path: &str) -> Result<bool, String> {
-    xpc_request("bless", Some((b"path\0", path)), None)
-        .map(|reply| reply.value.as_deref() == Some("already blessed"))
+pub(crate) fn bless_script(path: &str, endorse_caller: bool) -> Result<bool, String> {
+    xpc_request(
+        "bless",
+        Some((b"path\0", path)),
+        None,
+        endorse_caller.then_some(&b"endorse_caller\0"[..]),
+    )
+    .map(|reply| reply.value.as_deref() == Some("already blessed"))
 }
 
 pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
@@ -49,7 +60,7 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         .map_err(|err| format!("failed to read current directory: {err}"))?
         .to_string_lossy()
         .into_owned();
-    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None)?.names)
+    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None)?.names)
 }
 
 #[cfg(target_os = "macos")]
@@ -57,6 +68,7 @@ fn xpc_request(
     operation: &str,
     field: Option<(&'static [u8], &str)>,
     extra: Option<(&'static [u8], &str)>,
+    bool_field: Option<&'static [u8]>,
 ) -> Result<XpcReply, String> {
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int, c_void};
@@ -139,6 +151,9 @@ fn xpc_request(
         if let Some((extra_field, value)) = extra {
             set_string(message, extra_field, value)?;
         }
+        if let Some(bool_field) = bool_field {
+            xpc_dictionary_set_bool(message, bool_field.as_ptr().cast(), true);
+        }
         xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
     }
 
@@ -212,6 +227,7 @@ fn xpc_request(
     _operation: &str,
     _field: Option<(&'static [u8], &str)>,
     _extra: Option<(&'static [u8], &str)>,
+    _bool_field: Option<&'static [u8]>,
 ) -> Result<XpcReply, String> {
     Err("the Automic Vault menu bar approval service is only available on macOS".to_string())
 }

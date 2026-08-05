@@ -2568,7 +2568,9 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: true, error: nil, value: "already blessed")
             return
         }
-        let launcher = launcherIdentities(for: identity).first { !$0.isStandalone }
+        let launcher = xpc_dictionary_get_bool(message, "endorse_caller")
+            ? launcherIdentities(for: identity).first { !$0.isStandalone }
+            : nil
         let request = BlessedScriptReviewRequest(
             path: path,
             declaration: declaration,

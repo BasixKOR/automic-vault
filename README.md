@@ -221,6 +221,9 @@ $ av bless ./scripts/my_script.sh
 # Blessing window appears
 ```
 
+By default, blessing does not endorse the calling app for automatic approval.
+Pass `--endorse-caller` to include it in the blessing review.
+
 Blessed scripts can have capabilities which allows you to compress multiple
 approval prompts for tools into a single approval prompt for the script. For
 example here is a script that needs a token (`$APPLE_PASSWORD`) and to be
