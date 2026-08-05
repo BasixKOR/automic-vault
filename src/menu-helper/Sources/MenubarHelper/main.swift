@@ -872,7 +872,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
         )
         title.append(NSAttributedString(
-            string: record.command.replacingOccurrences(of: " \\\n", with: "\n"),
+            string: record.command.replacingOccurrences(of: " \\\n  ", with: " "),
             attributes: [.font: NSFont.menuFont(ofSize: 0)]
         ))
         item.attributedTitle = title
@@ -6267,7 +6267,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
     guard let groupedSubmenuTitle = groupedMenuItem.submenu?.items.first?.attributedTitle else {
         return 1
     }
-    let groupedCommand = groupedMenuRecords[0].record.command.replacingOccurrences(of: " \\\n", with: "\n")
+    let groupedCommand = groupedMenuRecords[0].record.command.replacingOccurrences(of: " \\\n  ", with: " ")
     let groupedCommandStart = groupedSubmenuTitle.length - (groupedCommand as NSString).length
     let request = ApprovalRequest(
         op: "inject",
@@ -6350,6 +6350,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           groupedCommandStart > 0,
           groupedSubmenuTitle.string.hasSuffix(groupedCommand),
           !groupedSubmenuTitle.string.contains("\\"),
+          !groupedSubmenuTitle.string.contains("\n"),
           !groupedSubmenuTitle.string.contains(groupedMenuRecords[0].record.launcher),
           groupedSubmenuTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
               == .disabledControlTextColor,
