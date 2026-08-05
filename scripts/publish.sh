@@ -46,6 +46,7 @@ RELEASE_NOTES=""
 INTERNAL_VERSION_METADATA=""
 INTERNAL_VERSION_FILES=()
 RESUME_RELEASE=0
+RECOVERED_RELEASE=0
 if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" == "$CURRENT_VERSION" ]]; then
   RESUME_RELEASE=1
 fi
@@ -459,7 +460,7 @@ finish_publication() {
 
 resume_published_release() {
   local release_info is_draft is_immutable head release_url
-  [[ -n "$REQUESTED_VERSION" ]] || return 1
+  [[ -n "$REQUESTED_VERSION" ]] || return 0
   if ! release_info="$(
     gh api \
       -H "X-GitHub-Api-Version: 2026-03-10" \
@@ -467,11 +468,11 @@ resume_published_release() {
       --jq '[.draft, .immutable, .target_commitish, .html_url] | @tsv' \
       2>/dev/null
   )"; then
-    return 1
+    return 0
   fi
   read -r is_draft is_immutable head release_url <<<"$release_info"
   if [[ "$is_draft" != "false" || "$is_immutable" != "true" ]]; then
-    return 1
+    return 0
   fi
 
   # The checkout may have changed while Actions ran, but the recovery logic itself must not have.
@@ -493,6 +494,7 @@ resume_published_release() {
   prepare_cask_publish
   prepare_website_publish
   finish_publication "$VERSION" "$head" "$release_url"
+  RECOVERED_RELEASE=1
 }
 
 verify_draft_update() (
@@ -610,7 +612,8 @@ case "$(git -C "$ROOT" remote get-url origin)" in
     exit 64
     ;;
 esac
-if resume_published_release; then
+resume_published_release
+if [[ "$RECOVERED_RELEASE" -eq 1 ]]; then
   exit 0
 fi
 if ! command -v codex >/dev/null 2>&1; then
