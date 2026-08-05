@@ -178,6 +178,9 @@ fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
+if [[ "$release_artifact" -eq 1 ]]; then
+  SCANNER_CODESIGN_IDENTITY="$identity" "$ROOT/scripts/build-scanner.sh"
+fi
 cp "$ROOT/target/release/av" "$MACOS/av"
 cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"

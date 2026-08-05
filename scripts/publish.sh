@@ -2,6 +2,7 @@
 # --- automic-vault
 # capabilities:
 #   gh: trusted
+#   aws: trusted
 # ---
 # shellcheck shell=bash disable=SC1008,SC2096
 set -euo pipefail
@@ -28,6 +29,9 @@ done
 ROOT="$(cd "$(dirname "${AV_SCRIPT_PATH:-$0}")/.." && pwd)"
 REPOSITORY="automic-vault/automic-vault"
 TAP_ROOT="${AUTOMIC_VAULT_REPO_CACHE:-$ROOT/../homebrew-isotopes}"
+WEBSITE_BUCKET="${AUTOMIC_VAULT_WEBSITE_BUCKET:-automicvault.com}"
+WEBSITE_ALIAS="${AUTOMIC_VAULT_WEBSITE_DOMAIN:-automicvault.com}"
+WEBSITE_DISTRIBUTION_ID="${AUTOMIC_VAULT_CLOUDFRONT_DISTRIBUTION_ID:-}"
 CURRENT_VERSION="$(
   awk -F '"' '
     /^\[package\]/ { package = 1; next }
@@ -310,6 +314,82 @@ prepare_cask_publish() {
   fi
 }
 
+prepare_website_publish() {
+  if ! command -v aws >/dev/null 2>&1; then
+    echo "error: publish requires aws" >&2
+    exit 64
+  fi
+  if [[ ! "$WEBSITE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ||
+    ! "$WEBSITE_ALIAS" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    echo "error: invalid website bucket or domain" >&2
+    exit 64
+  fi
+  if ! aws s3api head-bucket --bucket "$WEBSITE_BUCKET" >/dev/null; then
+    echo "error: cannot access website bucket $WEBSITE_BUCKET" >&2
+    exit 64
+  fi
+  if [[ -z "$WEBSITE_DISTRIBUTION_ID" ]]; then
+    WEBSITE_DISTRIBUTION_ID="$(
+      aws cloudfront list-distributions \
+        --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$WEBSITE_ALIAS')].Id | [0]" \
+        --output text
+    )"
+  fi
+  if [[ ! "$WEBSITE_DISTRIBUTION_ID" =~ ^E[A-Z0-9]+$ ]]; then
+    echo "error: cannot find the CloudFront distribution for $WEBSITE_ALIAS" >&2
+    exit 64
+  fi
+}
+
+publish_website_assets() (
+  set -euo pipefail
+  umask 077
+  local version="$1"
+  local tmp archive expected actual scanner requirement
+  tmp="$(mktemp -d "$ROOT/target/av-website-publish.XXXXXX")"
+  trap 'rm -rf "$tmp"' EXIT
+  archive="$tmp/scanner.tgz"
+  scanner="$tmp/scanner"
+
+  gh release download "$version" \
+    --repo "$REPOSITORY" \
+    --pattern scanner.tgz \
+    --dir "$tmp"
+  expected="$(
+    gh release view "$version" \
+      --repo "$REPOSITORY" \
+      --json assets \
+      --jq '.assets[] | select(.name == "scanner.tgz") | .digest'
+  )"
+  actual="sha256:$(shasum -a 256 "$archive" | awk '{print $1}')"
+  if [[ ! "$expected" =~ ^sha256:[0-9a-f]{64}$ || "$actual" != "$expected" ]]; then
+    echo "error: scanner archive does not match GitHub's digest" >&2
+    exit 1
+  fi
+  if [[ "$(tar -tzf "$archive")" != scanner ]]; then
+    echo "error: scanner archive has unexpected contents" >&2
+    exit 1
+  fi
+  tar -xOzf "$archive" scanner >"$scanner"
+  requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "ZU76A67LGU" and identifier "com.automicvault.scanner"'
+  codesign --verify --strict -R "$requirement" "$scanner"
+  /bin/sh -n "$ROOT/scripts/dist/install.sh"
+  /bin/bash -n "$ROOT/scripts/dist/scanner.sh"
+
+  aws s3 cp "$archive" "s3://$WEBSITE_BUCKET/scanner.tgz" \
+    --content-type application/gzip \
+    --cache-control no-cache
+  aws s3 cp "$ROOT/scripts/dist/scanner.sh" "s3://$WEBSITE_BUCKET/scanner.sh" \
+    --content-type "text/x-shellscript; charset=utf-8" \
+    --cache-control no-cache
+  aws s3 cp "$ROOT/scripts/dist/install.sh" "s3://$WEBSITE_BUCKET/install.sh" \
+    --content-type "text/x-shellscript; charset=utf-8" \
+    --cache-control no-cache
+  aws cloudfront create-invalidation \
+    --distribution-id "$WEBSITE_DISTRIBUTION_ID" \
+    --paths /scanner.tgz /scanner.sh /install.sh >/dev/null
+)
+
 publish_cask() {
   local version="$1"
   local sha256="$2"
@@ -468,6 +548,7 @@ case "$(git -C "$ROOT" remote get-url origin)" in
     ;;
 esac
 prepare_cask_publish
+prepare_website_publish
 git -C "$ROOT" fetch --quiet origin main
 source_head="$(git -C "$ROOT" rev-parse HEAD)"
 if [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
@@ -555,6 +636,7 @@ if [[ "$is_draft" != "false" || "$is_immutable" != "true" || "$target_commitish"
   echo "error: published release is not immutable or targets the wrong commit" >&2
   exit 1
 fi
+publish_website_assets "$VERSION"
 digest="$(
   gh release view "$VERSION" \
     --repo "$REPOSITORY" \

@@ -17,3 +17,7 @@ path = "src/cli/main.rs"
 [[bin]]
 name = "av-brew-stub"
 path = "src/brew_stub/main.rs"
+
+[[bin]]
+name = "scanner"
+path = "src/scanner/main.rs"
