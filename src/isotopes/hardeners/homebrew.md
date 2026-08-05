@@ -70,7 +70,8 @@ is that solution.
   regular completion files into
   `~/.local/share/automic-vault/homebrew/zsh/site-functions`. The mirror is
   replaced atomically and the original Homebrew completion directory is removed
-  from `fpath` by `brew shellenv zsh`.
+  from `fpath` by `brew shellenv zsh`. Completion symlinks that resolve outside
+  the protected Homebrew prefix are omitted with a warning.
 - A failed refresh leaves the previous mirror intact. It warns without changing
   the result of an ordinary Homebrew command; `brew shellenv zsh` fails instead
   of emitting an unsafe `fpath` when no valid mirror can be published.
