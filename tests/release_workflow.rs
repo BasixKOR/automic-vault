@@ -136,18 +136,20 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(
         PUBLISH_SCRIPT.contains("exactly one Developer ID Application identity for ZU76A67LGU")
     );
-    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/build-scanner.sh"));
-    assert!(PUBLISH_SCRIPT.contains("scanner must be built from the clean release commit"));
+    assert!(PUBLISH_SCRIPT.contains("git -C \"$ROOT\" archive \"$expected_head\""));
+    assert!(PUBLISH_SCRIPT.contains("$source/scripts/build-scanner.sh"));
+    assert!(PUBLISH_SCRIPT.contains("scanner release commit is invalid"));
+    assert!(!PUBLISH_SCRIPT.contains("scanner must be built from the clean release commit"));
     assert!(!PUBLISH_SCRIPT.contains("--pattern scanner.tgz"));
-    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/install.sh"));
-    assert!(PUBLISH_SCRIPT.contains("$ROOT/scripts/dist/scanner.sh"));
+    assert!(PUBLISH_SCRIPT.contains("$source/scripts/dist/install.sh"));
+    assert!(PUBLISH_SCRIPT.contains("$source/scripts/dist/scanner.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));
     assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/scanner.tgz"));
     assert!(PUBLISH_SCRIPT.contains("scanner archive has unexpected contents"));
     assert!(PUBLISH_SCRIPT.contains("codesign --verify --strict -R \"$requirement\" \"$scanner\""));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
     let build = PUBLISH_SCRIPT
-        .find("$ROOT/scripts/build-scanner.sh")
+        .find("$source/scripts/build-scanner.sh")
         .unwrap();
     let verify = PUBLISH_SCRIPT
         .find("codesign --verify --strict -R \"$requirement\" \"$scanner\"")

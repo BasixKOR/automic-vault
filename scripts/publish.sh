@@ -365,20 +365,24 @@ publish_website_assets() (
   set -euo pipefail
   umask 077
   local expected_head="$1"
-  local tmp archive scanner requirement
-  if [[ "$(git -C "$ROOT" rev-parse HEAD)" != "$expected_head" ||
-    -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
-    echo "error: scanner must be built from the clean release commit" >&2
+  local tmp source archive scanner requirement
+  if [[ ! "$expected_head" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "$ROOT" cat-file -e "$expected_head^{commit}" 2>/dev/null; then
+    echo "error: scanner release commit is invalid: $expected_head" >&2
     exit 1
   fi
+  mkdir -p "$ROOT/target"
   tmp="$(mktemp -d "$ROOT/target/av-website-publish.XXXXXX")"
   trap 'rm -rf "$tmp"' EXIT
+  source="$tmp/source"
   archive="$tmp/scanner.tgz"
   scanner="$tmp/scanner"
+  mkdir "$source"
+  git -C "$ROOT" archive "$expected_head" | tar -x -C "$source"
 
   SCANNER_RUST_TOOLCHAIN="$SCANNER_RUST_TOOLCHAIN" \
     SCANNER_CODESIGN_IDENTITY="$SCANNER_CODESIGN_IDENTITY" \
-    "$ROOT/scripts/build-scanner.sh" "$archive"
+    "$source/scripts/build-scanner.sh" "$archive"
   if [[ "$(tar -tzf "$archive")" != scanner ]]; then
     echo "error: scanner archive has unexpected contents" >&2
     exit 1
@@ -386,16 +390,16 @@ publish_website_assets() (
   tar -xOzf "$archive" scanner >"$scanner"
   requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "ZU76A67LGU" and identifier "com.automicvault.scanner"'
   codesign --verify --strict -R "$requirement" "$scanner"
-  /bin/sh -n "$ROOT/scripts/dist/install.sh"
-  /bin/bash -n "$ROOT/scripts/dist/scanner.sh"
+  /bin/sh -n "$source/scripts/dist/install.sh"
+  /bin/bash -n "$source/scripts/dist/scanner.sh"
 
   aws s3 cp "$archive" "s3://$WEBSITE_BUCKET/scanner.tgz" \
     --content-type application/gzip \
     --cache-control no-cache
-  aws s3 cp "$ROOT/scripts/dist/scanner.sh" "s3://$WEBSITE_BUCKET/scanner.sh" \
+  aws s3 cp "$source/scripts/dist/scanner.sh" "s3://$WEBSITE_BUCKET/scanner.sh" \
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control no-cache
-  aws s3 cp "$ROOT/scripts/dist/install.sh" "s3://$WEBSITE_BUCKET/install.sh" \
+  aws s3 cp "$source/scripts/dist/install.sh" "s3://$WEBSITE_BUCKET/install.sh" \
     --content-type "text/x-shellscript; charset=utf-8" \
     --cache-control no-cache
   aws cloudfront create-invalidation \
