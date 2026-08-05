@@ -17,7 +17,7 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
-    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 3);
+    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 2);
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
     assert!(RELEASE_WORKFLOW.contains("SHA256SUMS"));
     assert!(RELEASE_WORKFLOW.contains("RUST_TOOLCHAIN: 1.96.0"));
@@ -38,11 +38,8 @@ fn release_assets_are_immutable_and_never_replaced() {
     assert!(!BUILD_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("gh release create"));
-    assert!(RELEASE_WORKFLOW.contains("SCANNER_NAME: scanner.tgz"));
-    assert!(
-        RELEASE_WORKFLOW
-            .contains("codesign --verify --strict -R \"$requirement\" \"$scanner_dir/scanner\"")
-    );
+    assert!(!RELEASE_WORKFLOW.contains("SCANNER_NAME"));
+    assert!(!RELEASE_WORKFLOW.contains("scanner.tgz"));
 }
 
 #[test]
@@ -96,7 +93,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
     ));
     assert!(BUILD_SCRIPT.contains("requires a Developer ID Application identity"));
     assert!(BUILD_SCRIPT.contains("requires the Developer ID provisioning profile"));
-    assert!(BUILD_SCRIPT.contains("SCANNER_CODESIGN_IDENTITY=\"$identity\""));
+    assert!(!BUILD_SCRIPT.contains("build-scanner.sh"));
     assert!(NOTARIZE_SCRIPT.starts_with("#!/bin/sh\n"));
     assert!(!NOTARIZE_SCRIPT.contains("/usr/local/bin/av"));
     for secret in ["APPLE_USERNAME", "APPLE_PASSWORD", "APPLE_TEAM_ID"] {
