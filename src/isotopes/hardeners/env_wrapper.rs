@@ -14,7 +14,7 @@ const STUB_DIR: &str = "/usr/local/bin";
 const TARGET_DIR: &str = "/opt/homebrew/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
-const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those isotope keys. Automic Vault requests elevation only to install the launcher stub. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
+const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those isotope keys. Automic Vault requests elevation only to install the launcher stub. This does not protect the target executable; anything that can replace it can read the injected credentials. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -119,13 +119,6 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
                 target.display()
             ));
         }
-        if test_target_dir().is_none() && actual_uid() != 0 && !target_is_protected(&target)? {
-            return Err(format!(
-                "refusing to harden {} because {} is writable by the current user; run `sudo av harden brew` first",
-                wrapper.name,
-                target.display()
-            ));
-        }
         let stub_path = stub_path(stub.command);
         if stub_path.exists() && !is_managed_stub(&stub_path, stub) {
             return Err(format!(
@@ -135,16 +128,6 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-fn target_is_protected(path: &Path) -> Result<bool, String> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|err| format!("cannot resolve {}: {err}", path.display()))?;
-    Ok(path
-        .ancestors()
-        .chain(canonical.ancestors())
-        .all(|path| !crate::path_security::is_user_writable(path)))
 }
 
 fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
@@ -559,18 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_user_writable_targets() {
-        let path = temp_dir("env-wrapper-writable").join("bin/tool");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "").unwrap();
-
-        assert!(!target_is_protected(&path).unwrap());
-
-        fs::remove_dir_all(path.ancestors().nth(2).unwrap()).unwrap();
-    }
-
-    #[test]
-    fn installs_simple_env_stub() {
+    fn installs_with_user_writable_target() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let previous_home = std::env::var_os("HOME");
         let dir = temp_dir("env-wrapper-simple");
