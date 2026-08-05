@@ -437,6 +437,64 @@ RUBY
   git -C "$TAP_ROOT" push origin HEAD:main
 }
 
+finish_publication() {
+  local version="$1"
+  local head="$2"
+  local release_url="$3"
+  local digest
+  publish_website_assets "$head"
+  digest="$(
+    gh release view "$version" \
+      --repo "$REPOSITORY" \
+      --json assets \
+      --jq ".assets[] | select(.name == \"Automic-Vault-$version.dmg\") | .digest"
+  )"
+  if [[ ! "$digest" =~ ^sha256:([0-9a-f]{64})$ ]]; then
+    echo "error: release DMG has no valid SHA-256 digest" >&2
+    exit 1
+  fi
+  publish_cask "$version" "${BASH_REMATCH[1]}"
+  echo "Published release: $release_url"
+}
+
+resume_published_release() {
+  local release_info is_draft is_immutable head release_url
+  [[ -n "$REQUESTED_VERSION" ]] || return 1
+  if ! release_info="$(
+    gh api \
+      -H "X-GitHub-Api-Version: 2026-03-10" \
+      "repos/$REPOSITORY/releases/tags/$REQUESTED_VERSION" \
+      --jq '[.draft, .immutable, .target_commitish, .html_url] | @tsv' \
+      2>/dev/null
+  )"; then
+    return 1
+  fi
+  read -r is_draft is_immutable head release_url <<<"$release_info"
+  if [[ "$is_draft" != "false" || "$is_immutable" != "true" ]]; then
+    return 1
+  fi
+
+  # The checkout may have changed while Actions ran, but the recovery logic itself must not have.
+  if [[ ! -f "$ROOT/scripts/publish.sh" || -L "$ROOT/scripts/publish.sh" ]] ||
+    ! git -C "$ROOT" diff --quiet HEAD -- scripts/publish.sh; then
+    echo "error: recovery requires an unmodified publish script" >&2
+    exit 64
+  fi
+  git -C "$ROOT" fetch --quiet origin main
+  if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "$ROOT" cat-file -e "$head^{commit}" 2>/dev/null ||
+    ! git -C "$ROOT" merge-base --is-ancestor "$head" origin/main; then
+    echo "error: release $REQUESTED_VERSION does not target a commit on main" >&2
+    exit 1
+  fi
+
+  VERSION="$REQUESTED_VERSION"
+  echo "Resuming local publication for immutable release $VERSION."
+  prepare_cask_publish
+  prepare_website_publish
+  finish_publication "$VERSION" "$head" "$release_url"
+}
+
 verify_draft_update() (
   set -euo pipefail
   umask 077
@@ -545,6 +603,16 @@ if ! command -v gh >/dev/null 2>&1; then
   echo "error: publish requires gh" >&2
   exit 64
 fi
+case "$(git -C "$ROOT" remote get-url origin)" in
+  git@github.com:automic-vault/automic-vault.git | https://github.com/automic-vault/automic-vault.git) ;;
+  *)
+    echo "error: publish requires the automic-vault/automic-vault origin" >&2
+    exit 64
+    ;;
+esac
+if resume_published_release; then
+  exit 0
+fi
 if ! command -v codex >/dev/null 2>&1; then
   echo "error: publish requires codex" >&2
   exit 64
@@ -557,13 +625,6 @@ if [[ "$(git -C "$ROOT" branch --show-current)" != "main" ]]; then
   echo "error: publish requires the main branch" >&2
   exit 64
 fi
-case "$(git -C "$ROOT" remote get-url origin)" in
-  git@github.com:automic-vault/automic-vault.git | https://github.com/automic-vault/automic-vault.git) ;;
-  *)
-    echo "error: publish requires the automic-vault/automic-vault origin" >&2
-    exit 64
-    ;;
-esac
 prepare_cask_publish
 prepare_website_publish
 git -C "$ROOT" fetch --quiet origin main
@@ -653,16 +714,4 @@ if [[ "$is_draft" != "false" || "$is_immutable" != "true" || "$target_commitish"
   echo "error: published release is not immutable or targets the wrong commit" >&2
   exit 1
 fi
-publish_website_assets "$head"
-digest="$(
-  gh release view "$VERSION" \
-    --repo "$REPOSITORY" \
-    --json assets \
-    --jq ".assets[] | select(.name == \"Automic-Vault-$VERSION.dmg\") | .digest"
-)"
-if [[ ! "$digest" =~ ^sha256:([0-9a-f]{64})$ ]]; then
-  echo "error: release DMG has no valid SHA-256 digest" >&2
-  exit 1
-fi
-publish_cask "$VERSION" "${BASH_REMATCH[1]}"
-echo "Published release: $release_url"
+finish_publication "$VERSION" "$head" "$release_url"

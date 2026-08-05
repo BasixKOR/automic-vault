@@ -130,6 +130,10 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$head\""));
+    assert!(PUBLISH_SCRIPT.contains("resume_published_release"));
+    assert!(PUBLISH_SCRIPT.contains("Resuming local publication for immutable release"));
+    assert!(PUBLISH_SCRIPT.contains("recovery requires an unmodified publish script"));
+    assert!(PUBLISH_SCRIPT.contains("finish_publication \"$VERSION\" \"$head\" \"$release_url\""));
     assert!(PUBLISH_SCRIPT.contains("contains(Aliases.Items, '$WEBSITE_ALIAS')"));
     assert!(!PUBLISH_SCRIPT.contains("contains(join(',', Aliases.Items)"));
     assert!(PUBLISH_SCRIPT.contains("SCANNER_RUST_TOOLCHAIN=\"1.96.0\""));
@@ -156,6 +160,11 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
         .unwrap();
     let upload = PUBLISH_SCRIPT.find("aws s3 cp \"$archive\"").unwrap();
     assert!(build < verify && verify < upload);
+    let resume = PUBLISH_SCRIPT
+        .rfind("if resume_published_release; then")
+        .unwrap();
+    let codex = PUBLISH_SCRIPT.rfind("if ! command -v codex").unwrap();
+    assert!(resume < codex);
 }
 
 #[test]
