@@ -26,10 +26,12 @@ av harden codex
 ```
 
 Codex can store credentials in the system keyring itself, so the fix belongs in
-its configuration rather than in a wrapper. The hardener guides you to set
+its configuration rather than in a wrapper. The hardener sets
 `cli_auth_credentials_store` to `keyring` in
-`${CODEX_HOME:-$HOME/.codex}/config.toml`, run `codex login` again, confirm the
-new login, and only then delete the plaintext file left behind.
+`${CODEX_HOME:-$HOME/.codex}/config.toml`, runs `codex login`, confirms the new
+login, and only then deletes the plaintext file left behind. It restores the
+original configuration and preserves the plaintext credentials if login or
+verification fails.
 
 ```toml
 cli_auth_credentials_store = "keyring"

@@ -91,6 +91,20 @@ fn select_agent_cli(selector: Option<&str>) -> Option<&'static AgentCliDoctor> {
     AGENT_CLIS.iter().find(|agent| agent.command == selector)
 }
 
+pub(crate) fn trusted_codex_cli() -> Result<PathBuf, String> {
+    let agent = select_agent_cli(Some("codex")).unwrap();
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let executable = resolve(agent.command, &path)
+        .ok_or_else(|| "codex is not available through PATH; run `av doctor codex`".to_string())?;
+    if !vendor_signature_valid(&executable, agent.team_identifier, agent.signing_identifier) {
+        return Err(format!(
+            "refusing to run unsigned Codex CLI {}; run `av doctor codex`",
+            executable.display()
+        ));
+    }
+    Ok(executable)
+}
+
 fn diagnose_agent_cli(
     agent: &AgentCliDoctor,
     path: &OsStr,

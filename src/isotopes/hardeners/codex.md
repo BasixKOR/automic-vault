@@ -2,17 +2,22 @@
 
 ## How Automic Vault Hardens Codex
 
-`av harden codex` guides Codex's own supported credential-storage migration:
+`av harden codex` performs Codex's supported credential-storage migration:
 
-1. Close active Codex sessions.
-2. Set `cli_auth_credentials_store = "keyring"` in
+1. Refuse to proceed while ChatGPT.app is running.
+2. Show the complete plan and ask for confirmation.
+3. Atomically set `cli_auth_credentials_store = "keyring"` in
    `${CODEX_HOME:-$HOME/.codex}/config.toml`.
-3. Run `codex login` and confirm it with `codex login status`.
-4. Only then delete the old plaintext `auth.json`.
+4. Run `codex login` and confirm it with `codex login status`.
+5. Only after successful verification, delete the old plaintext `auth.json`.
 
-Automic Vault does not delete `auth.json` automatically. Losing the only working
-credential copy would be worse than leaving a clearly reported plaintext copy
-for the user to remove after a verified login.
+If login or verification fails, Automic Vault restores the original
+configuration and keeps `auth.json`. It also refuses to execute a `codex` binary
+that does not carry OpenAI's expected code signature.
+
+API-key and access-token logins preserve their existing method by passing the
+credential to Codex over stdin. Mixed, malformed, Bedrock, and agent-identity
+credential files fail closed for manual migration.
 
 ## ChatGPT Desktop
 
@@ -26,5 +31,5 @@ session, so close the app before changing it and expect to reauthenticate.
 
 - `keyring` fails closed when the OS credential store is unavailable; `auto` can
   fall back to plaintext `auth.json`.
-- The configuration change does not migrate or remove an existing `auth.json`.
+- A failed login never removes the existing `auth.json`.
 - A project-level `.codex/config.toml` has higher precedence than the user file.

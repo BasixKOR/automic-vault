@@ -3,7 +3,7 @@ use std::io::{IsTerminal, Write};
 
 mod aws;
 mod bless;
-mod doctor;
+pub(crate) mod doctor;
 mod inject;
 mod list;
 mod open;
@@ -277,7 +277,7 @@ where
                 return finish_hardening(result, "brew", stdout, stderr);
             }
             if target == "codex" {
-                return match hardeners::codex::run(stdout) {
+                return match hardeners::codex::run(stdout, yes) {
                     Ok(()) => 0,
                     Err(err) => {
                         let _ = writeln!(stderr, "av harden: {err}");
@@ -451,6 +451,7 @@ pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     fn run_args(args: &[&str]) -> (i32, String, String) {
         let mut stdout = Vec::new();
@@ -632,28 +633,117 @@ mod tests {
     }
 
     #[test]
-    fn harden_codex_prints_the_safe_migration_order() {
+    fn harden_codex_performs_the_safe_migration_order() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let home = std::env::temp_dir().join(format!("av-cli-codex-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
+        let codex = home.join("codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\nexpected='cli_auth_credentials_store=\"keyring\"'\nif [ \"$1 $2\" = \"login --with-api-key\" ]; then read secret; [ \"$secret\" = api-secret ] && [ \"$3\" = -c ] && [ \"$4\" = \"$expected\" ]; exit; fi\n[ \"$1 $2\" = \"login status\" ] && [ \"$3\" = -c ] && [ \"$4\" = \"$expected\" ]\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(home.join("config.toml"), "model = \"gpt-5.6\"\n").unwrap();
+        std::fs::write(home.join("auth.json"), r#"{"OPENAI_API_KEY":"api-secret"}"#).unwrap();
         unsafe {
             std::env::set_var("CODEX_HOME", &home);
+            std::env::set_var("AUTOMIC_VAULT_TEST_CODEX_CLI_PATH", &codex);
+            std::env::set_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING", "0");
         }
 
-        let (code, stdout, stderr) = run_args(&["av", "harden", "codex"]);
+        let (code, stdout, stderr) = run_args(&["av", "harden", "codex", "--yes"]);
 
         unsafe {
             std::env::remove_var("CODEX_HOME");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_CODEX_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING");
         }
-        let _ = std::fs::remove_dir_all(&home);
         assert_eq!(code, 0);
-        assert!(stdout.contains(&home.join("config.toml").display().to_string()));
-        assert!(stdout.contains("`codex login`"));
-        assert!(stdout.contains("`codex login status`"));
-        assert!(stdout.contains("only after confirmation"));
-        assert!(stdout.contains("ChatGPT desktop's Codex surface"));
+        assert!(stdout.contains("delete"));
+        assert!(stdout.contains("login --with-api-key"));
+        assert!(stdout.contains("only after verification"));
+        assert!(stdout.contains("verified Codex login from the Keychain"));
+        assert!(!stdout.contains("api-secret"));
+        assert_eq!(
+            std::fs::read_to_string(home.join("config.toml")).unwrap(),
+            "cli_auth_credentials_store = \"keyring\"\nmodel = \"gpt-5.6\"\n"
+        );
+        assert!(!home.join("auth.json").exists());
         assert_eq!(stderr, "");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn harden_codex_rolls_back_when_login_verification_fails() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let home =
+            std::env::temp_dir().join(format!("av-cli-codex-rollback-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let codex = home.join("codex");
+        std::fs::write(
+            &codex,
+            "#!/bin/sh\n[ \"$1 $2\" = \"login -c\" ] && exit 0\nexit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let original = "model = \"gpt-5.6\"\n";
+        std::fs::write(home.join("config.toml"), original).unwrap();
+        std::fs::write(
+            home.join("auth.json"),
+            r#"{"tokens":{"access_token":"secret"}}"#,
+        )
+        .unwrap();
+        unsafe {
+            std::env::set_var("CODEX_HOME", &home);
+            std::env::set_var("AUTOMIC_VAULT_TEST_CODEX_CLI_PATH", &codex);
+            std::env::set_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING", "0");
+        }
+
+        let (code, _, stderr) = run_args(&["av", "harden", "codex", "--yes"]);
+
+        unsafe {
+            std::env::remove_var("CODEX_HOME");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_CODEX_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING");
+        }
+        assert_eq!(code, 1);
+        assert!(stderr.contains("restored the original Codex configuration"));
+        assert_eq!(
+            std::fs::read_to_string(home.join("config.toml")).unwrap(),
+            original
+        );
+        assert!(home.join("auth.json").exists());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn harden_codex_refuses_while_chatgpt_is_running() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let home =
+            std::env::temp_dir().join(format!("av-cli-codex-chatgpt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("auth.json"), "secret").unwrap();
+        unsafe {
+            std::env::set_var("CODEX_HOME", &home);
+            std::env::set_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING", "1");
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "codex", "--yes"]);
+
+        unsafe {
+            std::env::remove_var("CODEX_HOME");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_CHATGPT_RUNNING");
+        }
+        assert_eq!(code, 1);
+        assert!(stdout.starts_with("╭─ harden codex"));
+        assert!(stderr.contains("quit ChatGPT.app"));
+        assert!(!home.join("config.toml").exists());
+        assert!(home.join("auth.json").exists());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
