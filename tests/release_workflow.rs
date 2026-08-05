@@ -125,6 +125,7 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(!RELEASE_WORKFLOW.contains("homebrew-isotopes"));
     assert!(!RELEASE_WORKFLOW.contains("HOMEBREW_TAP_TOKEN"));
     assert!(PUBLISH_SCRIPT.contains("release y/n?"));
+    assert!(PUBLISH_SCRIPT.contains("read -r -s -n 1 -p"));
     assert!(PUBLISH_SCRIPT.contains("gh release edit"));
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));

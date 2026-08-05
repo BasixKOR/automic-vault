@@ -628,9 +628,9 @@ fi
 verify_draft_update "$VERSION" "$head"
 echo "Draft release ready for review and publication:"
 echo "$release_url"
-printf "release y/n? "
 reply=""
-read -r reply || true
+read -r -s -n 1 -p "release y/n? " reply || true
+printf '%s\n' "$reply"
 if [[ "$reply" != "y" && "$reply" != "Y" ]]; then
   echo "Draft release left unpublished."
   exit 0
