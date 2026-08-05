@@ -2,6 +2,9 @@ const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
 const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
 const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
+const BUILD_SCANNER_SCRIPT: &str = include_str!("../scripts/build-scanner.sh");
+const INSTALL_SCRIPT: &str = include_str!("../scripts/install.sh");
+const SCANNER_SCRIPT: &str = include_str!("../scripts/scanner.sh");
 
 #[test]
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
@@ -14,7 +17,7 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
-    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 2);
+    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 3);
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
     assert!(RELEASE_WORKFLOW.contains("SHA256SUMS"));
     assert!(RELEASE_WORKFLOW.contains("RUST_TOOLCHAIN: 1.96.0"));
@@ -35,7 +38,11 @@ fn release_assets_are_immutable_and_never_replaced() {
     assert!(!BUILD_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("--clobber"));
     assert!(!PUBLISH_SCRIPT.contains("gh release create"));
-    assert!(!PUBLISH_SCRIPT.contains("aws s3"));
+    assert!(RELEASE_WORKFLOW.contains("SCANNER_NAME: scanner.tgz"));
+    assert!(
+        RELEASE_WORKFLOW
+            .contains("codesign --verify --strict -R \"$requirement\" \"$scanner_dir/scanner\"")
+    );
 }
 
 #[test]
@@ -47,6 +54,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
 # --- automic-vault\n\
 # capabilities:\n\
 #   gh: trusted\n\
+#   aws: trusted\n\
 # ---\n"
     ));
     assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
@@ -88,6 +96,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
     ));
     assert!(BUILD_SCRIPT.contains("requires a Developer ID Application identity"));
     assert!(BUILD_SCRIPT.contains("requires the Developer ID provisioning profile"));
+    assert!(BUILD_SCRIPT.contains("SCANNER_CODESIGN_IDENTITY=\"$identity\""));
     assert!(NOTARIZE_SCRIPT.starts_with("#!/bin/sh\n"));
     assert!(!NOTARIZE_SCRIPT.contains("/usr/local/bin/av"));
     for secret in ["APPLE_USERNAME", "APPLE_PASSWORD", "APPLE_TEAM_ID"] {
@@ -122,6 +131,11 @@ fn publication_is_local_and_release_actions_need_no_aws() {
     assert!(PUBLISH_SCRIPT.contains("gh release edit"));
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
+    assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$VERSION\""));
+    assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/install.sh"));
+    assert!(PUBLISH_SCRIPT.contains("s3://$WEBSITE_BUCKET/scanner.tgz"));
+    assert!(PUBLISH_SCRIPT.contains("scanner archive does not match GitHub's digest"));
+    assert!(PUBLISH_SCRIPT.contains("codesign --verify --strict -R \"$requirement\" \"$scanner\""));
     assert!(RELEASE_WORKFLOW.contains("DMG_NAME: Automic-Vault-${{ inputs.version }}.dmg"));
 }
 
@@ -145,4 +159,39 @@ fn publication_requires_the_previous_app_to_accept_the_draft() {
     );
     assert!(PUBLISH_SCRIPT.contains("lacks the updater preflight"));
     assert!(PUBLISH_SCRIPT.contains("downloaded draft DMG does not match GitHub's digest"));
+}
+
+#[test]
+fn scanner_is_small_signed_and_read_only() {
+    for setting in [
+        "CARGO_PROFILE_RELEASE_OPT_LEVEL=z",
+        "CARGO_PROFILE_RELEASE_LTO=fat",
+        "CARGO_PROFILE_RELEASE_STRIP=symbols",
+    ] {
+        assert!(BUILD_SCANNER_SCRIPT.contains(setting));
+    }
+    assert!(SCANNER_SCRIPT.contains("https://www.automicvault.com/scanner.tgz"));
+    assert!(SCANNER_SCRIPT.contains("--proto '=https' --proto-redir '=https' --tlsv1.2"));
+    assert!(SCANNER_SCRIPT.contains("certificate leaf[subject.OU] = \"ZU76A67LGU\""));
+    assert!(SCANNER_SCRIPT.contains("identifier \"com.automicvault.scanner\""));
+    assert!(SCANNER_SCRIPT.contains("(deny default)"));
+    assert!(SCANNER_SCRIPT.contains("(allow file-read*)"));
+    assert!(SCANNER_SCRIPT.contains("(allow process-info*)"));
+    assert!(SCANNER_SCRIPT.contains("(allow sysctl-read)"));
+    assert!(
+        SCANNER_SCRIPT.find("codesign --verify").unwrap()
+            < SCANNER_SCRIPT.rfind("/usr/bin/sandbox-exec").unwrap()
+    );
+}
+
+#[test]
+fn website_installer_is_transparent_and_verifies_release() {
+    assert!(INSTALL_SCRIPT.contains("https://automicvault.com/av.dmg"));
+    assert!(INSTALL_SCRIPT.contains("set +x"));
+    assert!(INSTALL_SCRIPT.contains("set -x"));
+    assert!(INSTALL_SCRIPT.contains("/usr/sbin/spctl -a -vv --type exec \"$app\""));
+    assert!(INSTALL_SCRIPT.contains("/usr/bin/codesign --verify --deep --strict \"$app\""));
+    assert!(INSTALL_SCRIPT.contains("^TeamIdentifier=${team_id}$"));
+    assert!(INSTALL_SCRIPT.contains("$app/Contents/MacOS/av"));
+    assert!(INSTALL_SCRIPT.find("set -x").unwrap() < INSTALL_SCRIPT.find("/usr/bin/curl").unwrap());
 }
