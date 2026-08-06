@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusMenu()
 
         if shouldHandOffToLaunchAgent() {
-            if CommandLine.arguments.contains(openMainWindowArgument) {
+            if shouldOpenMainWindow(pending: false) {
                 UserDefaults.standard.set(true, forKey: pendingMainWindowKey)
             }
             if let secretGateID = requestedSecretGateID(arguments: CommandLine.arguments) {
@@ -3859,9 +3859,10 @@ private func isLaunchAgentInstance(
 
 private func shouldOpenMainWindow(
     arguments: [String] = CommandLine.arguments,
-    pending: Bool
+    pending: Bool,
+    environment: [String: String] = ProcessInfo.processInfo.environment
 ) -> Bool {
-    pending || arguments.contains(openMainWindowArgument)
+    pending || arguments.contains(openMainWindowArgument) || !isLaunchAgentInstance(environment: environment)
 }
 
 private func requestedSecretGateID(arguments: [String]) -> String? {
@@ -6192,9 +6193,22 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
           shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
           !shouldHandOffToLaunchAgent(environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName], launchAgentURL: URL(fileURLWithPath: "/tmp/agent.plist")),
           !shouldHandOffToLaunchAgent(environment: [:], launchAgentURL: nil),
-          shouldOpenMainWindow(arguments: ["AutomicVaultMenubar", openMainWindowArgument], pending: false),
-          shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: true),
-          !shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: false),
+          shouldOpenMainWindow(
+              arguments: ["AutomicVaultMenubar", openMainWindowArgument],
+              pending: false,
+              environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]
+          ),
+          shouldOpenMainWindow(
+              arguments: ["AutomicVaultMenubar"],
+              pending: true,
+              environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]
+          ),
+          shouldOpenMainWindow(arguments: ["AutomicVaultMenubar"], pending: false, environment: [:]),
+          !shouldOpenMainWindow(
+              arguments: ["AutomicVaultMenubar"],
+              pending: false,
+              environment: ["XPC_SERVICE_NAME": approvalLaunchAgentName]
+          ),
           requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "aws"]) == "aws",
           requestedSecretGateID(arguments: ["AutomicVaultMenubar", "--secret-gate", "../aws"]) == nil,
           secretGateID(from: URL(string: "automic-vault://secret-gate/aws")!) == "aws",
