@@ -1,26 +1,32 @@
-use std::io::Write;
+use std::fs::{self, OpenOptions};
+use std::io::{Read, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use super::HardenerDetection;
+use super::{HardenerDetection, RootOnlyOutcome};
 
 const PAM_DIR: &str = "/etc/pam.d";
 const SUDO_LOCAL_PATH: &str = "/etc/pam.d/sudo_local";
-const ENABLE_TOUCH_ID_COMMAND: &str =
-    "echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null";
+const PAM_TID_LINE: &str = "auth sufficient pam_tid.so";
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::RootOnly;
 
-pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<(), String> {
+pub(crate) fn run(stdout: &mut dyn Write, color: bool) -> Result<RootOnlyOutcome, String> {
+    let pam_dir = pam_dir();
     writeln!(stdout, "╭─ harden sudo").ok();
-    writeln!(stdout, "│").ok();
-    writeln!(stdout, "◇ enables biometric authentication for sudo").ok();
-    writeln!(stdout, "│").ok();
-    if pam_tid_enabled(&pam_dir())? {
+    if pam_tid_enabled(&pam_dir)? {
         writeln!(stdout, "╰─ {}", green("already hardened ✔︎", color)).ok();
-    } else {
-        writeln!(stdout, "╰─ run:").ok();
-        writeln!(stdout).ok();
-        writeln!(stdout, "        {ENABLE_TOUCH_ID_COMMAND}").ok();
+        return Ok(RootOnlyOutcome::Hardened);
     }
-    Ok(())
+    if PRIVILEGE_MODE == super::PrivilegeMode::RootOnly && super::effective_uid() != 0 {
+        writeln!(stdout, "│").ok();
+        writeln!(stdout, "├─ enable biometric authentication for sudo").ok();
+        writeln!(stdout, "╰─ next: sudo av harden sudo").ok();
+        return Ok(RootOnlyOutcome::Previewed);
+    }
+
+    enable_pam_tid(&pam_dir)?;
+    writeln!(stdout, "╰─ hardened sudo").ok();
+    Ok(RootOnlyOutcome::Hardened)
 }
 
 pub(crate) fn detect() -> HardenerDetection {
@@ -56,6 +62,53 @@ fn pam_tid_enabled(pam_dir: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+fn enable_pam_tid(pam_dir: &Path) -> Result<(), String> {
+    let test_override = crate::test_env_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR").is_some();
+    let directory = fs::symlink_metadata(pam_dir)
+        .map_err(|err| format!("failed to inspect {}: {err}", pam_dir.display()))?;
+    if !directory.file_type().is_dir()
+        || !test_override && (directory.uid() != 0 || directory.permissions().mode() & 0o022 != 0)
+    {
+        return Err(format!(
+            "refusing to modify untrusted {}",
+            pam_dir.display()
+        ));
+    }
+
+    let path = pam_dir.join("sudo_local");
+    let mut file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .mode(0o644)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&path)
+        .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+    if !metadata.file_type().is_file()
+        || !test_override && (metadata.uid() != 0 || metadata.permissions().mode() & 0o022 != 0)
+    {
+        return Err(format!("refusing to modify untrusted {}", path.display()));
+    }
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    if contents.lines().any(line_enables_pam_tid) {
+        return Ok(());
+    }
+    if !contents.is_empty() && !contents.ends_with('\n') {
+        writeln!(file).map_err(|err| format!("failed to update {}: {err}", path.display()))?;
+    }
+    writeln!(file, "{PAM_TID_LINE}")
+        .and_then(|()| file.sync_all())
+        .map_err(|err| format!("failed to update {}: {err}", path.display()))?;
+    pam_tid_enabled(pam_dir)?
+        .then_some(())
+        .ok_or_else(|| format!("failed to verify {}", path.display()))
+}
+
 fn file_has_line(path: &Path, predicate: fn(&str) -> bool) -> Result<bool, String> {
     let contents = std::fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
@@ -79,7 +132,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn prints_touch_id_command_when_unhardened() {
+    fn previews_touch_id_change_when_unprivileged() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let pam = temp_dir("unhardened");
         fs::write(pam.join("sudo_local"), "#auth sufficient pam_tid.so\n").unwrap();
@@ -88,7 +141,7 @@ mod tests {
         }
         let mut stdout = Vec::new();
 
-        run(&mut stdout, false).unwrap();
+        assert_eq!(run(&mut stdout, false).unwrap(), RootOnlyOutcome::Previewed);
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
@@ -96,8 +149,61 @@ mod tests {
         let stdout = String::from_utf8(stdout).unwrap();
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n"
+            "╭─ harden sudo\n│\n├─ enable biometric authentication for sudo\n╰─ next: sudo av harden sudo\n"
         );
+        let _ = fs::remove_dir_all(pam);
+    }
+
+    #[test]
+    fn privileged_run_hardens_without_a_prompt() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let pam = temp_dir("privileged");
+        fs::write(pam.join("sudo_local"), "#auth sufficient pam_tid.so\n").unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR", &pam);
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+        }
+        let mut stdout = Vec::new();
+
+        assert_eq!(run(&mut stdout, false).unwrap(), RootOnlyOutcome::Hardened);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+        }
+        assert_eq!(
+            String::from_utf8(stdout).unwrap(),
+            "╭─ harden sudo\n╰─ hardened sudo\n"
+        );
+        assert_eq!(
+            fs::read_to_string(pam.join("sudo_local")).unwrap(),
+            "#auth sufficient pam_tid.so\nauth sufficient pam_tid.so\n"
+        );
+        let _ = fs::remove_dir_all(pam);
+    }
+
+    #[test]
+    fn privileged_run_refuses_a_symlinked_pam_file() {
+        use std::os::unix::fs::symlink;
+
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let pam = temp_dir("symlink");
+        let victim = pam.join("victim");
+        fs::write(&victim, "leave me alone\n").unwrap();
+        symlink(&victim, pam.join("sudo_local")).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR", &pam);
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+        }
+
+        let err = run(&mut Vec::new(), false).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+        }
+        assert!(err.contains("failed to open"));
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "leave me alone\n");
         let _ = fs::remove_dir_all(pam);
     }
 
@@ -111,13 +217,12 @@ mod tests {
         }
         let mut stdout = Vec::new();
 
-        run(&mut stdout, false).unwrap();
+        assert_eq!(run(&mut stdout, false).unwrap(), RootOnlyOutcome::Hardened);
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("◇ enables biometric authentication for sudo"));
         assert!(stdout.contains("already hardened ✔︎"));
         let _ = fs::remove_dir_all(pam);
     }

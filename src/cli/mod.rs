@@ -38,7 +38,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 14;
+pub(crate) const INSTALL_REVISION: u32 = 15;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -225,7 +225,7 @@ where
             }
         }
         Some("unharden") => {
-            let Some((target, yes)) = parse_harden_args(&rest) else {
+            let Some((target, _yes)) = parse_harden_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");
                 return 2;
             };
@@ -233,8 +233,9 @@ where
                 let _ = writeln!(stderr, "{USAGE}");
                 return 2;
             }
-            match hardeners::homebrew::unharden(stdout, yes) {
-                Ok(()) => 0,
+            match hardeners::homebrew::unharden(stdout) {
+                Ok(hardeners::RootOnlyOutcome::Hardened) => 0,
+                Ok(hardeners::RootOnlyOutcome::Previewed) => 1,
                 Err(err) => {
                     let _ = writeln!(stderr, "av unharden: {err}");
                     1
@@ -308,8 +309,17 @@ where
                 return finish_hardening(result, "codex", stdout, stderr);
             }
             if target == "sudo" {
-                let result = hardeners::sudo::run(stdout, style.color);
-                return finish_hardening(result, "sudo", stdout, stderr);
+                return match hardeners::sudo::run(stdout, style.color) {
+                    Ok(hardeners::RootOnlyOutcome::Hardened) => {
+                        print_hardening_followup(stdout, "sudo");
+                        0
+                    }
+                    Ok(hardeners::RootOnlyOutcome::Previewed) => 1,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "av harden: {err}");
+                        1
+                    }
+                };
             }
             if target == "supabase" || target == "supabase-cli" {
                 let result = hardeners::supabase::run(stdout, yes);
@@ -657,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn harden_sudo_prints_touch_id_command() {
+    fn harden_sudo_previews_the_privileged_step() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let pam = std::env::temp_dir().join(format!("av-cli-sudo-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&pam);
@@ -673,12 +683,30 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_SUDO_PAM_DIR");
         }
         let _ = std::fs::remove_dir_all(pam);
-        assert_eq!(code, 0);
+        assert_eq!(code, 1);
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n◇ next: run `av doctor sudo`\n"
+            "╭─ harden sudo\n│\n├─ enable biometric authentication for sudo\n╰─ next: sudo av harden sudo\n"
         );
         assert_eq!(stderr, "");
+    }
+
+    #[test]
+    fn user_only_hardeners_reject_root() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0") };
+
+        for target in ["codex", "gh", "stripe", "supabase"] {
+            let (code, stdout, stderr) = run_args(&["av", "harden", target]);
+            assert_eq!(code, 1, "{target}");
+            assert_eq!(stdout, "", "{target}");
+            assert_eq!(
+                stderr,
+                format!("av harden: `av harden {target}` cannot be run as root\n")
+            );
+        }
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
     }
 
     #[test]

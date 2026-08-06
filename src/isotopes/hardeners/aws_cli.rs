@@ -20,19 +20,16 @@ const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
 const AWS_TARGET_PATH: &str = "/opt/homebrew/bin/aws";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::Mixed;
 
 unsafe extern "C" {
     fn geteuid() -> u32;
 }
 
 pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    let is_root = effective_uid() == 0;
     let has_test_stub = crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some();
-    if is_root && !has_test_stub {
-        return Err(
-            "run `av harden aws` without sudo; av will request elevation when needed".into(),
-        );
-    }
+    PRIVILEGE_MODE.require_user("aws", has_test_stub)?;
+    let is_root = super::effective_uid() == 0;
     if !has_test_stub {
         crate::cli::ensure_aws_helper_ready()?;
         if !Path::new(AWS_TARGET_PATH).is_file() {
@@ -84,7 +81,11 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         }
     }
 
-    writeln!(stdout, "├─ install the native AWS credential helper").ok();
+    writeln!(
+        stdout,
+        "├─ run sudo to install the native AWS credential helper"
+    )
+    .ok();
     writeln!(stdout, "│").ok();
     if !confirm(stdout, yes)? {
         writeln!(stdout, "╰─ cancelled").ok();
@@ -223,12 +224,6 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 
 fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool {
     !is_root || has_test_keychain
-}
-
-fn effective_uid() -> u32 {
-    crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_else(actual_uid)
 }
 
 fn is_aws_stub(path: &Path) -> bool {
@@ -531,11 +526,9 @@ mod tests {
             std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
         }
         assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
-        assert!(
-            String::from_utf8(stdout)
-                .unwrap()
-                .contains("╰─ hardened aws")
-        );
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains("run sudo to install the native AWS credential helper"));
+        assert!(stdout.contains("╰─ hardened aws"));
         let _ = fs::remove_dir_all(dir);
     }
 

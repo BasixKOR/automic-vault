@@ -6,6 +6,7 @@ use std::process::Command;
 
 use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
 const GH_CLI_PATH: &str = "/opt/homebrew/opt/gh-cli/bin/gh";
 pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
 
@@ -29,6 +30,7 @@ struct GhCredential {
 }
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
+    PRIVILEGE_MODE.require_user("gh", false)?;
     if !gh_cli_path().exists() {
         return Err(HardenError::GhCliNotInstalled);
     }

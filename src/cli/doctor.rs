@@ -573,11 +573,7 @@ fn identity_issues(
 }
 
 fn harden_invocation(hardener: &str) -> String {
-    if matches!(hardener, "aws" | "brew") {
-        format!("av harden {hardener}")
-    } else {
-        format!("sudo av harden {hardener}")
-    }
+    format!("av harden {hardener}")
 }
 
 fn manual_identity_repair(hardener: &str, kind: &str, name: &str, stub: &str) -> String {

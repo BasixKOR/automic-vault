@@ -5,6 +5,7 @@ use std::process::Command;
 
 use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
 const SUPABASE_CLI_PATH: &str = "/opt/homebrew/opt/supabase-cli/bin/supabase";
 const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/supabase-cli";
 const VAULT_KEY: &str = "SUPABASE_ACCESS_TOKEN";
@@ -12,6 +13,7 @@ const KEYCHAIN_SERVICE: &str = "Supabase CLI";
 const KEYCHAIN_ACCOUNTS: &[&str] = &["supabase", "access-token"];
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+    PRIVILEGE_MODE.require_user("supabase", false)?;
     if !supabase_cli_path().exists() {
         return Err(format!(
             "supabase is not installed; run `{INSTALL_COMMAND}`"

@@ -1,6 +1,7 @@
 ## What It Does
 
-`av harden sudo` enables Touch ID for sudo:
+`av harden sudo` previews the PAM change, then directs you to rerun it with
+sudo. The privileged run appends:
 
 ```sh
 echo 'auth sufficient pam_tid.so' >> /etc/pam.d/sudo_local

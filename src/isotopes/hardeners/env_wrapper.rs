@@ -14,6 +14,7 @@ const STUB_DIR: &str = "/usr/local/bin";
 const TARGET_DIR: &str = "/opt/homebrew/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::Mixed;
 const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those isotope keys. Automic Vault requests elevation only to install the launcher stub. This does not protect the target executable; anything that can replace it can read the injected credentials. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
 
 unsafe extern "C" {
@@ -81,18 +82,18 @@ fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
 }
 
 fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    if effective_uid() == 0 && test_stub_dir().is_none() {
-        return Err(format!(
-            "run `av harden {}` without sudo; av will request elevation when needed",
-            wrapper.name
-        ));
-    }
+    PRIVILEGE_MODE.require_user(wrapper.name, test_stub_dir().is_some())?;
     preflight(wrapper)?;
 
     writeln!(stdout, "╭─ harden {}", wrapper.name).ok();
     writeln!(stdout, "│").ok();
     for stub in stubs(wrapper) {
-        writeln!(stdout, "├─ write {}", stub_path(stub.command).display()).ok();
+        writeln!(
+            stdout,
+            "├─ run sudo to write {}",
+            stub_path(stub.command).display()
+        )
+        .ok();
     }
     writeln!(stdout, "│").ok();
     if !confirm(stdout, yes)? {
@@ -334,12 +335,6 @@ fn test_stub_dir() -> Option<PathBuf> {
     crate::test_env_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR").map(PathBuf::from)
 }
 
-fn effective_uid() -> u32 {
-    crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or_else(actual_uid)
-}
-
 fn actual_uid() -> u32 {
     unsafe { geteuid() }
 }
@@ -558,7 +553,8 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
         }
 
-        run(wrapper("doctl").unwrap(), &mut Vec::new(), true).unwrap();
+        let mut output = Vec::new();
+        run(wrapper("doctl").unwrap(), &mut output, true).unwrap();
 
         unsafe {
             match previous_home {
@@ -573,6 +569,11 @@ mod tests {
         assert!(script.contains(MARKER));
         assert!(script.contains("+DIGITALOCEAN_ACCESS_TOKEN"));
         assert!(script.contains("exec \"$original\" \"$@\""));
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("run sudo to write")
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -8,6 +8,44 @@ pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 
+unsafe extern "C" {
+    fn geteuid() -> u32;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrivilegeMode {
+    RootOnly,
+    Mixed,
+    UserOnly,
+}
+
+impl PrivilegeMode {
+    pub(crate) fn require_user(self, hardener: &str, test_override: bool) -> Result<(), String> {
+        if effective_uid() != 0 || test_override {
+            return Ok(());
+        }
+        match self {
+            Self::Mixed => Err(format!(
+                "run `av harden {hardener}` without sudo; av will request elevation when needed"
+            )),
+            Self::UserOnly => Err(format!("`av harden {hardener}` cannot be run as root")),
+            Self::RootOnly => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RootOnlyOutcome {
+    Previewed,
+    Hardened,
+}
+
+pub(crate) fn effective_uid() -> u32 {
+    crate::test_env_string("AUTOMIC_VAULT_TEST_EUID")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| unsafe { geteuid() })
+}
+
 pub(crate) struct HardenerMetadata {
     pub(crate) name: &'static str,
     pub(crate) documentation: &'static str,

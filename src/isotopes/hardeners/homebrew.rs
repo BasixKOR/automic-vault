@@ -18,6 +18,8 @@ const BREW_STUB: &str = "/usr/local/bin/brew";
 const APP_BREW_STUB: &str = "/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::Mixed;
+const UNHARDEN_PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::RootOnly;
 const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
@@ -25,10 +27,6 @@ const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V15";
 const STUB_VERSION: u32 = 15;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
-
-unsafe extern "C" {
-    fn geteuid() -> u32;
-}
 
 #[derive(Debug, PartialEq, Eq)]
 struct SourceUser {
@@ -39,11 +37,10 @@ struct SourceUser {
 }
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    if effective_uid() == 0 && crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX").is_none() {
-        return Err(
-            "run `av harden brew` without sudo; av will request elevation when needed".into(),
-        );
-    }
+    PRIVILEGE_MODE.require_user(
+        "brew",
+        crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX").is_some(),
+    )?;
     let (prefix, stub, _source, source_user) = preflight()?;
     let automic_home = prefix.join("var/automic");
     let automic_cache = automic_home.join("cache");
@@ -113,7 +110,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         "├─ disable Homebrew shell completions to preserve shell ownership checks"
     )
     .ok();
-    writeln!(stdout, "├─ install {}", stub.display()).ok();
+    writeln!(
+        stdout,
+        "├─ run sudo for privileged Homebrew changes and install {}",
+        stub.display()
+    )
+    .ok();
     if !shell_rcs.is_empty() {
         writeln!(
             stdout,
@@ -152,7 +154,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 }
 
 pub(crate) fn harden_privileged(stdout: &mut dyn Write) -> Result<(), String> {
-    if effective_uid() != 0 {
+    if super::effective_uid() != 0 {
         return Err("Homebrew installation requires root".into());
     }
     let (prefix, stub, source, source_user) = preflight()?;
@@ -218,22 +220,19 @@ fn preflight() -> Result<(PathBuf, PathBuf, PathBuf, SourceUser), String> {
     let casks = incompatible_installed_casks(&prefix)?;
     if !casks.is_empty() {
         return Err(format!(
-            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `sudo av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again",
+            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again",
             casks.join(", ")
         ));
     }
     Ok((prefix, stub, source, source_user))
 }
 
-pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+pub(crate) fn unharden(stdout: &mut dyn Write) -> Result<super::RootOnlyOutcome, String> {
     let prefix = brew_prefix();
     let target = brew_target_path();
     let stub = brew_stub_path();
     if !target.exists() {
         return Err(format!("Homebrew is not installed at {}", target.display()));
-    }
-    if effective_uid() != 0 {
-        return Err("run `sudo av unharden brew`".to_string());
     }
     if !is_managed_stub_file(&stub) {
         return Err(format!(
@@ -243,33 +242,32 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
     }
     let source_user = source_user()?;
 
-    writeln!(stdout, "╭─ unharden brew").ok();
-    writeln!(stdout, "│").ok();
-    writeln!(stdout, "◆ THIS TEMPORARILY REMOVES HOMEBREW HARDENING").ok();
-    writeln!(
-        stdout,
-        "│  Anything running as {} will be able to modify Homebrew and its formulae.",
-        source_user.name
-    )
-    .ok();
-    writeln!(
-        stdout,
-        "│  Remove or migrate every incompatible cask, then immediately run `av harden brew`."
-    )
-    .ok();
-    writeln!(stdout, "│").ok();
-    writeln!(stdout, "├─ remove {}", stub.display()).ok();
-    writeln!(
-        stdout,
-        "├─ restore {} ownership to {}",
-        prefix.display(),
-        source_user.name
-    )
-    .ok();
-    writeln!(stdout, "│").ok();
-    if !confirm(stdout, yes)? {
-        writeln!(stdout, "╰─ cancelled").ok();
-        return Ok(());
+    if UNHARDEN_PRIVILEGE_MODE == super::PrivilegeMode::RootOnly && super::effective_uid() != 0 {
+        writeln!(stdout, "╭─ unharden brew").ok();
+        writeln!(stdout, "│").ok();
+        writeln!(stdout, "◆ THIS TEMPORARILY REMOVES HOMEBREW HARDENING").ok();
+        writeln!(
+            stdout,
+            "│  Anything running as {} will be able to modify Homebrew and its formulae.",
+            source_user.name
+        )
+        .ok();
+        writeln!(
+            stdout,
+            "│  Remove or migrate every incompatible cask, then immediately run `av harden brew`."
+        )
+        .ok();
+        writeln!(stdout, "│").ok();
+        writeln!(stdout, "├─ remove {}", stub.display()).ok();
+        writeln!(
+            stdout,
+            "├─ restore {} ownership to {}",
+            prefix.display(),
+            source_user.name
+        )
+        .ok();
+        writeln!(stdout, "╰─ next: sudo av unharden brew").ok();
+        return Ok(super::RootOnlyOutcome::Previewed);
     }
 
     if !is_managed_stub_file(&stub) {
@@ -287,7 +285,7 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
         "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate incompatible casks, then immediately run `av harden brew`"
     )
     .ok();
-    Ok(())
+    Ok(super::RootOnlyOutcome::Hardened)
 }
 
 pub(crate) fn detect() -> HardenerDetection {
@@ -443,7 +441,7 @@ fn brew_user_diagnostics(
                 "Hardened Homebrew does not support these installed casks: {}",
                 casks.join(", ")
             ),
-            remediation: "Run `sudo av unharden brew`, remove or migrate every application or installer cask, then run `av harden brew`.".into(),
+            remediation: "Run `av unharden brew`, remove or migrate every application or installer cask, then run `av harden brew`.".into(),
             path: Some(caskroom.display().to_string()),
         }),
         Err(message) => diagnostics.push(HardenerDiagnostic {
@@ -978,7 +976,7 @@ fn chown_tree(path: &Path, skipped: &Path, uid: u32, gid: u32) -> Result<(), Str
 fn source_user() -> Result<SourceUser, String> {
     let user = crate::test_env_string("AUTOMIC_VAULT_TEST_BREW_USER")
         .or_else(|| {
-            if effective_uid() == 0 {
+            if super::effective_uid() == 0 {
                 std::env::var("SUDO_USER").ok()
             } else {
                 current_user_name().ok()
@@ -1337,10 +1335,6 @@ fn vault_gid() -> Option<u32> {
     })
 }
 
-fn effective_uid() -> u32 {
-    test_u32("AUTOMIC_VAULT_TEST_EUID").unwrap_or_else(|| unsafe { geteuid() })
-}
-
 fn test_u32(name: &str) -> Option<u32> {
     crate::test_env_string(name)?.parse().ok()
 }
@@ -1632,7 +1626,10 @@ mod tests {
         }
 
         let mut output = Vec::new();
-        unharden(&mut output, true).unwrap();
+        assert_eq!(
+            unharden(&mut output).unwrap(),
+            crate::isotopes::hardeners::RootOnlyOutcome::Hardened
+        );
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_PREFIX");
@@ -1646,10 +1643,58 @@ mod tests {
         }
         assert!(!stub.exists());
         assert!(!prefix.join(BREW_USER_UID_FILE).exists());
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate incompatible casks, then immediately run `av harden brew`\n"
+        );
+        fs::remove_dir_all(prefix).unwrap();
+    }
+
+    #[test]
+    fn unharden_previews_without_mutating_when_unprivileged() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let prefix = temp_path("brew-unharden-preview");
+        let target = prefix.join("bin/brew");
+        let stub = prefix.join("usr-local-brew");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "brew").unwrap();
+        fs::write(&stub, STUB_MARKER).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_PREFIX", &prefix);
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &target);
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB", &stub);
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER", "alice");
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_UID", "501");
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_GID", "20");
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_USER_HOME", "/Users/alice");
+        }
+
+        let mut output = Vec::new();
+        assert_eq!(
+            unharden(&mut output).unwrap(),
+            crate::isotopes::hardeners::RootOnlyOutcome::Previewed
+        );
+
+        unsafe {
+            for name in [
+                "AUTOMIC_VAULT_TEST_BREW_PREFIX",
+                "AUTOMIC_VAULT_TEST_BREW_TARGET",
+                "AUTOMIC_VAULT_TEST_BREW_STUB",
+                "AUTOMIC_VAULT_TEST_EUID",
+                "AUTOMIC_VAULT_TEST_BREW_USER",
+                "AUTOMIC_VAULT_TEST_BREW_USER_UID",
+                "AUTOMIC_VAULT_TEST_BREW_USER_GID",
+                "AUTOMIC_VAULT_TEST_BREW_USER_HOME",
+            ] {
+                std::env::remove_var(name);
+            }
+        }
+        assert!(stub.exists());
         assert!(
             String::from_utf8(output)
                 .unwrap()
-                .contains("TEMPORARILY REMOVES")
+                .ends_with("╰─ next: sudo av unharden brew\n")
         );
         fs::remove_dir_all(prefix).unwrap();
     }

@@ -7,11 +7,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::HardenerDetection;
 
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
 const KEY: &str = "cli_auth_credentials_store";
 const SETTING: &str = "cli_auth_credentials_store = \"keyring\"";
 const OVERRIDE: &str = "cli_auth_credentials_store=\"keyring\"";
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
+    PRIVILEGE_MODE.require_user("codex", false)?;
     let config = crate::isotopes::detectors::codex::config_path()?;
     let auth = crate::isotopes::detectors::codex::auth_path()?;
 

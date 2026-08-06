@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
 
+const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
 const STRIPE_CLI_PATH: &str = "/opt/homebrew/opt/stripe-cli/bin/stripe";
 const KEYCHAIN_SERVICE: &str = "StripeCLI";
 pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/stripe-cli";
@@ -29,6 +30,7 @@ struct Credential {
 }
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
+    PRIVILEGE_MODE.require_user("stripe", false)?;
     if !stripe_cli_path().exists() {
         return Err(HardenError::StripeCliNotInstalled);
     }

@@ -98,7 +98,7 @@ pinned to `--formula`.
 
 Hardening refuses to proceed while `/opt/homebrew/Caskroom` contains anything
 other than validated CLI-only casks. For an existing hardened installation, run
-`sudo av unharden brew`, remove or migrate incompatible casks using
+`av unharden brew`, follow its explicit sudo step, remove or migrate incompatible casks using
 `/opt/homebrew/bin/brew`, then run `av harden brew` again. Homebrew is
 user-writable between those commands; do not run hardened tools or expose
 credentials through them during that migration window.
