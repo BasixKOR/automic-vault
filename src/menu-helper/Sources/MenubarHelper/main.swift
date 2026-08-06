@@ -4768,6 +4768,7 @@ private struct ApprovalPromptView: View {
 
 private struct ApprovalPromptBlessingView: View {
     let context: BlessedScriptPromptContext
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -4794,7 +4795,7 @@ private struct ApprovalPromptBlessingView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.green.opacity(colorScheme == .light ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(.green.opacity(0.25), lineWidth: 1)
