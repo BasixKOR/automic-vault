@@ -115,6 +115,29 @@ pub(crate) fn keychain_services_allow_security_tool(_services: &[String]) -> Res
     Ok(false)
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) use macos_keychain::{LegacyKeychainItem, legacy_keychain_items};
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) struct LegacyKeychainItem {
+    pub service: String,
+    pub account: String,
+}
+
+#[cfg(not(target_os = "macos"))]
+impl LegacyKeychainItem {
+    pub(crate) fn delete(self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn legacy_keychain_items(
+    _services: &[String],
+) -> Result<Vec<LegacyKeychainItem>, String> {
+    Ok(Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +275,7 @@ mod macos_keychain {
     const CSSM_ACL_AUTHORIZATION_ANY: i32 = 1;
     const CSSM_ACL_AUTHORIZATION_DECRYPT: i32 = 24;
     const SEC_GENERIC_PASSWORD_ITEM_CLASS: u32 = u32::from_be_bytes(*b"genp");
+    const SEC_ACCOUNT_ITEM_ATTR: u32 = u32::from_be_bytes(*b"acct");
     const SEC_SERVICE_ITEM_ATTR: u32 = u32::from_be_bytes(*b"svce");
     const SECURITY_TOOL_PATH: &[u8] = b"/usr/bin/security";
 
@@ -278,6 +302,13 @@ mod macos_keychain {
         attr: *mut SecKeychainAttribute,
     }
 
+    #[repr(C)]
+    struct SecKeychainAttributeInfo {
+        count: u32,
+        tag: *mut u32,
+        format: *mut u32,
+    }
+
     #[link(name = "CoreFoundation", kind = "framework")]
     unsafe extern "C" {
         fn CFArrayGetCount(array: CFArrayRef) -> isize;
@@ -298,6 +329,19 @@ mod macos_keychain {
         fn SecACLGetAuthorizations(acl: SecACLRef, tags: *mut i32, tag_count: *mut u32) -> i32;
         fn SecAccessCopyACLList(access: SecAccessRef, acl_list: *mut CFArrayRef) -> i32;
         fn SecKeychainItemCopyAccess(item: SecKeychainItemRef, access: *mut SecAccessRef) -> i32;
+        fn SecKeychainItemCopyAttributesAndData(
+            item: SecKeychainItemRef,
+            info: *mut SecKeychainAttributeInfo,
+            item_class: *mut u32,
+            attr_list: *mut *mut SecKeychainAttributeList,
+            length: *mut u32,
+            data: *mut *mut c_void,
+        ) -> i32;
+        fn SecKeychainItemDelete(item: SecKeychainItemRef) -> i32;
+        fn SecKeychainItemFreeAttributesAndData(
+            attr_list: *mut SecKeychainAttributeList,
+            data: *mut c_void,
+        ) -> i32;
         fn SecKeychainSearchCopyNext(
             search: SecKeychainSearchRef,
             item: *mut SecKeychainItemRef,
@@ -323,7 +367,50 @@ mod macos_keychain {
         Ok(false)
     }
 
+    pub(crate) struct LegacyKeychainItem {
+        pub service: String,
+        pub account: String,
+        item: ScopedCf<c_void>,
+    }
+
+    impl LegacyKeychainItem {
+        pub(crate) fn delete(self) -> Result<(), String> {
+            check_status(
+                unsafe { SecKeychainItemDelete(self.item.0) },
+                &format!(
+                    "delete legacy keychain item (service {:?}, account {:?})",
+                    self.service, self.account
+                ),
+            )
+        }
+    }
+
+    pub(crate) fn legacy_keychain_items(
+        services: &[String],
+    ) -> Result<Vec<LegacyKeychainItem>, String> {
+        let mut found = Vec::new();
+        for service in services {
+            for item in service_items(service)? {
+                found.push(LegacyKeychainItem {
+                    service: service.clone(),
+                    account: item_account(item.0)?,
+                    item,
+                });
+            }
+        }
+        Ok(found)
+    }
+
     fn service_allows_security_tool(service: &str) -> Result<bool, String> {
+        for item in service_items(service)? {
+            if item_allows_security_tool(item.0)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn service_items(service: &str) -> Result<Vec<ScopedCf<c_void>>, String> {
         let mut service_bytes = service.as_bytes().to_vec();
         let mut attr = SecKeychainAttribute {
             tag: SEC_SERVICE_ITEM_ATTR,
@@ -344,23 +431,68 @@ mod macos_keychain {
             )
         };
         if status == ERR_SEC_ITEM_NOT_FOUND {
-            return Ok(false);
+            return Ok(Vec::new());
         }
         check_status(status, "create keychain search")?;
         let _search_ref = ScopedCf(search);
+        let mut items = Vec::new();
 
         loop {
             let mut item = ptr::null();
             let status = unsafe { SecKeychainSearchCopyNext(search, &mut item) };
             if status == ERR_SEC_ITEM_NOT_FOUND {
-                return Ok(false);
+                return Ok(items);
             }
             check_status(status, "copy next keychain item")?;
-            let _item_ref = ScopedCf(item);
-            if item_allows_security_tool(item)? {
-                return Ok(true);
-            }
+            items.push(ScopedCf(item));
         }
+    }
+
+    fn item_account(item: SecKeychainItemRef) -> Result<String, String> {
+        let mut tag = SEC_ACCOUNT_ITEM_ATTR;
+        let mut info = SecKeychainAttributeInfo {
+            count: 1,
+            tag: &mut tag,
+            format: ptr::null_mut(),
+        };
+        let mut attributes = ptr::null_mut();
+        check_status(
+            unsafe {
+                SecKeychainItemCopyAttributesAndData(
+                    item,
+                    &mut info,
+                    ptr::null_mut(),
+                    &mut attributes,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            },
+            "copy keychain item account",
+        )?;
+        let account = if attributes.is_null() || unsafe { (*attributes).count } != 1 {
+            Err("legacy keychain item has no account".to_string())
+        } else if let Some(attribute) = unsafe { (*attributes).attr.as_ref() } {
+            if attribute.data.is_null() && attribute.length != 0 {
+                Err("legacy keychain item has an invalid account".to_string())
+            } else {
+                let bytes = if attribute.length == 0 {
+                    &[]
+                } else {
+                    unsafe {
+                        std::slice::from_raw_parts(attribute.data.cast(), attribute.length as usize)
+                    }
+                };
+                String::from_utf8(bytes.to_vec())
+                    .map_err(|_| "legacy keychain item account is not UTF-8".to_string())
+            }
+        } else {
+            Err("legacy keychain item has no account".to_string())
+        };
+        check_status(
+            unsafe { SecKeychainItemFreeAttributesAndData(attributes, ptr::null_mut()) },
+            "free keychain item account",
+        )?;
+        account
     }
 
     fn item_allows_security_tool(item: SecKeychainItemRef) -> Result<bool, String> {

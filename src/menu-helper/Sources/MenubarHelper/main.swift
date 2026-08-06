@@ -1252,6 +1252,7 @@ private struct ApprovalRequest {
 
 enum SecretMutation {
     case save(account: String, value: String, accessibility: StoredSecretAccessibility)
+    case saveIfAbsentOrEqual(account: String, value: String, accessibility: StoredSecretAccessibility)
     case delete(account: String)
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
@@ -1263,6 +1264,11 @@ enum SecretMutation {
             properties = (
                 "save", [account], ["save", account], "Store \(account)?",
                 "This will create or replace a secret in Automic Vault."
+            )
+        case .saveIfAbsentOrEqual(let account, _, _):
+            properties = (
+                "save-if-absent", [account], ["save-if-absent", account], "Store \(account)?",
+                "This will create the secret only if no differing value already exists."
             )
         case .delete(let account):
             properties = (
@@ -1305,6 +1311,12 @@ enum SecretMutation {
         switch self {
         case .save(let account, let value, let accessibility):
             saveStoredSecret(account: account, value: value, accessibility: accessibility)
+        case .saveIfAbsentOrEqual(let account, let value, let accessibility):
+            saveStoredSecretIfAbsentOrEqual(
+                account: account,
+                value: value,
+                accessibility: accessibility
+            )
         case .delete(let account):
             deleteStoredSecret(account: account)
         case .rename(let account, let newAccount):
@@ -1800,6 +1812,14 @@ private final class ApprovalServer: @unchecked Sendable {
             )
         case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case "save-if-absent" where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleSave(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                caller: mutationCaller,
+                ifAbsentOrEqual: true
+            )
         case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
             handleLoad(message, on: peer)
         case "bless" where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -2542,7 +2562,8 @@ private final class ApprovalServer: @unchecked Sendable {
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
         cancellation: ApprovalCancellation,
-        caller: MutationCaller
+        caller: MutationCaller,
+        ifAbsentOrEqual: Bool = false
     ) {
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
               let valuePointer = xpc_dictionary_get_string(message, "value")
@@ -2556,8 +2577,11 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let value = String(cString: valuePointer)
+        let mutation: SecretMutation = ifAbsentOrEqual
+            ? .saveIfAbsentOrEqual(account: key, value: value, accessibility: .whenUnlocked)
+            : .save(account: key, value: value, accessibility: .whenUnlocked)
         handleMutation(
-            .save(account: key, value: value, accessibility: .whenUnlocked),
+            mutation,
             on: peer,
             message: message,
             cancellation: cancellation,
@@ -2763,7 +2787,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             switch mutation {
-            case .save(let account, _, _):
+            case .save(let account, _, _), .saveIfAbsentOrEqual(let account, _, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {

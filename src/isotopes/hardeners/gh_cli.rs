@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -33,13 +34,18 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
     }
 
     let hosts_paths = gh_hosts_paths()?;
-    let mut credentials = Vec::new();
+    let configured_hosts = configured_hosts(&hosts_paths);
+    let mut plaintext_credentials = Vec::new();
     for path in &hosts_paths {
-        credentials.extend(read_plaintext_credentials(path)?);
+        plaintext_credentials.extend(read_plaintext_credentials(path)?);
     }
-    if credentials.is_empty() {
-        credentials.extend(read_legacy_keychain_credentials(&hosts_paths));
-    }
+    let legacy_credentials = read_legacy_keychain_credentials(&configured_hosts)?;
+    let mut credentials = plaintext_credentials.clone();
+    credentials.extend(
+        legacy_credentials
+            .iter()
+            .map(|credential| credential.credential.clone()),
+    );
 
     writeln!(stdout, "╭─ harden gh").ok();
     writeln!(stdout, "│").ok();
@@ -49,32 +55,44 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
         return Ok(());
     }
 
+    let destinations = migration_destinations(&credentials, &configured_hosts)?;
+    preflight_destinations(&destinations)?;
+
     writeln!(
         stdout,
         "├─ migrate {} GitHub token(s) into Automic Vault",
         credentials.len()
     )
     .ok();
-    writeln!(
-        stdout,
-        "├─ remove plaintext oauth_token entries from hosts.yml"
-    )
-    .ok();
+    if !plaintext_credentials.is_empty() {
+        writeln!(
+            stdout,
+            "├─ delete plaintext oauth_token entries from hosts.yml"
+        )
+        .ok();
+    }
+    if !legacy_credentials.is_empty() {
+        writeln!(
+            stdout,
+            "├─ delete {} exact legacy GitHub Keychain item(s)",
+            legacy_credentials.len()
+        )
+        .ok();
+    }
     writeln!(stdout, "│").ok();
     if !confirm(stdout, yes)? {
         writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
 
-    for credential in &credentials {
-        store_gh_credential(credential)?;
-    }
+    store_and_verify_destinations(&destinations)?;
     for path in &hosts_paths {
         remove_plaintext_tokens(path)?;
     }
-    for credential in &credentials {
-        delete_legacy_keychain_tokens(&credential.host, credential.user.as_deref())?;
+    for credential in legacy_credentials {
+        credential.delete()?;
     }
+    verify_postconditions()?;
     writeln!(stdout, "╰─ migrated gh credentials").ok();
     super::write_secret_gate_notice(stdout, "gh");
     Ok(())
@@ -178,11 +196,11 @@ fn parse_hosts_credentials(contents: &str) -> Vec<GhCredential> {
         if indent <= 4 {
             user_context = None;
         }
-        if indent == 4 {
-            if let Some(value) = yaml_string_value(trimmed, "user") {
-                active_user = Some(value.to_string());
-                continue;
-            }
+        if indent == 4
+            && let Some(value) = yaml_string_value(trimmed, "user")
+        {
+            active_user = Some(value.to_string());
+            continue;
         }
         if indent >= 8 && trimmed.ends_with(':') {
             user_context = trimmed.strip_suffix(':').map(str::to_string);
@@ -211,19 +229,72 @@ fn yaml_string_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     Some(value.trim().trim_matches('"').trim_matches('\''))
 }
 
-fn read_legacy_keychain_credentials(hosts_paths: &[PathBuf]) -> Vec<GhCredential> {
-    let hosts = configured_hosts(hosts_paths);
-    let mut credentials = Vec::new();
-    for (host, user) in hosts {
-        if let Some(token) = legacy_token(&host, user.as_deref()) {
-            credentials.push(GhCredential { host, user, token });
-        }
-    }
-    credentials
+struct LegacyCredential {
+    credential: GhCredential,
+    item: Option<crate::isotopes::detectors::gh_cli::LegacyKeychainItem>,
 }
 
-fn configured_hosts(hosts_paths: &[PathBuf]) -> Vec<(String, Option<String>)> {
-    let mut hosts = vec![("github.com".to_string(), None)];
+impl LegacyCredential {
+    fn delete(self) -> Result<(), String> {
+        self.item.map_or(Ok(()), |item| item.delete())
+    }
+}
+
+fn read_legacy_keychain_credentials(
+    hosts: &BTreeMap<String, Option<String>>,
+) -> Result<Vec<LegacyCredential>, String> {
+    if let Some(token) = crate::test_env_string("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN") {
+        return Ok(hosts
+            .iter()
+            .map(|(host, user)| LegacyCredential {
+                credential: GhCredential {
+                    host: host.clone(),
+                    user: user.clone(),
+                    token: token.clone(),
+                },
+                item: None,
+            })
+            .collect());
+    }
+    if crate::test_keychain_dir().is_some() {
+        return Ok(Vec::new());
+    }
+
+    let services = hosts
+        .keys()
+        .map(|host| format!("gh:{host}"))
+        .collect::<Vec<_>>();
+    let items = crate::isotopes::detectors::gh_cli::legacy_keychain_items(&services)?;
+    let mut identities = BTreeSet::new();
+    let mut credentials = Vec::new();
+    for item in items {
+        if !identities.insert((item.service.clone(), item.account.clone())) {
+            return Err(format!(
+                "refusing ambiguous duplicate legacy keychain items (service {:?}, account {:?})",
+                item.service, item.account
+            ));
+        }
+        let token = security_find_generic_password_result(&item.service, Some(&item.account))?
+            .ok_or_else(|| {
+                format!(
+                    "failed to read legacy keychain item (service {:?}, account {:?})",
+                    item.service, item.account
+                )
+            })?;
+        credentials.push(LegacyCredential {
+            credential: GhCredential {
+                host: item.service.trim_start_matches("gh:").to_string(),
+                user: (!item.account.is_empty()).then(|| item.account.clone()),
+                token,
+            },
+            item: Some(item),
+        });
+    }
+    Ok(credentials)
+}
+
+fn configured_hosts(hosts_paths: &[PathBuf]) -> BTreeMap<String, Option<String>> {
+    let mut hosts = BTreeMap::from([("github.com".to_string(), None)]);
     for path in hosts_paths {
         let Ok(contents) = fs::read_to_string(path) else {
             continue;
@@ -235,53 +306,59 @@ fn configured_hosts(hosts_paths: &[PathBuf]) -> Vec<(String, Option<String>)> {
             let trimmed = line.trim();
             if indent == 0 {
                 if let Some(previous) = host.take() {
-                    hosts.push((previous, active_user.take()));
+                    hosts.insert(previous, active_user.take());
                 }
                 host = trimmed.strip_suffix(':').map(str::to_string);
-            } else if indent == 4 {
-                if let Some(value) = yaml_string_value(trimmed, "user") {
-                    active_user = Some(value.to_string());
-                }
+            } else if indent == 4
+                && let Some(value) = yaml_string_value(trimmed, "user")
+            {
+                active_user = Some(value.to_string());
             }
         }
         if let Some(previous) = host {
-            hosts.push((previous, active_user));
+            hosts.insert(previous, active_user);
         }
     }
-    hosts.sort();
-    hosts.dedup();
     hosts
-}
-
-fn legacy_token(host: &str, user: Option<&str>) -> Option<String> {
-    if let Some(token) = crate::test_env_string("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN") {
-        return Some(token);
-    }
-    let service = format!("gh:{host}");
-    if let Some(user) = user {
-        if let Some(token) = security_find_generic_password(&service, Some(user)) {
-            return Some(token);
-        }
-    }
-    security_find_generic_password(&service, Some(""))
-        .or_else(|| security_find_generic_password(&service, None))
 }
 
 pub(super) fn security_find_generic_password(
     service: &str,
     account: Option<&str>,
 ) -> Option<String> {
+    security_find_generic_password_result(service, account)
+        .ok()
+        .flatten()
+}
+
+fn security_find_generic_password_result(
+    service: &str,
+    account: Option<&str>,
+) -> Result<Option<String>, String> {
     let mut command = Command::new(security_path());
     command.args(["find-generic-password", "-s", service]);
     if let Some(account) = account {
         command.args(["-a", account]);
     }
     command.arg("-w");
-    let output = command.output().ok()?;
+    let output = command
+        .output()
+        .map_err(|err| format!("failed to run security: {err}"))?;
     if !output.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("could not be found")
+            || stderr.contains("The specified item could not be found")
+        {
+            return Ok(None);
+        }
+        return Err(format!(
+            "failed to read legacy keychain item (service {service:?}, account {account:?}): {}",
+            stderr.trim()
+        ));
     }
-    decode_legacy_keychain_password(String::from_utf8_lossy(&output.stdout).trim())
+    Ok(decode_legacy_keychain_password(
+        String::from_utf8_lossy(&output.stdout).trim(),
+    ))
 }
 
 fn decode_legacy_keychain_password(value: &str) -> Option<String> {
@@ -363,12 +440,127 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn store_gh_credential(credential: &GhCredential) -> Result<(), String> {
-    crate::secrets::store_secret(&vault_key(&credential.host, None), &credential.token)?;
-    if let Some(user) = &credential.user {
-        crate::secrets::store_secret(&vault_key(&credential.host, Some(user)), &credential.token)?;
+fn migration_destinations(
+    credentials: &[GhCredential],
+    active_users: &BTreeMap<String, Option<String>>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut destinations = BTreeMap::new();
+    for credential in credentials {
+        if let Some(user) = credential.user.as_deref().filter(|user| !user.is_empty()) {
+            insert_destination(
+                &mut destinations,
+                vault_key(&credential.host, Some(user)),
+                &credential.token,
+            )?;
+        } else {
+            insert_destination(
+                &mut destinations,
+                vault_key(&credential.host, None),
+                &credential.token,
+            )?;
+        }
+
+        if active_users
+            .get(&credential.host)
+            .and_then(|user| user.as_deref())
+            == credential.user.as_deref()
+        {
+            insert_destination(
+                &mut destinations,
+                vault_key(&credential.host, None),
+                &credential.token,
+            )?;
+        }
+    }
+
+    for (host, active_user) in active_users {
+        if active_user.is_some() || destinations.contains_key(&vault_key(host, None)) {
+            continue;
+        }
+        let mut tokens = credentials
+            .iter()
+            .filter(|credential| credential.host == *host)
+            .map(|credential| credential.token.as_str());
+        if let Some(token) = tokens
+            .next()
+            .filter(|token| tokens.all(|other| other == *token))
+        {
+            insert_destination(&mut destinations, vault_key(host, None), token)?;
+        }
+    }
+    Ok(destinations)
+}
+
+fn insert_destination(
+    destinations: &mut BTreeMap<String, String>,
+    key: String,
+    token: &str,
+) -> Result<(), String> {
+    if let Some(existing) = destinations.get(&key) {
+        if existing != token {
+            return Err(format!(
+                "refusing ambiguous GitHub credential destination {key}"
+            ));
+        }
+    } else {
+        destinations.insert(key, token.to_string());
     }
     Ok(())
+}
+
+fn preflight_destinations(destinations: &BTreeMap<String, String>) -> Result<(), String> {
+    let existing = crate::secrets::list_secret_names()?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for (key, expected) in destinations {
+        if existing.contains(key) && crate::secrets::load_secret(key)? != *expected {
+            return Err(format!(
+                "refusing to replace differing existing GitHub credential {key}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn store_and_verify_destinations(destinations: &BTreeMap<String, String>) -> Result<(), String> {
+    for (key, token) in destinations {
+        crate::secrets::store_secret_if_absent_or_equal(key, token)?;
+    }
+    for (key, expected) in destinations {
+        if crate::secrets::load_secret(key)? != *expected {
+            return Err(format!("failed to verify GitHub credential {key}"));
+        }
+    }
+    Ok(())
+}
+
+fn verify_postconditions() -> Result<(), String> {
+    let hosts_token =
+        crate::isotopes::detectors::gh_cli::hosts_token::install_insecurity_reasons()?;
+    let keychain_access = if crate::test_keychain_dir().is_some() {
+        Vec::new()
+    } else {
+        crate::isotopes::detectors::gh_cli::keychain_access::install_insecurity_reasons()?
+    };
+    ensure_postconditions(&hosts_token, &keychain_access)
+}
+
+fn ensure_postconditions(hosts_token: &[String], keychain_access: &[String]) -> Result<(), String> {
+    let mut failed = Vec::new();
+    if !hosts_token.is_empty() {
+        failed.push("gh-cli-hosts-token");
+    }
+    if !keychain_access.is_empty() {
+        failed.push("gh-cli-keychain-access");
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "GitHub migration postcondition failed: {}",
+            failed.join(", ")
+        ))
+    }
 }
 
 fn remove_plaintext_tokens(path: &Path) -> Result<(), String> {
@@ -386,17 +578,6 @@ fn remove_plaintext_tokens(path: &Path) -> Result<(), String> {
             .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
     }
     Ok(())
-}
-
-fn delete_legacy_keychain_tokens(host: &str, user: Option<&str>) -> Result<(), String> {
-    if crate::test_env_var("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN").is_some() {
-        return Ok(());
-    }
-    let service = format!("gh:{host}");
-    if let Some(user) = user {
-        security_delete_generic_password(&service, Some(user))?;
-    }
-    security_delete_generic_password(&service, Some(""))
 }
 
 pub(super) fn security_delete_generic_password(
@@ -559,13 +740,12 @@ mod tests {
     }
 
     #[test]
-    fn harden_decodes_go_keyring_legacy_token() {
+    fn harden_imports_legacy_keychain_token() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
-        let dir = temp_path("gh-go-keyring-import");
+        let dir = temp_path("gh-keychain-import");
         let config = dir.join("config");
         let keychain = dir.join("keychain");
         let gh = dir.join("gh");
-        let security = dir.join("security");
         fs::create_dir_all(&config).unwrap();
         fs::write(&gh, "").unwrap();
         fs::write(
@@ -573,27 +753,27 @@ mod tests {
             "github.com:\n    users:\n        mxcl:\n    user: mxcl\n",
         )
         .unwrap();
-        fs::write(
-            &security,
-            "#!/bin/sh\nprintf '%s\\n' 'go-keyring-base64:Z2hvX3NlY3JldA=='\n",
-        )
-        .unwrap();
-        fs::set_permissions(&security, fs::Permissions::from_mode(0o700)).unwrap();
         unsafe {
             std::env::set_var("GH_CONFIG_DIR", &config);
             std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
             std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &gh);
-            std::env::set_var("AUTOMIC_VAULT_TEST_SECURITY_PATH", &security);
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN", "gho_secret");
         }
 
-        run(&mut Vec::new(), true).unwrap();
+        let mut output = Vec::new();
+        run(&mut output, true).unwrap();
 
         unsafe {
             std::env::remove_var("GH_CONFIG_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
-            std::env::remove_var("AUTOMIC_VAULT_TEST_SECURITY_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_LEGACY_TOKEN");
         }
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("delete 1 exact legacy")
+        );
         assert_eq!(
             fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM")).unwrap(),
             "gho_secret"
@@ -603,6 +783,125 @@ mod tests {
             "gho_secret"
         );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migration_destinations_union_multiple_accounts() {
+        let credentials = vec![
+            GhCredential {
+                host: "github.com".into(),
+                user: Some("monalisa".into()),
+                token: "active-token".into(),
+            },
+            GhCredential {
+                host: "github.com".into(),
+                user: Some("hubot".into()),
+                token: "other-token".into(),
+            },
+        ];
+        let active_users =
+            BTreeMap::from([("github.com".to_string(), Some("monalisa".to_string()))]);
+
+        assert_eq!(
+            migration_destinations(&credentials, &active_users).unwrap(),
+            BTreeMap::from([
+                (
+                    "GH_TOKEN_GITHUB_COM".to_string(),
+                    "active-token".to_string()
+                ),
+                (
+                    "GH_TOKEN_GITHUB_COM_HUBOT".to_string(),
+                    "other-token".to_string(),
+                ),
+                (
+                    "GH_TOKEN_GITHUB_COM_MONALISA".to_string(),
+                    "active-token".to_string(),
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn migration_rejects_ambiguous_destination() {
+        let credentials = vec![
+            GhCredential {
+                host: "github.com".into(),
+                user: Some("mona-lisa".into()),
+                token: "first".into(),
+            },
+            GhCredential {
+                host: "github.com".into(),
+                user: Some("mona_lisa".into()),
+                token: "second".into(),
+            },
+        ];
+
+        let error = migration_destinations(
+            &credentials,
+            &BTreeMap::from([("github.com".to_string(), None)]),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("refusing ambiguous GitHub credential destination"));
+    }
+
+    #[test]
+    fn harden_preserves_sources_and_destination_on_conflict() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("gh-destination-conflict");
+        let config = dir.join("config");
+        let keychain = dir.join("keychain");
+        let gh = dir.join("gh");
+        fs::create_dir_all(&config).unwrap();
+        fs::create_dir_all(&keychain).unwrap();
+        fs::write(&gh, "").unwrap();
+        fs::write(
+            config.join("hosts.yml"),
+            "github.com:\n    user: monalisa\n    oauth_token: incoming\n",
+        )
+        .unwrap();
+        fs::write(keychain.join("GH_TOKEN_GITHUB_COM"), "working").unwrap();
+        unsafe {
+            std::env::set_var("GH_CONFIG_DIR", &config);
+            std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &gh);
+        }
+
+        let error = run(&mut Vec::new(), true).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("GH_CONFIG_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+        }
+        assert!(
+            matches!(error, HardenError::Other(message) if message.contains("refusing to replace"))
+        );
+        assert_eq!(
+            fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM")).unwrap(),
+            "working"
+        );
+        assert!(
+            fs::read_to_string(config.join("hosts.yml"))
+                .unwrap()
+                .contains("oauth_token: incoming")
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn verifies_both_detector_postconditions() {
+        assert!(ensure_postconditions(&[], &[]).is_ok());
+        assert!(
+            ensure_postconditions(&["plaintext".into()], &[])
+                .unwrap_err()
+                .contains("gh-cli-hosts-token")
+        );
+        assert!(
+            ensure_postconditions(&[], &["keychain".into()])
+                .unwrap_err()
+                .contains("gh-cli-keychain-access")
+        );
     }
 
     #[test]
