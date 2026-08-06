@@ -1926,7 +1926,7 @@ private struct ReferenceDetailView: View {
                     Text(item.title)
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(3)
+                        .lineLimit(1)
                     referenceBadge
                     if item.id == "homebrew" {
                         Text("Experimental")
