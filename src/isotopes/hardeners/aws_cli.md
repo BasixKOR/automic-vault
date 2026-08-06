@@ -34,9 +34,9 @@ The helper verifies all of the following before returning credentials:
 Normal commands receive temporary credentials. AWS does not permit non-MFA
 `GetSessionToken` credentials to call IAM or most STS operations, so a base
 profile without MFA or a role receives the original long-lived keys for those
-operations. The approval window warns prominently and classifies the request
-as a secret dump: Trusted Access still prompts, while explicitly selected Full
-Access means everything and may auto-approve it.
+operations. The approval window warns that this is Elevated Secret Application.
+Write Access still prompts, while Full Access may automically authorize the
+recognized operation.
 
 ## Supported Profiles
 

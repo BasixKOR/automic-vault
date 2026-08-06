@@ -283,7 +283,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gate.defaultProtection == .readOnlyAndUpdates)
     #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
-    #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "All commands are approved automatically")
+    #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "Every recognized operation is automically authorized; unknown operations require approval")
 
     let secretGate = try #require(loadSecretGates(hardeners: [testGateMetadata()], service: service).first)
     #expect(secretGate.defaultProtection == .readOnly)
@@ -294,8 +294,8 @@ private func secretlessGateMetadata() -> HardenerMetadata {
         .fullExceptSecretDumps,
         .fullIncludingSecretDumps,
     ])
-    #expect(secretGate.protectionTitle(.readOnlyAndLocalWrites) == "Local Write Access")
-    #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Trusted Access")
+    #expect(secretGate.protectionTitle(.readOnlyAndLocalWrites) == "Local Write")
+    #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Write Access")
 }
 
 @Test func newGateGetsExplicitInitialPolicy() throws {
@@ -435,7 +435,7 @@ func protectionPolicyMatrix(
     case .readOnlyAndLocalWrites: classification == .readOnly || classification == .localWrite
     case .readOnlyAndUpdates: classification == .readOnly || classification == .update
     case .fullExceptSecretDumps: classification != .secretDump && classification != .unknown
-    case .fullIncludingSecretDumps: true
+    case .fullIncludingSecretDumps: classification != .unknown
     }
     #expect(protection.allows(classification) == expected)
 }
@@ -680,7 +680,7 @@ func protectionPolicyMatrix(
         command: "aws s3 ls",
         decision: "Approved",
         approvalSource: "Auto",
-        reason: "Read Only Access",
+        reason: "Read Only",
         launcher: "Codex",
         callerPath: "/usr/local/bin/av",
         target: "/opt/homebrew/bin/aws",
@@ -720,7 +720,7 @@ func protectionPolicyMatrix(
 
     let records = try JSONDecoder().decode([AccessRequestRecord].self, from: data)
     #expect(records.first?.approvalSource == nil)
-    #expect(records.first?.approvalSourceLabel == "Auto")
+    #expect(records.first?.approvalSourceLabel == "Policy")
 }
 
 private func temporaryDirectory() -> URL {

@@ -4,7 +4,7 @@ Date: 2026-07-14
 
 ## Incident finding
 
-The reported AWS commands did not reach the approval helper. The unified log has no XPC connection or access record for either command. A reused PID approval cannot explain that result: the transient key includes the PID, process start time, caller identity, exact operation, keys, target, arguments, working directory, flags, environment conflicts, script, and tool. Reuse also writes an access record before returning secrets.
+The reported AWS commands did not reach the approval helper. The unified log has no XPC connection or Authorization Record for either command. A reused PID Approval cannot explain that result: the transient key includes the PID, process start time, Launcher identity, exact operation, Secret Names, Target, arguments, working directory, flags, environment conflicts, script, and Tool. Reuse also writes an Authorization Record before returning secrets.
 
 The terminal process visible after the incident started at 19:09:27, 21 seconds after the 19:09:06 screenshot. Its later `which aws` result and environment do not describe the incident shell.
 
@@ -19,12 +19,12 @@ The available evidence rules out the approval cache and confirms a helper bypass
 
 | Path or variation | Result | Change |
 | --- | --- | --- |
-| Missing, unreadable, or malformed gate policy | Previously fell back to permissive behavior | Fail closed to No Access |
-| New gate defaults | Trusted Access is an explicit onboarding policy | Persist the explicit policy, including explicit No Access choices |
-| Launcher identity unavailable | Resolver applied “All Other Apps” without knowing whether an override matched | Disable persistent auto-approval and require a prompt |
-| Auto or manual approval | Reply could precede audit persistence | Persist and verify the record before returning secrets |
-| Audit storage | Same-user processes could alter `UserDefaults` | Store production records in the app-private Data Protection Keychain |
-| Transient PID approval | Includes process birth time and complete request identity | No bypass found; every reuse remains audited |
+| Missing, unreadable, or malformed gate policy | Previously fell back to permissive behavior | Fail closed to Approval Required |
+| Existing onboarding grants | Legacy Trusted Access was stored as an explicit choice | Preserve the stored grant under the Write Access label and persist every explicit default |
+| Launcher identity unavailable | Resolver applied “All Other Apps” without knowing whether an override matched | Disable durable automic authorization and require Approval |
+| Policy or human authorization | Reply could precede Authorization Record persistence | Persist and verify the record before returning secrets |
+| Authorization History storage | Same-user processes could alter `UserDefaults` | Store production records in the app-private Data Protection Keychain |
+| Transient PID Approval | Includes process birth time and complete request identity | No bypass found; every reuse remains recorded |
 | Installed CLI test hooks | Release/copy could use test Keychain and path overrides | Accept test overrides only from debug binaries inside their Cargo profile |
 | XPC server identity | Rust, GH, and Supabase clients checked an identifier only | Pin Apple anchor, team ID, and current app identifier |
 | Keychain item group | Wildcard entitlement was first, so omitted `kSecAttrAccessGroup` stored items there | Write/query the private app-ID group and migrate verified legacy items |
@@ -62,19 +62,19 @@ Isotope commits:
 
 ### Wrapper bypass
 
-Secret Gates shadow commands on PATH; they do not mediate `exec`. A caller can run the underlying executable directly. Vault-managed credentials should remain unavailable, but any ambient provider can still authorize the direct process. Closing this boundary requires moving the real target behind an access-controlled launcher or adding execution mediation such as Endpoint Security. A doctor warning can detect PATH order but cannot prevent an absolute-path call.
+Secret Gates shadow commands on PATH; they do not mediate `exec`. A process can run the underlying Target directly. Vault-managed credentials should remain unavailable, but any ambient provider can still authorize the direct process. Closing this boundary requires moving the Target behind an access-controlled Launcher or adding execution mediation such as Endpoint Security. Doctor can detect PATH order but cannot prevent an absolute-path call.
 
-### Generic Trusted Access
+### Generic Write Access
 
-Generic wrappers inject a secret into the target process. The target can load plugins, invoke helpers, or expose its environment. Automic Vault cannot promise “all commands except secret dumps” for an arbitrary third-party CLI from argv classification alone. Trusted Access therefore means trusting that target's complete runtime, configuration, and child-process behavior. No Access or per-command approval is the defensible setting for an untrusted launcher.
+Generic wrappers apply a Secret to the Target process. The Target can load plugins, invoke helpers, or expose its environment. Automic Vault cannot identify every sensitive secret operation for an arbitrary third-party CLI from arguments alone. Write Access therefore trusts the Target's complete runtime, configuration, and child-process behavior for recognized writes. Approval Required or per-command Approval is the defensible setting for an untrusted Launcher.
 
 ### Keychain migration
 
 The single-user migration completed on 2026-07-14. The signed transitional build copied each legacy item, verified the bytes in the private group, deleted the old item, and verified that the wildcard group was empty. Production source now signs only for `ZU76A67LGU.com.automicvault`; the wildcard entitlement and migration helper have been removed.
 
-### Local audit scope
+### Authorization History scope
 
-Keychain storage prevents ordinary same-user apps from rewriting the access list, and approved requests fail closed if the write cannot be verified. The list still retains only 50 records and is not a remote or append-only security log. Denied and failed requests remain best-effort because they never receive a secret.
+Keychain storage prevents ordinary same-user apps from rewriting Authorization History, and allowed requests fail closed if the record cannot be verified. The list retains only 50 records and is not a remote or append-only security log. Denied and failed requests remain best effort because they never receive a Secret.
 
 ### Deployment
 

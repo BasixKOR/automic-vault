@@ -295,7 +295,7 @@ private func manifestProtection(_ value: String) -> SecretGateProtection? {
     case "read-only": .readOnly
     case "local-write": .readOnlyAndLocalWrites
     case "read-and-updates": .readOnlyAndUpdates
-    case "trusted": .fullExceptSecretDumps
+    case "write", "trusted": .fullExceptSecretDumps
     case "full": .fullIncludingSecretDumps
     default: nil
     }

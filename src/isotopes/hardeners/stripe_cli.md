@@ -2,7 +2,7 @@
 
 ## How Automic Vault Hardens `stripe`
 
-Install the patched [Stripe CLI fork] from the Automic Vault isotope tap. On
+Install the patched [Stripe CLI fork] from the Automic Vault Isotopes tap. On
 macOS it stores and retrieves Stripe CLI credentials through the authenticated
 Automic Vault XPC broker instead of Keychain or plaintext fallback files.
 

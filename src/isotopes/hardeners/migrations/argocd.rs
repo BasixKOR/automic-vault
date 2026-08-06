@@ -11,7 +11,7 @@ pub trait CredentialStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
 
     fn load_secret(&self, _key: &str) -> Result<String, String> {
-        Err("isotope key not found".to_string())
+        Err("secret not found".to_string())
     }
 }
 
@@ -217,17 +217,17 @@ fn keychain_load_secret(service: &str, account: &str) -> Result<String, String> 
     if value.is_null() {
         let message = unsafe { take_bridge_string(error) }
             .unwrap_or_else(|| "keychain lookup failed".to_string());
-        return Err(format!("failed to load isotope key {account}: {message}"));
+        return Err(format!("failed to load secret {account}: {message}"));
     }
 
     let secret = unsafe { take_bridge_string(value) }
-        .ok_or_else(|| format!("failed to load isotope key {account}: invalid keychain data"))?;
+        .ok_or_else(|| format!("failed to load secret {account}: invalid keychain data"))?;
     Ok(secret)
 }
 
 #[cfg(any(not(target_os = "macos"), coverage))]
 fn keychain_load_secret(_service: &str, _account: &str) -> Result<String, String> {
-    Err("isotope keychain integration is only available on macOS".to_string())
+    Err("Automic Vault secret storage is only available on macOS".to_string())
 }
 
 #[cfg(all(target_os = "macos", not(coverage)))]
@@ -261,12 +261,12 @@ fn keychain_store_secret(service: &str, account: &str, value: &str) -> Result<()
 
     let message =
         unsafe { take_bridge_string(error) }.unwrap_or_else(|| "keychain write failed".to_string());
-    Err(format!("failed to store isotope key {account}: {message}"))
+    Err(format!("failed to store secret {account}: {message}"))
 }
 
 #[cfg(any(not(target_os = "macos"), coverage))]
 fn keychain_store_secret(_service: &str, _account: &str, _value: &str) -> Result<(), String> {
-    Err("isotope keychain integration is only available on macOS".to_string())
+    Err("Automic Vault secret storage is only available on macOS".to_string())
 }
 
 #[cfg(all(target_os = "macos", not(coverage)))]

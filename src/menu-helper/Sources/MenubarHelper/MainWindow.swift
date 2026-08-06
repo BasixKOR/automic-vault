@@ -201,7 +201,7 @@ final class DashboardModel: ObservableObject {
                         "Scripts: \($0.scriptPaths.joined(separator: ", "))",
                         "Secrets: \($0.keyPatterns.joined(separator: ", "))",
                         "Targets: \($0.targetPaths.joined(separator: ", "))",
-                        "Calling apps: \($0.appPolicies.map(\.bundleIdentifier).joined(separator: ", "))",
+                        "Launcher rules: \($0.appPolicies.map(\.bundleIdentifier).joined(separator: ", "))",
                     ].joined(separator: "\n")
                 )
             }
@@ -225,9 +225,9 @@ final class DashboardModel: ObservableObject {
             [
                 DashboardItem(
                     id: "automatic-approval-feedback",
-                    title: "Automatic Approvals",
+                    title: "Automic Authorization",
                     subtitle: "Choose subtle feedback or none",
-                    detail: "Control visual feedback after an automatic approval."
+                    detail: "Control visual feedback after policy authorizes an operation."
                 ),
                 DashboardItem(
                     id: "secret-name-access",
@@ -1116,7 +1116,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .secretGates: "Secret Gates"
         case .blessedScripts: "Blessed Scripts"
         case .allSecrets: "Secrets"
-        case .secretUsage: "Secret Usage"
+        case .secretUsage: "Authorization History"
         case .settings: "Settings"
         }
     }
@@ -1389,7 +1389,7 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .secretUsage, let record = model.selectedAccessRequest {
-                SecretUsageDetailView(record: record)
+                AuthorizationHistoryDetailView(record: record)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -1559,7 +1559,7 @@ private struct EmptyListView: View {
         case .secretGates: "Secret Gates control how specific apps can access secrets through specific tools"
         case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
         case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
-        case .secretUsage: "Secret Usage records when apps request, receive, or are denied access to secrets"
+        case .secretUsage: "Authorization History records requests and their authorization decisions"
         case .settings: "Settings control how Automic Vault behaves"
         }
     }
@@ -2044,7 +2044,7 @@ private struct AccessHistoryView: View {
             }
 
             if records.isEmpty {
-                Text("No access requests logged for this tool.")
+                Text("No authorization requests recorded for this tool.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else {
@@ -2071,12 +2071,12 @@ private struct AccessHistoryView: View {
     }
 }
 
-private struct SecretUsageDetailView: View {
+private struct AuthorizationHistoryDetailView: View {
     let record: AccessRequestRecord
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Secret Usage")
+            Text("Authorization History")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.primary)
             AccessRequestRow(record: record)
@@ -2135,9 +2135,9 @@ private struct AccessRequestRow: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 3) {
                     AccessMetaLine("Launcher", record.launcher ?? "unknown")
-                    AccessMetaLine("Approved by", record.approvalSourceLabel)
-                    AccessMetaLine("Keys", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
-                    AccessMetaLine("Caller", record.callerPath)
+                    AccessMetaLine("Decision source", record.approvalSourceLabel)
+                    AccessMetaLine("Secret names", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
+                    AccessMetaLine("Gate client", record.callerPath)
                     AccessMetaLine("Target", record.target)
                     AccessMetaLine("Working directory", record.cwd)
                     if let detail = record.detail, !detail.isEmpty {
@@ -2170,7 +2170,7 @@ private struct AccessRequestRow: View {
     private var sourceColor: Color {
         switch record.approvalSourceLabel {
         case "Human": .purple
-        case "Auto": .cyan
+        case "Policy": .cyan
         default: .gray
         }
     }
@@ -2363,9 +2363,9 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Automatic Approvals")
+                Text("Automic Authorization")
                     .font(.system(size: 24, weight: .semibold))
-                Text("Choose what appears when access is approved automatically.")
+                Text("Choose what appears when policy authorizes an operation.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -2375,7 +2375,7 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 }
             }
             .pickerStyle(.radioGroup)
-            Text("Automatic approvals are always recorded in Secret Usage. Approval prompts and automatic rejection notifications are unaffected.")
+            Text("Automic authorizations are recorded in Authorization History. Approval prompts and policy-denial notifications are unaffected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -44,11 +44,11 @@ The primary adversary is untrusted or compromised code already running with your
 - A hardening manager for over 100 tool configurations, including AWS, GitHub,
   GitLab, and more. We move plaintext secrets into the macOS keychain and ensure
   the application of those secrets receives granular access control.
-- Execution controls for tools that perform sensitive actions granular to the
-  tool & caller basis. Callers can be apps, CLIs or even scripts with capability
-  YAML front matter.
-- Agent and harness agnostic: we operate at a layer beneath them. Thus we are
-  also **zeroconf**. Automic Vault “just works”.
+- Execution controls for sensitive developer operations, scoped to an
+  Authorization Gate and a Verified Launcher.
+- Zeroconf operation above the security boundary. Terminals, IDEs, agents,
+  harnesses, and projects keep using their existing commands. They need no
+  Automic Vault plugin or policy file.
 
 ### Automic Vault Is **Not**
 
@@ -151,14 +151,18 @@ Hardening varies, but its purpose is:
 > † This means you can have different access control for eg. your terminal and
 > your agent.
 
-Hardened tools gain a configuration section in the app that allows you to set
-the approval level for each tool *based on the launcher*:
+Hardened tools gain a Secret Gate in the app. Each gate has a default Access
+Level and optional rules for specific Verified Launchers:
 
-1. Approval required for all actions (aka “paranoid mode”)
-2. Approval required for actions with side effects (aka “read-only” mode)
-3. Approval required for actions that reveal secrets (ie. no approvals except eg.
-   `gh auth token`)
-4. No approval required (aka “yolo mode”—there’s no plaintext secrets so you’re still better off you’re letting callers get them via other means… so it depends on the intelligence of the caller)
+1. **Approval Required**: every operation needs your approval.
+2. **Read Only**: recognized read-only operations are automically authorized.
+3. **Local Write**: recognized read-only and local-write operations are
+   automically authorized where the Tool supports this distinction.
+4. **Write Access**: recognized read and write operations are automically
+   authorized. Secret Disclosure and Elevated Secret Application still need
+   approval.
+5. **Full Access**: recognized sensitive secret operations may also be
+   automically authorized. Unknown operations still need approval.
 
 Hardened tools request secrets when they need them. Automic Vault releases those
 secrets only when your gate policy allows it or you approve.
@@ -180,8 +184,9 @@ child of that registered, still-running process.
 Normal commands receive short-lived STS credentials. MFA and role profiles work
 without writing a session cache to disk. Commands that AWS requires long-lived
 keys for, including some IAM and STS operations, receive them only after the
-approval window presents a large warning. Your normal Secret Gate access levels
-still apply; **Full Access means full access**.
+approval window presents a large Elevated Secret Application warning. Your
+normal Secret Gate Access Levels still apply; **Full Access includes the
+original reusable credentials**.
 
 > [!IMPORTANT]
 > AWS hardening supports a narrow profile model on purpose: the imported
@@ -204,7 +209,7 @@ still apply; **Full Access means full access**.
 > [!NOTE]
 > For launcher-specific policy, we walk the process’s launcher chain, validate its code
 > signature with macOS and match its designated requirement against the identity
-> you approved. If we cannot verify that identity, automatic approval fails closed.
+> you approved. If we cannot verify that identity, automic authorization fails closed.
 > Code signing proves identity and integrity—not good intentions. You still choose
 > which launchers to trust.
 
@@ -254,30 +259,29 @@ $ av bless ./scripts/my_script.sh
 # Blessing window appears
 ```
 
-By default, blessing does not endorse the calling app for automatic approval.
-Pass `--endorse-caller` to include it in the blessing review.
+By default, Blessing does not endorse the Launcher for automic authorization.
+Pass `--endorse-launcher` to include a Launcher Endorsement in the review.
+`--endorse-caller` remains a compatibility alias.
 
-Blessed scripts can have capabilities which allows you to compress multiple
-approval prompts for tools into a single approval prompt for the script. For
-example here is a script that needs a token (`$APPLE_PASSWORD`) and to be
-able to run `gh` commands that cause no mutations and `aws` commands that
-perform mutations.
+A Script Declaration may include per-Gate Capabilities. This lets one Blessing
+cover the script's reviewed Secret Names and operations. This script needs
+`APPLE_PASSWORD`, Read Only access to `gh`, and Write Access to `aws`:
 
 ```sh
 #!/usr/local/bin/av inject +APPLE_PASSWORD -- /bin/bash
 # --- automic-vault
 # capabilities:
 #   gh: read-only
-#   aws: trusted
+#   aws: write
 # ---
 ```
 
-Blessing is bound to that canonical path, exact file contents and injection
-declaration. Thus editing scripts invalidates the blessing and requires an
-explicit re-bless.
+Blessing binds the canonical path, exact file contents, and complete Script
+Declaration. Editing the script invalidates the Blessing and requires another
+review.
 
-Execution of blessed scripts *can* be configured to be automatically approved
-for specific launchers.
+Launcher Endorsement can make the exact Blessed Script automically authorized
+for a specific Verified Launcher.
 
 > [!TIP]
 > Allowing specific signed launchers is powerful but requires careful
@@ -324,9 +328,10 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
     session tokens for each invocation.
   - Some tools need more, so we patch them and provide a homebrew tap to install
     them (`gh`, `stripe`, `supabase` etc.). We try to upstream these patches.
-- We make approval gates rare and smart.
-  - By default, secret gates only automatically approve read-only commands.
-  - Mutating commands require explicit, human approval.
+- We make approval gates rare and specific.
+  - By default, Secret Gates automically authorize recognized read-only commands.
+  - Writes and sensitive secret operations require Approval unless the chosen
+    Access Level permits them.
   - Once you get used to that we recommend playing with the levels, eg.
     requiring human approval for *everything* but one Terminal and your agent apps.
   - We also try to be smart, eg. `gh` even decodes GraphQL queries to determine
@@ -418,6 +423,10 @@ approve a request itself, they cannot.
 ## User Manual
 
 https://www.automicvault.com/docs/
+
+The authoritative project vocabulary and security boundaries live in
+[Domain Language](docs/domain-language.md), [Architecture](docs/architecture.md),
+and the [architecture decisions](docs/adr/).
 
 ## Discord
 

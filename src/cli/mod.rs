@@ -22,7 +22,7 @@ commands:
   $ av doctor [<tool>] [--json]           # verify installed hardening
   $ av detectors --json                   # print detector metadata
   $ av hardeners --json                   # print hardener metadata
-  $ av bless [--endorse-caller] <path>    # approve a script for secret access
+  $ av bless [--endorse-launcher] <path>  # review a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
   $ av list                               # list saved secret names

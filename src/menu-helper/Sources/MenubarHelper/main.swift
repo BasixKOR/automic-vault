@@ -1034,7 +1034,7 @@ private func autoApprovalRecord(
 private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord? {
     let wasCanceled = record.decision == "Canceled"
     let wasDenied = record.decision == "Denied"
-    guard wasCanceled || wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Auto") else { return nil }
+    guard wasCanceled || wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Policy") else { return nil }
     return AutoApprovalRecord(
         accessRequestID: record.id,
         date: record.date,
@@ -1049,7 +1049,7 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
 }
 
 private func shouldShowAutomaticAccessToast(_ record: AccessRequestRecord) -> Bool {
-    record.decision == "Denied" && record.approvalSourceLabel == "Auto"
+    record.decision == "Denied" && record.approvalSourceLabel == "Policy"
 }
 
 private func automaticApprovalFeedback(rawValue: String? = UserDefaults.standard.string(
@@ -1344,7 +1344,7 @@ private func canceledAccessRequestRecord(
         callerPath: callerPath,
         decision: "Canceled",
         approvalSource: "Manual",
-        reason: "Caller exited",
+        reason: "Gate client exited",
         launcher: launcher
     )
 }
@@ -1400,7 +1400,7 @@ private func performApprovedSecretMutation(
             callerPath: callerPath,
             decision: canceled ? "Canceled" : "Denied",
             approvalSource: "Manual",
-            reason: canceled ? "Caller exited" : "Denied in prompt",
+            reason: canceled ? "Gate client exited" : "Denied in prompt",
             launcher: launcher
         ))
         return (nil, canceled ? "secret mutation canceled" : "secret mutation denied")
@@ -1743,7 +1743,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let pid = xpc_connection_get_pid(peer)
         var identity = AVProcessIdentity()
         guard av_process_identity(pid, &identity) else {
-            reply(peer, to: message, ok: false, error: "approval caller identity is unavailable")
+            reply(peer, to: message, ok: false, error: "Gate Client identity is unavailable")
             return
         }
 
@@ -1757,7 +1757,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let op = String(cString: opPointer)
 
         guard isAllowedCaller(path: callerPath, signing: signing) else {
-            reply(peer, to: message, ok: false, error: "approval caller is not trusted")
+            reply(peer, to: message, ok: false, error: "Gate Client is not trusted")
             return
         }
         let mutationCaller = MutationCaller(
@@ -2087,7 +2087,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         if let key = missingRequiredSecret(for: request) {
-            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
+            reply(peer, to: message, ok: false, error: "failed to load secret \(key): \(errSecItemNotFound)")
             return
         }
         let configuredGate = matchingSecretGate(
@@ -2555,7 +2555,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let key = String(cString: keyPointer)
         guard validSecretKeyName(key) else {
-            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            reply(peer, to: message, ok: false, error: "invalid secret name: \(key)")
             return
         }
         let value = String(cString: valuePointer)
@@ -2578,11 +2578,11 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let key = String(cString: keyPointer)
         guard validSecretKeyName(key) else {
-            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            reply(peer, to: message, ok: false, error: "invalid secret name: \(key)")
             return
         }
         guard let value = loadStoredSecret(account: key) else {
-            reply(peer, to: message, ok: false, error: "failed to load isotope key \(key): \(errSecItemNotFound)")
+            reply(peer, to: message, ok: false, error: "failed to load secret \(key): \(errSecItemNotFound)")
             return
         }
         reply(peer, to: message, ok: true, error: nil, value: value)
@@ -2731,7 +2731,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let key = String(cString: keyPointer)
         guard validSecretKeyName(key) else {
-            reply(peer, to: message, ok: false, error: "invalid isotope key name: \(key)")
+            reply(peer, to: message, ok: false, error: "invalid secret name: \(key)")
             return
         }
         handleMutation(
@@ -2777,7 +2777,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         peer,
                         to: message,
                         ok: false,
-                        error: "failed to store isotope key \(account): \(status)"
+                        error: "failed to store secret \(account): \(status)"
                     )
                 }
             case .delete(let account):
@@ -2788,7 +2788,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         peer,
                         to: message,
                         ok: false,
-                        error: "failed to delete isotope key \(account): \(status)"
+                        error: "failed to delete secret \(account): \(status)"
                     )
                 }
             case .rename, .setAccessibility:
@@ -2803,7 +2803,7 @@ private final class ApprovalServer: @unchecked Sendable {
         for key in request.keys where request.replaceExistingEnv || !conflicts.contains(key) {
             guard let value = loadStoredSecret(account: key) else {
                 if request.allowMissingKeys { continue }
-                throw AppError("failed to load isotope key \(key): \(errSecItemNotFound)")
+                throw AppError("failed to load secret \(key): \(errSecItemNotFound)")
             }
             secrets[key] = value
         }
@@ -3667,7 +3667,7 @@ private func ghGraphQLIndirectInputExplanation(_ args: [String]) -> String? {
     else {
         return nil
     }
-    return "Automic Vault could not verify this GraphQL request as read-only because gh will read a field value from standard input or a file. That content is not present in the command being approved, so automatic access fails closed. Pass field values inline—for example, use -f query=… for the query—to make them verifiable."
+    return "Automic Vault could not verify this GraphQL request as read-only because gh will read a field value from standard input or a file. That content is not present in the authorization request, so automic authorization fails closed. Pass field values inline, for example with -f query=…, to make them verifiable."
 }
 
 private struct GhGraphQLArguments {
@@ -4141,9 +4141,9 @@ private struct LauncherAppVerificationFailure {
 
     var explanation: String {
         if resourcesUnreadable {
-            return "Automatic approval was unavailable because \(appName) contains signed app resources that Automic Vault cannot read, so its identity could not be securely verified. Manual approval is required to fail closed."
+            return "Automic authorization was unavailable because \(appName) contains signed app resources that Automic Vault cannot read, so its identity could not be securely verified. Approval is required to fail closed."
         }
-        return "Automatic approval was unavailable because \(appName)’s code signature could not be securely verified. Manual approval is required to fail closed."
+        return "Automic authorization was unavailable because \(appName)’s code signature could not be securely verified. Approval is required to fail closed."
     }
 }
 
@@ -4548,8 +4548,8 @@ private func approvalPromptSections(
             ApprovalPromptRow("Replace existing", request.replaceExistingEnv ? "yes" : "no"),
             ApprovalPromptRow("Allow missing keys", request.allowMissingKeys ? "yes" : "no"),
         ]),
-        ApprovalPromptSection("Caller Identity", "terminal", [
-            ApprovalPromptRow("Caller", "\(callerPath) (pid \(pid))"),
+        ApprovalPromptSection("Gate Client Identity", "terminal", [
+            ApprovalPromptRow("Gate Client", "\(callerPath) (pid \(pid))"),
             ApprovalPromptRow("Signed", "\(signing.identifier) / \(signing.teamIdentifier)"),
         ]),
     ]
@@ -4748,7 +4748,7 @@ private struct ApprovalPromptView: View {
 
             Text(allowsPersistentApproval
                 ? "Always Allow trusts this verified app until removed in Settings"
-                : "Automatically Approve can be configured for verified apps in the Atomic Vault app.")
+                : "Automic authorization can be configured for verified Launchers in the Automic Vault app.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -5095,7 +5095,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
     guard canceled.status == nil,
           canceled.error == "secret mutation canceled",
           cancellationRecord?.decision == "Canceled",
-          cancellationRecord?.reason == "Caller exited",
+          cancellationRecord?.reason == "Gate client exited",
           !performedAfterCancellation
     else { return 1 }
 
@@ -5236,7 +5236,7 @@ private func runApprovalSelfCheck() -> Int32 {
           String(commandWithoutArguments.characters) == "gh    # /opt/homebrew/bin/gh",
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
-            == "gh: Read Only Access • stripe: Trusted Access",
+            == "gh: Read Only • stripe: Write Access",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
@@ -5244,7 +5244,7 @@ private func runApprovalSelfCheck() -> Int32 {
           cliRequester.name == "/opt/homebrew/bin/gh — Team ID: TEAM",
           cliRequester.iconPath == "/opt/homebrew/bin/gh",
           automaticApprovalExplanation.contains("ChatGPT contains signed app resources"),
-          automaticApprovalExplanation.contains("Manual approval is required to fail closed"),
+          automaticApprovalExplanation.contains("Approval is required to fail closed"),
           collapsedHeight > 0,
           collapsedHeight < 660,
           constrainedHeight <= 500
@@ -5687,9 +5687,10 @@ private func runApprovalSelfCheck() -> Int32 {
               gateID: "aws",
               request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
           ) == .mutating,
-          SecretGateRequestClassification.allCases.allSatisfy({
-              secretGateProtectionAllows(.fullIncludingSecretDumps, classification: $0)
-          }),
+          (SecretGateRequestClassification.allCases
+              .filter { $0 != .unknown }
+              .allSatisfy { secretGateProtectionAllows(.fullIncludingSecretDumps, classification: $0) }),
+          !secretGateProtectionAllows(.fullIncludingSecretDumps, classification: .unknown),
           !secretGateProtectionAllows(.noAccess, classification: .readOnly),
           secretGateProtectionAllows(.readOnly, classification: .readOnly),
           !secretGateProtectionAllows(.readOnly, classification: .unknown),
@@ -5986,7 +5987,7 @@ private func runGhReadOnlySelfCheck() -> Int32 {
     }),
     ghGraphQLIndirectInputExplanation(
         ["api", "graphql", "-F", "query=@-"]
-    )?.contains("automatic access fails closed") == true,
+    )?.contains("automic authorization fails closed") == true,
     ghGraphQLIndirectInputExplanation(
         ["api", "graphql", "-f", "query={ viewer { login } }"]
     ) == nil
@@ -6437,7 +6438,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
               command: "gh pr create",
               decision: "Canceled",
               approvalSource: "Manual",
-              reason: "Caller exited",
+              reason: "Gate client exited",
               launcher: recordedApproval.launcher,
               callerPath: recordedApproval.callerPath,
               target: recordedApproval.target,

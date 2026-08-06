@@ -568,7 +568,7 @@ mod tests {
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(!stdout.contains("plaintext keys"));
         assert!(stdout.contains(
-            "`aws` defaults to Read Only Access, adjust this in the app: `av open --secret-gate aws`"
+            "`aws` defaults to Read Only, adjust this in the app: `av open --secret-gate aws`"
         ));
         let _ = fs::remove_dir_all(dir);
     }

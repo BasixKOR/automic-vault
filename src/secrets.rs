@@ -44,7 +44,7 @@ pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Res
                     .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
                 (existing == value)
                     .then_some(())
-                    .ok_or_else(|| format!("refusing to replace existing isotope key {account}"))
+                    .ok_or_else(|| format!("refusing to replace existing secret {account}"))
             }
             Err(err) => Err(format!("failed to create {}: {err}", path.display())),
         }
@@ -67,15 +67,16 @@ pub(crate) fn load_secret(account: &str) -> Result<String, String> {
     }
     xpc_request("load", Some((b"key\0", account)), None, None)?
         .value
-        .ok_or_else(|| format!("failed to load isotope key {account}"))
+        .ok_or_else(|| format!("failed to load secret {account}"))
 }
 
-pub(crate) fn bless_script(path: &str, endorse_caller: bool) -> Result<bool, String> {
+pub(crate) fn bless_script(path: &str, endorse_launcher: bool) -> Result<bool, String> {
     xpc_request(
         "bless",
         Some((b"path\0", path)),
         None,
-        endorse_caller.then_some(&b"endorse_caller\0"[..]),
+        // Compatibility wire key. The domain term is Launcher Endorsement.
+        endorse_launcher.then_some(&b"endorse_caller\0"[..]),
     )
     .map(|reply| reply.value.as_deref() == Some("already blessed"))
 }

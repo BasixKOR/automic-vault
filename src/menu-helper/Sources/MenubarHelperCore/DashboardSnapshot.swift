@@ -347,24 +347,27 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
     public var title: String {
         switch self {
-        case .noAccess: "No Access"
-        case .readOnly: "Read Only Access"
-        case .readOnlyAndLocalWrites: "Local Write Access"
-        case .readOnlyAndUpdates: "Read & Update Access"
-        case .fullExceptSecretDumps: "Trusted Access"
+        case .noAccess: "Approval Required"
+        case .readOnly: "Read Only"
+        case .readOnlyAndLocalWrites: "Local Write"
+        case .readOnlyAndUpdates: "Local Write"
+        case .fullExceptSecretDumps: "Write Access"
         case .fullIncludingSecretDumps: "Full Access"
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .noAccess: "All authenticated commands have approval gates"
-        case .readOnly: "Commands without side-effects are approved automatically"
+        case .noAccess: "Every operation requires approval"
+        case .readOnly: "Recognized read-only operations are automically authorized"
         case .readOnlyAndLocalWrites:
-            "Read-only commands and commands that only change local files are approved automatically"
-        case .readOnlyAndUpdates: "Commands without side-effects *and* `brew update` are approved automatically"
-        case .fullExceptSecretDumps: "All commands are approved automatically except those that might exfiltrate secrets"
-        case .fullIncludingSecretDumps: "All commands are approved automatically"
+            "Recognized read-only and local-write operations are automically authorized"
+        case .readOnlyAndUpdates:
+            "Recognized read-only operations and `brew update` are automically authorized"
+        case .fullExceptSecretDumps:
+            "Recognized read and write operations are automically authorized; sensitive secret operations require approval"
+        case .fullIncludingSecretDumps:
+            "Every recognized operation is automically authorized; unknown operations require approval"
         }
     }
 
@@ -381,7 +384,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         case .fullExceptSecretDumps:
             classification != .secretDump && classification != .unknown
         case .fullIncludingSecretDumps:
-            true
+            classification != .unknown
         }
     }
 }
@@ -513,7 +516,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public func protectionSubtitle(_ protection: SecretGateProtection) -> String {
         keyPatterns.isEmpty && protection == .fullExceptSecretDumps
-            ? "All commands are approved automatically"
+            ? "Every recognized operation is automically authorized; unknown operations require approval"
             : protection.subtitle
     }
 }
@@ -607,10 +610,14 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
 
     public var approvalSourceLabel: String {
         if let approvalSource, !approvalSource.isEmpty {
-            return approvalSource
+            return switch approvalSource.lowercased() {
+            case "auto", "automatic", "policy": "Policy"
+            case "manual", "human": "Human"
+            default: approvalSource
+            }
         }
         if reason.localizedCaseInsensitiveContains("auto") || reason.localizedCaseInsensitiveContains("reused") {
-            return "Auto"
+            return "Policy"
         }
         if reason.localizedCaseInsensitiveContains("prompt") {
             return "Human"

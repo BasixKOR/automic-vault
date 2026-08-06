@@ -136,12 +136,12 @@ fn keychain_store_secret(service: &str, account: &str, value: &str) -> Result<()
 
     let message =
         unsafe { take_bridge_string(error) }.unwrap_or_else(|| "keychain write failed".to_string());
-    Err(format!("failed to store isotope key {account}: {message}"))
+    Err(format!("failed to store secret {account}: {message}"))
 }
 
 #[cfg(any(not(target_os = "macos"), test, coverage))]
 fn keychain_store_secret(_service: &str, _account: &str, _value: &str) -> Result<(), String> {
-    Err("isotope keychain integration is only available on macOS".to_string())
+    Err("Automic Vault secret storage is only available on macOS".to_string())
 }
 
 #[cfg(all(target_os = "macos", not(test), not(coverage)))]
@@ -356,7 +356,7 @@ mod tests {
             KeychainCredentialStore
                 .store_secret(CIVO_TOKEN_ENV_KEY, "fake-civo-key")
                 .unwrap_err()
-                .contains("keychain integration")
+                .contains("secret storage")
         );
         fs::remove_dir_all(temp).unwrap();
     }

@@ -8,7 +8,8 @@ import Testing
     # --- automic-vault
     # capabilities:
     #   gh: read-only
-    #   aws: trusted
+    #   aws: write
+    #   stripe: trusted
     # ---
     echo ok
     """.utf8)
@@ -22,6 +23,7 @@ import Testing
     #expect(declaration.manifest.capabilities == [
         "gh": .readOnly,
         "aws": .fullExceptSecretDumps,
+        "stripe": .fullExceptSecretDumps,
     ])
     #expect(declaration.checksum.count == 64)
 }

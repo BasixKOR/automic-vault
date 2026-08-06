@@ -6,7 +6,7 @@ release asset; a correction is a new patch release.
 
 The publishing script uses Codex to choose the next semantic version and draft
 release notes from the changes since the latest release. Codex runs read-only,
-without the caller's environment, and treats repository content as untrusted.
+without the invoking process's environment, and treats repository content as untrusted.
 It also reviews installed-artifact, persistence, protocol, and schema revisions,
 including the CLI install and Homebrew stub revisions, and applies any missing
 numeric increments before creating the release commit.

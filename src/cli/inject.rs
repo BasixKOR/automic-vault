@@ -383,7 +383,7 @@ fn build_env(
                 env.insert(OsString::from(key), OsString::from(value));
             }
             None if options.allow_missing_keys => {}
-            None => return Err(format!("failed to load isotope key {key}: -25300")),
+            None => return Err(format!("failed to load secret {key}: -25300")),
         }
     }
     Ok(env)
@@ -428,12 +428,12 @@ fn resolve_target(target: &OsString) -> Result<PathBuf, String> {
 pub(super) fn validate_key_name(key: &str) -> Result<(), String> {
     let mut chars = key.chars();
     let Some(first) = chars.next() else {
-        return Err("empty isotope key name".into());
+        return Err("empty secret name".into());
     };
     if !(first == '_' || first.is_ascii_alphabetic())
         || chars.any(|ch| !(ch == '_' || ch.is_ascii_alphanumeric()))
     {
-        return Err(format!("invalid isotope key name: {key}"));
+        return Err(format!("invalid secret name: {key}"));
     }
     Ok(())
 }

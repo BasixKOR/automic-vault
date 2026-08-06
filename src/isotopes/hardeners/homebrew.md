@@ -57,11 +57,12 @@ is that solution.
   For compatibility with existing startup files, `brew shellenv zsh` is
   normalized to generic shell output and does not add Homebrew's protected zsh
   completion directory to `fpath`.
-- Every launcher invocation is authorized by the menu bar app before Homebrew
-  runs. Read Only Access approves known inspection commands automatically and
-  prompts for writes or unknown commands; Read & Update Access additionally
-  approves `brew update` and is the default; No Access prompts for every
-  command, while Full Access approves every command automatically.
+- Every Launcher invocation is authorized by the menu bar app before Homebrew
+  runs. Read Only automically authorizes recognized inspection commands and
+  prompts for writes or unknown commands. Local Write also authorizes `brew
+  update` and is the default. Approval Required prompts for every command.
+  Full Access authorizes every recognized command; unknown commands still
+  require approval.
 - The launcher fails closed when the approval service is unavailable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.
