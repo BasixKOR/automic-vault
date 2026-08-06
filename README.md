@@ -31,7 +31,11 @@
 
 ## What is Automic Vault?
 
-Automic Vault is:
+Automic Vault protects developer credentials at two boundaries: where they are stored and where they are used. It finds credentials that any process running as you can trivially retrieve from plaintext files, environment variables, permissive Keychain items, or credential-helper commands, then moves supported tools toward protected storage. It also controls the application of those credentials, authorizing each operation according to the verified Launcher, Target, command, and policy, or asking you when policy cannot decide.
+
+The primary adversary is untrusted or compromised code already running with your normal user privileges: an agent, dependency, plugin, script, or supply-chain payload. Automic Vault builds on macOS code signing, Keychain, TCC, Hardened Runtime, and process identity, with you as the final authority. It does not claim to contain a root or kernel compromise, prevent arbitrary local destruction, or make a Target trustworthy after it receives a secret.
+
+### Automic Vault Is
 
 - A secrets manager with granular access controls designed for developers that
   use agents and who are vulnerable to supply chain attacks.
@@ -46,7 +50,7 @@ Automic Vault is:
 - Agent and harness agnostic: we operate at a layer beneath them. Thus we are
   also **zeroconf**. Automic Vault “just works”.
 
-Automic Vault is **not**:
+### Automic Vault Is **Not**
 
 - Not just guardrails: we’re a security layer underneath agents and all other
   command line tools†
