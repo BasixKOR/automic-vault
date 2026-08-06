@@ -1,47 +1,54 @@
 # Homebrew Detector
 
-## Trigger Conditions
-
-- Homebrew exists at `/opt/homebrew/bin/brew` and the current user can modify
-  `/opt/homebrew` or one of its immediate child directories.
-
 ## Rationale
 
-Malware and agents can modify installed packages or Homebrew itself without
-constraint.
+macOS has numerous protections to prevent same user processes from modifying
+`.apps`. Most of these protections do not apply to command line tools. Automic Vault
+[aims to be the adapter bringing these protections to the command line][blog].
 
-After hardening, use `brew install` as usual; installed packages are owned by
-`automic:vault`.
+[blog]: https://www.automicvault.com/blog/bringing-macos-security-to-the-terminal/
 
-We also add approval gates for sensitive actions like `brew upgrade` and
-`brew install` so if an agent tries to sneakily install a package you can
-vet its decision first.
+> The simple fact is: not hardening Homebrew can make everything else Automic
+> Vault does moot. If malware can just modify your hardened packages then the
+> hardening is either *much less effective* or potentially *completely useless*.
 
-## Caveats
+## Overview
 
-This is not a supported configuration for Homebrew. However we use it and it
-works fine for us. If you have issues with Homebrew while Automic Vault
-Hardening is enabled please report the bug to *us* first.
+- After hardening, use `brew install` as usual; installed packages are owned by
+  `automic:vault`.
+- We add approval gates for sensitive actions like `brew upgrade` and
+  `brew install` so if an agent tries to sneakily install a package you can
+  vet its decision first.
 
-The simple fact is: not hardening Homebrew can make everything else Automic
-Vault does moot. If malware can just modify your hardened packages then the
-hardening is either *much less effective* or potentially *completely useless*.
+## Important Caveats
+
+- This is not an officially supported configuration for Homebrew.
+- Casks that are not simple wrappers around executables are unsupported.
+- ZSH requires its completions to be owned by the executing user for some reason
+  so we remove them from `brew shellenv zsh`.
+
+> Many people have hardened their `brew` without issues.
+> The hardening has gone through several iterations of battle testing.
+
+> If you have issues with Homebrew while Automic Vault hardening is enabled
+> please report the bug to *us* first.
+
+# Detection Details
+
+## Trigger Conditions
+
+- Homebrew exists at `/opt/homebrew/bin/brew`.
+- The current user can modify `/opt/homebrew` or an immediate child directory.
 
 ## Mitigation
 
 ```sh
-sudo av harden brew
+av harden brew
 ```
 
-Replace any direct `/opt/homebrew/bin/brew shellenv` startup command with:
-
-```sh
-eval "$(/usr/local/bin/brew shellenv)"
-```
-
-**Homebrew shell completions are unavailable while hardened.** Do not add the
-protected completion directory to your shell path or bypass shell ownership
-checks. `brew shellenv zsh` is normalized so it does not add that directory.
+The hardener requests elevation when needed and offers to replace direct
+`/opt/homebrew/bin/brew` references in common shell startup files with the
+hardened `/usr/local/bin/brew` launcher.
 
 ## Sensitive Files
 
