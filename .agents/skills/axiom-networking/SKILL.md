@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY networking work including HTTP requests, WebSockets, TCP connections, or network debugging.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/networking-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -28,6 +36,7 @@ license: MIT
 | NWConnection patterns (iOS 12-18) | See `skills/networking-legacy.md` |
 | UDP batch, NWListener, NWBrowser | See `skills/networking-legacy.md` |
 | BSD sockets → NWConnection migration | See `skills/networking-migration.md` |
+| Push/calls on networks without internet (Local Push Connectivity, NEAppPushProvider) | **Use axiom-integration (skills/local-push-connectivity.md)** |
 | NWConnection → NetworkConnection migration | See `skills/networking-migration.md` |
 | URLSession StreamTask → NetworkConnection | See `skills/networking-migration.md` |
 

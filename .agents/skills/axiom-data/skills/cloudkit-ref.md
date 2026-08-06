@@ -327,7 +327,39 @@ if let asset = fetchedRecord["image"] as? CKAsset,
 }
 ```
 
-**Important**: CKAsset requires a **file URL**, not Data. Write data to temp file first.
+**Important**: A **locally-created** CKAsset requires a **file URL**, not Data — write data to a temp file first. The one exception is an asset obtained via the server-side import path below: its `fileURL` is `nil` (read it back through the record, never a local URL).
+
+### Server-side asset copy (Photos → CloudKit) `OS27`
+
+Copy a Photos asset straight into CloudKit — the **server** performs the copy on save, with no local download/re-upload round-trip (potentially into a different container).
+
+```swift
+// Producer — Photos; all Apple platforms at 27 except watchOS (no producer there):
+@available(anyAppleOS 27, *)
+@available(watchOS, unavailable)
+func exportedID(for resource: PHAssetResource) async throws -> CKAsset.ExportedAssetID {
+    try await PHAssetResourceManager.default().exportedAssetID(for: resource)
+}
+
+// Consumer — CKAsset(importing:) is available on all platforms, watchOS 27 included:
+let id = try await exportedID(for: resource)
+let asset = CKAsset(importing: id)           // fileURL is nil on this asset
+record["image"] = asset
+try await privateDatabase.save(record)       // server copies the asset
+```
+
+Data-safety edges (from the SDK doc comments — absent from the web docs):
+
+| Edge | Consequence |
+|------|-------------|
+| `ExportedAssetID` is `Codable` but device-bound + expires in days | The conformance invites a serialize-and-ship mistake that silently breaks. Do NOT persist or transmit it. |
+| Imported asset's `fileURL` is `nil` | Read it back via the fetched record, not a local URL. |
+| Source asset gone from server | `CKError.unknownItem` (11) |
+| ID invalid or expired | `CKError.assetNotAvailable` (35) |
+| Reader OS floor: needs iOS 17 / macOS 14 / tvOS 17 / watchOS 10 / visionOS 1 to download | A writer on this path can mint an asset an older peer CANNOT fetch — a silent cross-version data-availability hazard in a shared or synced container. |
+| Producer needs network + a cloud-enabled library | Local-only library → `PHPhotosError.requestNotSupportedForAsset` (3306); honors cancellation → `CancellationError`. |
+
+**Availability trap**: `CKAsset(importing:)` is callable on watchOS 27, but its only input producer (`exportedAssetID(for:)`) is watchOS-**unavailable** — there is no supported way to obtain an `ExportedAssetID` on watchOS. The producer side (`exportedAssetID(for:)`, `PHAssetResource.dataSize`) is documented in axiom-media `photo-library-ref`.
 
 ---
 
@@ -516,24 +548,48 @@ func application(_ application: UIApplication,
 
 ## Sharing Records
 
-### Create a Share
+CloudKit has two sharing models. Pick by how the app reads the shared data.
+
+| Model | API | What's shared | Use when |
+|-------|-----|---------------|----------|
+| Hierarchical (root-record) | `CKShare(rootRecord:)` | Root record + its `parent`-linked descendants | You share one document/object and traverse its hierarchy from the root |
+| Zone-wide | `CKShare(recordZoneID:)` | Every record in the zone | You read/write by enumerating the whole zone, so records aren't tied to a single root |
+
+**Pitfall**: root-record sharing only shares records reachable through `parent` references from the root. If the app instead enumerates the entire zone (no root hierarchy), the participant sees an empty data set. Use zone-wide sharing for that access pattern.
+
+### Create a Share (Root-Record)
 
 ```swift
-// ✅ Share a record with other users
+// ✅ Share a record and its parent-linked descendants
 let record = try await privateDatabase.record(for: recordID)
 
-// Record must be in a custom zone (not default zone)
+// Record must be in a custom zone (not the default zone)
 let share = CKShare(rootRecord: record)
 share[CKShare.SystemFieldKey.title] = "Shared Task List"
 share.publicPermission = .none  // Invite-only
 
-// Save both the record and share together
-let operation = CKModifyRecordsOperation(
-    recordsToSave: [record, share],
-    recordIDsToDelete: nil
-)
-try await privateDatabase.add(operation)
+// Save the root record and share together, atomically
+try await privateDatabase.modifyRecords(saving: [record, share], deleting: [])
 ```
+
+### Share an Entire Zone (Zone-Wide)
+
+```swift
+// ✅ Every record in the zone is shared — no root record
+// Custom zones in the private database have the .zoneWideSharing
+// capability by default; the default zone cannot be shared.
+let share = CKShare(recordZoneID: customZone.zoneID)
+share[CKShare.SystemFieldKey.title] = "Household Inventory"
+share.publicPermission = .none
+
+// No root record to batch — save the share on its own
+try await privateDatabase.save(share)
+```
+
+**Constraints**:
+- A zone and its records can take part in **only one** share — zone-wide and per-record shares are mutually exclusive within the same zone.
+- The zone-wide share's record name is the well-known constant `CKRecordNameZoneWideShare`.
+- On accept, CloudKit copies the records into a new zone in the participant's shared database. Get the new zone ID with `CKFetchDatabaseChangesOperation`, then read records with `CKFetchRecordZoneChangesOperation` (there is no root record to fetch).
 
 ### Present Sharing UI
 
@@ -574,6 +630,8 @@ for participant in share.participants {
 share.removeParticipant(participant)
 try await privateDatabase.save(share)
 ```
+
+**Footgun — participant equality is identity, not structural.** `CKShare.Participant`'s `==` / `isEqual:` answers *"is this the same person?"* — it returns `true` when `participantID`, `userIdentity.userRecordID`, **or** `userIdentity.lookupInfo` matches, and **ignores** `role`, `permission`, `acceptanceStatus`, and `dateAddedToShare`. So `share.participants.contains(updatedParticipant)` matches a participant whose **permission differs**, and two "equal" participants can carry different access. Compare the specific field (`permission`, `acceptanceStatus`) explicitly; never infer identical properties from equality. (Behavior on all versions — documented in 27.)
 
 ### Accept a Share
 

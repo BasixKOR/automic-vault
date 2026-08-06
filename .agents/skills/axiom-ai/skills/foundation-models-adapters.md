@@ -184,6 +184,8 @@ Apple ships no default eval suite for custom adapters. A complete eval covers fo
 
 If the app ships in a non-English locale, run eval against the matching group. English-only eval against a multi-locale app silently ships non-English regressions.
 
+**Express these four axes in the Evaluations framework** (`OS27`). This discipline predates the framework, but you no longer have to hand-roll the harness: each axis becomes a named `Metric`, larger-model grading becomes a `ModelJudgeEvaluator`, the safety red-team set becomes an adversarial dataset, and "any axis regressing blocks ship" becomes an aggregate threshold asserted in a Swift Testing gate. Locale groups become separate datasets over the same `Evaluation`. See `axiom-ai (skills/foundation-models-evaluations-ref.md)`. Human grading stays human — use it to validate the model judge before you trust the judge's scores.
+
 For `examples.generate` CLI usage, see `axiom-ai (skills/foundation-models-adapters-ref.md)`.
 
 ---
@@ -270,7 +272,7 @@ Speculative decoding pays off when the *acceptance rate* is high and completions
 
 #### The compilation rate limit (this is the trap)
 
-Apple rate-limits draft-model compilation: *"the framework... rate-limits the compilation process on all platforms, excluding macOS, to three draft model compilations per-app, per-day."* This is a **runtime, on-device** compile step, specific to the draft model — not adapter compilation generally, and not enforced on macOS. Three per app per day is a hard ceiling on iOS/iPadOS/visionOS. Design around it:
+Apple rate-limits adapter compilation: *"the framework... rate-limits the compilation process on all platforms, excluding macOS, to three draft model compilations per-app, per-day."* The limit applies to **`SystemLanguageModel.Adapter.compile()`**, and what it counts is **draft-model** compilations — the draft model being an *optional* component a custom adapter may ship for speculative decoding. So an `Adapter.compile()` for an adapter that includes a draft model consumes one of the three slots. It's a **runtime, on-device** compile step, not enforced on macOS. Three per app per day is a hard ceiling on iOS/iPadOS/visionOS. Design around it:
 
 - **Cache the compiled draft model across launches.** Never recompile speculatively or "to be safe." A recompile-on-every-launch bug silently burns the daily quota and then fails.
 - **The first compilation is the user's first AI invocation cost.** It is not instant — surface progress, don't block the UI on it.

@@ -8,6 +8,15 @@ license: MIT
 
 **You MUST use this skill for ANY SwiftUI work including views, state, navigation, layout, animations, architecture, gestures, and debugging.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/swiftui-architecture-auditor.md`, `skills/swiftui-layout-auditor.md`, `skills/swiftui-nav-auditor.md`, `skills/swiftui-performance-analyzer.md`, `skills/textkit-auditor.md`, `skills/ux-flow-auditor.md`.
+> Homed in another suite: `axiom-design/skills/liquid-glass-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -17,10 +26,12 @@ license: MIT
 | Slow previews / building good previews / `@Previewable` / `PreviewModifier` / variant matrix | See `skills/previews.md` |
 | Preview API reference (`#Preview`, traits, modes, Development Assets) | See `skills/previews-ref.md` |
 | Preview crashes / won't load | See `skills/debugging.md` (Preview Crashes section) |
+| Hot reload / live editing / edit the running app on device | See `skills/hot-reload.md` |
 | Navigation issues | See `skills/nav.md` |
 | Navigation still broken after debugging | See `skills/nav-diag.md` |
 | Navigation API reference | See `skills/nav-ref.md` |
 | Layout breaks on iPad/rotation | See `skills/layout.md` |
+| State lost on resize/rotation (scroll, selection, focus, drafts) | See `skills/layout.md` (State Survives the Transition) |
 | Layout API reference | See `skills/layout-ref.md` |
 | Performance/lag/slow scroll | See `skills/swiftui-performance.md` |
 | Architecture/testability | See `skills/architecture.md` |
@@ -29,6 +40,9 @@ license: MIT
 | Custom containers / List replacement (iOS 18+) | See `skills/containers-ref.md` Part 7 |
 | Search implementation | See `skills/search-ref.md` |
 | Toolbars, ToolbarItem, sheet button placement, customization | See `skills/toolbars.md` |
+| Sheets, detents, popovers, fullScreenCover, presentation adaptation | See `skills/presentations.md` |
+| Multi-column Table, sortable/resizable columns (iPad/Mac; collapses to first column in compact) | See axiom-macos (skills/swiftui-differences.md) |
+| Inspector panel (`.inspector` — trailing column in regular width, sheet in compact) | See axiom-macos (skills/swiftui-differences.md) |
 | Gesture conflicts | See `skills/gestures.md` |
 | iOS 26 features | See `skills/26-ref.md` |
 
@@ -83,10 +97,13 @@ digraph swiftui {
     what -> "skills/gestures.md" [label="gestures"];
     what -> "skills/search-ref.md" [label="search"];
     what -> "skills/toolbars.md" [label="toolbars / sheet buttons"];
+    what -> "skills/presentations.md" [label="sheets/detents/popovers"];
     what -> "skills/26-ref.md" [label="iOS 26 features"];
     what -> "skills/previews.md" [label="slow previews / building good previews"];
     what -> "skills/previews-ref.md" [label="preview API reference"];
     what -> "skills/debugging.md" [label="preview crashes / won't load"];
+    what -> "skills/hot-reload.md" [label="hot reload / live editing"];
+    what -> "axiom-macos (skills/swiftui-differences.md)" [label="Table / .inspector\n(large-window density)"];
     what -> "axiom-uikit (skills/uikit-bridging.md)" [label="UIKit interop"];
     what -> "axiom-design (skills/app-composition.md)" [label="app-level (root, auth)"];
     what -> "axiom-swift (skills/transferable-ref.md)" [label="drag/drop, sharing"];
@@ -114,5 +131,7 @@ digraph swiftui {
 | "No architecture needed" | Even small features benefit from separation. `skills/architecture.md` prevents refactoring debt. |
 | "I know .searchable" | Search has 6 gotchas. `skills/search-ref.md` covers all of them. |
 | "I'll just add a Done button" | Sheets without Cancel break the HIG (updated 2026-03-24). `.cancellationAction` / `.confirmationAction` produce HIG-correct placement automatically — `skills/toolbars.md` Pattern 2 has the rules. |
+| "A sheet is a sheet, nothing to configure" | Detents, compact adaptation, background interaction, and iOS 18 sizing decide how it behaves across window shapes. `skills/presentations.md` covers the adaptation traps (landscape sheets silently become full-screen covers). |
 | "Previews are slow forever, I'll just use the simulator" | Five concrete fixes in `skills/previews.md`. Rule 4 (auto-refresh off) is 30 seconds and often halves perceived slowness. |
 | "I'll just write a wrapper view for `@State` in this preview" | `@Previewable @State` (Xcode 16+) eliminates that boilerplate. `skills/previews-ref.md` has the macro signature. |
+| "I'll just rebuild and relaunch every time" | Hot reload edits the running app in place, state preserved. `skills/hot-reload.md` has the InjectionNext + Inject setup and the verify-via-`xclog` loop. |

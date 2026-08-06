@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY game development, SpriteKit, SceneKit, RealityKit, touch controls, game controller, or interactive simulation work.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/spritekit-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -16,6 +24,7 @@ license: MIT
 | Adding touch controls to a game (TouchController) | See `skills/game-input.md` |
 | Game controller input (GCController, polling vs handlers) | See `skills/game-input.md` |
 | Controller Home button settings, spatial accessories `OS27` | See `skills/game-input.md` |
+| Game window resizing, orientation lock, UIRequiresFullScreen `OS27` | See axiom-uikit (skills/uikit-modernization.md) |
 | SpriteKit API lookup | See `skills/spritekit-ref.md` |
 | Physics contacts not firing | See `skills/spritekit-diag.md` |
 | Frame rate drops (SpriteKit) | See `skills/spritekit-diag.md` |
@@ -57,6 +66,11 @@ These topics are part of the broader games/3D domain but live in separate skill 
 - Apple-Hosted Background Assets, asset packs, Steam depot conversion → See axiom-integration (skills/background-assets.md)
 - In-app purchase, StoreKit views → See axiom-integration (skills/in-app-purchases.md)
 
+**Windowing and orientation (OS27):**
+- Every app resizes at 27, iPhone included. `UIRequiresFullScreen` now means discrete snap-resizing for games (not a fullscreen opt-out); orientation lock is a preference; minimum size via `sizeRestrictions` → See axiom-uikit (skills/uikit-modernization.md)
+- Game runs in iPhone Mirroring: trackpad/mouse input reaches custom gestures as indirect events, and the scene always reports portrait → See axiom-uikit (skills/uikit-modernization.md)
+- Metal drawable sizing, render-target reallocation, and quality throttling during live resize → See axiom-graphics (skills/resizable-rendering.md)
+
 ## Decision Tree
 
 ```dot
@@ -91,7 +105,8 @@ digraph games {
 11. Building AR game? → See axiom-graphics (skills/realitykit.md)
 12. Porting a Mac/Windows game to Apple platforms? → See axiom-graphics (skills/metal-migration.md)
 13. Unlocking in-game content (asset packs, IAP)? → See axiom-integration (skills/background-assets.md, skills/in-app-purchases.md)
-14. Want automated SpriteKit code scan? → `spritekit-auditor` agent
+14. Game needs fullscreen/orientation lock, or breaks when its window resizes? → See axiom-uikit (skills/uikit-modernization.md)
+15. Want automated SpriteKit code scan? → `spritekit-auditor` agent
 
 ## Automated Scanning
 
@@ -133,6 +148,7 @@ Scores: PERFORMANT / DEGRADED / UNPLAYABLE
 - `TCTouchController.isSupported` gate + connect/render/touch-routing setup
 - Half-screen collider shapes for movement and camera (never small circles)
 - Safe-area-adjusted anchor offsets for fullscreen games
+- GCMouse delta look/aim + GCKeyboard key state (iPad pointer, iPhone Mirroring)
 - Controller Home button settings + visionOS spatial accessories `OS27`
 
 ## Anti-Rationalization
@@ -149,6 +165,7 @@ Scores: PERFORMANT / DEGRADED / UNPLAYABLE
 | "I don't need collision shapes for taps" | RealityKit gestures require CollisionComponent. axiom-graphics (skills/realitykit-diag.md) diagnoses this in 2 min vs 30 min guessing. |
 | "I'll overlay UIButtons for touch controls" | TouchController renders in your Metal pass and surfaces as a GCController — existing controller logic just works. UIButton overlays mean a second input path and per-frame UIKit cost. game-input.md Section 2. |
 | "Touch controls = put every controller button on screen" | A 1:1 mapping clutters the play area and demands 3+ fingers. game-input.md Section 5 has the redesign patterns (context icons, hide unused, collapse combos). |
+| "Games are fullscreen — resizability doesn't apply to me" | At 27 every app resizes, iPhone included. `UIRequiresFullScreen` only gets a game discrete snap-resizing, not a fixed canvas. axiom-uikit (skills/uikit-modernization.md) has the scene-geometry and minimum-size patterns. |
 
 ## Example Invocations
 
@@ -178,6 +195,9 @@ User: "How do I handle game controller input?"
 
 User: "How do I read spatial accessory input on visionOS?"
 → See `skills/game-input.md`
+
+User: "My game's layout breaks when the window is resized"
+→ See axiom-uikit (skills/uikit-modernization.md)
 
 User: "I need to build a 3D game"
 → Invoke: See axiom-graphics (skills/realitykit.md)

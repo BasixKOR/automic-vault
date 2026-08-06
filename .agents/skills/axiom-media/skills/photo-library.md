@@ -36,6 +36,10 @@ Signs you're making this harder than it needs to be:
 - ❌ Decoding a full-resolution image into memory — a 48MP / RAW / panorama photo is a ~190 MB decompressed bitmap; loading it whole gets the app jetsammed (the "crashes on big photos" report). Downsample with ImageIO.
 - ❌ Using PhotoKit APIs when you only need to pick photos (over-engineering)
 - ❌ Assuming `.authorized` after user grants access (could be `.limited`)
+- ❌ Wrapping `PHAsset` / `PHFetchResult` / `PHChange` / `PHPhotoLibrary` in an `@unchecked Sendable` box, or adding a `@retroactive` conformance — **they are already `NS_SWIFT_SENDABLE` as of the iOS 26 SDK**. The compiler will NOT stop you: a redundant `extension` conformance is only a *warning* (the module's own conformance wins), and a wrapper `struct Box: @unchecked Sendable` compiles with **zero diagnostics**. So this merges silently and teaches the team to reach for `@unchecked` on PhotoKit types — the next one that genuinely isn't `Sendable` gets the same treatment and suppresses a real diagnostic
+- ❌ Conforming a `@MainActor` type to `PHPhotoLibraryChangeObserver` without `nonisolated` on the method — and silencing the resulting error with `@preconcurrency` or an isolated conformance, both of which build clean and trap at runtime
+- ❌ Passing a `@MainActor`-isolated closure to `performChanges` — it inherits isolation and traps on PhotoKit's serial queue; write `{ @Sendable in }`
+- ❌ Wrapping `PHImageManager.requestImage(for:targetSize:contentMode:options:)` in `withCheckedContinuation` — its handler is documented "called one or more times", so the second call is a double-resume crash. Not a blanket ban: `requestImageDataAndOrientation` is documented "called exactly once" and *is* continuation-safe
 
 ## Mandatory First Steps
 
@@ -346,7 +350,7 @@ picker.moveAsset(withIdentifier: "assetID", afterAssetWithIdentifier: "otherID")
 
 ### Pattern 2b: Options Menu & HDR Support (iOS 17+)
 
-The picker now shows an Options menu letting users choose to strip location metadata from photos. This works automatically with PhotosPicker and PHPicker.
+The picker now shows an Options menu letting users choose to strip location metadata from photos. This works automatically with PhotosPicker and PHPicker. It is **user**-controlled — to strip metadata unconditionally, see Pattern 2c.
 
 **Preserving HDR content**:
 
@@ -382,6 +386,42 @@ config.preferredAssetRepresentationMode = .current  // Don't transcode
 ```
 
 **Cinematic mode videos**: Picker returns rendered version with depth effects baked in. To get original with decision points, use PhotoKit with library access instead.
+
+### Pattern 2c: Metadata Stripping & Search Seeding `OS27`
+
+Available on iOS/macOS/visionOS 27 — **not tvOS/watchOS**, so gate with `@available(iOS 27, macOS 27, visionOS 27, *)`. Do not reach for `anyAppleOS 27` here; it would claim two platforms where these APIs do not exist.
+
+Pattern 2b's Options menu is *user*-controlled: the user may or may not strip location. `metadataOptions` is *developer*-controlled and unconditional — the strip happens before your app ever sees the asset, so there is no item-provider work to write and nothing to forget.
+
+```swift
+// SwiftUI
+PhotosPicker(selection: $selectedItems, matching: .images) {
+    Text("Select Photo")
+}
+.photosPickerMetadataOptions([.removeLocation, .removeCaptions])
+
+// UIKit
+var config = PHPickerConfiguration()
+config.metadataOptions = [.removeLocation, .removeCaptions]
+```
+
+**The default is empty** — nothing is stripped. The privacy win is opt-in, so an app that never sets this keeps forwarding GPS coordinates to its backend exactly as before. In Swift the empty set is `[]`; the header's `PHPickerMetadataOptionsNone` is the ObjC spelling and `.none` is explicitly unavailable ("use [] to construct an empty option set").
+
+**Seeding the picker's search field**:
+```swift
+// SwiftUI — String overload, or PHPickerSearchText for the typed form
+.photosPickerSearchText("beach sunset")
+
+// UIKit
+config.searchText = PHPickerSearchText("beach sunset")
+
+// Live update on an already-presented picker (extends the iOS 17 updatePicker path)
+var update = PHPickerConfiguration.Update()
+update.searchText = PHPickerSearchText("golden retriever")
+picker.updatePicker(using: update)
+```
+
+**Cost**: 2 min. One line to remove location metadata from every picked asset.
 
 ### Pattern 3: Handling Limited Library Access
 
@@ -445,10 +485,13 @@ class PhotoLibraryManager {
 // Register for changes
 PHPhotoLibrary.shared().register(self)
 
-// In delegate
-func photoLibraryDidChange(_ changeInstance: PHChange) {
-    // User may have modified their limited selection
-    // Refresh your photo grid
+// The callback arrives on an arbitrary serial queue — `nonisolated` is required
+// on a @MainActor type. See Pattern 6 for the full observer.
+nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+    Task { @MainActor in
+        // User may have modified their limited selection — refresh your photo grid
+        self.refreshGrid()
+    }
 }
 ```
 
@@ -469,14 +512,16 @@ func saveImageToLibrary(_ image: UIImage) async throws {
         throw PhotoError.permissionDenied
     }
 
-    try await PHPhotoLibrary.shared().performChanges {
+    // @Sendable is required if this is ever called from a @MainActor context —
+    // a bare block inherits the caller's isolation and traps on PhotoKit's queue
+    try await PHPhotoLibrary.shared().performChanges { @Sendable in
         PHAssetCreationRequest.creationRequestForAsset(from: image)
     }
 }
 
 // With metadata preservation
 func savePhotoData(_ data: Data, metadata: [String: Any]? = nil) async throws {
-    try await PHPhotoLibrary.shared().performChanges {
+    try await PHPhotoLibrary.shared().performChanges { @Sendable in
         let request = PHAssetCreationRequest.forAsset()
 
         // Write data to temp file for addResource
@@ -491,6 +536,64 @@ func savePhotoData(_ data: Data, metadata: [String: Any]? = nil) async throws {
 ```
 
 **Cost**: 15 min implementation
+
+### Pattern 4b: Shared Albums `OS27`
+
+Three system sheets for creating, posting to, and customizing shared albums — iOS/macOS/visionOS 27, **not tvOS/watchOS**. Each has a SwiftUI modifier and a UIKit view controller.
+
+```swift
+// Create — onCompletion receives PHSharedAlbumCreationResult? (albumIdentifier + albumURL)
+.photosSharedAlbumCreationSheet(
+    isPresented: $creating,
+    defaultTitle: "Trip Photos",
+    defaultSharingPolicy: .private,
+    photoLibrary: .shared()
+) { result in
+    guard let result else { return }   // nil == user cancelled
+    albumID = result.albumIdentifier
+}
+
+// Post — completion is Result<String, any Error>; the String is the album identifier
+.photosSharedAlbumPostingSheet(
+    isPresented: $posting,
+    items: selectedItems,
+    defaultAlbumIdentifier: albumID,
+    photoLibrary: .shared()
+) { result in ... }
+
+// Customize — no-ops silently unless albumIdentifier is non-nil BEFORE isPresented flips true
+.photosSharedAlbumCustomizationSheet(
+    isPresented: $customizing,
+    albumIdentifier: albumID,
+    photoLibrary: .shared()
+) { ... }
+```
+
+**Behavioral traps** — all straight from Apple's own doc comments, but buried in per-parameter Remarks where they are easy to miss:
+
+| Trap | Consequence |
+|---|---|
+| Cancel is **silent** on the creation and customization sheets | `isPresented` → false, `onCompletion` never fires. Teardown in the completion handler never runs. (The posting sheet documents no cancel behavior, and its `Result<String, _>` has no channel to signal one — treat it as unspecified) |
+| Completion/dismiss ordering is **inverted between siblings** | Creation: `onCompletion` fires *before* `isPresented` → false. Customization: `isPresented` → false *before* `onCompletion`. Code assuming one ordering breaks on the other |
+| Customization no-ops on a nil identifier | Both `isPresented == true` AND a non-nil `albumIdentifier` are required, and the id must be set *by the time* the sheet presents |
+| Customization is system-photo-library-only | Stated repeatedly in the ObjC header (not in the SwiftUI modifier's doc comment); a custom `PHPhotoLibrary` silently does nothing |
+| UIKit VCs never self-dismiss | All three delegates. You dismiss |
+| The UIKit creation delegate is **tri-state** | success = `creationResult` non-nil; failure = `error` non-nil; **cancel = both nil** |
+
+**Apple's doc comments are wrong here.** The creation sheet's prose says the completion receives a `String` identifier — the real parameter is `PHSharedAlbumCreationResult?`. The delegate header references an `albumIdentifier` property on the view controller that does not exist (it is `creationResult`). Read the signatures, not the prose.
+
+**Default sharing policy is `.private`** (invite/approval required). `.public` lets anyone with the link in without approval — an explicit opt-in you should surface in your own UI, not silently pass through. Note the label differs between layers: SwiftUI takes `defaultSharingPolicy:`, the UIKit configuration property is `defaultPolicy`.
+
+**Migration**: `View.postToPhotosSharedAlbumSheet(...)` shipped in iOS 26.0 (iOS-only) and is **deprecated in 27**. The replacement `photosSharedAlbumPostingSheet(...)` widens to iOS/macOS/visionOS and breaks the signature two ways — a mechanical find-and-replace will not compile:
+
+```
+old (iOS 26.0, deprecated 27):
+  postToPhotosSharedAlbumSheet(isPresented:items:photoLibrary:defaultAlbumIdentifier:completion:)
+new:                                                          ^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^ swapped
+  photosSharedAlbumPostingSheet(isPresented:items:defaultAlbumIdentifier:photoLibrary:completion:)
+```
+
+The completion type also changes from `Result<Void, any Error>` to `Result<String, any Error>` (the `String` is the album identifier).
 
 ### Pattern 5: Loading Images from PhotosPickerItem
 
@@ -530,12 +633,17 @@ func loadImage(from item: PhotosPickerItem) async -> UIImage? {
 ```
 
 **Loading with progress**:
-```swift
-func loadImageWithProgress(from item: PhotosPickerItem) async -> UIImage? {
-    let progress = Progress()
 
-    return await withCheckedContinuation { continuation in
-        _ = item.loadTransferable(type: TransferableImage.self) { result in
+`loadTransferable`'s handler fires **exactly once**, so wrapping it in a continuation is safe. `PHImageManager.requestImage` is the opposite — it can call back repeatedly, and the same wrapper double-resumes and crashes (see Red Flags).
+
+```swift
+func loadImage(
+    from item: PhotosPickerItem,
+    onProgress: @escaping @Sendable (Progress) -> Void
+) async -> UIImage? {
+    await withCheckedContinuation { continuation in
+        // loadTransferable returns the real Progress — surface it, don't discard it
+        let progress = item.loadTransferable(type: TransferableImage.self) { result in
             switch result {
             case .success(let transferable):
                 continuation.resume(returning: transferable?.image)
@@ -543,6 +651,7 @@ func loadImageWithProgress(from item: PhotosPickerItem) async -> UIImage? {
                 continuation.resume(returning: nil)
             }
         }
+        onProgress(progress)
     }
 }
 ```
@@ -553,13 +662,17 @@ func loadImageWithProgress(from item: PhotosPickerItem) async -> UIImage? {
 
 **Use case**: Keep your gallery UI in sync with Photos app.
 
+`PHPhotoLibraryChangeObserver` is **nonisolated** — the callback arrives on an arbitrary serial queue. Under Swift 6, conforming a `@MainActor` type without marking the method `nonisolated` is a compile error, and two of the compiler's three fix-its (`@preconcurrency`, isolated conformance) build clean but crash on device with `_dispatch_assert_queue_fail`. See axiom-concurrency (skills/isolation-inheritance-diag.md).
+
 ```swift
 import Photos
 
-class PhotoGalleryViewModel: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
-    @Published var photos: [PHAsset] = []
+@MainActor
+@Observable
+final class PhotoGalleryModel: NSObject, PHPhotoLibraryChangeObserver {
+    private(set) var photos: [PHAsset] = []
 
-    private var fetchResult: PHFetchResult<PHAsset>?
+    @ObservationIgnored private var fetchResult: PHFetchResult<PHAsset>?
 
     override init() {
         super.init()
@@ -574,26 +687,29 @@ class PhotoGalleryViewModel: NSObject, ObservableObject, PHPhotoLibraryChangeObs
     func fetchPhotos() {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        fetchResult = PHAsset.fetchAssets(with: .image, options: options)
-
-        photos = fetchResult?.objects(at: IndexSet(0..<(fetchResult?.count ?? 0))) ?? []
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        fetchResult = result
+        photos = result.objects(at: IndexSet(0..<result.count))
     }
 
-    func photoLibraryDidChange(_ changeInstance: PHChange) {
-        guard let fetchResult = fetchResult,
-              let changes = changeInstance.changeDetails(for: fetchResult) else {
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.fetchResult = changes.fetchResultAfterChanges
-            self.photos = changes.fetchResultAfterChanges.objects(at:
-                IndexSet(0..<changes.fetchResultAfterChanges.count)
-            )
+    // nonisolated matches the protocol's real signature — NOT a workaround
+    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor in
+            guard let current = self.fetchResult,
+                  let changes = changeInstance.changeDetails(for: current) else { return }
+            let after = changes.fetchResultAfterChanges
+            self.fetchResult = after
+            self.photos = after.objects(at: IndexSet(0..<after.count))
         }
     }
 }
 ```
+
+The example replaces the whole array for clarity. Three things to change for a real gallery:
+
+- **Don't materialize the whole library.** `result.objects(at:)` allocates every `PHAsset` up front — a large spike on a 50k-photo library (see Anti-Pattern 5). `PHFetchResult` is already a lazy random-access collection that fetches in chunks; hold it and index into it from your cell provider, or set `options.fetchLimit`.
+- **If you drive a collection view with `insertedIndexes` / `removedIndexes` / `changedIndexes`,** assign `fetchResultAfterChanges` to your stored result *before* applying those deltas, or the data source and the batch update disagree.
+- **`Task { @MainActor in }` does not guarantee ordering.** Two rapid library changes can land out of order. If you apply incremental deltas rather than replacing wholesale, serialize the hops (an `AsyncStream` consumed by one task) so they cannot interleave.
 
 **Cost**: 30 min implementation
 
@@ -619,6 +735,8 @@ PhotosPicker(selection: $item, matching: .images) {
 ```
 
 **Why it matters**: PHPicker and PhotosPicker handle privacy automatically. Requesting library access when you only need to pick photos is a privacy violation and may cause App Store rejection.
+
+**"Automatically" covers *access*, not *metadata*.** The picker keeps your app out of the library, but the asset it hands back still carries the photo's GPS coordinates and captions. If you upload picked photos, you are shipping the user's location to your backend. On OS 27, `.photosPickerMetadataOptions([.removeLocation, .removeCaptions])` strips it in one line — see Pattern 2c.
 
 ### Anti-Pattern 2: Ignoring Limited Status
 
@@ -720,6 +838,22 @@ func downsampledImage(from data: Data, maxPixel: CGFloat) -> UIImage? {
 
 `CGImageSourceCreateThumbnailAtIndex` decodes directly at the target size — it never materializes the full bitmap. Pick a `maxPixel` matching your display (e.g. 2048 for a full-screen attachment), and downsample again to your upload target before sending over the network.
 
+**Harden untrusted sources with an allowlist `OS27`.** Image-decoder bugs are a recurring iOS attack vector, and by default `CGImageSource` will reach for *any* decoder ImageIO ships. When the bytes came from the network or another app, restrict which formats can be parsed:
+
+```swift
+let src = CGImageSourceCreateWithData(untrustedData as CFData, [
+    kCGImageSourceShouldCache: false,
+    kCGImageSourceAllowableTypes: ["public.jpeg", "public.png"] as CFArray
+] as CFDictionary)
+```
+
+- Unknown UTIs are **silently ignored** — a typo does not error, it just fails to widen the allowlist. Verify against the system-declared identifiers.
+- Unspecified = every supported format (today's behavior).
+- **Intersects** with the process-wide `CGImageSourceSetAllowableTypes`: only formats permitted by *both* get decoded.
+- Not to be confused with that function, which dates to iOS 17.2, applies process-wide, and can only be called once. The 27 addition is the **per-source** key — the first way to harden a single untrusted asset without committing the whole process.
+
+There is no Swift-native ImageIO to migrate to: the `ImageIO.swiftmodule` added in 27 exposes **zero** public API. Keep writing the C-style `CGImageSource` calls.
+
 **Why it matters**: "Slow to load" is a UX problem (show a placeholder). "Crashes on big photos" is a *memory* problem (downsample) — different fix. Conflating them leaves the crash in place.
 
 ## Pressure Scenarios
@@ -774,31 +908,37 @@ func downsampledImage(from data: Data, maxPixel: CGFloat) -> UIImage? {
 
 Before shipping photo library features:
 
-**Permission Strategy**:
+#### Permission Strategy
 - ☑ Using PHPicker/PhotosPicker for simple selection (no permission needed)
 - ☑ Only requesting .readWrite if building gallery UI
 - ☑ Only requesting .addOnly if only saving photos
 - ☑ Info.plist usage descriptions present
 
-**Limited Library**:
+#### Limited Library
 - ☑ Handling `.limited` status (not treating as denied)
 - ☑ Offering `presentLimitedLibraryPicker()` for users to add photos
 - ☑ UI explains limited access to users
 
-**Image Loading**:
+#### Privacy & Untrusted Input
+- ☑ Picked assets that leave the device have location/captions stripped (`metadataOptions` `OS27`) or are scrubbed manually on older targets
+- ☑ `CGImageSource` over untrusted bytes passes `kCGImageSourceAllowableTypes` `OS27`
+
+#### Image Loading
 - ☑ All loading is async (no UI blocking)
 - ☑ Custom Transferable handles JPEG/HEIF (not just PNG)
 - ☑ Error handling for failed loads
 - ☑ Loading indicator for large files
 
-**Saving Photos**:
+#### Saving Photos
 - ☑ Using .addOnly when full access not needed
 - ☑ Using performChanges for atomic operations
 - ☑ Handling save failures gracefully
 
-**Photo Library Changes**:
+#### Observing Library Changes
 - ☑ Registered as PHPhotoLibraryChangeObserver if displaying library
-- ☑ Updating UI on main thread after changes
+- ☑ `photoLibraryDidChange` marked `nonisolated`, hopping to `@MainActor` inside
+- ☑ No `@preconcurrency` / isolated conformance used to silence the isolation error
+- ☑ `performChanges` blocks written `{ @Sendable in }` when called from an isolated context
 - ☑ Unregistering observer in deinit
 
 ## Resources
@@ -807,4 +947,4 @@ Before shipping photo library features:
 
 **Docs**: /photosui/phpickerviewcontroller, /photosui/photospicker, /photos/phphotolibrary
 
-**Skills**: skills/photo-library-ref.md, skills/camera-capture.md
+**Skills**: skills/photo-library-ref.md, skills/camera-capture.md, axiom-concurrency/skills/isolation-inheritance-diag.md

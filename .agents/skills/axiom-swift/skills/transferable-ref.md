@@ -449,7 +449,10 @@ UTType.jpeg            // public.jpeg
 UTType.pdf             // com.adobe.pdf
 UTType.mpeg4Movie      // public.mpeg-4
 UTType.commaSeparatedText  // public.comma-separated-values-text
+UTType.markdown            // net.daringfireball.markdown (OS27)
 ```
+
+**`UTType.markdown` `OS27`** — system-declared identifier `net.daringfireball.markdown`, conforming to `public.utf8-plain-text` (UTF-8 text, **not** `public.plain-text` — the distinction matters for `Transferable` conformance matching). Before 27, apps hand-rolled their own Markdown `UTExportedTypeDeclarations`, so two apps' Markdown types did not interoperate; it is now system-declared and shared across `Transferable`, `fileImporter`/`fileExporter`, `.draggable`, and `DocumentGroup`. Gate with `if #available` when the deployment target is below 27. All platforms.
 
 ### Declaring Custom Types
 
@@ -504,6 +507,10 @@ Custom types should conform to system types for broader compatibility:
 
 Common conformance parents: `public.data`, `public.content`, `public.text`, `public.image`
 
+#### `UTType(identifier:allowUndeclared:)` `OS27`
+
+A failable init that, with `allowUndeclared: true`, returns a `UTType` **keeping the identity** of an identifier the system does not know — for round-tripping an identifier from another subsystem without losing it. **Gotcha**: that undeclared type has no conformances or tags, so it silently **fails every `conforms(to:)` check**. With `allowUndeclared: false` it behaves identically to `UTType(_:)`. All platforms.
+
 ---
 
 ## Part 5: UIKit Bridging
@@ -546,6 +553,16 @@ struct ShareSheet: UIViewControllerRepresentable {
 ```
 
 For most apps, `ShareLink` is sufficient and preferred — it integrates with `Transferable` natively.
+
+### Promised Files (Drag to Finder)
+
+On the Mac — Catalyst, iOS-on-Mac, and AppKit apps — a drag to Finder can deliver a **file promise**: the receiver asks for the file only after the drop lands, so the source doesn't write anything for drags that never complete. The APIs below are what make content promise-backed; a plain file URL on the pasteboard is not a promise.
+
+- **`Transferable` sources**: `FileRepresentation` already registers promise-shaped file content through `NSItemProvider` — its exporting closure runs when a receiver actually requests the file. No extra adoption for the common case.
+- **AppKit drag sources**: `NSFilePromiseProvider` is the explicit API — you supply the file type up front and write the file in the `NSFilePromiseProviderDelegate` callback when the destination asks.
+- **AppKit drop targets**: check the pasteboard for `NSFilePromiseReceiver` and call `receivePromisedFiles(atDestination:options:operationQueue:reader:)` — reading the URL types directly gets you nothing for promised content.
+
+**Gotcha**: the promise callback fires *after* the drag session ends, on the receiver's schedule. The source must still be able to produce the file then — don't tear down the export state (or delete a temp source) when the drag ends, and don't capture view state that may be gone by the time Finder asks.
 
 ---
 
@@ -635,6 +652,13 @@ Color.clear
     .dropDestination(for: Image.self) { ... }
 ```
 
+### Drop Targets Move When Layout Reflows
+
+A drag session outlives any single layout: mid-drag, the window can resize, a column can collapse, and auto-scroll or a hover-triggered expansion can push targets around. SwiftUI's `.dropDestination` follows the view's current geometry through a reflow — there is no cached frame to invalidate. Custom UIKit drop handling breaks when the delegate caches geometry:
+
+- Compute highlight and insertion position from `session.location(in:)` inside `dropInteraction(_:sessionDidUpdate:)` (or `tableView(_:dropSessionDidUpdate:...)`) **every time it fires** — never from frames captured in `sessionDidEnter`.
+- If a resize can remove a target entirely (a sidebar that collapses at narrow widths), return `.cancel`/`.forbidden` from the update callback when the target is gone rather than dropping into a stale rect.
+
 ### Async Loading with loadTransferable
 
 `NSItemProvider.loadTransferable` is asynchronous. Update UI on the main actor:
@@ -662,6 +686,6 @@ provider.loadTransferable(type: Profile.self) { result in
 
 **WWDC**: 2022-10062, 2022-10052, 2022-10023, 2022-10093, 2022-10095
 
-**Docs**: /coretransferable/transferable, /coretransferable/choosing-a-transfer-representation-for-a-model-type, /coretransferable/filerepresentation, /coretransferable/proxyrepresentation, /swiftui/sharelink, /swiftui/drag-and-drop, /swiftui/clipboard, /uniformtypeidentifiers
+**Docs**: /coretransferable/transferable, /coretransferable/choosing-a-transfer-representation-for-a-model-type, /coretransferable/filerepresentation, /coretransferable/proxyrepresentation, /swiftui/sharelink, /swiftui/drag-and-drop, /swiftui/clipboard, /uniformtypeidentifiers, /appkit/nsfilepromiseprovider, /appkit/nsfilepromisereceiver
 
 **Skills**: axiom-integration, axiom-data (skills/codable.md), axiom-swiftui

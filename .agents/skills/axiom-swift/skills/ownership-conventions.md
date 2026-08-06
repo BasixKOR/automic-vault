@@ -455,6 +455,7 @@ The 6.4 stdlib adds lightweight ownership containers — verified usable in the 
 | Type | Copyability | Init | Role |
 |------|-------------|------|------|
 | `UniqueBox<Value>` | `~Copyable` | `UniqueBox(consuming value)` | Heap box that uniquely owns a `~Copyable` value |
+| `UniqueArray<Element>` | `~Copyable` | `UniqueArray()` / `UniqueArray(capacity:)` | Growable heap array that uniquely owns `~Copyable` elements |
 | `Ref<Value>` | `Copyable`, `~Escapable` | `Ref(borrowing value)` | Shareable read-only borrow of a single value |
 | `MutableRef<Value>` | `~Copyable`, `~Escapable` | `MutableRef(&value)` | Exclusive in-place borrow of a single value |
 
@@ -470,18 +471,36 @@ func demo() {
 }
 ```
 
+`UniqueArray` is the growable collection form — a `~Copyable` heap array of `~Copyable` elements, the array analog of `UniqueBox`. Element access is via `borrow`/`mutate` subscript accessors (no implicit copy); assigning it to another binding **consumes** it, so pass `borrowing`/`consuming` explicitly (or `clone()` when `Element` is `Copyable`) when you need a second owner:
+
+```swift
+@available(anyAppleOS 27, *)
+func buildIDs() {
+    var ids = UniqueArray<Int>()      // or UniqueArray(capacity: 4)
+    ids.append(1)
+    ids.append(2)
+    ids[0] = 10                       // mutate accessor, in place
+    let last = ids.popLast()          // -> Element?
+    _ = (ids.count, ids.isEmpty, last)
+    consumeIDs(ids)                   // moves ownership; `ids` unusable after
+}
+
+@available(anyAppleOS 27, *)
+func consumeIDs(_ x: consuming UniqueArray<Int>) { _ = x.count }
+```
+
 `Ref`/`MutableRef` are the single-value analog of `Span`/`MutableSpan`: non-escapable, so the borrow can't outlive its source. On the concurrency side, `withTaskCancellationShield` is usable now and the single-resume `Continuation` is present but limited in this beta — see `swift-concurrency-ref`.
+
+Paren-free optional existentials and opaque types now compile under Swift 6.4 — `var overlay: any Drawable?` and `some P?` no longer have to be written `(any Drawable)?`.
 
 ### Still forthcoming (re-check each beta)
 
-Other 6.4 stdlib features are **not yet usable** in the current Xcode 27 beta (confirmed by compile-probe, build swiftlang-6.4.0.23.5):
+Other 6.4 stdlib features are **not yet usable** as of Xcode 27 beta 4 (confirmed by compile-probe, build swiftlang-6.4.0.27.1):
 
 | Feature | State in beta |
 |---------|---------------|
-| `UniqueArray` (`~Copyable` array) | Absent — `UniqueBox` shipped, the array form has not |
 | `Dictionary.mapKeyedValues` | Absent |
 | `FilePath` as a stdlib type | Still requires `import System` |
-| Paren-free `any P?` / `some P?` | Still must be written `(any P)?` |
 | `for`-loop borrowing iteration | Shipped as `BorrowingSequence` / `BorrowingIteratorProtocol` (renamed from "Iterable"), but gated behind `-enable-experimental-feature BorrowingSequence` — present, not yet shippable |
 
 Treat these as forthcoming; re-probe on each new beta and fold what flips.

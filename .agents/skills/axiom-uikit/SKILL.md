@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY UIKit bridging, Auto Layout, Combine, TextKit, or UIKit animation work.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/resize-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -15,6 +23,7 @@ license: MIT
 | UIViewRepresentable, UIViewControllerRepresentable | See `skills/uikit-bridging.md` |
 | Embedding SwiftUI in UIKit (UIHostingController) | See `skills/uikit-bridging.md` |
 | Coordinator pattern, updateUIView lifecycle | See `skills/uikit-bridging.md` |
+| Building adaptive UIKit layout: guides, width-conditional constraints, compositional layout, self-sizing cells | See `skills/adaptive-layout.md` |
 | "Unable to simultaneously satisfy constraints" | See `skills/auto-layout-debugging.md` |
 | Constraint conflicts, ambiguous layout | See `skills/auto-layout-debugging.md` |
 | Views not appearing, positioned incorrectly | See `skills/auto-layout-debugging.md` |
@@ -25,6 +34,9 @@ license: MIT
 | @Published properties, Combine ↔ async/await | See `skills/combine-patterns.md` |
 | When to use Combine vs async/await | See `skills/combine-patterns.md` |
 | UIScene lifecycle required, resizable apps, size classes, tab sidebar `OS27` | See `skills/uikit-modernization.md` |
+| iPhone Mirroring compat: indirect input, companion Face ID, portrait trap | See `skills/uikit-modernization.md` |
+| Scene edges: teardown, activation requests, per-scene restoration, external display, activeAppearance | See `skills/uikit-modernization.md` |
+| Automated resize-readiness scan (scene lifecycle, UIScreen.main, fixed-canvas, Mirroring input) | Launch `resize-auditor` agent or `/axiom:audit resize` |
 | TextKit 2 architecture, NSTextLayoutManager | See `skills/textkit-ref.md` |
 | Writing Tools integration (iOS 26) | See `skills/textkit-ref.md` |
 | Viewport rendering surfaces, attachment reuse, collapsible text `OS27` | See `skills/textkit-ref.md` |
@@ -44,6 +56,7 @@ digraph uikit {
 
     start -> what;
     what -> "skills/uikit-bridging.md" [label="wrap UIKit in SwiftUI\nor SwiftUI in UIKit"];
+    what -> "skills/adaptive-layout.md" [label="build adaptive layout\n(guides, constraint sets,\ncompositional)"];
     what -> "skills/auto-layout-debugging.md" [label="constraint errors,\nlayout issues"];
     what -> "skills/uikit-animation-debugging.md" [label="CAAnimation bugs,\nspring physics,\ncompletion handlers"];
     what -> "skills/combine-patterns.md" [label="publishers, sinks,\n@Published,\nasync/await bridge"];
@@ -54,8 +67,10 @@ digraph uikit {
 ```
 
 0. Scene-lifecycle migration, "app won't launch on 27", resizability, size classes, tab sidebar? → `skills/uikit-modernization.md`
+0b. App misbehaves in iPhone Mirroring (gestures dead, Face ID blocked, layout stuck portrait)? → `skills/uikit-modernization.md`
 1. UIViewRepresentable / UIViewControllerRepresentable / UIHostingController? → `skills/uikit-bridging.md`
 2. "Unable to simultaneously satisfy constraints" / layout bugs? → `skills/auto-layout-debugging.md`
+2b. Building a layout that adapts (layout guides, size-class constraint sets, compositional column math, self-sizing cells)? → `skills/adaptive-layout.md`
 3. CAAnimation completion missing / spring physics wrong / animation jank? → `skills/uikit-animation-debugging.md`
 4. Combine publishers / AnyCancellable / @Published / Combine ↔ async bridge? → `skills/combine-patterns.md`
 5. TextKit 2 / Writing Tools / TextEditor / TextKit 1 migration? → `skills/textkit-ref.md`
@@ -124,3 +139,12 @@ User: "My SwiftUI view has a memory leak from a Combine subscription"
 
 User: "How do I embed SwiftUI in my UIKit app?"
 → Read: `skills/uikit-bridging.md`
+
+User: "Audit my app for screen resizing support"
+→ Launch `resize-auditor` agent (or `/axiom:audit resize`)
+
+User: "My custom pinch gesture stops working when the app runs in iPhone Mirroring"
+→ Read: `skills/uikit-modernization.md`
+
+User: "How do I vary my collection view's column count with the window width?"
+→ Read: `skills/adaptive-layout.md`

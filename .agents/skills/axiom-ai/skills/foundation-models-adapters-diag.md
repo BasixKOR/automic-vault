@@ -349,7 +349,7 @@ Regenerate training JSONL with complete tool-call schema (see `axiom-ai (skills/
 
 **Symptom**:
 
-Trivial user prompts (a few words) consume 30-90% of the 4096-token context window. Multi-turn conversations exceed `exceededContextWindowSize` after only 2-3 turns.
+Trivial user prompts (a few words) consume 30-90% of the 4096-token context window. Multi-turn conversations throw `LanguageModelSession.GenerationError.exceededContextWindowSize` after only 2-3 turns. (The 26-cycle spelling is correct here: the adapter runtime is obsoleted in 27.0, so an adapter-using app is on a 26.x floor, where `LanguageModelError` — iOS 27+ — is not available.)
 
 **Cause**:
 
@@ -368,7 +368,7 @@ If median system-message length exceeds ~200 characters, this pattern is likely.
 
 1. Rewrite training JSONL with short, consistent system messages (≤100 characters, ideally a single sentence)
 2. Retrain
-3. Re-evaluate token efficiency: `Transcript` is a `RandomAccessCollection` of `Transcript.Entry` (iterate it directly — there is no `.entries` property). On iOS 26.4+ measure its size with `session.tokenCount(for: Array(transcript))`, which accepts `some Collection<Transcript.Entry>`; capture this for a representative single-turn baseline and compare against the previous adapter's measurements
+3. Re-evaluate token efficiency: `Transcript` is a `RandomAccessCollection` of `Transcript.Entry` (iterate it directly — there is no `.entries` property). On iOS 26.4+ measure its size with `SystemLanguageModel.default.tokenCount(for: Array(transcript))` (`tokenCount(for:)` is a `SystemLanguageModel` method, not a `LanguageModelSession` one), which accepts `some Collection<Transcript.Entry>`; capture this for a representative single-turn baseline and compare against the previous adapter's measurements
 
 **Time cost**: days (dataset rewrite + retrain).
 

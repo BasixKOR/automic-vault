@@ -30,13 +30,13 @@ Apple frames safety as layered — a "Swiss cheese" model where a violation requ
 let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
 let session = LanguageModelSession(model: model)
 
-// With an adapter:
+// With an adapter (26-cycle only — `init(adapter:)` is obsoleted in 27.0; see foundation-models-adapters.md):
 let model = SystemLanguageModel(adapter: myAdapter, guardrails: .permissiveContentTransformations)
 ```
 
 - `SystemLanguageModel.Guardrails` exposes exactly two values: **`.default`** and **`.permissiveContentTransformations`**. There is no public initializer — you cannot author a custom guardrail policy, only choose between these two.
 - Availability: **iOS 26.0+, macOS 26.0+, visionOS 26.0+**. Guardrails are **not available on tvOS or watchOS**.
-- A violation throws `LanguageModelSession.GenerationError.guardrailViolation(Context)`.
+- A violation throws `LanguageModelError.guardrailViolation` (`OS27`; the 26-cycle spelling `LanguageModelSession.GenerationError.guardrailViolation(Context)` is deprecated). Distinct from `LanguageModelError.refusal`, which is the model declining rather than a guardrail tripping — handle both or you leave a dead end.
 
 ### ⚠️ Permissive mode is string-only
 
@@ -116,4 +116,4 @@ Custom adapter training can **erode the base model's guardrails on topics adjace
 
 **Docs**: /foundationmodels/systemlanguagemodel/guardrails, /foundationmodels/improving-the-safety-of-generative-model-output — plus Apple Developer Forums thread 787736 (false-refusal reports + Apple staff guidance)
 
-**Skills**: foundation-models (HIG refusal UX, Approach Triage), foundation-models-diag (Pattern 2b — guardrailViolation troubleshooting), foundation-models-adapters (Pattern 2 — safety eval axis), foundation-models-ref (`GenerationError` cases)
+**Skills**: foundation-models (HIG refusal UX, Approach Triage), foundation-models-diag (Pattern 2b — guardrailViolation troubleshooting), foundation-models-adapters (Pattern 2 — safety eval axis), foundation-models-ref (`LanguageModelError` cases + the OS27 migration table)

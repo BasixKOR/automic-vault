@@ -8,6 +8,15 @@ license: MIT
 
 **You MUST use this skill for ANY accessibility work including VoiceOver, Dynamic Type, color contrast, WCAG compliance, and UX flow auditing.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/accessibility-auditor.md`.
+> Homed in another suite: `axiom-concurrency/skills/concurrency-auditor.md`, `axiom-data/skills/swiftdata-auditor.md`, `axiom-swiftui/skills/swiftui-nav-auditor.md`, `axiom-swiftui/skills/ux-flow-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -22,6 +31,8 @@ license: MIT
 | Color contrast (WCAG AA/AAA) | See `skills/accessibility-diag.md` |
 | Touch target sizes (< 44x44pt) | See `skills/accessibility-diag.md` |
 | Keyboard navigation (iPadOS/macOS) | See `skills/accessibility-diag.md` |
+| Button Shapes, Large Content Viewer, Full Keyboard Access, Switch Control | See `skills/accessibility-diag.md` |
+| VoiceOver order broken after resize / column collapse; table & grid semantics | See `skills/accessibility-diag.md` |
 | Reduce Motion support | See `skills/accessibility-diag.md` |
 | Assistive Access (cognitive, iOS 17+) | See `skills/accessibility-diag.md` |
 | Accessibility Inspector workflows | See `skills/accessibility-diag.md` |
@@ -51,6 +62,7 @@ digraph accessibility {
     what -> "skills/accessibility-diag.md" [label="color contrast"];
     what -> "skills/accessibility-diag.md" [label="touch targets"];
     what -> "skills/accessibility-diag.md" [label="keyboard nav"];
+    what -> "skills/accessibility-diag.md" [label="resizable window / desktop-class"];
     what -> "skills/accessibility-diag.md" [label="Reduce Motion"];
     what -> "skills/accessibility-diag.md" [label="Assistive Access"];
     what -> "skills/accessibility-diag.md" [label="custom control techniques"];
@@ -125,6 +137,12 @@ User: "How do I support Assistive Access?"
 → See `skills/accessibility-diag.md`
 
 User: "How do I prepare my tvOS app for Large Text?"
+→ See `skills/accessibility-diag.md`
+
+User: "VoiceOver reads my screen in the wrong order after the window resizes"
+→ See `skills/accessibility-diag.md`
+
+User: "How do I support Button Shapes / the Large Content Viewer in my custom controls?"
 → See `skills/accessibility-diag.md`
 
 User: "VoiceOver stops reading at the end of each page in my book app"

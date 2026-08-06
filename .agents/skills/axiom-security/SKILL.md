@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY keychain, encryption, passkey, app integrity, agentic/AI feature security, file protection, or code signing work.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/security-privacy-scanner.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -23,6 +31,7 @@ license: MIT
 | App integrity verification, DCAppAttestService, fraud metric | See `skills/app-attest.md` |
 | Prompt injection, securing AI agents / agentic features, tool confirmation | See `skills/agentic-security.md` |
 | NSFileProtection levels, data protection at rest | See `skills/file-protection-ref.md` |
+| SensitiveContentAnalysis verdict must never leave the device (no analytics/moderation queue/synced cache; license §3.3.3) | See `axiom-vision` (skills/vision-ref.md) |
 | Certificate management, provisioning profiles, CI/CD signing | See `skills/code-signing.md` |
 | Certificate not found, profile mismatch, entitlement errors | See `skills/code-signing-diag.md` |
 | Certificate CLI, profile inspection, entitlement extraction | See `skills/code-signing-ref.md` |

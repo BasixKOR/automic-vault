@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY iOS system integration including Siri, Shortcuts, widgets, in-app purchases, background tasks, push notifications, and more.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/iap-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -39,6 +47,9 @@ license: MIT
 | Weather data, forecasts, attribution (WeatherKit) | See `skills/weatherkit.md` |
 | VoIP calls, CallKit, VoIP push, caller ID/blocking | See `skills/callkit-livecommunicationkit.md` |
 | CallKit / LiveCommunicationKit / IdentityLookup API reference | See `skills/callkit-livecommunicationkit-ref.md` |
+| SharePlay, GroupActivities, shared sessions, spatial Personas | See `skills/shareplay.md` |
+| GroupActivities API reference (GroupSession, messenger, journal) | See `skills/shareplay-ref.md` |
+| SharePlay coordinated audio/video playback | Use axiom-media (`skills/shareplay-playback.md`) instead |
 | Suggested actions for a messaging conversation (`SuggestedActionsView`, `com.apple.developer.suggested-actions` entitlement, `OS27`) | Use axiom-ai (skills/suggested-actions.md) instead — Apple-Intelligence-backed; the entitlement/capability is the integration half |
 | AlarmKit (iOS 26+) | See `skills/alarmkit-ref.md` |
 | Timer patterns, scheduling | See `skills/timer-patterns.md` |
@@ -52,6 +63,7 @@ license: MIT
 | Push notifications, APNs | See `skills/push-notifications.md` |
 | Push notification debugging | See `skills/push-notifications-diag.md` |
 | Push notification API reference | See `skills/push-notifications-ref.md` |
+| Push without APNs on restricted/local networks (Local Push Connectivity, NEAppPushProvider, MCX `iOS27`) | See `skills/local-push-connectivity.md` |
 
 ## Decision Tree
 
@@ -79,6 +91,7 @@ digraph integration {
     what -> "skills/background-processing.md" [label="background tasks"];
     what -> "skills/background-assets.md" [label="large asset delivery /\nFM adapter shipping"];
     what -> "skills/push-notifications.md" [label="push notifications"];
+    what -> "skills/local-push-connectivity.md" [label="push without APNs\n(local network / MCX)"];
 }
 ```
 
@@ -103,6 +116,7 @@ digraph integration {
 12. Background tasks / BGTaskScheduler? → `skills/background-processing.md`, `skills/background-processing-diag.md`, `skills/background-processing-ref.md`
 12a. Large asset delivery (game packs, localized asset packs, ML models, Foundation Models adapters, ODR migration)? → `skills/background-assets.md`, `skills/background-assets-ref.md`
 13. Push notifications? → `skills/push-notifications.md`, `skills/push-notifications-diag.md`, `skills/push-notifications-ref.md`
+13a. Push/calls on networks without internet, or PTT over an MCX cellular slice? → `skills/local-push-connectivity.md`
 14. Want IAP audit? → Launch `iap-auditor` agent
 15. Want full IAP implementation? → Launch `iap-implementation` agent
 16. Camera / photos / audio / haptics / ShazamKit? → **Use `axiom-media` instead**
@@ -171,8 +185,12 @@ digraph integration {
 | "I'll use URLSession for the asset download" | URLSession doesn't integrate with App Store install progress, charging-aware scheduling, or per-app quota — and can't reach Apple-hosted asset packs at all. Background Assets is the supported channel. |
 | "On-Demand Resources still works fine" | The entire `NSBundleResourceRequest` family is deprecated in the 27 SDKs ("Use Background Assets instead"). Migrate ODR tags to asset packs. See `skills/background-assets.md`. |
 | "Just request full Calendar access" | Most apps only need to add events — EventKitUI does that with zero permissions. |
+| "SharePlay is just a message channel between participants" | `GroupSession` is not `Sendable`, observation is Combine-only, and the late-joiner delta depends on `@Published` willSet timing. Migrating it to `@Observable` silently breaks catch-up. |
+| "The person who started the SharePlay session is the host" | There is no host. Every participant is equal — the framework has no owner or turn-taking concept. `lifetimePolicy` is the only related control, and it lives on the activity. |
+| "One messenger, I'll pick reliable or unreliable per message" | `deliveryMode` is a `let` fixed at init and no `send` overload takes a mode. Mixed protocols need two `GroupSessionMessenger` instances. |
 | "I'll request Bluetooth permission and scan for the accessory" | AccessorySetupKit (iOS 18+) pairs in one tap with no broad Bluetooth prompt and grants scoped BT+Wi-Fi access. See `skills/accessorysetupkit.md`. |
 | "I'll process the VoIP push, then report the call when ready" | iOS terminates your app and stops delivering VoIP pushes if a push doesn't report a call *before* completion. Report first, fetch after. See `skills/callkit-livecommunicationkit.md`. |
+| "No internet on this network, so I'll keep my own socket open in the background" | iOS suspends the app and the socket dies. Local Push Connectivity runs a system-managed provider extension for exactly this. See `skills/local-push-connectivity.md`. |
 | "I'll activate the audio session when the call connects" | CallKit owns the audio session — activate only in `provider(_:didActivate:)` or audio is silent/misrouted. See `skills/callkit-livecommunicationkit.md`. |
 | "I'll use CNContactStore directly for picking" | CNContactPickerViewController needs no authorization and shows all contacts. |
 
@@ -204,6 +222,9 @@ User: "How do I implement push notifications?"
 
 User: "Push notifications work in dev but not production"
 → Read: `skills/push-notifications-diag.md`
+
+User: "Our app must receive calls on a ship / hospital network with no internet" / "Push to Talk over a Mission Critical 5G slice"
+→ Read: `skills/local-push-connectivity.md`
 
 User: "My background task never runs"
 → Read: `skills/background-processing-diag.md`

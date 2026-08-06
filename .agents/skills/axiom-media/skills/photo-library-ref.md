@@ -62,6 +62,10 @@ config = PHPickerConfiguration(photoLibrary: .shared())
 config.preferredAssetRepresentationMode = .automatic  // default
 // .current - original format
 // .compatible - converted to compatible format
+
+// Metadata stripping + search seeding (OS27; iOS/macOS/visionOS only)
+config.metadataOptions = [.removeLocation, .removeCaptions]  // default []
+config.searchText = PHPickerSearchText("beach sunset")
 ```
 
 ### Filter Options
@@ -250,6 +254,40 @@ PhotosPicker(
 | `.current` | Original format, preserves HDR |
 | `.compatible` | Force compatible format |
 
+### Picker Modifiers `OS27`
+
+iOS/macOS/visionOS 27 only — unavailable on tvOS/watchOS.
+
+```swift
+.photosPickerMetadataOptions([.removeLocation, .removeCaptions])
+.photosPickerSearchText("beach sunset")          // String overload
+.photosPickerSearchText(PHPickerSearchText(...)) // typed overload
+```
+
+| API | Type | Default |
+|---|---|---|
+| `PHPickerMetadataOptions` | OptionSet: `.removeLocation`, `.removeCaptions` (`.none` is unavailable in Swift — use `[]`) | `[]` |
+| `PHPickerSearchText` | `init(_ string: String)` | `nil` |
+| `PHPickerConfiguration.Update.searchText` | live update via `updatePicker(using:)` | `nil` |
+
+### Shared Album Sheets `OS27`
+
+```swift
+.photosSharedAlbumCreationSheet(isPresented:defaultTitle:defaultSharingPolicy:photoLibrary:onCompletion:)
+.photosSharedAlbumPostingSheet(isPresented:items:defaultAlbumIdentifier:photoLibrary:completion:)
+.photosSharedAlbumCustomizationSheet(isPresented:albumIdentifier:photoLibrary:onCompletion:)
+```
+
+| Type | Members |
+|---|---|
+| `PHSharedAlbumCreationResult` | `albumIdentifier: String`, `albumURL: URL` |
+| `PHSharedAlbumCreationSharingPolicy` | `.private` (default, approval required), `.public` |
+| `PHSharedAlbumCreationConfiguration` | `photoLibrary`, `defaultTitle`, `defaultPolicy` |
+
+Completion types: creation → `PHSharedAlbumCreationResult?`; posting → `Result<String, any Error>`; customization → `Void`. Cancel fires no completion on creation and customization (posting is undocumented). UIKit equivalents: `PHSharedAlbumCreationViewController`, `PHSharedAlbumPostingViewController`, `PHSharedAlbumCustomizationViewController` — none self-dismiss.
+
+Deprecated in 27: `postToPhotosSharedAlbumSheet` (iOS 26.0) → `photosSharedAlbumPostingSheet`. Two breaks: `photoLibrary:` and `defaultAlbumIdentifier:` swap order, and the completion type changes `Result<Void, _>` → `Result<String, _>`.
+
 ### Loading Images from PhotosPickerItem
 
 ```swift
@@ -353,14 +391,16 @@ PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: viewController) { iden
 
 ### Performing Changes
 
+Change blocks run on **PhotoKit's own serial queue**. `performChanges` takes a `dispatch_block_t`, which imports as non-`Sendable`, so a bare block written inside a `@MainActor` type inherits that isolation and traps at runtime. Mark the block `@Sendable` whenever the enclosing context is isolated — the snippets below and elsewhere in this file omit it only because they sit at file scope. See axiom-concurrency (skills/isolation-inheritance-diag.md).
+
 ```swift
 // Async changes
-try await PHPhotoLibrary.shared().performChanges {
+try await PHPhotoLibrary.shared().performChanges { @Sendable in
     // Create, update, or delete assets
 }
 
 // With completion handler
-PHPhotoLibrary.shared().performChanges({
+PHPhotoLibrary.shared().performChanges({ @Sendable in
     // Changes
 }) { success, error in
     // Handle result
@@ -369,8 +409,11 @@ PHPhotoLibrary.shared().performChanges({
 
 ### Change Observer
 
+The callback arrives on an **arbitrary serial queue**. On a `@MainActor` type the method must be `nonisolated` — see axiom-concurrency (skills/isolation-inheritance-diag.md) for why `@preconcurrency` and isolated conformance build clean and crash.
+
 ```swift
-class PhotoObserver: NSObject, PHPhotoLibraryChangeObserver {
+@MainActor
+final class PhotoObserver: NSObject, PHPhotoLibraryChangeObserver {
 
     override init() {
         super.init()
@@ -381,19 +424,37 @@ class PhotoObserver: NSObject, PHPhotoLibraryChangeObserver {
         PHPhotoLibrary.shared().unregisterChangeObserver(self)
     }
 
-    func photoLibraryDidChange(_ changeInstance: PHChange) {
-        // Handle changes
-        guard let changes = changeInstance.changeDetails(for: fetchResult) else { return }
-
-        DispatchQueue.main.async {
-            // Update UI with new fetch result
-            let newResult = changes.fetchResultAfterChanges
+    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor in
+            guard let changes = changeInstance.changeDetails(for: self.fetchResult) else { return }
+            self.fetchResult = changes.fetchResultAfterChanges
         }
     }
 }
 ```
 
 ---
+
+## Sendability
+
+These types carry `NS_SWIFT_SENDABLE` in the SDK (verified iOS 26 and 27) and cross isolation boundaries without a diagnostic:
+
+| Type | Sendable |
+|------|----------|
+| `PHAsset`, `PHObject`, `PHObjectPlaceholder` | yes |
+| `PHFetchResult`, `PHChange`, `PHPhotoLibrary` | yes |
+| `PHImageManager`, `PHCollection`, `PHAssetCollection` | yes |
+
+**Do not add `@unchecked Sendable` boxes or `@retroactive` conformances for these.** The conformance already exists. Note the compiler does NOT block either shape (verified by compile):
+
+| Shape | Diagnostic |
+|-------|------------|
+| `extension PHObject: @retroactive @unchecked Sendable {}` | warning — "conformance … already stated in the type's module 'Photos'"; builds, module's conformance wins |
+| `struct Box: @unchecked Sendable { let c: PHChange }` | **none** — compiles silently |
+
+So it merges, becomes house style, and normalizes `@unchecked` for the next type that genuinely needs checking. This is a common wrong reflex — LLM baselines invent these boxes unprompted because the annotations postdate most training data.
+
+Re-fetching by `localIdentifier` is still often right, but for **staleness** (a `PHAsset` is a snapshot; one held across library changes can target the wrong state) — never for isolation. See axiom-concurrency (skills/isolation-inheritance-diag.md).
 
 ## PHAsset
 
@@ -573,6 +634,26 @@ func saveToAlbum(_ image: UIImage, album: PHAssetCollection) async throws {
 
 ---
 
+## CloudKit Server-Side Asset Export `OS27`
+
+Export a photo-library asset directly into CloudKit — the CloudKit **server** copies it on save, with no local download/re-upload round-trip. This is the **producer** half; the CloudKit consumer (`CKAsset(importing:)`) and its data-safety edges live in axiom-data `cloudkit-ref` → "Server-side asset copy".
+
+```swift
+import CloudKit   // for CKAsset.ExportedAssetID
+
+// All Apple platforms at 27 except watchOS (no producer there):
+@available(anyAppleOS 27, *)
+@available(watchOS, unavailable)
+func exportedID(for resource: PHAssetResource) async throws -> CKAsset.ExportedAssetID {
+    try await PHAssetResourceManager.default().exportedAssetID(for: resource)
+}
+```
+
+- `PHAssetResource.dataSize: Int?` (`OS27`) reports the resource's byte size (nil when unknown) — gate or skip oversized exports before the round-trip.
+- Requires network + a **cloud-enabled** photo library. A local-only library throws `PHPhotosError.requestNotSupportedForAsset` (3306). The call honors cancellation (`CancellationError`).
+- **Apple doc bug (27.0b)**: the doc comment says to gate on `PHAssetResource.TypeGroup.coreComponents`, which does NOT exist anywhere in the 27 SDK. Gate on `PHAssetResourceType` and handle the throw — quoting the doc verbatim yields non-compiling code.
+- The returned `ExportedAssetID` is device-bound and expires in days — hand it straight to `CKAsset(importing:)`; never persist or transmit it.
+
 ## PHFetchResult
 
 Ordered list of assets from a fetch.
@@ -704,34 +785,30 @@ Represents changes to the photo library.
 ### Getting Change Details
 
 ```swift
-func photoLibraryDidChange(_ changeInstance: PHChange) {
-    guard let changes = changeInstance.changeDetails(for: fetchResult) else { return }
+// nonisolated — PhotoKit calls this on an arbitrary serial queue
+nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+    Task { @MainActor in
+        guard let changes = changeInstance.changeDetails(for: self.fetchResult) else { return }
 
-    // Check what changed
-    let hasIncrementalChanges = changes.hasIncrementalChanges
-    let insertedIndexes = changes.insertedIndexes
-    let removedIndexes = changes.removedIndexes
-    let changedIndexes = changes.changedIndexes
+        // Assign the new fetch result BEFORE applying deltas, or the data
+        // source and the batch update disagree
+        self.fetchResult = changes.fetchResultAfterChanges
 
-    // Get new fetch result
-    let newResult = changes.fetchResultAfterChanges
+        guard changes.hasIncrementalChanges else {
+            self.collectionView.reloadData()
+            return
+        }
 
-    // Update collection view
-    DispatchQueue.main.async {
-        if hasIncrementalChanges {
-            collectionView.performBatchUpdates {
-                if let removed = removedIndexes {
-                    collectionView.deleteItems(at: removed.map { IndexPath(item: $0, section: 0) })
-                }
-                if let inserted = insertedIndexes {
-                    collectionView.insertItems(at: inserted.map { IndexPath(item: $0, section: 0) })
-                }
-                if let changed = changedIndexes {
-                    collectionView.reloadItems(at: changed.map { IndexPath(item: $0, section: 0) })
-                }
+        self.collectionView.performBatchUpdates {
+            if let removed = changes.removedIndexes {
+                self.collectionView.deleteItems(at: removed.map { IndexPath(item: $0, section: 0) })
             }
-        } else {
-            collectionView.reloadData()
+            if let inserted = changes.insertedIndexes {
+                self.collectionView.insertItems(at: inserted.map { IndexPath(item: $0, section: 0) })
+            }
+            if let changed = changes.changedIndexes {
+                self.collectionView.reloadItems(at: changed.map { IndexPath(item: $0, section: 0) })
+            }
         }
     }
 }
@@ -748,9 +825,10 @@ import SwiftUI
 import Photos
 
 @MainActor
-class PhotoGalleryViewModel: ObservableObject {
-    @Published var assets: [PHAsset] = []
-    @Published var authorizationStatus: PHAuthorizationStatus = .notDetermined
+@Observable
+final class PhotoGalleryViewModel {
+    private(set) var assets: [PHAsset] = []
+    private(set) var authorizationStatus: PHAuthorizationStatus = .notDetermined
 
     func requestAccess() async {
         authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
@@ -775,7 +853,7 @@ class PhotoGalleryViewModel: ObservableObject {
 }
 
 struct PhotoGalleryView: View {
-    @StateObject private var viewModel = PhotoGalleryViewModel()
+    @State private var viewModel = PhotoGalleryViewModel()
 
     var body: some View {
         Group {
@@ -805,4 +883,4 @@ struct PhotoGalleryView: View {
 
 **Docs**: /photosui/phpickerviewcontroller, /photosui/photospicker, /photos/phphotolibrary, /photos/phasset, /photos/phimagemanager
 
-**Skills**: skills/photo-library.md, skills/camera-capture.md
+**Skills**: skills/photo-library.md, skills/camera-capture.md, axiom-concurrency/skills/isolation-inheritance-diag.md

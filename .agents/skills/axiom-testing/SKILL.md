@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY testing-related question, including writing tests, debugging test failures, making tests faster, or choosing between testing approaches.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/test-failure-analyzer.md`, `skills/testing-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -24,6 +32,7 @@ license: MIT
 | Condition-based waiting patterns | See `skills/ui-testing.md` |
 | Recording UI Automation (Xcode 26) | See `skills/ui-testing.md` |
 | Network conditioning, multi-factor testing | See `skills/ui-testing.md` |
+| Testing resizable apps: dimension matrix, RTL/pseudoloc launch args, live-resize passes | See `skills/ui-testing.md` |
 | Test Face ID/Touch ID, orientation, or simulator state from CI — devicectl | See `skills/ui-testing.md` |
 | XCUIElement queries, waiting strategies | See `skills/xctest-automation.md` |
 | Accessibility identifiers, test plans | See `skills/xctest-automation.md` |
@@ -31,6 +40,7 @@ license: MIT
 | Record/Replay/Review workflow (Xcode 26) | See `skills/ui-recording.md` |
 | Test plan multi-configuration replay | See `skills/ui-recording.md` |
 | Enhancing recorded tests for stability | See `skills/ui-recording.md` |
+| Testing a generative AI feature — output isn't deterministic, so `#expect(result == expected)` doesn't hold (`OS27`) | See axiom-ai (`skills/foundation-models-evaluations.md`) for the discipline, then axiom-ai (`skills/foundation-models-evaluations-ref.md`) for the API |
 
 ## Decision Tree
 
@@ -45,6 +55,7 @@ digraph testing {
     what -> "skills/ui-testing.md" [label="UI tests,\nflaky tests,\nrecording"];
     what -> "skills/xctest-automation.md" [label="XCUITest patterns,\nelement queries"];
     what -> "skills/ui-recording.md" [label="Xcode 26\nRecord/Replay/Review"];
+    what -> "axiom-ai (skills/foundation-models-evaluations.md)" [label="generative AI feature\n(nondeterministic output)"];
 }
 ```
 
@@ -59,6 +70,7 @@ digraph testing {
 9. Fix failing tests automatically? → test-debugger (Agent)
 10. Want test quality audit? → testing-auditor (Agent) or `/axiom:audit testing`
 11. Automate without XCUITest / AXe CLI? → simulator-tester (Agent) + See axiom-xcode-mcp (skills/axe-ref.md)
+12. Testing a Foundation Models / generative feature? → See axiom-ai (`skills/foundation-models-evaluations.md`) for the discipline (dataset design, guardrails vs optimization target, judge calibration), then axiom-ai (`skills/foundation-models-evaluations-ref.md`) for the API. The Evaluations framework (`OS27`) runs *inside* Swift Testing via the `.evaluates` trait — it doesn't replace it. A model isn't a pure function, so you score outputs against a dataset and gate on an aggregate metric instead of asserting on one exact string.
 
 ## Swift Testing vs XCTest Quick Guide
 
@@ -122,6 +134,8 @@ digraph testing {
 | "Tests are slow but it's fine" | Fast tests enable TDD. `skills/swift-testing.md` shows how to run without simulator. |
 | "I'll fix the flaky test with a sleep()" | sleep() makes tests slower AND flakier. `skills/ui-testing.md` has condition-based waiting. |
 | "I'll add tests later" | Tests written after implementation miss edge cases. |
+| "I'll test the AI feature by asserting the model returns the right string" | A model isn't a pure function — that test fails on a synonym and passes on a fluent lie. Score a dataset and gate on an aggregate metric: axiom-ai (`skills/foundation-models-evaluations.md`). |
+| "The AI output looked good when I tried it, so it's tested" | Trying a few prompts by hand measures nothing and catches no regression. That's the exact gap the Evaluations framework exists to close. |
 
 ## Example Invocations
 

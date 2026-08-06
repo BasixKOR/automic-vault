@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY camera, photo, audio, haptic, or media playback work.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/camera-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -19,6 +27,7 @@ license: MIT
 | Camera freezes, black preview, rotation | See `skills/camera-capture-diag.md` |
 | Photo pickers, library access | See `skills/photo-library.md` |
 | PHPicker, PhotosPicker API reference | See `skills/photo-library-ref.md` |
+| PhotoKit + Swift 6 strict concurrency, `nonisolated` observer, `performChanges` isolation, `_dispatch_assert_queue_fail` | See axiom-concurrency (skills/isolation-inheritance-diag.md) |
 | Audio, AVFoundation, spatial audio | See `skills/avfoundation-ref.md` |
 | Video write/export/playback, sample-buffer engine, resumable export, Apple Log 2, iOS 27 deprecations (`OS27`) | See `skills/avfoundation-video-ref.md` |
 | Audio recognition, ShazamKit | See `skills/shazamkit.md` |
@@ -26,6 +35,8 @@ license: MIT
 | On-device music analysis (key, tempo, structure, loudness), MusicUnderstanding (`OS27`) | See `skills/music-understanding.md` |
 | On-device face grouping (cluster faces into people across a library), video highlights/key frames, MediaIntelligence (`OS27`) | See `skills/media-intelligence.md` |
 | Haptic feedback, Core Haptics | See `skills/haptics.md` |
+| SharePlay coordinated playback, AVDelegatingPlaybackCoordinator, custom-engine sync | See `skills/shareplay-playback.md` |
+| SharePlay session lifecycle, activation, non-media state | Use axiom-integration (`skills/shareplay.md`) instead |
 | Now Playing metadata, remote commands | See `skills/now-playing.md` |
 | Animated lock-screen artwork (iOS 26+) | See `skills/now-playing.md` Pattern 8 |
 | NowPlaying framework (`import NowPlaying`, Swift-native `MediaSession`, `OS27`) | See `skills/now-playing.md` (NowPlaying Framework section) |
@@ -37,6 +48,7 @@ license: MIT
 | CarPlay Now Playing template customization + sports mode | See `skills/now-playing-carplay.md` |
 | MusicKit Now Playing | See `skills/now-playing-musickit.md` |
 | DockKit motorized stands / gimbals, subject tracking, custom motor control | See `skills/dockkit.md` |
+| Speech-to-text / transcription (SpeechAnalyzer, mic → transcript) | **Invoke axiom-ai** (`skills/ios-ml.md`) |
 
 ## Decision Tree
 
@@ -91,6 +103,11 @@ digraph media {
 - Now Playing metadata/controls → **stay here** (now-playing)
 - Background audio mode / BGTaskScheduler → **invoke axiom-integration** (background-processing reference)
 
+**Speech-to-text + audio capture** (transcribing mic or asset audio):
+- `SpeechAnalyzer` / `SpeechTranscriber`, the ~2-simultaneous-analyzer cap, the `OS27` input providers → **invoke axiom-ai** (`skills/ios-ml.md`)
+- Audio session category/mode, `AVCaptureSession` wiring → **stay here** (avfoundation-ref, camera-capture)
+- **The trap**: `CaptureInputSequenceProvider.providerWithSession(...)` (`OS27`) automatically reconfigures your app's default `AVAudioSession`. If this suite's audio-session setup "randomly breaks" after transcription is added, that's the cause — use `provider(from:in:)` and add its `captureAudioDataOutput` to your own session.
+
 **Photo library + privacy**:
 - Photo picker (PHPicker, PhotosPicker) → **stay here** (photo-library) — no permissions needed
 - Full PHPhotoLibrary access → **stay here** (photo-library-ref) — limited access model
@@ -120,6 +137,8 @@ digraph media {
 | "DockKit is just pairing a stand" | Custom control needs system tracking disabled, handles inverted dock states, and two different coordinate origins. |
 | "Grouping faces is just Vision face detection" | Vision detects faces in one image; MediaIntelligence clusters them into persistent people (entities) across a whole library, with its own working directory and state. |
 | "Casting to Chromecast means bundling the Google Cast SDK" | On iOS 27, AVSystemRouting exposes non-AirPlay routes as system routes — you adopt one Apple API (observe events, start a session, drive playbackControl) instead of a per-vendor SDK. Likely EU-gated/beta — gate and keep a fallback. |
+| "I'll sync SharePlay playback by broadcasting the current time over the messenger" | The messenger has no clock. `AVDelegatingPlaybackCoordinatorPlayCommand.hostClockTime` gives you an absolute `CMClockGetHostTimeClock()` start time; hand-rolling reinvents startup barriers, seek ordering, stalls, and interruptions badly. |
+| "The playback coordinator handles interruptions for me" | Only `AVPlayerPlaybackCoordinator` does. `AVDelegatingPlaybackCoordinator` adds **no** automatic suspensions — a custom engine begins *and* ends every one, and a suspension never ended hangs the whole group. |
 | "ScreenCaptureKit on iPad works like the Mac (enumerate displays/windows)" | On iOS/iPadOS `SCShareableContent` and all `SCContentFilter` initializers are macOS-only — you get a filter ONLY from the system `SCContentSharingPicker`. New on iOS/iPadOS/tvOS/visionOS 27. Also not `ImageRenderer` (that snapshots your own SwiftUI view). |
 
 ## Example Invocations

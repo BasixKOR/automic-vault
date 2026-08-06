@@ -8,6 +8,14 @@ license: MIT
 
 **You MUST use this skill for ANY concurrency, async/await, threading, or Swift 6 concurrency work.**
 
+<!-- AXIOM_AUDITOR_INLINE_BEGIN — auto-maintained by scripts/build-inlined-auditors.ts; do not hand-edit -->
+> **Not on Claude Code?** Where this router says "Launch `some-auditor` agent", read that auditor's file in this suite and follow it inline — the same procedure, needing only file search and read.
+>
+> Available here: `skills/concurrency-auditor.md`.
+>
+> Agents that need Bash — builds, tests, simulators, crash symbolication — stay Claude Code-only; there is no inline equivalent for those.
+<!-- AXIOM_AUDITOR_INLINE_END -->
+
 ## Quick Reference
 
 | Symptom / Task | Reference |
@@ -28,7 +36,8 @@ license: MIT
 | Crash signature `_swift_task_checkIsolatedSwift` | See `skills/isolation-inheritance-diag.md` |
 | Core Data `context.perform` runtime crash inside @MainActor class | See `skills/isolation-inheritance-diag.md` |
 | Combine `.map`/`.sink` crash from receive(on:) placement | See `skills/isolation-inheritance-diag.md` |
-| Delegate method crash from isolation inheritance (CLLocationManager, NSDocument, AVAudioPlayerDelegate, WKNavigationDelegate) | See `skills/isolation-inheritance-diag.md` |
+| Delegate method crash from isolation inheritance (CLLocationManager, NSDocument, AVAudioPlayerDelegate, WKNavigationDelegate, PHPhotoLibraryChangeObserver) | See `skills/isolation-inheritance-diag.md` |
+| PhotoKit `performChanges` block traps on PhotoKit's queue | See `skills/isolation-inheritance-diag.md` |
 | Actor reentrancy / stale state across await | See `skills/isolation-inheritance-diag.md` |
 | Swift Concurrency Instruments template | See `skills/concurrency-profiling.md` |
 | Actor contention diagnosis | See `skills/concurrency-profiling.md` |
@@ -53,6 +62,7 @@ digraph concurrency {
 
 1. Data races / actor isolation / @MainActor / Sendable / Swift 6 migration? → `skills/swift-concurrency.md`
 1a. Need specific API syntax (actor definition, TaskGroup, AsyncStream, continuations)? → `skills/swift-concurrency-ref.md`
+1b. NotificationCenter observer, `userInfo` casting, or Sendable errors unpacking a notification? → `skills/swift-concurrency-ref.md` (Typed Notifications — `MainActorMessage`/`AsyncMessage`, iOS 26+)
 2. Writing async/await code? → `skills/swift-concurrency.md`
 3. assumeIsolated / @preconcurrency? → `skills/assume-isolated.md`
 3a. Warning-free Swift 6 build that crashes in production with `_dispatch_assert_queue_fail` or `_swift_task_checkIsolatedSwift`? → `skills/isolation-inheritance-diag.md`
