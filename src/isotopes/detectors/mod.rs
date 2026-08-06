@@ -46,7 +46,7 @@ mod firebase_cli;
 mod flyctl;
 mod gallery_dl;
 mod gcli;
-mod gh_cli;
+pub(crate) mod gh_cli;
 mod git;
 mod glab;
 mod goat;

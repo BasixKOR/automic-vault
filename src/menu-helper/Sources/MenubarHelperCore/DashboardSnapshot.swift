@@ -1225,6 +1225,18 @@ public func saveStoredSecret(
     )
 }
 
+public func saveStoredSecretIfAbsentOrEqual(
+    account: String,
+    value: String,
+    service: String = automicVaultKeychainService
+) -> OSStatus {
+    saveKeychainDataIfAbsentOrEqual(
+        Data(value.utf8),
+        service: service,
+        account: account
+    )
+}
+
 public func setStoredSecretAccessibility(
     account: String,
     accessibility: StoredSecretAccessibility,
@@ -1354,6 +1366,30 @@ func saveKeychainData(
     addQuery[kSecValueData as String] = data
     addQuery[kSecAttrAccessible as String] = accessibility.keychainValue
     return SecItemAdd(addQuery as CFDictionary, nil)
+}
+
+func saveKeychainDataIfAbsentOrEqual(
+    _ data: Data,
+    service: String,
+    account: String
+) -> OSStatus {
+    var query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
+        kSecValueData as String: data,
+        kSecAttrAccessible as String: StoredSecretAccessibility.whenUnlocked.keychainValue,
+    ]
+    addCanonicalAccessGroup(to: &query)
+    let status = SecItemAdd(query as CFDictionary, nil)
+    guard status == errSecDuplicateItem else { return status }
+    guard case .success(let existing) = loadKeychainDataResult(service: service, account: account),
+          existing == data
+    else {
+        return errSecDuplicateItem
+    }
+    return errSecSuccess
 }
 
 private func addCanonicalAccessGroup(to query: inout [String: Any]) {

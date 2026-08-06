@@ -24,6 +24,41 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
     .map(|_| ())
 }
 
+pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
+        let path = PathBuf::from(dir).join(account);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(value.as_bytes())
+                    .map_err(|err| format!("failed to write {}: {err}", path.display()))
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                let existing = std::fs::read_to_string(&path)
+                    .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+                (existing == value)
+                    .then_some(())
+                    .ok_or_else(|| format!("refusing to replace existing isotope key {account}"))
+            }
+            Err(err) => Err(format!("failed to create {}: {err}", path.display())),
+        }
+    } else {
+        xpc_request(
+            "save-if-absent",
+            Some((b"key\0", account)),
+            Some((b"value\0", value)),
+            None,
+        )
+        .map(|_| ())
+    }
+}
+
 pub(crate) fn load_secret(account: &str) -> Result<String, String> {
     if let Some(dir) = crate::test_keychain_dir() {
         let path = PathBuf::from(dir).join(account);
@@ -47,8 +82,12 @@ pub(crate) fn bless_script(path: &str, endorse_caller: bool) -> Result<bool, Str
 
 pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
     if let Some(dir) = crate::test_keychain_dir() {
-        let mut names = std::fs::read_dir(dir)
-            .map_err(|err| format!("failed to list test keychain: {err}"))?
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) => return Err(format!("failed to list test keychain: {err}")),
+        };
+        let mut names = entries
             .filter_map(|entry| entry.ok())
             .filter_map(|entry| entry.file_type().ok()?.is_file().then(|| entry.file_name()))
             .filter_map(|name| name.into_string().ok())
