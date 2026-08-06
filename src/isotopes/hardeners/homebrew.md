@@ -3,6 +3,7 @@
 ## Summary
 
 - Only `brew` can alter `/opt/homebrew`.
+- Hardened Homebrew manages formulae only. Homebrew Casks are not supported.
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
@@ -78,24 +79,23 @@ is that solution.
 
 ## Casks
 
-The desktop account that runs `sudo av harden brew` is configured as the cask
-app owner. Homebrew still performs cask transactions as `automic:vault`, so its
-prefix checks and formula state remain protected. After a successful
-install, reinstall, or upgrade, the launcher verifies each declared
-`/Applications/*.app` with Gatekeeper and transfers that bundle to the
-configured account's UID and primary group. It verifies the bundle and
-resulting ownership again before returning success.
+**Homebrew Casks are categorically incompatible with this hardener.** A cask is
+not confined to the Homebrew prefix: it may modify `/Applications`, `/Library`,
+launch services, system plugins, privileged packages, and user data. Running
+that package manager as the protected `automic` account also makes its nested
+`sudo` operations authenticate the wrong identity. Pretending this is the same
+ownership model as a formula weakens the security guarantee and still fails for
+ordinary casks.
 
-Caskroom receipts, caches, locks, and trust configuration remain
-`automic:vault`. Obsolete per-user Caskroom and trust-store ACLs from earlier
-launcher versions are removed during hardening.
+The launcher therefore pins `install`, `reinstall`, `upgrade`, `uninstall`,
+`remove`, and `rm` to `--formula` before requesting approval. Explicit cask
+mutations are rejected. `brew bundle` is rejected because a Brewfile may contain
+casks. Read-only commands such as `brew list --cask` remain available for
+migration and inspection.
 
-For commands without `--cask` or `--formula`, the launcher asks Homebrew to
-resolve each package and pins the result before execution. Mixed formula/cask
-commands must be split. Missing formula dependencies must be installed first so
-Cellar content always remains `automic:vault`.
-
-Casks that install packages, plugins, fonts, or other artifacts outside an app
-bundle are rejected because their ownership cannot be transferred safely.
-Caskroom-backed executables, services, shell completions, and links into signed
-app bundles remain `automic:vault`.
+Hardening refuses to proceed while `/opt/homebrew/Caskroom` contains installed
+casks. For an existing hardened installation, run `sudo av unharden brew`,
+remove or migrate every cask using `/opt/homebrew/bin/brew`, then run
+`sudo av harden brew` again. Homebrew is user-writable between those commands;
+do not run hardened tools or expose credentials through them during that
+migration window.

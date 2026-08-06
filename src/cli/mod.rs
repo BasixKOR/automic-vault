@@ -28,6 +28,7 @@ commands:
   $ av list                               # list saved secret names
   $ av save <key>                         # store a secret
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
+  $ av unharden brew [-y|--yes]           # temporarily restore Homebrew for cask migration
   $ av open [--secret-gate <id>]          # open the Automic Vault app
 
 modes:
@@ -211,6 +212,23 @@ where
                 Err(err) => {
                     let _ = writeln!(stderr, "av doctor: {err}");
                     2
+                }
+            }
+        }
+        Some("unharden") => {
+            let Some((target, yes)) = parse_harden_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            if target != "brew" && target != "homebrew" {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            }
+            match hardeners::homebrew::unharden(stdout, yes) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av unharden: {err}");
+                    1
                 }
             }
         }
@@ -576,6 +594,33 @@ mod tests {
             stderr,
             format!(
                 "av harden: Homebrew is not installed at {}\n",
+                missing.display()
+            )
+        );
+    }
+
+    #[test]
+    fn unharden_brew_is_routed() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing =
+            std::env::temp_dir().join(format!("av-missing-unharden-brew-{}", std::process::id()));
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &missing);
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "unharden", "brew"]);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_TARGET");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
+        }
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            format!(
+                "av unharden: Homebrew is not installed at {}\n",
                 missing.display()
             )
         );
