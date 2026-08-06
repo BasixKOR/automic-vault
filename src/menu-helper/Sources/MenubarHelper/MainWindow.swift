@@ -1929,11 +1929,11 @@ private struct ReferenceDetailView: View {
                         .lineLimit(1)
                     referenceBadge
                     if item.id == "homebrew" {
-                        Text("Experimental")
+                        Label("Experimental", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 8)
                             .frame(height: 20)
-                            .outlinedPill(.purple)
+                            .outlinedPill(.orange)
                     }
                 }
                 Text(summary)
