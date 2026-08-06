@@ -26,7 +26,7 @@ pub(crate) fn findings(_home: &Path) -> Vec<Finding> {
             severity: "medium",
             explanation: "Homebrew installation contains paths writable by the current user"
                 .to_string(),
-            solution: "Run `sudo av harden brew`.".to_string(),
+            solution: "Run `av harden brew`.".to_string(),
             affected,
             docs_url: DOCS_URL,
         }]

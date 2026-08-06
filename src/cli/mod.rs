@@ -38,7 +38,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 13;
+pub(crate) const INSTALL_REVISION: u32 = 14;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -175,6 +175,15 @@ where
     };
 
     match command.to_str() {
+        Some("__harden-brew") if rest.is_empty() => {
+            match hardeners::homebrew::harden_privileged(stdout) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
         Some("__install-aws-wrapper") if rest.is_empty() => {
             match hardeners::aws_cli::install_aws_wrapper() {
                 Ok(()) => 0,
@@ -574,7 +583,7 @@ mod tests {
         let missing = std::env::temp_dir().join(format!("av-missing-brew-{}", std::process::id()));
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &missing);
-            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
         }
 
         let (code, stdout, stderr) = run_args(&["av", "harden", "brew"]);
@@ -795,6 +804,19 @@ mod tests {
         assert_eq!(code, 1);
         assert_eq!(stdout, "");
         assert_eq!(stderr, "av: unknown hardener `definitely-not-a-hardener`\n");
+    }
+
+    #[test]
+    fn private_brew_hardener_requires_root() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501") };
+
+        let (code, stdout, stderr) = run_args(&["av", "__harden-brew"]);
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(stderr, "av: Homebrew installation requires root\n");
     }
 
     #[test]

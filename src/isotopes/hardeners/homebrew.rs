@@ -16,6 +16,8 @@ const BREW_PREFIX: &str = "/opt/homebrew";
 const BREW_TARGET: &str = "/opt/homebrew/bin/brew";
 const BREW_STUB: &str = "/usr/local/bin/brew";
 const APP_BREW_STUB: &str = "/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub";
+const AV_PATH: &str = "/usr/local/bin/av";
+const SUDO_PATH: &str = "/usr/bin/sudo";
 const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
@@ -37,39 +39,15 @@ struct SourceUser {
 }
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
-    let prefix = brew_prefix();
-    let target = brew_target_path();
-    let stub = brew_stub_path();
-    let source = brew_stub_source_path()?;
+    if effective_uid() == 0 && crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX").is_none() {
+        return Err(
+            "run `av harden brew` without sudo; av will request elevation when needed".into(),
+        );
+    }
+    let (prefix, stub, _source, source_user) = preflight()?;
     let automic_home = prefix.join("var/automic");
     let automic_cache = automic_home.join("cache");
-
-    if !target.exists() {
-        return Err(format!("Homebrew is not installed at {}", target.display()));
-    }
-    if effective_uid() != 0 {
-        return Err("run `sudo av harden brew`".to_string());
-    }
-    if stub.exists() && !is_managed_stub_file(&stub) {
-        return Err(format!(
-            "{} already exists and is not an Automic Vault brew stub",
-            stub.display()
-        ));
-    }
-    if !is_managed_stub_file(&source) {
-        return Err(format!(
-            "{} is not an Automic Vault brew stub",
-            source.display()
-        ));
-    }
-    let source_user = source_user()?;
-    let casks = incompatible_installed_casks(&prefix)?;
-    if !casks.is_empty() {
-        return Err(format!(
-            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `sudo av unharden brew`, remove or migrate the incompatible casks, then run `sudo av harden brew` again",
-            casks.join(", ")
-        ));
-    }
+    let shell_rcs = shell_rc_references(&source_user.home)?;
 
     writeln!(stdout, "╭─ harden brew").ok();
     writeln!(stdout, "│").ok();
@@ -136,11 +114,50 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     )
     .ok();
     writeln!(stdout, "├─ install {}", stub.display()).ok();
+    if !shell_rcs.is_empty() {
+        writeln!(
+            stdout,
+            "├─ found {BREW_TARGET} in {}",
+            shell_rcs
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .ok();
+    }
     writeln!(stdout, "│").ok();
+    let fix_shell_rcs = !shell_rcs.is_empty() && confirm_shell_rc_fix(stdout, yes)?;
     if !confirm(stdout, yes)? {
         writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
+
+    install_privileged(stdout)?;
+    if fix_shell_rcs {
+        replace_shell_rc_references(&shell_rcs)?;
+        writeln!(
+            stdout,
+            "├─ changed {BREW_TARGET} to {BREW_STUB} in shell startup files"
+        )
+        .ok();
+    }
+    writeln!(
+        stdout,
+        "╰─ hardened brew; run `hash -r` (or start a new shell) before using brew"
+    )
+    .ok();
+    super::write_secret_gate_notice(stdout, "brew");
+    Ok(())
+}
+
+pub(crate) fn harden_privileged(stdout: &mut dyn Write) -> Result<(), String> {
+    if effective_uid() != 0 {
+        return Err("Homebrew installation requires root".into());
+    }
+    let (prefix, stub, source, source_user) = preflight()?;
+    let automic_home = prefix.join("var/automic");
+    let automic_cache = automic_home.join("cache");
 
     let gid = ensure_group()?;
     let uid = ensure_user(gid)?;
@@ -174,13 +191,38 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     migration?;
     install_stub(&source, &stub, uid, gid)?;
     remove_legacy_cask_user_file(&prefix.join(LEGACY_CASK_USER_UID_FILE))?;
-    writeln!(
-        stdout,
-        "╰─ hardened brew; run `hash -r` (or start a new shell) before using brew"
-    )
-    .ok();
-    super::write_secret_gate_notice(stdout, "brew");
     Ok(())
+}
+
+fn preflight() -> Result<(PathBuf, PathBuf, PathBuf, SourceUser), String> {
+    let prefix = brew_prefix();
+    let target = brew_target_path();
+    let stub = brew_stub_path();
+    let source = brew_stub_source_path()?;
+    if !target.exists() {
+        return Err(format!("Homebrew is not installed at {}", target.display()));
+    }
+    if stub.exists() && !is_managed_stub_file(&stub) {
+        return Err(format!(
+            "{} already exists and is not an Automic Vault brew stub",
+            stub.display()
+        ));
+    }
+    if !is_managed_stub_file(&source) {
+        return Err(format!(
+            "{} is not an Automic Vault brew stub",
+            source.display()
+        ));
+    }
+    let source_user = source_user()?;
+    let casks = incompatible_installed_casks(&prefix)?;
+    if !casks.is_empty() {
+        return Err(format!(
+            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `sudo av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again",
+            casks.join(", ")
+        ));
+    }
+    Ok((prefix, stub, source, source_user))
 }
 
 pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
@@ -212,7 +254,7 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
     .ok();
     writeln!(
         stdout,
-        "│  Remove or migrate every incompatible cask, then immediately run `sudo av harden brew`."
+        "│  Remove or migrate every incompatible cask, then immediately run `av harden brew`."
     )
     .ok();
     writeln!(stdout, "│").ok();
@@ -242,7 +284,7 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
     remove_legacy_cask_user_file(&prefix.join(LEGACY_CASK_USER_UID_FILE))?;
     writeln!(
         stdout,
-        "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate incompatible casks, then immediately run `sudo av harden brew`"
+        "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate incompatible casks, then immediately run `av harden brew`"
     )
     .ok();
     Ok(())
@@ -331,7 +373,7 @@ fn brew_user_diagnostics(
             return vec![HardenerDiagnostic {
                 kind: "brew_user_file_permissions_invalid",
                 message: "Homebrew's configured user file is not protected".into(),
-                remediation: "Run `sudo av harden brew` to restore its ownership and permissions."
+                remediation: "Run `av harden brew` to restore its ownership and permissions."
                     .into(),
                 path: Some(uid_file.display().to_string()),
             }];
@@ -340,8 +382,8 @@ fn brew_user_diagnostics(
             return vec![HardenerDiagnostic {
                 kind: "brew_user_missing",
                 message: "Homebrew hardening has no configured user".into(),
-                remediation:
-                    "Run `sudo av harden brew` as the desktop user who should run Homebrew.".into(),
+                remediation: "Run `av harden brew` as the desktop user who should run Homebrew."
+                    .into(),
                 path: Some(uid_file.display().to_string()),
             }];
         }
@@ -350,8 +392,7 @@ fn brew_user_diagnostics(
         return vec![HardenerDiagnostic {
             kind: "brew_user_file_permissions_invalid",
             message: "Homebrew's configured user file is not protected".into(),
-            remediation: "Run `sudo av harden brew` to restore its ownership and permissions."
-                .into(),
+            remediation: "Run `av harden brew` to restore its ownership and permissions.".into(),
             path: Some(uid_file.display().to_string()),
         }];
     };
@@ -363,8 +404,7 @@ fn brew_user_diagnostics(
         return vec![HardenerDiagnostic {
             kind: "brew_user_file_permissions_invalid",
             message: "Homebrew's configured user file is not protected".into(),
-            remediation: "Run `sudo av harden brew` to restore its ownership and permissions."
-                .into(),
+            remediation: "Run `av harden brew` to restore its ownership and permissions.".into(),
             path: Some(uid_file.display().to_string()),
         }];
     }
@@ -373,7 +413,7 @@ fn brew_user_diagnostics(
         return vec![HardenerDiagnostic {
             kind: "brew_user_unreadable",
             message: "Homebrew's configured user file could not be read".into(),
-            remediation: "Run `sudo av harden brew` to restore the user configuration.".into(),
+            remediation: "Run `av harden brew` to restore the user configuration.".into(),
             path: Some(uid_file.display().to_string()),
         }];
     };
@@ -381,7 +421,7 @@ fn brew_user_diagnostics(
         return vec![HardenerDiagnostic {
             kind: "brew_user_invalid",
             message: "Homebrew's configured user UID is invalid".into(),
-            remediation: "Run `sudo av harden brew` to recreate the user configuration.".into(),
+            remediation: "Run `av harden brew` to recreate the user configuration.".into(),
             path: Some(uid_file.display().to_string()),
         }];
     };
@@ -389,7 +429,7 @@ fn brew_user_diagnostics(
         return vec![HardenerDiagnostic {
             kind: "brew_user_unresolvable",
             message: format!("configured Homebrew user UID {configured_uid} cannot be resolved"),
-            remediation: "Run `sudo av harden brew` from the intended desktop account.".into(),
+            remediation: "Run `av harden brew` from the intended desktop account.".into(),
             path: Some(uid_file.display().to_string()),
         }];
     };
@@ -403,7 +443,7 @@ fn brew_user_diagnostics(
                 "Hardened Homebrew does not support these installed casks: {}",
                 casks.join(", ")
             ),
-            remediation: "Run `sudo av unharden brew`, remove or migrate every application or installer cask, then run `sudo av harden brew`.".into(),
+            remediation: "Run `sudo av unharden brew`, remove or migrate every application or installer cask, then run `av harden brew`.".into(),
             path: Some(caskroom.display().to_string()),
         }),
         Err(message) => diagnostics.push(HardenerDiagnostic {
@@ -418,7 +458,7 @@ fn brew_user_diagnostics(
         diagnostics.push(HardenerDiagnostic {
             kind: "legacy_caskroom_acl_present",
             message: format!("Homebrew Caskroom still grants configured user `{user}` access"),
-            remediation: "Run `sudo av harden brew` to remove the obsolete Caskroom ACL.".into(),
+            remediation: "Run `av harden brew` to remove the obsolete Caskroom ACL.".into(),
             path: Some(caskroom.display().to_string()),
         });
     }
@@ -427,7 +467,7 @@ fn brew_user_diagnostics(
         diagnostics.push(HardenerDiagnostic {
             kind: "legacy_cask_trust_acl_present",
             message: format!("Homebrew trust configuration still grants `{user}` direct access"),
-            remediation: "Run `sudo av harden brew` to remove the obsolete trust-store ACL.".into(),
+            remediation: "Run `av harden brew` to remove the obsolete trust-store ACL.".into(),
             path: Some(config.display().to_string()),
         });
     }
@@ -444,7 +484,7 @@ fn brew_user_diagnostics(
                     path.display()
                 ),
                 remediation: format!(
-                    "Remove that ACL with `sudo chmod -a 'user:{user} allow ...' {}`, then rerun `sudo av harden brew`.",
+                    "Remove that ACL with `sudo chmod -a 'user:{user} allow ...' {}`, then rerun `av harden brew`.",
                     path.display()
                 ),
                 path: Some(path.display().to_string()),
@@ -636,7 +676,7 @@ fn account_diagnostics(expected_gid: u32) -> Vec<HardenerDiagnostic> {
                 "cannot inspect the local `automic` account with dscl: {}",
                 errors.join("; ")
             ),
-            remediation: "Run `dscl . -read /Users/automic PrimaryGroupID NFSHomeDirectory UserShell` to inspect the failure, then rerun `sudo av harden brew`.".to_string(),
+            remediation: "Run `dscl . -read /Users/automic PrimaryGroupID NFSHomeDirectory UserShell` to inspect the failure, then rerun `av harden brew`.".to_string(),
             path: None,
         }];
     }
@@ -663,6 +703,99 @@ fn account_diagnostics(expected_gid: u32) -> Vec<HardenerDiagnostic> {
         ),
         path: None,
     }]
+}
+
+fn install_privileged(stdout: &mut dyn Write) -> Result<(), String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX").is_some() {
+        return harden_privileged(stdout);
+    }
+    super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
+    let installed_revision = Command::new(AV_PATH)
+        .arg("__version")
+        .output()
+        .map_err(|err| format!("failed to check {AV_PATH}: {err}"))?;
+    if !installed_revision.status.success()
+        || std::str::from_utf8(&installed_revision.stdout)
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            != Some(crate::cli::INSTALL_REVISION)
+    {
+        return Err(
+            "update the av CLI from the Automic Vault app before hardening Homebrew".into(),
+        );
+    }
+    let status = Command::new(SUDO_PATH)
+        .args([AV_PATH, "__harden-brew"])
+        .status()
+        .map_err(|err| format!("failed to run sudo: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Homebrew hardening failed: {status}"))
+    }
+}
+
+fn shell_rc_references(home: &Path) -> Result<Vec<PathBuf>, String> {
+    [
+        ".zshenv",
+        ".zprofile",
+        ".zshrc",
+        ".zlogin",
+        ".bash_profile",
+        ".bash_login",
+        ".bashrc",
+        ".profile",
+        ".config/fish/config.fish",
+    ]
+    .into_iter()
+    .map(|name| home.join(name))
+    .filter(|path| path.is_file())
+    .filter_map(|path| match fs::read_to_string(&path) {
+        Ok(contents) if contents.contains(BREW_TARGET) => Some(Ok(path)),
+        Ok(_) => None,
+        Err(err) => Some(Err(format!("failed to read {}: {err}", path.display()))),
+    })
+    .collect()
+}
+
+fn replace_shell_rc_references(paths: &[PathBuf]) -> Result<(), String> {
+    for path in paths {
+        let contents = fs::read_to_string(path)
+            .map_err(|err| format!("failed to reread {}: {err}", path.display()))?;
+        let updated = contents.replace(BREW_TARGET, BREW_STUB);
+        if updated != contents {
+            fs::write(path, updated)
+                .map_err(|err| format!("failed to update {}: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn confirm_shell_rc_fix(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
+    if yes {
+        writeln!(
+            stdout,
+            "◇ Change those references to {BREW_STUB}? yes (--yes)"
+        )
+        .ok();
+        return Ok(true);
+    }
+
+    write!(stdout, "◇ Change those references to {BREW_STUB}? [y/N] ").ok();
+    stdout
+        .flush()
+        .map_err(|err| format!("failed to flush prompt: {err}"))?;
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|err| format!("failed to read confirmation: {err}"))?;
+    if !io::stdin().is_terminal() {
+        writeln!(stdout).ok();
+    }
+    Ok(matches!(
+        input.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
@@ -844,8 +977,16 @@ fn chown_tree(path: &Path, skipped: &Path, uid: u32, gid: u32) -> Result<(), Str
 
 fn source_user() -> Result<SourceUser, String> {
     let user = crate::test_env_string("AUTOMIC_VAULT_TEST_BREW_USER")
-        .or_else(|| std::env::var("SUDO_USER").ok())
-        .ok_or_else(|| "run `sudo av harden brew` from the desktop account".to_string())?;
+        .or_else(|| {
+            if effective_uid() == 0 {
+                std::env::var("SUDO_USER").ok()
+            } else {
+                current_user_name().ok()
+            }
+        })
+        .ok_or_else(|| {
+            "cannot resolve the desktop account running Homebrew hardening".to_string()
+        })?;
     if user == "root" {
         return Err("cannot configure root as the hardened Homebrew user".into());
     }
@@ -888,6 +1029,24 @@ fn source_user() -> Result<SourceUser, String> {
         gid,
         home,
     })
+}
+
+fn current_user_name() -> Result<String, String> {
+    let output = Command::new("/usr/bin/id")
+        .arg("-un")
+        .output()
+        .map_err(|err| format!("failed to identify the current user: {err}"))?;
+    if !output.status.success() {
+        return Err("failed to identify the current user".into());
+    }
+    String::from_utf8(output.stdout)
+        .map(|user| user.trim().to_string())
+        .map_err(|_| "current user name is not valid UTF-8".to_string())
+        .and_then(|user| {
+            (!user.is_empty())
+                .then_some(user)
+                .ok_or_else(|| "current user name is empty".to_string())
+        })
 }
 
 fn remove_legacy_cask_access(prefix: &Path, user: &str) -> Result<(), String> {
@@ -1375,7 +1534,7 @@ mod tests {
     }
 
     #[test]
-    fn run_requires_root() {
+    fn run_rejects_sudo() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = temp_path("brew-root");
         let target = dir.join("bin/brew");
@@ -1384,22 +1543,64 @@ mod tests {
         fs::write(&target, "").unwrap();
         fs::write(&source, STUB_MARKER).unwrap();
         unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_PREFIX", &dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &target);
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE", &source);
-            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
         }
 
         let err = run(&mut Vec::new(), true).unwrap_err();
 
         unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_PREFIX");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_TARGET");
             std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_STUB_SOURCE");
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
         }
-        assert_eq!(err, "run `sudo av harden brew`");
+        assert_eq!(
+            err,
+            "run `av harden brew` without sudo; av will request elevation when needed"
+        );
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn finds_and_updates_common_shell_startup_files() {
+        let home = temp_path("brew-shellrc");
+        fs::create_dir_all(home.join(".config/fish")).unwrap();
+        fs::write(
+            home.join(".zprofile"),
+            "eval \"$(/opt/homebrew/bin/brew shellenv)\"\n/opt/homebrew/bin/brew update\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join(".config/fish/config.fish"),
+            "/opt/homebrew/bin/brew shellenv | source\n",
+        )
+        .unwrap();
+        fs::write(home.join(".bashrc"), "export EDITOR=vim\n").unwrap();
+
+        let paths = shell_rc_references(&home).unwrap();
+        replace_shell_rc_references(&paths).unwrap();
+
+        assert_eq!(
+            paths,
+            vec![
+                home.join(".zprofile"),
+                home.join(".config/fish/config.fish")
+            ]
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".zprofile")).unwrap(),
+            "eval \"$(/usr/local/bin/brew shellenv)\"\n/usr/local/bin/brew update\n"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".config/fish/config.fish")).unwrap(),
+            "/usr/local/bin/brew shellenv | source\n"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join(".bashrc")).unwrap(),
+            "export EDITOR=vim\n"
+        );
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
@@ -1459,7 +1660,7 @@ mod tests {
         let missing = temp_path("missing-brew");
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_BREW_TARGET", &missing);
-            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "0");
+            std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
         }
 
         let err = run(&mut Vec::new(), true).unwrap_err();

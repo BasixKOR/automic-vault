@@ -298,7 +298,7 @@ fn validate_caller() -> Result<(), String> {
         configured_user_uid(Path::new(BREW_USER_UID), euid, unsafe { libc::getegid() })?;
     if uid != configured {
         return Err(
-            "brew must be invoked directly by the user configured by `sudo av harden brew`".into(),
+            "brew must be invoked directly by the user configured by `av harden brew`".into(),
         );
     }
     Ok(())
@@ -309,7 +309,7 @@ fn validate_invoker(uid: u32, euid: u32) -> Result<(), String> {
         return Err("brew cannot be invoked as root".into());
     }
     if uid == euid {
-        return Err("brew stub is not installed setuid; run `sudo av harden brew`".into());
+        return Err("brew stub is not installed setuid; run `av harden brew`".into());
     }
     Ok(())
 }
@@ -774,7 +774,7 @@ mod tests {
         );
         assert_eq!(
             validate_invoker(501, 501).unwrap_err(),
-            "brew stub is not installed setuid; run `sudo av harden brew`"
+            "brew stub is not installed setuid; run `av harden brew`"
         );
         assert!(validate_invoker(501, 550).is_ok());
     }

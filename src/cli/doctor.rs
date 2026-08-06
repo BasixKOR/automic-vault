@@ -379,7 +379,8 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
                     command.name
                 ),
                 remediation: format!(
-                    "Run `sudo av harden {hardener}` to recreate it. Manual repair: {}. Then rerun `av doctor {}`.",
+                    "Run `{}` to recreate it. Manual repair: {}. Then rerun `av doctor {}`.",
+                    harden_invocation(hardener),
                     manual_stub_repair(hardener, command, stub),
                     command.name
                 ),
@@ -420,7 +421,8 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
                 "hardened launcher {stub} is {actual}; expected a regular file"
             ),
             remediation: format!(
-                "Remove {stub} after reviewing it, then run `sudo av harden {hardener}`. Manual repair: install the documented launcher directly at {stub}; do not use a symlink."
+                "Remove {stub} after reviewing it, then run `{}`. Manual repair: install the documented launcher directly at {stub}; do not use a symlink.",
+                harden_invocation(hardener)
             ),
             stub_path: Some(stub.to_string()),
             target_path: Some(command.target_path.clone()),
@@ -528,11 +530,7 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
                 } else {
                     ""
                 },
-                if hardener == "aws" {
-                    "av harden aws".to_string()
-                } else {
-                    format!("sudo av harden {hardener}")
-                },
+                harden_invocation(hardener),
                 manual_stub_repair(hardener, command, stub)
             ),
             stub_path: Some(stub.to_string()),
@@ -563,7 +561,8 @@ fn identity_issues(
             identity.name
         ),
         remediation: format!(
-            "Run `sudo av harden {hardener}` to recreate the required account metadata. Manual repair: {}",
+            "Run `{}` to recreate the required account metadata. Manual repair: {}",
+            harden_invocation(hardener),
             manual_identity_repair(hardener, kind, identity.name, stub)
         ),
         stub_path: Some(stub.to_string()),
@@ -571,6 +570,14 @@ fn identity_issues(
         resolved_path: None,
     })
     .collect()
+}
+
+fn harden_invocation(hardener: &str) -> String {
+    if matches!(hardener, "aws" | "brew") {
+        format!("av harden {hardener}")
+    } else {
+        format!("sudo av harden {hardener}")
+    }
 }
 
 fn manual_identity_repair(hardener: &str, kind: &str, name: &str, stub: &str) -> String {
@@ -1056,11 +1063,7 @@ mod tests {
 
         assert_eq!(results[0].issues[0].kind, "stub_upgrade_required");
         assert!(results[0].issues[0].message.contains("out of date"));
-        assert!(
-            results[0].issues[0]
-                .remediation
-                .contains("sudo av harden brew")
-        );
+        assert!(results[0].issues[0].remediation.contains("av harden brew"));
         let _ = fs::remove_dir_all(dir);
     }
 
