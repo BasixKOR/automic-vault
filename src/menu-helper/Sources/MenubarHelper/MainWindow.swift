@@ -1422,7 +1422,7 @@ private struct DashboardDetailView: View {
                     fallbackDocumentation: "No detector documentation is bundled for this item.",
                     badge: item.isTriggered
                         ? ReferenceBadge(title: "Flagged", color: detectorSeverityColor(item.severity))
-                        : ReferenceBadge(title: "No Vulnerabilities Detected", color: .green)
+                        : ReferenceBadge(title: "✓ Passed", color: .green)
                 )
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
