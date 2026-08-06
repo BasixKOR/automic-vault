@@ -13,8 +13,14 @@ fn av_brew_stub_binary_is_built() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
-        "AUTOMIC_VAULT_BREW_STUB_V13"
+        "AUTOMIC_VAULT_BREW_STUB_V14"
     );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_av-brew-stub"))
+        .args(["--automic-vault-brew-stub-marker", "--version"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
 }
 
 #[test]

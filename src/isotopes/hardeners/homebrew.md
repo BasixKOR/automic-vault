@@ -7,9 +7,9 @@
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
-Zsh completions are copied into a user-owned mirror after Homebrew runs. This
-keeps `/opt/homebrew` protected, satisfies zsh's ownership checks, and avoids a
-`sudo` prompt when Homebrew regenerates completion files.
+**Homebrew shell completions are unavailable while hardened.** Completion files
+remain protected inside `/opt/homebrew`; the launcher never copies them into a
+user-owned location or weakens shell ownership checks.
 
 ## What it Does
 
@@ -47,17 +47,16 @@ is that solution.
 - `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`. After hardening,
   run `hash -r` or start a new shell so it does not keep using a cached path to
   the original `brew` executable.
-- Zsh startup must evaluate the hardened launcher's shell environment before
-  `compinit`:
+- Shell startup must evaluate the hardened launcher's environment instead of
+  invoking `/opt/homebrew/bin/brew` directly:
 
-  ```zsh
-  eval "$(/usr/local/bin/brew shellenv zsh)"
-  autoload -Uz compinit
-  compinit
+  ```sh
+  eval "$(/usr/local/bin/brew shellenv)"
   ```
 
-  Replace any startup invocation of `/opt/homebrew/bin/brew shellenv` with the
-  `/usr/local/bin/brew shellenv zsh` command above.
+  For compatibility with existing startup files, `brew shellenv zsh` is
+  normalized to generic shell output and does not add Homebrew's protected zsh
+  completion directory to `fpath`.
 - Every launcher invocation is authorized by the menu bar app before Homebrew
   runs. Read Only Access approves known inspection commands automatically and
   prompts for writes or unknown commands; Read & Update Access additionally
@@ -66,16 +65,9 @@ is that solution.
 - The launcher fails closed when the approval service is unavailable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.
-- Homebrew's zsh completions remain `automic:vault`. After each invocation, the
-  launcher permanently drops to the configured desktop UID and copies protected
-  regular completion files into
-  `~/.local/share/automic-vault/homebrew/zsh/site-functions`. The mirror is
-  replaced atomically and the original Homebrew completion directory is removed
-  from `fpath` by `brew shellenv zsh`. Completion symlinks that resolve outside
-  the protected Homebrew prefix are omitted with a warning.
-- A failed refresh leaves the previous mirror intact. It warns without changing
-  the result of an ordinary Homebrew command; `brew shellenv zsh` fails instead
-  of emitting an unsafe `fpath` when no valid mirror can be published.
+- Do not add `/opt/homebrew/share/zsh/site-functions` to `fpath` or bypass zsh's
+  ownership checks. Older user-owned Automic Vault completion mirrors are no
+  longer updated and may be removed.
 
 ## Casks
 
@@ -90,10 +82,11 @@ weakens the security guarantee and still fails for ordinary casks.
 The sole exception is a CLI-only cask from the official `homebrew/cask`
 repository. It must declare one or more `binary` artifacts whose sources remain
 inside its staged Caskroom and whose targets are directly inside
-`/opt/homebrew/bin`. Generated shell completions are allowed. `zap` metadata may
-be present, but `--zap` is rejected and never runs. Cask dependencies and every
-app, package, installer, script, flight block, service, plugin, arbitrary
-artifact, completion-file, manpage, or external target are rejected.
+`/opt/homebrew/bin`. Generated shell completions may remain protected inside the
+Homebrew prefix but are not added to shell paths. `zap` metadata may be present,
+but `--zap` is rejected and never runs. Cask dependencies and every app,
+package, installer, script, flight block, service, plugin, arbitrary artifact,
+completion-file, manpage, or external target are rejected.
 
 Cask mutations must use `--cask` and name every cask explicitly. The launcher
 checks Homebrew's effective JSON metadata after approval and validates the

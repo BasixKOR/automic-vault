@@ -20,8 +20,8 @@ const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V13";
-const STUB_VERSION: u32 = 13;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V14";
+const STUB_VERSION: u32 = 14;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -132,8 +132,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     .ok();
     writeln!(
         stdout,
-        "├─ mirror zsh completions into {}/.local/share/automic-vault/homebrew/zsh/site-functions",
-        source_user.home.display()
+        "├─ disable Homebrew shell completions to preserve shell ownership checks"
     )
     .ok();
     writeln!(stdout, "├─ install {}", stub.display()).ok();
@@ -175,11 +174,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     migration?;
     install_stub(&source, &stub, uid, gid)?;
     remove_legacy_cask_user_file(&prefix.join(LEGACY_CASK_USER_UID_FILE))?;
-    writeln!(
-        stdout,
-        "├─ for zsh, initialize Homebrew with `eval \"$(/usr/local/bin/brew shellenv zsh)\"` before `compinit`"
-    )
-    .ok();
     writeln!(
         stdout,
         "╰─ hardened brew; run `hash -r` (or start a new shell) before using brew"
@@ -1295,7 +1289,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V13 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V15 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
