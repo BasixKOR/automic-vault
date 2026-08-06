@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V14";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V15";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";

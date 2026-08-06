@@ -22,8 +22,8 @@ const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V14";
-const STUB_VERSION: u32 = 14;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V15";
+const STUB_VERSION: u32 = 15;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -1448,7 +1448,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V15 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V16 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
