@@ -34,6 +34,7 @@ WEBSITE_ALIAS="${AUTOMIC_VAULT_WEBSITE_DOMAIN:-automicvault.com}"
 WEBSITE_DISTRIBUTION_ID="${AUTOMIC_VAULT_CLOUDFRONT_DISTRIBUTION_ID:-}"
 SCANNER_RUST_TOOLCHAIN="1.96.0"
 SCANNER_CODESIGN_IDENTITY=""
+TART_MACOS_14_IMAGE="ghcr.io/cirruslabs/macos-sonoma-base@sha256:41a4a6eef68363b23f9cfcd520fce5db5523aa90e10c0db70e51974bcc7f058c"
 CURRENT_VERSION="$(
   awk -F '"' '
     /^\[package\]/ { package = 1; next }
@@ -497,12 +498,117 @@ resume_published_release() {
   RECOVERED_RELEASE=1
 }
 
+verify_macos_14_launch() (
+  set -euo pipefail
+  local candidate_dmg="$1"
+  local version="$2"
+  local shared_dir vm run_pid="" product_version deadline created=0
+  shared_dir="$(dirname "$candidate_dmg")"
+  vm="av-sonoma-${version//./-}-$$-$RANDOM"
+
+  cleanup() {
+    if [[ -n "$run_pid" ]]; then
+      tart stop "$vm" --timeout 10 >/dev/null 2>&1 || true
+      wait "$run_pid" 2>/dev/null || true
+    fi
+    if [[ "$created" -eq 1 ]]; then
+      tart delete "$vm" >/dev/null 2>&1 || true
+    fi
+  }
+  trap cleanup EXIT
+
+  if tart get "$vm" >/dev/null 2>&1; then
+    echo "error: refusing to replace existing Tart VM $vm" >&2
+    exit 1
+  fi
+  TART_NO_AUTO_PRUNE=1 tart clone "$TART_MACOS_14_IMAGE" "$vm"
+  created=1
+  tart run \
+    --no-graphics \
+    --no-audio \
+    --no-clipboard \
+    --net-softnet-block=0.0.0.0/0 \
+    --dir="release:$shared_dir:ro" \
+    "$vm" &
+  run_pid=$!
+
+  deadline=$((SECONDS + 120))
+  until tart exec "$vm" /usr/bin/true >/dev/null 2>&1; do
+    if ! kill -0 "$run_pid" 2>/dev/null; then
+      wait "$run_pid" || true
+      echo "error: macOS 14 Tart VM stopped before its guest agent was ready" >&2
+      exit 1
+    fi
+    if ((SECONDS >= deadline)); then
+      echo "error: macOS 14 Tart VM guest agent was not ready within 120 seconds" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+
+  product_version="$(tart exec "$vm" /usr/bin/sw_vers -productVersion)"
+  if [[ "$product_version" != 14.* ]]; then
+    echo "error: pinned Tart VM runs macOS $product_version, not macOS 14" >&2
+    exit 1
+  fi
+
+  tart exec -i "$vm" /bin/bash -s -- "$version" <<'GUEST'
+set -euo pipefail
+version="$1"
+dmg="/Volumes/My Shared Files/release/Automic-Vault-$version.dmg"
+mount="$(mktemp -d /tmp/av-release-mount.XXXXXX)"
+app_pid=""
+mounted=0
+cleanup() {
+  if [[ -n "$app_pid" ]]; then
+    kill -TERM "$app_pid" >/dev/null 2>&1 || true
+    for _ in {1..20}; do
+      kill -0 "$app_pid" >/dev/null 2>&1 || break
+      sleep 0.25
+    done
+    if kill -0 "$app_pid" >/dev/null 2>&1; then
+      kill -KILL "$app_pid" >/dev/null 2>&1 || true
+    fi
+  fi
+  if [[ "$mounted" -eq 1 ]]; then
+    hdiutil detach "$mount" >/dev/null 2>&1 || true
+  fi
+  rmdir "$mount" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg" >/dev/null
+mounted=1
+app="$mount/Automic Vault.app"
+if pgrep -x AutomicVaultMenubar >/dev/null; then
+  echo "error: macOS 14 Tart VM already runs Automic Vault" >&2
+  exit 1
+fi
+open -n "$app"
+for _ in {1..30}; do
+  app_pid="$(pgrep -x AutomicVaultMenubar | head -n 1 || true)"
+  [[ -n "$app_pid" ]] && break
+  sleep 1
+done
+if [[ -z "$app_pid" ]]; then
+  echo "error: Automic Vault did not launch on macOS 14" >&2
+  exit 1
+fi
+sleep 5
+if ! kill -0 "$app_pid" 2>/dev/null; then
+  echo "error: Automic Vault exited during the macOS 14 launch check" >&2
+  exit 1
+fi
+GUEST
+  echo "Automic Vault $version stayed running on macOS $product_version."
+)
+
 verify_draft_update() (
   set -euo pipefail
   umask 077
   local version="$1"
   local head="$2"
-  local tmp previous_mount previous_version previous_dmg previous_app preflight_app
+  local tmp candidate_dir previous_mount previous_version previous_dmg previous_app preflight_app
   local candidate_dmg releases_json expected_digest actual_digest previous_digest marker mounted=0
   local developer_id_requirement='=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13]'
   mkdir -p "$ROOT/target"
@@ -518,12 +624,14 @@ verify_draft_update() (
   trap cleanup EXIT
 
   releases_json="$tmp/releases.json"
-  candidate_dmg="$tmp/Automic-Vault-$version.dmg"
+  candidate_dir="$tmp/candidate"
+  mkdir "$candidate_dir"
+  candidate_dmg="$candidate_dir/Automic-Vault-$version.dmg"
   gh api "repos/$REPOSITORY/releases?per_page=30" >"$releases_json"
   gh release download "$version" \
     --repo "$REPOSITORY" \
     --pattern "Automic-Vault-$version.dmg" \
-    --dir "$tmp"
+    --dir "$candidate_dir"
   expected_digest="$(
     gh release view "$version" \
       --repo "$REPOSITORY" \
@@ -589,6 +697,7 @@ verify_draft_update() (
 
   "$preflight_app/Contents/MacOS/AutomicVaultMenubar" \
     --verify-update "$version" "$releases_json" "$candidate_dmg"
+  verify_macos_14_launch "$candidate_dmg" "$version"
   echo "Automic Vault $previous_version accepted draft update $version at $head."
 )
 
@@ -618,6 +727,10 @@ if [[ "$RECOVERED_RELEASE" -eq 1 ]]; then
 fi
 if ! command -v codex >/dev/null 2>&1; then
   echo "error: publish requires codex" >&2
+  exit 64
+fi
+if ! command -v tart >/dev/null 2>&1 || ! tart exec --help >/dev/null 2>&1; then
+  echo "error: publish requires Tart with guest-agent command execution support" >&2
   exit 64
 fi
 if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then

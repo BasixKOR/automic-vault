@@ -192,6 +192,49 @@ fn publication_requires_the_previous_app_to_accept_the_draft() {
 }
 
 #[test]
+fn publication_requires_the_draft_app_to_launch_on_macos_14() {
+    let updater = PUBLISH_SCRIPT.find("--verify-update \"$version\"").unwrap();
+    let launch = PUBLISH_SCRIPT
+        .find("verify_macos_14_launch \"$candidate_dmg\" \"$version\"")
+        .unwrap();
+    let prompt = PUBLISH_SCRIPT.find("release y/n?").unwrap();
+    assert!(updater < launch && launch < prompt);
+
+    assert!(PUBLISH_SCRIPT.contains(
+        "ghcr.io/cirruslabs/macos-sonoma-base@sha256:41a4a6eef68363b23f9cfcd520fce5db5523aa90e10c0db70e51974bcc7f058c"
+    ));
+    for requirement in [
+        "tart exec --help",
+        "--no-graphics",
+        "--no-audio",
+        "--no-clipboard",
+        "--net-softnet-block=0.0.0.0/0",
+        "--dir=\"release:$shared_dir:ro\"",
+        "TART_NO_AUTO_PRUNE=1 tart clone",
+        "SECONDS + 120",
+        "/usr/bin/sw_vers -productVersion",
+        "[[ \"$product_version\" != 14.* ]]",
+        "open -n \"$app\"",
+        "sleep 5",
+        "kill -0 \"$app_pid\"",
+        "tart stop \"$vm\" --timeout 10",
+        "tart delete \"$vm\"",
+    ] {
+        assert!(
+            PUBLISH_SCRIPT.contains(requirement),
+            "missing {requirement}"
+        );
+    }
+    assert!(PUBLISH_SCRIPT.contains("candidate_dir=\"$tmp/candidate\""));
+
+    let tart = PUBLISH_SCRIPT.rfind("if ! command -v tart").unwrap();
+    let release_commit = PUBLISH_SCRIPT
+        .find("git -C \"$ROOT\" commit -m \"Release $VERSION\"")
+        .unwrap();
+    assert!(tart < release_commit);
+}
+
+#[test]
 fn scanner_is_small_signed_and_read_only() {
     for setting in [
         "CARGO_PROFILE_RELEASE_OPT_LEVEL=z",

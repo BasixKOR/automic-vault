@@ -19,6 +19,12 @@ draft and updates the local Homebrew tap. The website resolves its download
 URLs directly to the latest GitHub release asset. Third-party Actions, the Rust
 toolchain, `create-dmg`, and the Syft SBOM generator are pinned.
 
+Publishing requires Tart with `tart exec` support. Before publication, the
+script boots a disposable clone of a pinned Cirrus Labs macOS 14 Sonoma image,
+mounts the verified draft DMG read-only, and requires the app to stay running
+for five seconds. The VM has no clipboard or audio sharing, outbound IPv4 is
+blocked, and the clone is deleted after the check.
+
 ## One-time GitHub setup
 
 Create a GitHub Actions environment named `release`. Protect it with required
@@ -121,14 +127,14 @@ without creating another version bump.
 
 The script prints Codex's selected version and release notes, updates the Cargo
 version metadata and any required internal revisions, pushes the resulting
-release commit, then dispatches that exact `main` commit. It waits
-for the workflow and verifies
-that the result is a draft targeting that commit, prints its URL, and asks
-`release y/n?`. Answering `y` publishes the draft, verifies that GitHub made it
-immutable, then updates and pushes the local Homebrew tap. Answering anything
-else leaves the draft unpublished. Draft creation never updates Homebrew. The
-website download redirects to GitHub's latest published release independently
-of this script.
+release commit, then dispatches that exact `main` commit. It waits for the
+workflow, verifies that the result is a draft targeting that commit, checks the
+updater against the draft, and launches the draft app in macOS 14. Only then
+does it print the draft URL and ask `release y/n?`. Answering `y` publishes the
+draft, verifies that GitHub made it immutable, then updates and pushes the local
+Homebrew tap. Answering anything else leaves the draft unpublished. Draft
+creation never updates Homebrew. The website download redirects to GitHub's
+latest published release independently of this script.
 
 The run fails if local `main` differs from `origin/main`, Codex returns an
 invalid or non-increasing version, the tag or release already exists, required
