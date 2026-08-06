@@ -139,7 +139,7 @@ commands. But some tooling configurations require “hardening”.
 ### Hardening
 
 ```sh
-av harden gh
+av harden gh  # `av scan` tells what to harden
 ```
 
 Hardening varies, but its purpose is:
@@ -291,9 +291,10 @@ for a specific Verified Launcher.
 >   those tools via immutable blessing is truly a level of safety developers
 >   have only ever dreamed of.
 > - Having a single terminal app that is the only one used for deployments and
->   the only launcher that is endorsed to run them.
-> - Or conversely, trusting your agents more than your terminal where supply
->   chain attacks are more likely to occur.
+>   the only launcher that is endorsed to run them (and never using it for
+>   anything else)
+> - Or conversely, trusting your agents more than your terminal (where supply
+>   chain attacks are more likely to occur).
 
 > [!NOTE]
 > Blessed scripts run from a verified `/dev/fd/N` snapshot
