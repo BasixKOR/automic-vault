@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V12";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V13";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -17,6 +17,7 @@ const ZSH_COMPLETIONS: &str = "share/zsh/site-functions";
 const ZSH_COMPLETION_MIRROR: &str = ".local/share/automic-vault/homebrew/zsh/site-functions";
 const MAX_COMPLETION_BYTES: usize = 8 * 1024 * 1024;
 const MAX_COMPLETIONS_BYTES: usize = 64 * 1024 * 1024;
+const FORBIDDEN_CASK_ARTIFACTS: &str = "app appimage artifact audiounitplugin bashcompletion colorpicker commandwrapper dictionary fishcompletion font generatedscript inputmethod installer internetplugin keyboardlayout manpage mdimporter pkg postflight postflightblock postflightsteps preflight preflightblock preflightsteps prefpane qlplugin screensaver service stageonly suite uninstall uninstallpostflightsteps uninstallpreflightsteps vst3plugin vstplugin zshcompletion";
 
 #[derive(Debug, PartialEq, Eq)]
 struct AuthorizationRequest {
@@ -31,6 +32,12 @@ struct Caller {
     gid: u32,
     home: PathBuf,
     shell: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CaskMutation {
+    command: String,
+    names: Vec<String>,
 }
 
 fn main() {
@@ -113,14 +120,22 @@ where
     I: IntoIterator<Item = (OsString, OsString)>,
     F: FnOnce(&AuthorizationRequest) -> Result<(), String>,
 {
+    let source_env = source_env.into_iter().collect::<Vec<_>>();
     let mut request = authorization_request(&args, cwd)?;
-    request.args = formula_only_args(&request.args)?;
+    let (args, cask) = governed_args(&request.args)?;
+    request.args = args;
     approve(&request)?;
+    if let Some(cask) = &cask {
+        validate_cask_mutation(cask, cwd)?;
+    }
     let mut command = Command::new(TARGET);
     command
         .args(request.args)
         .env_clear()
         .envs(stub_env(source_env));
+    if cask.is_some() {
+        command.env("HOMEBREW_NO_AUTO_UPDATE", "1");
+    }
     unsafe {
         command.pre_exec(drop_to_effective_identity);
     }
@@ -155,27 +170,185 @@ fn drop_to_caller(caller: &Caller) -> Result<(), String> {
     Ok(())
 }
 
-fn formula_only_args(args: &[String]) -> Result<Vec<String>, String> {
+fn governed_args(args: &[String]) -> Result<(Vec<String>, Option<CaskMutation>), String> {
     let Some((command_index, command)) = mutation_command(args) else {
-        return Ok(args.to_vec());
+        return Ok((args.to_vec(), None));
     };
     if command == "bundle" {
         return Err("`brew bundle` is unavailable because Brewfiles may contain casks; run formula commands directly".into());
     }
-    if args
+    let cask = args
         .iter()
-        .any(|arg| matches!(arg.as_str(), "--cask" | "--casks"))
-    {
-        return Err("Homebrew Casks are not supported by hardened Homebrew. Casks can modify applications, system libraries, services, and user data; manage graphical applications separately".into());
+        .any(|arg| matches!(arg.as_str(), "--cask" | "--casks"));
+    let formula = args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "--formula" | "--formulae"));
+    if cask && formula {
+        return Err("brew command cannot select both formulae and casks".into());
     }
+    if cask {
+        let names = cask_operands(args, command_index)?;
+        if names.is_empty() {
+            return Err("CLI-only cask mutations must name each cask explicitly".into());
+        }
+        return Ok((
+            args.to_vec(),
+            Some(CaskMutation {
+                command: command.to_string(),
+                names,
+            }),
+        ));
+    }
+
     let mut args = args.to_vec();
-    if !args
-        .iter()
-        .any(|arg| matches!(arg.as_str(), "--formula" | "--formulae"))
-    {
+    if !formula {
         args.insert(command_index + 1, "--formula".into());
     }
-    Ok(args)
+    Ok((args, None))
+}
+
+fn cask_operands(args: &[String], command_index: usize) -> Result<Vec<String>, String> {
+    const ALLOWED_FLAGS: &[&str] = &[
+        "--cask",
+        "--casks",
+        "--debug",
+        "--display-times",
+        "--dry-run",
+        "--force",
+        "--greedy",
+        "--greedy-auto-updates",
+        "--greedy-latest",
+        "--quiet",
+        "--verbose",
+    ];
+    for flag in &args[..command_index] {
+        if !matches!(flag.as_str(), "--debug" | "--quiet" | "--verbose") {
+            return Err(format!(
+                "unsupported option `{flag}` for a CLI-only cask mutation"
+            ));
+        }
+    }
+    let mut names = Vec::new();
+    for arg in &args[command_index + 1..] {
+        if arg == "--" {
+            continue;
+        }
+        if arg.starts_with('-') {
+            if !ALLOWED_FLAGS.contains(&arg.as_str()) {
+                return Err(format!(
+                    "unsupported option `{arg}` for a CLI-only cask mutation"
+                ));
+            }
+            continue;
+        }
+        if !safe_cask_name(arg) {
+            return Err(format!("unsupported cask name `{arg}`"));
+        }
+        names.push(arg.clone());
+    }
+    Ok(names)
+}
+
+fn safe_cask_name(name: &str) -> bool {
+    let parts = name.split('/').collect::<Vec<_>>();
+    matches!(parts.len(), 1 | 3)
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && !part.starts_with('.')
+                && part.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'+' | b'@')
+                })
+        })
+}
+
+fn validate_cask_mutation(cask: &CaskMutation, cwd: &Path) -> Result<(), String> {
+    let installs = matches!(cask.command.as_str(), "install" | "reinstall" | "upgrade");
+    let removes = matches!(
+        cask.command.as_str(),
+        "reinstall" | "upgrade" | "uninstall" | "remove" | "rm"
+    );
+    for name in &cask.names {
+        if installs {
+            let info = cask_info(name, cwd)?;
+            av::brew_cask_policy::validate_info_cask(name, &info)?;
+        }
+        if removes {
+            let receipt = installed_cask_receipt(name)?;
+            av::brew_cask_policy::validate_install_receipt(name, &receipt)?;
+        }
+    }
+    Ok(())
+}
+
+fn cask_info(name: &str, cwd: &Path) -> Result<serde_json::Value, String> {
+    let output = brew_output(&["info", "--json=v2", "--cask", "--", name], cwd)?;
+    let mut info: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|err| format!("Homebrew returned malformed JSON: {err}"))?;
+    let casks = info["casks"]
+        .as_array_mut()
+        .ok_or_else(|| format!("Homebrew returned malformed cask metadata for `{name}`"))?;
+    if casks.len() != 1 {
+        return Err(format!(
+            "Homebrew returned ambiguous cask metadata for `{name}`"
+        ));
+    }
+    Ok(casks.remove(0))
+}
+
+fn brew_output(args: &[&str], cwd: &Path) -> Result<std::process::Output, String> {
+    let mut command = Command::new(TARGET);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(stub_env([]))
+        .env("HOMEBREW_NO_AUTO_UPDATE", "1");
+    unsafe {
+        command.pre_exec(drop_to_effective_identity);
+    }
+    let output = command
+        .output()
+        .map_err(|err| format!("failed to inspect cask metadata: {err}"))?;
+    if output.status.success() {
+        return Ok(output);
+    }
+    Err(format!(
+        "Homebrew cask inspection failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
+}
+
+fn installed_cask_receipt(name: &str) -> Result<serde_json::Value, String> {
+    let token = name.rsplit('/').next().unwrap_or(name);
+    let cask = Path::new(PREFIX).join("Caskroom").join(token);
+    let metadata = fs::symlink_metadata(&cask)
+        .map_err(|err| format!("failed to inspect installed cask `{name}`: {err}"))?;
+    if !metadata.file_type().is_dir() {
+        return Err(format!(
+            "installed cask `{name}` is not a protected directory"
+        ));
+    }
+    let path = cask.join(".metadata/INSTALL_RECEIPT.json");
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&path)
+        .map_err(|err| format!("failed to read installed cask `{name}` receipt: {err}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|err| format!("failed to inspect installed cask `{name}` receipt: {err}"))?;
+    if !metadata.file_type().is_file()
+        || metadata.uid() != unsafe { libc::geteuid() }
+        || metadata.mode() & 0o022 != 0
+        || metadata.len() > 1024 * 1024
+    {
+        return Err(format!("installed cask `{name}` receipt is not protected"));
+    }
+    let mut contents = Vec::with_capacity(metadata.len() as usize);
+    file.read_to_end(&mut contents)
+        .map_err(|err| format!("failed to read installed cask `{name}` receipt: {err}"))?;
+    serde_json::from_slice(&contents)
+        .map_err(|err| format!("installed cask `{name}` receipt is malformed: {err}"))
 }
 
 fn mutation_command(args: &[String]) -> Option<(usize, &str)> {
@@ -752,6 +925,12 @@ where
             "HOMEBREW_CACHE".into(),
             "/opt/homebrew/var/automic/cache".into(),
         ),
+        ("HOMEBREW_FORBID_PACKAGES_FROM_PATHS".into(), "1".into()),
+        (
+            "HOMEBREW_FORBIDDEN_CASK_ARTIFACTS".into(),
+            FORBIDDEN_CASK_ARTIFACTS.into(),
+        ),
+        ("HOMEBREW_FORBIDDEN_OWNER".into(), "Automic Vault".into()),
     ];
 
     for (key, value) in source {
@@ -877,12 +1056,15 @@ mod tests {
     #[test]
     fn mutations_are_pinned_to_formulae() {
         assert_eq!(
-            formula_only_args(&["install".into(), "tree".into()]).unwrap(),
-            ["install", "--formula", "tree"]
+            governed_args(&["install".into(), "tree".into()]).unwrap(),
+            (
+                vec!["install".into(), "--formula".into(), "tree".into()],
+                None
+            )
         );
         assert_eq!(
-            formula_only_args(&["upgrade".into(), "--formula".into()]).unwrap(),
-            ["upgrade", "--formula"]
+            governed_args(&["upgrade".into(), "--formula".into()]).unwrap(),
+            (vec!["upgrade".into(), "--formula".into()], None)
         );
         assert_eq!(
             mutation_command(&[
@@ -898,18 +1080,43 @@ mod tests {
     }
 
     #[test]
-    fn cask_mutations_and_bundles_are_rejected() {
-        let error = formula_only_args(&["uninstall".into(), "--cask".into(), "firefox".into()])
-            .unwrap_err();
-        assert!(error.contains("Casks are not supported"));
+    fn cli_cask_mutations_are_explicit_and_restricted() {
+        assert_eq!(
+            governed_args(&["install".into(), "--cask".into(), "codex".into()]).unwrap(),
+            (
+                vec!["install".into(), "--cask".into(), "codex".into()],
+                Some(CaskMutation {
+                    command: "install".into(),
+                    names: vec!["codex".into()]
+                })
+            )
+        );
+        for args in [
+            vec!["upgrade".into(), "--cask".into()],
+            vec![
+                "uninstall".into(),
+                "--cask".into(),
+                "--zap".into(),
+                "codex".into(),
+            ],
+            vec!["install".into(), "--cask".into(), "./codex.rb".into()],
+            vec![
+                "install".into(),
+                "--cask".into(),
+                "--formula".into(),
+                "codex".into(),
+            ],
+        ] {
+            assert!(governed_args(&args).is_err());
+        }
         assert!(
-            formula_only_args(&["bundle".into()])
+            governed_args(&["bundle".into()])
                 .unwrap_err()
                 .contains("Brewfiles may contain casks")
         );
         assert_eq!(
-            formula_only_args(&["list".into(), "--cask".into()]).unwrap(),
-            ["list", "--cask"]
+            governed_args(&["list".into(), "--cask".into()]).unwrap(),
+            (vec!["list".into(), "--cask".into()], None)
         );
     }
 

@@ -1,3 +1,4 @@
+pub mod brew_cask_policy;
 mod cli;
 mod isotopes;
 mod path_security;

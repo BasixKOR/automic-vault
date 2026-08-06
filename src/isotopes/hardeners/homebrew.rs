@@ -20,8 +20,8 @@ const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V12";
-const STUB_VERSION: u32 = 12;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V13";
+const STUB_VERSION: u32 = 13;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 unsafe extern "C" {
@@ -63,17 +63,21 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         ));
     }
     let source_user = source_user()?;
-    let casks = installed_casks(&prefix)?;
+    let casks = incompatible_installed_casks(&prefix)?;
     if !casks.is_empty() {
         return Err(format!(
-            "Homebrew Casks are incompatible with hardened Homebrew. Installed casks: {}. Run `sudo av unharden brew`, remove or migrate every cask, then run `sudo av harden brew` again",
+            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `sudo av unharden brew`, remove or migrate the incompatible casks, then run `sudo av harden brew` again",
             casks.join(", ")
         ));
     }
 
     writeln!(stdout, "╭─ harden brew").ok();
     writeln!(stdout, "│").ok();
-    writeln!(stdout, "◆ CASKS ARE NOT SUPPORTED").ok();
+    writeln!(
+        stdout,
+        "◆ APPLICATION AND INSTALLER CASKS ARE NOT SUPPORTED"
+    )
+    .ok();
     writeln!(
         stdout,
         "│  Casks can modify applications, system libraries, services, and user data."
@@ -81,7 +85,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     .ok();
     writeln!(
         stdout,
-        "│  Hardened Homebrew manages formulae only; manage graphical applications separately."
+        "│  Only CLI-only casks that link protected executables into /opt/homebrew/bin are allowed."
     )
     .ok();
     writeln!(stdout, "│").ok();
@@ -214,7 +218,7 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
     .ok();
     writeln!(
         stdout,
-        "│  Remove or migrate every cask, then immediately run `sudo av harden brew`."
+        "│  Remove or migrate every incompatible cask, then immediately run `sudo av harden brew`."
     )
     .ok();
     writeln!(stdout, "│").ok();
@@ -244,7 +248,7 @@ pub(crate) fn unharden(stdout: &mut dyn Write, yes: bool) -> Result<(), String> 
     remove_legacy_cask_user_file(&prefix.join(LEGACY_CASK_USER_UID_FILE))?;
     writeln!(
         stdout,
-        "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate every cask, then immediately run `sudo av harden brew`"
+        "╰─ Homebrew is user-writable; use `/opt/homebrew/bin/brew` to remove or migrate incompatible casks, then immediately run `sudo av harden brew`"
     )
     .ok();
     Ok(())
@@ -398,14 +402,14 @@ fn brew_user_diagnostics(
 
     let mut diagnostics = Vec::new();
     let caskroom = prefix.join("Caskroom");
-    match installed_casks(prefix) {
+    match incompatible_installed_casks(prefix) {
         Ok(casks) if !casks.is_empty() => diagnostics.push(HardenerDiagnostic {
             kind: "casks_unsupported",
             message: format!(
-                "Hardened Homebrew does not support installed casks: {}",
+                "Hardened Homebrew does not support these installed casks: {}",
                 casks.join(", ")
             ),
-            remediation: "Run `sudo av unharden brew`, remove or migrate every cask, then run `sudo av harden brew`.".into(),
+            remediation: "Run `sudo av unharden brew`, remove or migrate every application or installer cask, then run `sudo av harden brew`.".into(),
             path: Some(caskroom.display().to_string()),
         }),
         Err(message) => diagnostics.push(HardenerDiagnostic {
@@ -496,6 +500,45 @@ fn installed_casks(prefix: &Path) -> Result<Vec<String>, String> {
         .collect::<Vec<_>>();
     casks.sort();
     Ok(casks)
+}
+
+fn incompatible_installed_casks(prefix: &Path) -> Result<Vec<String>, String> {
+    Ok(installed_casks(prefix)?
+        .into_iter()
+        .filter(|name| {
+            installed_cask_receipt(prefix, name)
+                .and_then(|receipt| {
+                    crate::brew_cask_policy::validate_install_receipt(name, &receipt)
+                })
+                .is_err()
+        })
+        .collect())
+}
+
+fn installed_cask_receipt(prefix: &Path, name: &str) -> Result<serde_json::Value, String> {
+    let cask = prefix.join("Caskroom").join(name);
+    let metadata = fs::symlink_metadata(&cask)
+        .map_err(|err| format!("failed to inspect {}: {err}", cask.display()))?;
+    if !metadata.file_type().is_dir() {
+        return Err(format!("{} is not a cask directory", cask.display()));
+    }
+    let path = cask.join(".metadata/INSTALL_RECEIPT.json");
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|err| format!("failed to inspect {}: {err}", path.display()))?;
+    if !metadata.file_type().is_file() || metadata.len() > 1024 * 1024 {
+        return Err(format!("{} is not a valid cask receipt", path.display()));
+    }
+    let mut contents = Vec::with_capacity(metadata.len() as usize);
+    file.read_to_end(&mut contents)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    serde_json::from_slice(&contents)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))
 }
 
 fn remove_legacy_cask_user_file(path: &Path) -> Result<(), String> {
@@ -1252,7 +1295,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V12 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V13 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
@@ -1543,10 +1586,17 @@ mod tests {
     fn installed_casks_are_reported_and_legacy_user_file_is_removed() {
         let root = temp_path("brew-installed-casks");
         fs::create_dir_all(root.join("Caskroom/zoom")).unwrap();
-        fs::create_dir_all(root.join("Caskroom/obs")).unwrap();
+        let codex = root.join("Caskroom/codex/.metadata");
+        fs::create_dir_all(&codex).unwrap();
+        fs::write(
+            codex.join("INSTALL_RECEIPT.json"),
+            r#"{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"binary":["bin/codex"]}]}"#,
+        )
+        .unwrap();
         fs::write(root.join("Caskroom/.DS_Store"), "metadata").unwrap();
 
-        assert_eq!(installed_casks(&root).unwrap(), ["obs", "zoom"]);
+        assert_eq!(installed_casks(&root).unwrap(), ["codex", "zoom"]);
+        assert_eq!(incompatible_installed_casks(&root).unwrap(), ["zoom"]);
 
         let legacy = root.join(LEGACY_CASK_USER_UID_FILE);
         fs::create_dir_all(legacy.parent().unwrap()).unwrap();

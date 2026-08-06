@@ -3,7 +3,7 @@
 ## Summary
 
 - Only `brew` can alter `/opt/homebrew`.
-- Hardened Homebrew manages formulae only. Homebrew Casks are not supported.
+- Hardened Homebrew manages formulae and a narrow class of CLI-only casks.
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
@@ -79,23 +79,33 @@ is that solution.
 
 ## Casks
 
-**Homebrew Casks are categorically incompatible with this hardener.** A cask is
-not confined to the Homebrew prefix: it may modify `/Applications`, `/Library`,
-launch services, system plugins, privileged packages, and user data. Running
-that package manager as the protected `automic` account also makes its nested
-`sudo` operations authenticate the wrong identity. Pretending this is the same
-ownership model as a formula weakens the security guarantee and still fails for
-ordinary casks.
+**Application and installer casks are categorically incompatible with this
+hardener.** A normal cask is not confined to the Homebrew prefix: it may modify
+`/Applications`, `/Library`, launch services, system plugins, privileged
+packages, and user data. Running that package manager as the protected
+`automic` account also makes its nested `sudo` operations authenticate the
+wrong identity. Pretending this is the same ownership model as a formula
+weakens the security guarantee and still fails for ordinary casks.
 
-The launcher therefore pins `install`, `reinstall`, `upgrade`, `uninstall`,
-`remove`, and `rm` to `--formula` before requesting approval. Explicit cask
-mutations are rejected. `brew bundle` is rejected because a Brewfile may contain
-casks. Read-only commands such as `brew list --cask` remain available for
-migration and inspection.
+The sole exception is a CLI-only cask from the official `homebrew/cask`
+repository. It must declare one or more `binary` artifacts whose sources remain
+inside its staged Caskroom and whose targets are directly inside
+`/opt/homebrew/bin`. Generated shell completions are allowed. `zap` metadata may
+be present, but `--zap` is rejected and never runs. Cask dependencies and every
+app, package, installer, script, flight block, service, plugin, arbitrary
+artifact, completion-file, manpage, or external target are rejected.
 
-Hardening refuses to proceed while `/opt/homebrew/Caskroom` contains installed
-casks. For an existing hardened installation, run `sudo av unharden brew`,
-remove or migrate every cask using `/opt/homebrew/bin/brew`, then run
-`sudo av harden brew` again. Homebrew is user-writable between those commands;
-do not run hardened tools or expose credentials through them during that
-migration window.
+Cask mutations must use `--cask` and name every cask explicitly. The launcher
+checks Homebrew's effective JSON metadata after approval and validates the
+protected installation receipt before upgrades, reinstalls, or removals.
+Homebrew's own in-process forbidden-artifact check is also enabled for the
+actual installation. Path-based casks, custom destination flags, bulk cask
+upgrades, and `brew bundle` are unavailable. Commands without `--cask` remain
+pinned to `--formula`.
+
+Hardening refuses to proceed while `/opt/homebrew/Caskroom` contains anything
+other than validated CLI-only casks. For an existing hardened installation, run
+`sudo av unharden brew`, remove or migrate incompatible casks using
+`/opt/homebrew/bin/brew`, then run `sudo av harden brew` again. Homebrew is
+user-writable between those commands; do not run hardened tools or expose
+credentials through them during that migration window.
