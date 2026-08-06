@@ -7,6 +7,9 @@ struct RenderedMarkdown: View {
 
     var body: some View {
         Markdown(markdownDroppingInitialHeadingMarker(markdown))
+            .markdownTheme(.basic.listItem { configuration in
+                configuration.label.markdownMargin(top: .em(0.15))
+            })
             .textSelection(.enabled)
     }
 }
