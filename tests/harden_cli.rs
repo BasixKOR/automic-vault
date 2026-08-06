@@ -18,7 +18,7 @@ fn harden_installs_stub_then_migrates_direct_token() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(
-        stdout(&output).contains("◇ verify with `av doctor doctl`"),
+        stdout(&output).contains("◇ next: run `av doctor doctl`"),
         "{}",
         stdout(&output)
     );

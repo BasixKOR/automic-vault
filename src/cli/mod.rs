@@ -295,13 +295,8 @@ where
                 return finish_hardening(result, "brew", stdout, stderr);
             }
             if target == "codex" {
-                return match hardeners::codex::run(stdout, yes) {
-                    Ok(()) => 0,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::codex::run(stdout, yes);
+                return finish_hardening(result, "codex", stdout, stderr);
             }
             if target == "sudo" {
                 let result = hardeners::sudo::run(stdout, style.color);
@@ -385,7 +380,7 @@ fn print_isotope_install_guidance(
 }
 
 fn print_hardening_followup(stdout: &mut dyn Write, target: &str) {
-    let _ = writeln!(stdout, "◇ verify with `av doctor {target}`");
+    let _ = writeln!(stdout, "◇ next: run `av doctor {target}`");
 }
 
 fn finish_hardening<W: Write, E: Write>(
@@ -672,7 +667,7 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(
             stdout,
-            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n◇ verify with `av doctor sudo`\n"
+            "╭─ harden sudo\n│\n◇ enables biometric authentication for sudo\n│\n╰─ run:\n\n        echo 'auth sufficient pam_tid.so' | sudo tee -a /etc/pam.d/sudo_local >/dev/null\n◇ next: run `av doctor sudo`\n"
         );
         assert_eq!(stderr, "");
     }
@@ -710,6 +705,7 @@ mod tests {
         assert!(stdout.contains("login --with-api-key"));
         assert!(stdout.contains("only after verification"));
         assert!(stdout.contains("verified Codex login from the Keychain"));
+        assert!(stdout.contains("◇ next: run `av doctor codex`"));
         assert!(!stdout.contains("api-secret"));
         assert_eq!(
             std::fs::read_to_string(home.join("config.toml")).unwrap(),
