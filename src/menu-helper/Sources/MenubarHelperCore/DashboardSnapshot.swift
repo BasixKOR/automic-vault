@@ -1228,14 +1228,12 @@ public func saveStoredSecret(
 public func saveStoredSecretIfAbsentOrEqual(
     account: String,
     value: String,
-    accessibility: StoredSecretAccessibility = .whenUnlocked,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
     saveKeychainDataIfAbsentOrEqual(
         Data(value.utf8),
         service: service,
-        account: account,
-        accessibility: accessibility
+        account: account
     )
 }
 
@@ -1373,8 +1371,7 @@ func saveKeychainData(
 func saveKeychainDataIfAbsentOrEqual(
     _ data: Data,
     service: String,
-    account: String,
-    accessibility: StoredSecretAccessibility = .whenUnlocked
+    account: String
 ) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1382,7 +1379,7 @@ func saveKeychainDataIfAbsentOrEqual(
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
         kSecValueData as String: data,
-        kSecAttrAccessible as String: accessibility.keychainValue,
+        kSecAttrAccessible as String: StoredSecretAccessibility.whenUnlocked.keychainValue,
     ]
     addCanonicalAccessGroup(to: &query)
     let status = SecItemAdd(query as CFDictionary, nil)

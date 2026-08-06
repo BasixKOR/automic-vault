@@ -1252,7 +1252,7 @@ private struct ApprovalRequest {
 
 enum SecretMutation {
     case save(account: String, value: String, accessibility: StoredSecretAccessibility)
-    case saveIfAbsentOrEqual(account: String, value: String, accessibility: StoredSecretAccessibility)
+    case saveIfAbsentOrEqual(account: String, value: String)
     case delete(account: String)
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
@@ -1265,7 +1265,7 @@ enum SecretMutation {
                 "save", [account], ["save", account], "Store \(account)?",
                 "This will create or replace a secret in Automic Vault."
             )
-        case .saveIfAbsentOrEqual(let account, _, _):
+        case .saveIfAbsentOrEqual(let account, _):
             properties = (
                 "save-if-absent", [account], ["save-if-absent", account], "Store \(account)?",
                 "This will create the secret only if no differing value already exists."
@@ -1311,12 +1311,8 @@ enum SecretMutation {
         switch self {
         case .save(let account, let value, let accessibility):
             saveStoredSecret(account: account, value: value, accessibility: accessibility)
-        case .saveIfAbsentOrEqual(let account, let value, let accessibility):
-            saveStoredSecretIfAbsentOrEqual(
-                account: account,
-                value: value,
-                accessibility: accessibility
-            )
+        case .saveIfAbsentOrEqual(let account, let value):
+            saveStoredSecretIfAbsentOrEqual(account: account, value: value)
         case .delete(let account):
             deleteStoredSecret(account: account)
         case .rename(let account, let newAccount):
@@ -2578,7 +2574,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let value = String(cString: valuePointer)
         let mutation: SecretMutation = ifAbsentOrEqual
-            ? .saveIfAbsentOrEqual(account: key, value: value, accessibility: .whenUnlocked)
+            ? .saveIfAbsentOrEqual(account: key, value: value)
             : .save(account: key, value: value, accessibility: .whenUnlocked)
         handleMutation(
             mutation,
@@ -2787,7 +2783,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             switch mutation {
-            case .save(let account, _, _), .saveIfAbsentOrEqual(let account, _, _):
+            case .save(let account, _, _), .saveIfAbsentOrEqual(let account, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {

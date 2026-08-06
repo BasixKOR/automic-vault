@@ -551,9 +551,26 @@ func protectionPolicyMatrix(
     defer { _ = deleteStoredSecret(account: account, service: service) }
 
     #expect(saveStoredSecretIfAbsentOrEqual(account: account, value: "first", service: service) == errSecSuccess)
+    #expect(keychainAccessibility(account: account, service: service) == kSecAttrAccessibleWhenUnlocked as String)
     #expect(saveStoredSecretIfAbsentOrEqual(account: account, value: "first", service: service) == errSecSuccess)
     #expect(saveStoredSecretIfAbsentOrEqual(account: account, value: "second", service: service) == errSecDuplicateItem)
     #expect(loadStoredSecret(account: account, service: service) == "first")
+}
+
+@Test func conditionalSecretSavePreservesExistingAccessibility() {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.conditional-save.\(UUID().uuidString)"
+    let account = "TOKEN"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+
+    #expect(saveStoredSecret(
+        account: account,
+        value: "first",
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess)
+    #expect(saveStoredSecretIfAbsentOrEqual(account: account, value: "first", service: service) == errSecSuccess)
+    #expect(keychainAccessibility(account: account, service: service) == kSecAttrAccessibleAfterFirstUnlock as String)
 }
 
 @Test func storedSecretAccessibilityCanChangeWithoutChangingValue() throws {
