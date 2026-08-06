@@ -2385,9 +2385,11 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
 
 private struct AboutSettingsView: View {
     let guiPath: String
+    let version: String
 
-    init(guiPath: String = guiPATH()) {
+    init(guiPath: String = guiPATH(), version: String = appVersion() ?? "Unknown") {
         self.guiPath = guiPath
+        self.version = version
     }
 
     var body: some View {
@@ -2399,6 +2401,7 @@ private struct AboutSettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
+            SecretGateField("Version", version)
             SecretGateField("GUI PATH (before shells)", guiPath, monospaced: true)
             Text("This is the PATH inherited by the app before shell startup files run.")
                 .font(.caption)
@@ -2406,6 +2409,11 @@ private struct AboutSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
+
+func appVersion(bundle: Bundle = .main) -> String? {
+    (bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        .flatMap { $0.isEmpty ? nil : $0 }
 }
 
 private func guiPATH(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
