@@ -165,6 +165,8 @@ An **Access Level** is a named policy preset for one Launcher at one Authorizati
 
 Every requested characteristic must fit the selected preset. Gates may omit presets that do not describe their operation set.
 
+The Homebrew Execution Gate does not expose Read Only. Homebrew may update itself and its package metadata while running inspection commands, so Automic Vault treats Read Only and Homebrew Update as one indivisible level: Read & Update.
+
 ## Detection and hardening
 
 ### Detector
@@ -252,7 +254,7 @@ The following identifiers remain in storage or code for compatibility. New produ
 | Legacy identifier or label | Canonical term |
 | --- | --- |
 | `No Access`, `noAccess` | Approval Required |
-| `Read Only Access`, `readOnly` | Read Only |
+| `Read Only Access`, `readOnly` | Read Only; Read & Update at the Homebrew Execution Gate |
 | `Read & Update Access`, `readOnlyAndUpdates` | Read & Update |
 | `Local Write Access`, `readOnlyAndLocalWrites` | Local Write |
 | `Trusted Access`, `fullExceptSecretDumps` | Write Access |

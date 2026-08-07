@@ -88,16 +88,16 @@ Access Levels are named presets over operation characteristics. The user sees a 
 
 ### Current compatibility model
 
-The shipped policy store encodes one legacy classification per request and persists legacy access-level raw values in Keychain. The product maps their labels to the canonical Access Levels without changing the stored grant:
+The shipped policy store encodes one legacy classification per request and persists legacy access-level raw values in Keychain. The product retains those raw values while mapping them to canonical Access Levels:
 
 - `noAccess` becomes Approval Required.
-- `readOnly` becomes Read Only.
+- `readOnly` becomes Read Only, except at the Homebrew Execution Gate where it becomes Read & Update.
 - Homebrew's `readOnlyAndUpdates` becomes Read & Update.
 - `readOnlyAndLocalWrites` becomes Local Write.
 - `fullExceptSecretDumps` becomes Write Access.
 - `fullIncludingSecretDumps` remains Full Access.
 
-The legacy `update` classification covers only `brew update`, a Homebrew Update. The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
+The Homebrew migration intentionally broadens persisted `readOnly` rules to allow explicit `brew update`. Homebrew could already update itself and its package metadata as a secondary effect of an authorized inspection command, so the old distinction did not enforce strict read-only execution. The legacy `update` classification covers only `brew update`, a Homebrew Update. The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
 
 ## Secret custody and availability
 

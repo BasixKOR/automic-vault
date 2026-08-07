@@ -345,6 +345,10 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
 
     public var id: String { rawValue }
 
+    public func normalized(forGateID gateID: String) -> Self {
+        gateID == "brew" && self == .readOnly ? .readOnlyAndUpdates : self
+    }
+
     public var title: String {
         switch self {
         case .noAccess: "Approval Required"
@@ -483,8 +487,11 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
 
     public var availableProtections: [SecretGateProtection] {
+        if id == "brew" {
+            return [.noAccess, .readOnlyAndUpdates, .fullExceptSecretDumps]
+        }
         if keyPatterns.isEmpty {
-            return [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps]
+            return [.noAccess, .readOnly, .fullExceptSecretDumps]
         }
         if id == "gh" {
             return [
@@ -503,19 +510,27 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
-        if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps { return .fullExceptSecretDumps }
-        if keyPatterns.isEmpty, protection == .readOnlyAndLocalWrites { return .readOnly }
-        if id != "gh", protection == .readOnlyAndLocalWrites { return .readOnly }
-        if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates { return .readOnly }
-        return protection
+        var protection = protection
+        if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps {
+            protection = .fullExceptSecretDumps
+        }
+        if id != "gh", protection == .readOnlyAndLocalWrites {
+            protection = .readOnly
+        }
+        if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates {
+            protection = .readOnly
+        }
+        return protection.normalized(forGateID: id)
     }
 
     public func protectionTitle(_ protection: SecretGateProtection) -> String {
-        keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
+        let protection = normalizedProtection(protection)
+        return keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
     }
 
     public func protectionSubtitle(_ protection: SecretGateProtection) -> String {
-        keyPatterns.isEmpty && protection == .fullExceptSecretDumps
+        let protection = normalizedProtection(protection)
+        return keyPatterns.isEmpty && protection == .fullExceptSecretDumps
             ? "Every recognized operation is automically authorized; unknown operations require approval"
             : protection.subtitle
     }

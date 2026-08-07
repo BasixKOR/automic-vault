@@ -1604,7 +1604,7 @@ private func blessedScriptCanAutoApprove(
         signing: signing,
         hardeners: metadata
     ),
-    let protection = script.capabilities[gate.id]
+    let protection = script.capabilities[gate.id]?.normalized(forGateID: gate.id)
     else { return false }
     return secretGateProtectionAllows(
         protection,
@@ -2624,7 +2624,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 defaultProtection: .noAccess,
                 appPolicies: []
             )
-            guard gate.availableProtections.contains(protection) else {
+            guard gate.availableProtections.contains(gate.normalizedProtection(protection)) else {
                 reply(peer, to: message, ok: false, error: "unsupported access level for \(id)")
                 return
             }

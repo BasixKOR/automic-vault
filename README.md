@@ -156,9 +156,10 @@ Level and optional rules for specific Verified Launchers:
 
 1. **Approval Required**: every operation needs your approval.
 2. **Read Only**: recognized read-only operations are automically authorized.
-3. **Read & Update**: at the Homebrew gate, recognized read-only operations and
-   `brew update` are automically authorized. Installs and upgrades still need
-   approval.
+   Homebrew omits this level because inspection commands may update Homebrew.
+3. **Read & Update**: at the Homebrew Execution Gate, recognized read-only
+   operations and `brew update` are automically authorized. Installs and
+   upgrades still need approval.
 4. **Local Write**: recognized read-only and local-write operations are
    automically authorized where the Tool supports this distinction.
 5. **Write Access**: recognized read and write operations are automically

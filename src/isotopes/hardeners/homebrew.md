@@ -58,12 +58,11 @@ is that solution.
   normalized to generic shell output and does not add Homebrew's protected zsh
   completion directory to `fpath`.
 - Every Launcher invocation is authorized by the menu bar app before Homebrew
-  runs. Read Only automically authorizes recognized inspection commands and
-  prompts for writes or unknown commands. Read & Update also authorizes `brew
-  update` and is the default; installs and upgrades still require Approval.
-  Approval Required prompts for every command.
-  Full Access authorizes every recognized command; unknown commands still
-  require approval.
+  runs. Read & Update automically authorizes recognized inspection commands and
+  `brew update`; Homebrew may perform the same update while running an
+  inspection command. Installs and upgrades require Approval at this level.
+  Approval Required prompts for every command. Full Access automically
+  authorizes every recognized command; unknown commands still require Approval.
 - The launcher fails closed when the approval service is unavailable.
 - The stub clears the environment, restores only safe terminal/locale values,
   and executes `/opt/homebrew/bin/brew` directly.

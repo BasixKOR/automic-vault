@@ -2290,7 +2290,7 @@ private struct BlessedScriptFields: View {
             SecretGateField(
                 "Capabilities",
                 capabilities.sorted(by: { $0.key < $1.key })
-                    .map { "\($0.key): \($0.value.title)" }
+                    .map { "\($0.key): \($0.value.normalized(forGateID: $0.key).title)" }
                     .joined(separator: ", ")
             )
         }

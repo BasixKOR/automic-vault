@@ -281,7 +281,11 @@ private func secretlessGateMetadata() -> HardenerMetadata {
 
     #expect(gate.keyPatterns.isEmpty)
     #expect(gate.defaultProtection == .readOnlyAndUpdates)
-    #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
+    #expect(gate.availableProtections == [.noAccess, .readOnlyAndUpdates, .fullExceptSecretDumps])
+    #expect(gate.normalizedProtection(.readOnly) == .readOnlyAndUpdates)
+    #expect(gate.normalizedProtection(.readOnly).allows(.update))
+    #expect(!gate.normalizedProtection(.readOnly).allows(.mutating))
+    #expect(gate.protectionTitle(.readOnly) == "Read & Update")
     #expect(gate.protectionTitle(.readOnlyAndUpdates) == "Read & Update")
     #expect(gate.protectionSubtitle(.readOnlyAndUpdates) == "Recognized read-only operations and `brew update` are automically authorized; installs and upgrades require approval")
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
@@ -298,6 +302,23 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     ])
     #expect(secretGate.protectionTitle(.readOnlyAndLocalWrites) == "Local Write")
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Write Access")
+}
+
+@Test func brewGateBroadensPersistedReadOnlyPoliciesToReadAndUpdate() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+    let account = "policies.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let legacy = #"[{"gateID":"brew","requirement":null,"protection":"readOnly"},{"gateID":"brew","requirement":"identifier \"com.example.app\"","protection":"readOnly"}]"#
+    #expect(saveStoredSecret(account: account, value: legacy, service: service) == errSecSuccess)
+
+    let gate = try #require(loadSecretGates(
+        hardeners: [secretlessGateMetadata()],
+        service: service,
+        account: account
+    ).first)
+    #expect(gate.defaultProtection == .readOnlyAndUpdates)
+    #expect(gate.appPolicies.first?.protection == .readOnlyAndUpdates)
 }
 
 @Test func newGateGetsExplicitInitialPolicy() throws {
@@ -393,7 +414,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
         service: service,
         account: account
     ).first)
-    #expect(gate.defaultProtection == .readOnly)
+    #expect(gate.defaultProtection == .readOnlyAndUpdates)
 }
 
 @Test func unhealthyInstalledWrapperKeepsItsSecretGate() throws {

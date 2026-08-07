@@ -28,9 +28,11 @@ The user-facing policy presents named Access Levels:
 
 System Write and Remote Write appear as reasons for Approval, not separate user settings. Elevated Secret Application and Secret Disclosure remain outside Write Access. Full Access includes them for recognized operations. Unknown still requires Approval.
 
+The Homebrew Execution Gate omits Read Only. Homebrew may update itself and its package metadata while running inspection commands, so its three presets are Approval Required, Read & Update, and Full Access.
+
 ## Compatibility
 
-The current implementation persists legacy Access Level raw values and enforces one legacy request classification. Display names may change without changing those grants. A future characteristic-set migration must review the Tool catalog, preserve or narrow every stored grant, and test unknown and combined operations before replacing the legacy classifier.
+The current implementation persists legacy Access Level raw values and enforces one legacy request classification. Existing Homebrew Read Only rules intentionally broaden to Read & Update because the old level could not prevent incidental Homebrew updates. Other display-name changes do not change stored grants. A future characteristic-set migration must review the Tool catalog, preserve or narrow every stored grant, and test unknown and combined operations before replacing the legacy classifier.
 
 ## Consequences
 
