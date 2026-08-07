@@ -1172,7 +1172,7 @@ struct DashboardRootView: View {
     var body: some View {
         NavigationSplitView() {
             DashboardSidebarView(model: model)
-                .navigationSplitViewColumnWidth(min: 186, ideal: 215, max: 250)
+                .navigationSplitViewColumnWidth(min: 186, ideal: 227, max: 250)
         } content: {
             DashboardListView(model: model)
                 .navigationSplitViewColumnWidth(min: 168, ideal: 255)
