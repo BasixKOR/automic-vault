@@ -58,8 +58,14 @@ pub(crate) struct Doctor {
 
 pub(crate) enum InstallPlan {
     Ready,
-    Homebrew { brew: PathBuf },
-    Direct { manifest: Manifest, update: bool },
+    Homebrew {
+        brew: PathBuf,
+        conflict: Option<String>,
+    },
+    Direct {
+        manifest: Manifest,
+        update: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,7 +82,10 @@ impl InstallPlan {
     pub(crate) fn write(&self, stdout: &mut dyn Write, spec: Spec) {
         match self {
             Self::Ready => {}
-            Self::Homebrew { brew } => {
+            Self::Homebrew { brew, conflict } => {
+                if let Some(conflict) = conflict {
+                    writeln!(stdout, "├─ run `{} unlink {conflict}`", brew.display()).ok();
+                }
                 writeln!(
                     stdout,
                     "├─ run `{} install automic-vault/isotopes/{}`",
@@ -97,7 +106,9 @@ impl InstallPlan {
     pub(crate) fn apply(self, spec: Spec) -> Result<(), String> {
         match self {
             Self::Ready => Ok(()),
-            Self::Homebrew { brew } => install_with_homebrew(spec, &brew),
+            Self::Homebrew { brew, conflict } => {
+                install_with_homebrew(spec, &brew, conflict.as_deref())
+            }
             Self::Direct { manifest, .. } => install_direct(spec, &manifest),
         }
     }
@@ -119,7 +130,10 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
         return Ok(InstallPlan::Ready);
     }
     if let Some(brew) = brew_path() {
-        return Ok(InstallPlan::Homebrew { brew });
+        return Ok(InstallPlan::Homebrew {
+            brew,
+            conflict: conflicting_formula(spec),
+        });
     }
     Ok(InstallPlan::Direct {
         manifest: current_manifest(spec)?,
@@ -255,7 +269,37 @@ pub(crate) fn install_privileged(
     Ok(())
 }
 
-fn install_with_homebrew(spec: Spec, brew: &Path) -> Result<(), String> {
+fn install_with_homebrew(
+    spec: Spec,
+    brew: &Path,
+    conflicting_formula: Option<&str>,
+) -> Result<(), String> {
+    if let Some(conflict) = conflicting_formula {
+        let status = Command::new(brew)
+            .args(["unlink", conflict])
+            .status()
+            .map_err(|err| format!("failed to run {}: {err}", brew.display()))?;
+        if !status.success() {
+            return Err(format!(
+                "failed to unlink conflicting Homebrew formula {conflict}: {status}"
+            ));
+        }
+    }
+
+    match install_and_verify_with_homebrew(spec, brew) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if let Some(conflict) = conflicting_formula
+                && let Err(rollback) = restore_homebrew_conflict(spec, brew, conflict)
+            {
+                return Err(format!("{error}; {rollback}"));
+            }
+            Err(error)
+        }
+    }
+}
+
+fn install_and_verify_with_homebrew(spec: Spec, brew: &Path) -> Result<(), String> {
     let package = format!("automic-vault/isotopes/{}", spec.formula);
     let status = Command::new(brew)
         .args(["install", &package])
@@ -273,6 +317,21 @@ fn install_with_homebrew(spec: Spec, brew: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn restore_homebrew_conflict(spec: Spec, brew: &Path, conflict: &str) -> Result<(), String> {
+    let _ = Command::new(brew).args(["unlink", spec.formula]).status();
+    let status = Command::new(brew)
+        .args(["link", conflict])
+        .status()
+        .map_err(|err| format!("failed to restore Homebrew formula {conflict}: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "failed to restore Homebrew formula {conflict}: {status}"
+        ))
+    }
 }
 
 fn install_direct(spec: Spec, manifest: &Manifest) -> Result<(), String> {
@@ -490,6 +549,23 @@ fn brew_targets(spec: Spec) -> Vec<PathBuf> {
         .to_vec()
 }
 
+fn conflicting_formula(spec: Spec) -> Option<String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH").is_some() {
+        return crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT")
+            .filter(|formula| !formula.is_empty());
+    }
+    ["/opt/homebrew/opt", "/usr/local/opt"]
+        .map(|root| {
+            Path::new(root)
+                .join(spec.primary)
+                .join("bin")
+                .join(spec.primary)
+        })
+        .into_iter()
+        .any(|path| executable(&path))
+        .then(|| spec.primary.to_string())
+}
+
 fn direct_target(spec: Spec) -> PathBuf {
     direct_bin_dir().join(spec.primary)
 }
@@ -641,12 +717,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_isotope_with_homebrew_plans_the_tap_install() {
+    fn missing_isotope_with_homebrew_plans_the_unlink_and_tap_install() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let missing = std::env::temp_dir().join("av-test-missing-gh-isotope");
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
             std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH", "/test/bin/brew");
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT", "gh");
         }
         let plan = plan(GH).unwrap();
         let mut output = Vec::new();
@@ -654,10 +731,73 @@ mod tests {
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
             std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT");
         }
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "├─ run `/test/bin/brew install automic-vault/isotopes/gh-cli`\n"
+            "├─ run `/test/bin/brew unlink gh`\n├─ run `/test/bin/brew install automic-vault/isotopes/gh-cli`\n"
+        );
+    }
+
+    #[test]
+    fn homebrew_install_unlinks_the_conflict_first() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let directory = TemporaryDirectory::new("brew-conflict").unwrap();
+        let brew = directory.path.join("brew");
+        let log = directory.path.join("brew.log");
+        let gh = directory.path.join("gh");
+        fs::write(
+            &brew,
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$AUTOMIC_VAULT_TEST_BREW_LOG\"\n",
+        )
+        .unwrap();
+        fs::write(&gh, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&brew, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_LOG", &log);
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &gh);
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR", &directory.path);
+        }
+
+        install_with_homebrew(GH, &brew, Some("gh")).unwrap();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_LOG");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR");
+        }
+        assert_eq!(
+            fs::read_to_string(log).unwrap(),
+            "unlink gh\ninstall automic-vault/isotopes/gh-cli\n"
+        );
+    }
+
+    #[test]
+    fn failed_homebrew_install_restores_the_conflicting_formula() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let directory = TemporaryDirectory::new("brew-conflict-rollback").unwrap();
+        let brew = directory.path.join("brew");
+        let log = directory.path.join("brew.log");
+        fs::write(
+            &brew,
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$AUTOMIC_VAULT_TEST_BREW_LOG\"\n[ \"$1\" != install ]\n",
+        )
+        .unwrap();
+        fs::set_permissions(&brew, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_LOG", &log);
+        }
+
+        let error = install_with_homebrew(GH, &brew, Some("gh")).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_LOG");
+        }
+        assert!(error.contains("Homebrew isotope installation failed"));
+        assert_eq!(
+            fs::read_to_string(log).unwrap(),
+            "unlink gh\ninstall automic-vault/isotopes/gh-cli\nunlink gh-cli\nlink gh\n"
         );
     }
 
