@@ -15,12 +15,13 @@ Use **Authorization Gate** as the general boundary, with **Secret Gate** and **E
 
 Each gate owns one Authorization Policy with an explicit default Access Level and optional Verified Launcher rules. An unverifiable Launcher does not receive the default. Unknown operations cannot be automically authorized.
 
-The policy engine's target model assigns a set of Operation Characteristics: Read Only, Local Write, System Write, Remote Write, Elevated Secret Application, Secret Disclosure, and Unknown. Policy must permit every characteristic.
+The policy engine's target model assigns a set of Operation Characteristics: Read Only, Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, Secret Disclosure, and Unknown. Homebrew Update means `brew update`: package-definition and bookkeeping changes without installing, upgrading, reinstalling, or removing software. Policy must permit every characteristic.
 
 The user-facing policy presents named Access Levels:
 
 - Approval Required
 - Read Only
+- Read & Update, only for the Homebrew Execution Gate
 - Local Write, where the gate supports it
 - Write Access
 - Full Access
@@ -34,6 +35,7 @@ The current implementation persists legacy Access Level raw values and enforces 
 ## Consequences
 
 - Homebrew fits the model as an Execution Gate.
+- Homebrew's default can authorize metadata updates without implying authority to upgrade installed software.
 - The architecture can describe combined effects without expanding the settings UI.
 - Product copy can state why a request needs Approval.
 - New Tool policies must classify conservatively and fail closed on unknown commands.

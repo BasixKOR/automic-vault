@@ -151,17 +151,20 @@ Hardening varies, but its purpose is:
 > † This means you can have different access control for eg. your terminal and
 > your agent.
 
-Hardened tools gain a Secret Gate in the app. Each gate has a default Access
+Hardened tools gain an Authorization Gate in the app. Each gate has a default Access
 Level and optional rules for specific Verified Launchers:
 
 1. **Approval Required**: every operation needs your approval.
 2. **Read Only**: recognized read-only operations are automically authorized.
-3. **Local Write**: recognized read-only and local-write operations are
+3. **Read & Update**: at the Homebrew gate, recognized read-only operations and
+   `brew update` are automically authorized. Installs and upgrades still need
+   approval.
+4. **Local Write**: recognized read-only and local-write operations are
    automically authorized where the Tool supports this distinction.
-4. **Write Access**: recognized read and write operations are automically
+5. **Write Access**: recognized read and write operations are automically
    authorized. Secret Disclosure and Elevated Secret Application still need
    approval.
-5. **Full Access**: recognized sensitive secret operations may also be
+6. **Full Access**: recognized sensitive secret operations may also be
    automically authorized. Unknown operations still need approval.
 
 Hardened tools request secrets when they need them. Automic Vault releases those

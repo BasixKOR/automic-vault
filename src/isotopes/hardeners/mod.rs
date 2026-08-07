@@ -119,7 +119,7 @@ pub(crate) struct RequiredIdentity {
 
 pub(crate) fn write_secret_gate_notice(stdout: &mut dyn std::io::Write, gate_id: &str) {
     let protection = if gate_id == "brew" {
-        "Local Write"
+        "Read & Update"
     } else {
         "Read Only"
     };
@@ -255,7 +255,7 @@ mod tests {
         super::write_secret_gate_notice(&mut brew, "brew");
         assert_eq!(
             String::from_utf8(brew).unwrap(),
-            "\n◇ `brew` defaults to Local Write, adjust this in the app: `av open --secret-gate brew`\n"
+            "\n◇ `brew` defaults to Read & Update, adjust this in the app: `av open --secret-gate brew`\n"
         );
     }
 }

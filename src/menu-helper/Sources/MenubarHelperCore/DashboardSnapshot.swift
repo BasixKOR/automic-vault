@@ -350,7 +350,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         case .noAccess: "Approval Required"
         case .readOnly: "Read Only"
         case .readOnlyAndLocalWrites: "Local Write"
-        case .readOnlyAndUpdates: "Local Write"
+        case .readOnlyAndUpdates: "Read & Update"
         case .fullExceptSecretDumps: "Write Access"
         case .fullIncludingSecretDumps: "Full Access"
         }
@@ -363,7 +363,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, S
         case .readOnlyAndLocalWrites:
             "Recognized read-only and local-write operations are automically authorized"
         case .readOnlyAndUpdates:
-            "Recognized read-only operations and `brew update` are automically authorized"
+            "Recognized read-only operations and `brew update` are automically authorized; installs and upgrades require approval"
         case .fullExceptSecretDumps:
             "Recognized read and write operations are automically authorized; sensitive secret operations require approval"
         case .fullIncludingSecretDumps:

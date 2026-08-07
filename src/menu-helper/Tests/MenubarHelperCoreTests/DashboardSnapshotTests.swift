@@ -282,6 +282,8 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(gate.keyPatterns.isEmpty)
     #expect(gate.defaultProtection == .readOnlyAndUpdates)
     #expect(gate.availableProtections == [.noAccess, .readOnly, .readOnlyAndUpdates, .fullExceptSecretDumps])
+    #expect(gate.protectionTitle(.readOnlyAndUpdates) == "Read & Update")
+    #expect(gate.protectionSubtitle(.readOnlyAndUpdates) == "Recognized read-only operations and `brew update` are automically authorized; installs and upgrades require approval")
     #expect(gate.protectionTitle(.fullExceptSecretDumps) == "Full Access")
     #expect(gate.protectionSubtitle(.fullExceptSecretDumps) == "Every recognized operation is automically authorized; unknown operations require approval")
 

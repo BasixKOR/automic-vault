@@ -59,8 +59,9 @@ is that solution.
   completion directory to `fpath`.
 - Every Launcher invocation is authorized by the menu bar app before Homebrew
   runs. Read Only automically authorizes recognized inspection commands and
-  prompts for writes or unknown commands. Local Write also authorizes `brew
-  update` and is the default. Approval Required prompts for every command.
+  prompts for writes or unknown commands. Read & Update also authorizes `brew
+  update` and is the default; installs and upgrades still require Approval.
+  Approval Required prompts for every command.
   Full Access authorizes every recognized command; unknown commands still
   require approval.
 - The launcher fails closed when the approval service is unavailable.

@@ -84,7 +84,7 @@ Each Authorization Gate owns one Authorization Policy:
 5. Policy must permit every characteristic for automic authorization.
 6. Unknown prevents automic authorization.
 
-Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Local Write, System Write, Remote Write, Elevated Secret Application, and Secret Disclosure distinct.
+Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, and Secret Disclosure distinct.
 
 ### Current compatibility model
 
@@ -92,11 +92,12 @@ The shipped policy store encodes one legacy classification per request and persi
 
 - `noAccess` becomes Approval Required.
 - `readOnly` becomes Read Only.
-- `readOnlyAndLocalWrites` and Homebrew's `readOnlyAndUpdates` become Local Write.
+- Homebrew's `readOnlyAndUpdates` becomes Read & Update.
+- `readOnlyAndLocalWrites` becomes Local Write.
 - `fullExceptSecretDumps` becomes Write Access.
 - `fullIncludingSecretDumps` remains Full Access.
 
-The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
+The legacy `update` classification covers only `brew update`, a Homebrew Update. The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
 
 ## Secret custody and availability
 
@@ -118,7 +119,7 @@ After Secret Application, the Target controls its own memory, plugins, helpers, 
 
 ## Secure defaults
 
-New Secret Gates start at Read Only. The Homebrew Execution Gate starts at Local Write because update is its bounded routine operation. Unknown operations and unverifiable Launchers require a human decision or denial according to the failed check. Every default and Launcher-specific rule is explicit and persisted.
+New Secret Gates start at Read Only. The Homebrew Execution Gate starts at Read & Update, which adds `brew update` without authorizing installation, upgrade, reinstall, removal, or other writes. Unknown operations and unverifiable Launchers require a human decision or denial according to the failed check. Every default and Launcher-specific rule is explicit and persisted.
 
 ## Source of truth
 

@@ -138,6 +138,7 @@ Uncertainty about policy or operation risk disables automic authorization and re
 The policy engine's target model describes an operation with a set of characteristics:
 
 - **Read Only:** reads state without an intended side effect.
+- **Homebrew Update:** refreshes Homebrew package definitions and local bookkeeping through `brew update`. It does not install, upgrade, reinstall, or remove software.
 - **Local Write:** changes files or state owned by the current user.
 - **System Write:** changes shared machine state, installed software, protected locations, or configuration outside the user's local project state.
 - **Remote Write:** changes state in a remote service.
@@ -157,6 +158,7 @@ An **Access Level** is a named policy preset for one Launcher at one Authorizati
 | --- | --- |
 | **Approval Required** | None. The user may approve a complete request once. |
 | **Read Only** | Recognized Read Only operations. |
+| **Read & Update** | Recognized Read Only and Homebrew Update operations. Available only at the Homebrew Execution Gate. |
 | **Local Write** | Recognized Read Only and Local Write operations. |
 | **Write Access** | Recognized read and write operations. Elevated Secret Application and Secret Disclosure still require Approval. |
 | **Full Access** | Recognized operations, including Elevated Secret Application and Secret Disclosure. Unknown operations still require Approval. |
@@ -251,7 +253,7 @@ The following identifiers remain in storage or code for compatibility. New produ
 | --- | --- |
 | `No Access`, `noAccess` | Approval Required |
 | `Read Only Access`, `readOnly` | Read Only |
-| `Read & Update Access`, `readOnlyAndUpdates` | Local Write |
+| `Read & Update Access`, `readOnlyAndUpdates` | Read & Update |
 | `Local Write Access`, `readOnlyAndLocalWrites` | Local Write |
 | `Trusted Access`, `fullExceptSecretDumps` | Write Access |
 | `Full Access`, `fullIncludingSecretDumps` | Full Access |
