@@ -1775,7 +1775,7 @@ private struct StoredSecretDetailView: View {
             Text("This secret will be permanently deleted.")
         }
         .sheet(isPresented: $isConfirmingDirectAccess) {
-            DirectAccessAcknowledgementView(secretName: secret.account) {
+            DirectAccessConfirmationView(secretName: secret.account) {
                 isConfirmingDirectAccess = false
                 model.addDirectAccessLauncher(to: secret)
             }
@@ -1798,11 +1798,9 @@ private struct StoredSecretDetailView: View {
     }
 }
 
-private struct DirectAccessAcknowledgementView: View {
+private struct DirectAccessConfirmationView: View {
     let secretName: String
     let confirm: () -> Void
-    @State private var understandsRisk = false
-    @State private var readAlternatives = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1813,20 +1811,12 @@ private struct DirectAccessAcknowledgementView: View {
                     .foregroundStyle(.orange)
                 Text("The verified Launcher will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
                     .fixedSize(horizontal: false, vertical: true)
-                Toggle(
-                    "I understand that Direct Secret Access is not the most secure way to use Automic Vault.",
-                    isOn: $understandsRisk
-                )
-                Toggle(
-                    "I have read the safer alternatives and determined they do not fit this use.",
-                    isOn: $readAlternatives
-                )
                 Link("Read the safer alternatives", destination: directAccessDocumentationURL)
                     .font(.callout)
                 Spacer(minLength: 0)
             }
             .padding(22)
-            .frame(width: 470, height: 260, alignment: .topLeading)
+            .frame(width: 470, height: 180, alignment: .topLeading)
             .navigationTitle("Allow Direct Secret Access?")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1834,13 +1824,8 @@ private struct DirectAccessAcknowledgementView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Continue") { confirm() }
-                        .disabled(!understandsRisk || !readAlternatives)
                 }
             }
-        }
-        .onAppear {
-            understandsRisk = false
-            readAlternatives = false
         }
     }
 }
