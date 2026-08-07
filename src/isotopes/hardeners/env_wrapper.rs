@@ -395,8 +395,9 @@ fn find_target(stub: &StubSpec) -> Result<PathBuf, String> {
                 )
             });
     }
-    if let Some(target) =
-        embedded_target(&stub_path(stub.command)).filter(|path| super::executable(path))
+    let launcher = stub_path(stub.command);
+    if let Some(target) = embedded_target(&launcher)
+        .filter(|path| !same_path(path, &launcher) && super::executable(path))
     {
         return Ok(target);
     }
@@ -715,6 +716,34 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
         }
         assert_eq!(targets[0].path, hcloud);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ignores_a_stub_that_embeds_itself_as_the_target() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let previous_path = std::env::var_os("PATH");
+        let dir = temp_dir("env-wrapper-self-target");
+        fs::create_dir_all(&dir).unwrap();
+        let launcher = dir.join("hcloud");
+        let spec = &wrapper("hcloud").unwrap().primary;
+        fs::write(&launcher, stub_script(spec, &launcher)).unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("PATH", "");
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &dir);
+        }
+
+        let error = resolve_targets(wrapper("hcloud").unwrap()).err().unwrap();
+
+        unsafe {
+            match previous_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
+        }
+        assert_eq!(error, "hcloud is not installed on PATH");
         fs::remove_dir_all(dir).unwrap();
     }
 
