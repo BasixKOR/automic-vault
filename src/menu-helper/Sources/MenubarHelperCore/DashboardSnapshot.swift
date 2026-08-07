@@ -8,6 +8,8 @@ public let secretGatePoliciesKeychainService = "com.automicvault.gate-policies"
 public let secretGatePoliciesKeychainAccount = "SecretGatePoliciesV2"
 public let secretNameAccessKeychainService = "com.automicvault.secret-name-access"
 public let secretNameAccessKeychainAccount = "SecretNameAccessV1"
+public let directAccessKeychainService = "com.automicvault.direct-secret-access"
+public let directAccessKeychainAccount = "DirectAccessRulesV1"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 public let accessRequestLogKeychainService = "com.automicvault.access-log"
 private let accessRequestLogLock = NSLock()
@@ -83,7 +85,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             ghCLIURL: ghCLIURL,
             metadata: hardenerMetadata
         )
-        let secrets = loadStoredSecrets()
+        let secrets = loadStoredSecrets(directAccessRules: loadDirectAccessRules())
         return DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
@@ -562,15 +564,18 @@ public struct StoredSecret: Equatable, Sendable {
     public let account: String
     public let accessibility: StoredSecretAccessibility
     public let keychainProperties: [String]
+    public let directAccessLaunchers: [BlessedScriptLauncher]
 
     public init(
         account: String,
         accessibility: StoredSecretAccessibility = .whenUnlocked,
-        keychainProperties: [String] = []
+        keychainProperties: [String] = [],
+        directAccessLaunchers: [BlessedScriptLauncher] = []
     ) {
         self.account = account
         self.accessibility = accessibility
         self.keychainProperties = keychainProperties
+        self.directAccessLaunchers = directAccessLaunchers
     }
 
     public var subtitle: String {
@@ -1152,7 +1157,11 @@ public func appendAccessRequestRecord(
     return loadAccessRequestRecords(defaults: defaults, key: key, service: service).first?.id == record.id
 }
 
-public func loadStoredSecrets(service: String = automicVaultKeychainService) -> [StoredSecret] {
+public func loadStoredSecrets(
+    service: String = automicVaultKeychainService,
+    directAccessRules: [DirectAccessRule] = []
+) -> [StoredSecret] {
+    let directAccess = Dictionary(grouping: directAccessRules, by: \.secretName)
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
@@ -1174,7 +1183,12 @@ public func loadStoredSecrets(service: String = automicVaultKeychainService) -> 
             accessibility: StoredSecretAccessibility(
                 keychainValue: item[kSecAttrAccessible as String]
             ),
-            keychainProperties: keychainProperties(for: item, dataProtection: true)
+            keychainProperties: keychainProperties(for: item, dataProtection: true),
+            directAccessLaunchers: (directAccess[account] ?? [])
+                .map(\.launcher)
+                .sorted {
+                    $0.bundleIdentifier.localizedStandardCompare($1.bundleIdentifier) == .orderedAscending
+                }
         )
     }
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
@@ -1278,6 +1292,22 @@ public func renameStoredSecret(account: String, to newAccount: String, service: 
     return SecItemUpdate(query as CFDictionary, [kSecAttrAccount as String: newAccount] as CFDictionary)
 }
 
+public func renameStoredSecretRevokingDirectAccess(
+    account: String,
+    to newAccount: String,
+    service: String = automicVaultKeychainService,
+    directAccessService: String = directAccessKeychainService,
+    directAccessAccount: String = directAccessKeychainAccount
+) -> OSStatus {
+    let status = revokeDirectAccess(
+        to: account,
+        service: directAccessService,
+        account: directAccessAccount
+    )
+    guard status == errSecSuccess else { return status }
+    return renameStoredSecret(account: account, to: newAccount, service: service)
+}
+
 public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1287,6 +1317,21 @@ public func deleteStoredSecret(account: String, service: String = automicVaultKe
     ]
     addCanonicalAccessGroup(to: &query)
     return SecItemDelete(query as CFDictionary)
+}
+
+public func deleteStoredSecretRevokingDirectAccess(
+    account: String,
+    service: String = automicVaultKeychainService,
+    directAccessService: String = directAccessKeychainService,
+    directAccessAccount: String = directAccessKeychainAccount
+) -> OSStatus {
+    let status = revokeDirectAccess(
+        to: account,
+        service: directAccessService,
+        account: directAccessAccount
+    )
+    guard status == errSecSuccess else { return status }
+    return deleteStoredSecret(account: account, service: service)
 }
 
 public func loadStoredSecret(account: String, service: String = automicVaultKeychainService) -> String? {
@@ -1330,12 +1375,15 @@ public func migrateBackgroundKeychainItems(
     accessLogService: String = accessRequestLogKeychainService,
     accessLogAccount: String = accessRequestLogDefaultsKey,
     secretNameAccessService: String = secretNameAccessKeychainService,
-    secretNameAccessAccount: String = secretNameAccessKeychainAccount
+    secretNameAccessAccount: String = secretNameAccessKeychainAccount,
+    directAccessService: String = directAccessKeychainService,
+    directAccessAccount: String = directAccessKeychainAccount
 ) -> OSStatus {
     for (service, account) in [
         (policyService, policyAccount),
         (accessLogService, accessLogAccount),
         (secretNameAccessService, secretNameAccessAccount),
+        (directAccessService, directAccessAccount),
     ] {
         let status = setKeychainAccessibility(.afterFirstUnlock, service: service, account: account)
         if status != errSecSuccess && status != errSecItemNotFound {
@@ -1343,6 +1391,148 @@ public func migrateBackgroundKeychainItems(
         }
     }
     return errSecSuccess
+}
+
+public struct DirectAccessRule: Codable, Equatable, Sendable {
+    public let secretName: String
+    public let launcher: BlessedScriptLauncher
+
+    public init(secretName: String, launcher: BlessedScriptLauncher) {
+        self.secretName = secretName
+        self.launcher = launcher
+    }
+}
+
+public func loadDirectAccessRules(
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> [DirectAccessRule] {
+    guard case .success(let rules) = loadDirectAccessRulesResult(service: service, account: account)
+    else { return [] }
+    return rules.sorted(by: directAccessRulePrecedes)
+}
+
+public func allowDirectAccess(
+    to secretName: String,
+    for launcher: BlessedScriptLauncher,
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> OSStatus {
+    guard !secretName.isEmpty, !launcher.requirement.isEmpty else { return errSecParam }
+    var rules: [DirectAccessRule]
+    switch loadDirectAccessRulesResult(service: service, account: account) {
+    case .success(let loaded): rules = loaded
+    case .failure(let status): return status
+    }
+    rules.removeAll {
+        $0.secretName == secretName && $0.launcher.requirement == launcher.requirement
+    }
+    rules.append(DirectAccessRule(secretName: secretName, launcher: launcher))
+    return saveDirectAccessRules(rules, service: service, account: account)
+}
+
+public func removeDirectAccess(
+    to secretName: String,
+    for launcher: BlessedScriptLauncher,
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> OSStatus {
+    mutateDirectAccessRules(service: service, account: account) { rules in
+        rules.removeAll { rule in
+            rule.secretName == secretName && rule.launcher.requirement == launcher.requirement
+        }
+    }
+}
+
+public func revokeDirectAccess(
+    to secretName: String,
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> OSStatus {
+    mutateDirectAccessRules(service: service, account: account) { rules in
+        rules.removeAll { $0.secretName == secretName }
+    }
+}
+
+public func directAccessAllows(
+    secretNames: [String],
+    launcherRequirement: String,
+    runtimeProtection: LauncherRuntimeProtection,
+    rules: [DirectAccessRule]
+) -> Bool {
+    guard !secretNames.isEmpty,
+          !launcherRequirement.isEmpty,
+          runtimeProtection.allowsSecretGateAccess
+    else { return false }
+    return Set(secretNames).allSatisfy { secretName in
+        rules.contains {
+            $0.secretName == secretName && $0.launcher.requirement == launcherRequirement
+        }
+    }
+}
+
+private enum DirectAccessRulesLoad {
+    case success([DirectAccessRule])
+    case failure(OSStatus)
+}
+
+private func loadDirectAccessRulesResult(service: String, account: String) -> DirectAccessRulesLoad {
+    switch loadKeychainDataResult(service: service, account: account) {
+    case .notFound:
+        return .success([])
+    case .failure(let status):
+        return .failure(status)
+    case .success(let data):
+        do {
+            return .success(try JSONDecoder().decode([DirectAccessRule].self, from: data))
+        } catch {
+            return .failure(errSecDecode)
+        }
+    }
+}
+
+private func mutateDirectAccessRules(
+    service: String,
+    account: String,
+    mutate: (inout [DirectAccessRule]) -> Void
+) -> OSStatus {
+    var rules: [DirectAccessRule]
+    switch loadDirectAccessRulesResult(service: service, account: account) {
+    case .success(let loaded): rules = loaded
+    case .failure(let status): return status
+    }
+    mutate(&rules)
+    return saveDirectAccessRules(rules, service: service, account: account)
+}
+
+private func saveDirectAccessRules(
+    _ rules: [DirectAccessRule],
+    service: String,
+    account: String
+) -> OSStatus {
+    if rules.isEmpty {
+        let status = deleteStoredSecret(account: account, service: service)
+        return status == errSecItemNotFound ? errSecSuccess : status
+    }
+    do {
+        return saveKeychainData(
+            try JSONEncoder().encode(rules.sorted(by: directAccessRulePrecedes)),
+            service: service,
+            account: account,
+            accessibility: .afterFirstUnlock
+        )
+    } catch {
+        return errSecParam
+    }
+}
+
+private func directAccessRulePrecedes(_ lhs: DirectAccessRule, _ rhs: DirectAccessRule) -> Bool {
+    [lhs.secretName, lhs.launcher.bundleIdentifier, lhs.launcher.requirement]
+        .joined(separator: "\u{1f}")
+        .localizedStandardCompare(
+            [rhs.secretName, rhs.launcher.bundleIdentifier, rhs.launcher.requirement]
+                .joined(separator: "\u{1f}")
+        ) == .orderedAscending
 }
 
 private func setKeychainAccessibility(

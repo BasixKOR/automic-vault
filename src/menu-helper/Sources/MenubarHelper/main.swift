@@ -1300,9 +1300,9 @@ enum SecretMutation {
         case .saveIfAbsentOrEqual(let account, let value):
             saveStoredSecretIfAbsentOrEqual(account: account, value: value)
         case .delete(let account):
-            deleteStoredSecret(account: account)
+            deleteStoredSecretRevokingDirectAccess(account: account)
         case .rename(let account, let newAccount):
-            renameStoredSecret(account: account, to: newAccount)
+            renameStoredSecretRevokingDirectAccess(account: account, to: newAccount)
         case .setAccessibility(let account, let accessibility):
             setStoredSecretAccessibility(account: account, accessibility: accessibility)
         }
@@ -1518,6 +1518,77 @@ private struct TransientApprovalCache {
     }
 }
 
+private enum RetainedAuthorizationGate: Hashable {
+    case blessing(path: String, checksum: String)
+    case directSecret
+    case secretGate(String)
+}
+
+private struct RetainedProcessExecution: Hashable {
+    let pid: Int32
+    let pidVersion: Int32
+    let startUsec: UInt64
+    let effectiveUserID: UInt32
+    let auditSessionID: UInt32
+    let codeIdentity: Data
+}
+
+private struct RetainedProcessChainNode {
+    let pid: Int32
+    let path: String
+    let execution: RetainedProcessExecution?
+}
+
+private struct RetainedProcessProvenanceMatch {
+    let launcher: LauncherIdentity
+    let processPath: String
+    let execution: RetainedProcessExecution
+}
+
+private struct RetainedProcessProvenanceStore {
+    private var records: [RetainedAuthorizationGate: [RetainedProcessExecution: LauncherIdentity]] = [:]
+
+    mutating func remember(
+        _ executions: [RetainedProcessExecution],
+        at gate: RetainedAuthorizationGate,
+        launcher: LauncherIdentity,
+        isLive: (RetainedProcessExecution) -> Bool = retainedProcessExecutionIsLive
+    ) {
+        prune(isLive: isLive)
+        guard !executions.isEmpty else { return }
+        for execution in executions where isLive(execution) {
+            records[gate, default: [:]][execution] = launcher
+        }
+    }
+
+    mutating func match(
+        at gate: RetainedAuthorizationGate,
+        in chains: [[RetainedProcessChainNode]],
+        isLive: (RetainedProcessExecution) -> Bool = retainedProcessExecutionIsLive
+    ) -> RetainedProcessProvenanceMatch? {
+        prune(isLive: isLive)
+        guard let gateRecords = records[gate] else { return nil }
+        for node in chains.joined() {
+            guard let execution = node.execution,
+                  let launcher = gateRecords[execution]
+            else { continue }
+            return RetainedProcessProvenanceMatch(
+                launcher: launcher,
+                processPath: node.path,
+                execution: execution
+            )
+        }
+        return nil
+    }
+
+    private mutating func prune(isLive: (RetainedProcessExecution) -> Bool) {
+        records = records.compactMapValues { gateRecords in
+            let live = gateRecords.filter { isLive($0.key) }
+            return live.isEmpty ? nil : live
+        }
+    }
+}
+
 private struct SigningInfo {
     let identifier: String
     let teamIdentifier: String
@@ -1653,8 +1724,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
-    // ponytail: in-memory per-process cache; use persistent approvals for cross-process trust.
+    // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
     private var transientApprovals = TransientApprovalCache()
+    private let retainedProcessProvenanceLock = NSLock()
+    private var retainedProcessProvenance = RetainedProcessProvenanceStore()
     private let blessedExecutionsLock = NSLock()
     private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
     private let awsRegistrationsLock = NSLock()
@@ -1716,6 +1789,29 @@ private final class ApprovalServer: @unchecked Sendable {
         if let listener {
             xpc_connection_cancel(listener)
             self.listener = nil
+        }
+    }
+
+    private func retainedProvenanceMatch(
+        at gate: RetainedAuthorizationGate,
+        in chains: [[RetainedProcessChainNode]]
+    ) -> RetainedProcessProvenanceMatch? {
+        retainedProcessProvenanceLock.withLock {
+            retainedProcessProvenance.match(at: gate, in: chains)
+        }
+    }
+
+    private func rememberRetainedProvenance(
+        at gate: RetainedAuthorizationGate,
+        launcher: LauncherIdentity,
+        chains: [[RetainedProcessChainNode]],
+        retainedMatch: RetainedProcessProvenanceMatch? = nil
+    ) {
+        let executions = retainedMatch.map {
+            retainedExecutions(leadingTo: $0.execution, in: chains)
+        } ?? retainedExecutions(leadingTo: launcher.pid, in: chains)
+        retainedProcessProvenanceLock.withLock {
+            retainedProcessProvenance.remember(executions, at: gate, launcher: launcher)
         }
     }
 
@@ -2005,6 +2101,10 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
+        let processChains = retainedProcessChains(for: identity)
+        let keepsDetachedProcessAccess = UserDefaults.standard.bool(
+            forKey: keepLauncherAccessForDetachedProcessesDefaultsKey
+        )
         var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         let launcherFallbackPath = ancestorFallbackPath ?? callerPath
@@ -2035,14 +2135,30 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
         }
+        let blessingGate = scriptApproval.map {
+            RetainedAuthorizationGate.blessing(path: $0.path, checksum: $0.checksum)
+        }
+        let retainedBlessingProvenance = blessingGate.flatMap {
+            retainedProvenanceMatch(at: $0, in: processChains)
+        }
+        let currentBlessingMatch = scriptApproval.flatMap {
+            matchingBlessedScript(request: request, approval: $0, launchers: launchers)
+        }
+        let retainedBlessingMatch = scriptApproval.flatMap { approval in
+            retainedBlessingProvenance.flatMap {
+                matchingBlessedScript(
+                    request: request,
+                    approval: approval,
+                    launchers: [$0.launcher]
+                )
+            }
+        }
+        let effectiveBlessingMatch = currentBlessingMatch
+            ?? (keepsDetachedProcessAccess ? retainedBlessingMatch : nil)
         if let scriptApproval,
-           let match = matchingBlessedScript(
-               request: request,
-               approval: scriptApproval,
-               launchers: launchers
-           )
+           let blessingGate,
+           let (script, matchedLauncher) = effectiveBlessingMatch
         {
-            let (script, _) = match
             do {
                 let payload = try approvedPayload(
                     for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
@@ -2055,22 +2171,26 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Approved",
                     approvalSource: "Auto",
                     reason: "Blessed script \(script.path)",
-                    launcher: launcher
+                    launcher: matchedLauncher
                 )
                 guard onAccessRequest(record) else {
                     reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                     return
                 }
                 registerBlessedExecution(script, pid: pid, identity: identity)
-                if let launcher {
-                    Task { @MainActor in
-                        self.onAutoApproval(autoApprovalRecord(
-                            accessRequestID: accessRequestID,
-                            request: request,
-                            script: scriptApproval,
-                            launcher: launcher
-                        ))
-                    }
+                rememberRetainedProvenance(
+                    at: blessingGate,
+                    launcher: matchedLauncher,
+                    chains: processChains,
+                    retainedMatch: currentBlessingMatch == nil ? retainedBlessingProvenance : nil
+                )
+                Task { @MainActor in
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: scriptApproval,
+                        launcher: matchedLauncher
+                    ))
                 }
                 reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
@@ -2080,7 +2200,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Failed",
                     approvalSource: "Auto",
                     reason: error.localizedDescription,
-                    launcher: launcher
+                    launcher: matchedLauncher
                 ))
                 reply(peer, to: message, ok: false, error: error.localizedDescription)
             }
@@ -2095,9 +2215,68 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             hardeners: metadata
         )
-        let resolvedPolicy = configuredGate.flatMap { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
+        let authorizationGate = configuredGate.map {
+            RetainedAuthorizationGate.secretGate($0.id)
+        } ?? .directSecret
+        let retainedGateProvenance = retainedProvenanceMatch(
+            at: authorizationGate,
+            in: processChains
+        )
+        var policyLaunchers = launchers
+        if keepsDetachedProcessAccess,
+           let retainedLauncher = retainedGateProvenance?.launcher,
+           !policyLaunchers.contains(where: {
+               $0.designatedRequirement == retainedLauncher.designatedRequirement
+           })
+        {
+            policyLaunchers.append(retainedLauncher)
+        }
+        let policyLauncher = executionOrigin(
+            among: policyLaunchers,
+            callerPID: pid,
+            ancestorFallbackPath: ancestorFallbackPath
+        ) ?? launcher
+        let directAccessRules = loadDirectAccessRules()
+        let directAccessLauncher = matchingDirectAccessLauncher(
+            request: request,
+            configuredGate: configuredGate,
+            trustedAVGateClient: isTrustedAvCaller(path: callerPath, signing: signing),
+            launchers: policyLaunchers,
+            rules: directAccessRules
+        )
+        let resolvedPolicy = configuredGate.flatMap {
+            resolveSecretGatePolicy(gate: $0, launchers: policyLaunchers)
+        }
         let classification = configuredGate.map {
             classifySecretGateRequest(gateID: $0.id, request: request)
+        }
+        let retainedProcessExplanation: String?
+        if !keepsDetachedProcessAccess,
+           retainedBlessingMatch != nil,
+           let retainedBlessingProvenance
+        {
+            retainedProcessExplanation = retainedProcessApprovalExplanation(
+                match: retainedBlessingProvenance,
+                gateName: "this Blessing"
+            )
+        } else if !keepsDetachedProcessAccess,
+                  activeBlessing == nil,
+                  let retainedGateProvenance,
+                  retainedProvenanceWouldAuthorize(
+                      request: request,
+                      configuredGate: configuredGate,
+                      classification: classification,
+                      launcher: retainedGateProvenance.launcher,
+                      directAccessRules: directAccessRules,
+                      trustedAVGateClient: isTrustedAvCaller(path: callerPath, signing: signing)
+                  )
+        {
+            retainedProcessExplanation = retainedProcessApprovalExplanation(
+                match: retainedGateProvenance,
+                gateName: configuredGate.map { "the \($0.id) gate" } ?? "the Direct Secret Gate"
+            )
+        } else {
+            retainedProcessExplanation = nil
         }
         let automaticApprovalExplanation: String?
         if let configuredGate,
@@ -2118,6 +2297,62 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             automaticApprovalExplanation = nil
         }
+        if activeBlessing == nil, let directAccessLauncher {
+            do {
+                let payload = try approvedPayload(
+                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                )
+                let accessRequestID = UUID()
+                let record = accessRequestRecord(
+                    id: accessRequestID,
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Approved",
+                    approvalSource: "Auto",
+                    reason: "Direct Access from \(shortAppName(directAccessLauncher.identifier))",
+                    launcher: directAccessLauncher
+                )
+                guard onAccessRequest(record) else {
+                    reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    return
+                }
+                rememberRetainedProvenance(
+                    at: authorizationGate,
+                    launcher: directAccessLauncher,
+                    chains: processChains,
+                    retainedMatch: launchers.contains(where: {
+                        $0.designatedRequirement == directAccessLauncher.designatedRequirement
+                    }) ? nil : retainedGateProvenance
+                )
+                Task { @MainActor in
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: scriptApproval,
+                        launcher: directAccessLauncher
+                    ))
+                }
+                reply(
+                    peer,
+                    to: message,
+                    ok: true,
+                    error: nil,
+                    secrets: payload.secrets,
+                    value: payload.value
+                )
+            } catch {
+                _ = onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    approvalSource: "Auto",
+                    reason: error.localizedDescription,
+                    launcher: directAccessLauncher
+                ))
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+            return
+        }
         if activeBlessing == nil,
            let configuredGate,
            let resolvedPolicy,
@@ -2127,6 +2362,7 @@ private final class ApprovalServer: @unchecked Sendable {
                classification: classification
            )
         {
+            let authorizingLauncher = resolvedPolicy.launcher ?? policyLauncher
             do {
                 let payload = try approvedPayload(
                     for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
@@ -2140,19 +2376,27 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Approved",
                     approvalSource: "Auto",
                     reason: reason,
-                    launcher: launcher
+                    launcher: authorizingLauncher
                 )
                 guard onAccessRequest(record) else {
                     reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                     return
                 }
-                if let launcher {
+                if let authorizingLauncher {
+                    rememberRetainedProvenance(
+                        at: authorizationGate,
+                        launcher: authorizingLauncher,
+                        chains: processChains,
+                        retainedMatch: launchers.contains(where: {
+                            $0.designatedRequirement == authorizingLauncher.designatedRequirement
+                        }) ? nil : retainedGateProvenance
+                    )
                     Task { @MainActor in
                         self.onAutoApproval(autoApprovalRecord(
                             accessRequestID: accessRequestID,
                             request: request,
                             script: scriptApproval,
-                            launcher: launcher
+                            launcher: authorizingLauncher
                         ))
                     }
                 }
@@ -2164,12 +2408,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Failed",
                     approvalSource: "Auto",
                     reason: error.localizedDescription,
-                    launcher: launcher
+                    launcher: authorizingLauncher
                 ))
                 reply(peer, to: message, ok: false, error: error.localizedDescription)
             }
             return
         }
+        let promptLauncher = policyLauncher
         let transientApproval = TransientApprovalKey(
             pid: pid,
             startUsec: identity.start_usec,
@@ -2225,7 +2470,7 @@ private final class ApprovalServer: @unchecked Sendable {
         DispatchQueue.main.async {
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
-                    request: request, callerPath: callerPath, launcher: launcher
+                    request: request, callerPath: callerPath, launcher: promptLauncher
                 ))
                 return
             }
@@ -2240,7 +2485,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         decision: "Denied",
                         approvalSource: "Auto",
                         reason: "Reused recent denial",
-                        launcher: launcher
+                        launcher: promptLauncher
                     ))
                     self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                     return
@@ -2255,7 +2500,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         decision: "Approved",
                         approvalSource: "Auto",
                         reason: "Reused recent approval",
-                        launcher: launcher
+                        launcher: promptLauncher
                     )
                     guard self.onAccessRequest(record) else {
                         self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
@@ -2269,7 +2514,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         decision: "Failed",
                         approvalSource: "Auto",
                         reason: error.localizedDescription,
-                        launcher: launcher
+                        launcher: promptLauncher
                     ))
                     self.reply(peer, to: message, ok: false, error: error.localizedDescription)
                 }
@@ -2283,7 +2528,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Denied",
                     approvalSource: "Auto",
                     reason: "Human approval unavailable",
-                    launcher: launcher
+                    launcher: promptLauncher
                 ))
                 self.reply(
                     peer,
@@ -2301,15 +2546,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 scriptApproval: scriptApproval,
                 blessing: promptBlessing,
-                launcher: launcher,
+                launcher: promptLauncher,
                 launcherFallbackPath: launcherFallbackPath,
                 automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
+                    ?? retainedProcessExplanation
                     ?? automaticApprovalExplanation,
                 cancellation: cancellation
             )
             if decision == .canceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
-                    request: request, callerPath: callerPath, launcher: launcher
+                    request: request, callerPath: callerPath, launcher: promptLauncher
                 ))
                 return
             }
@@ -2323,7 +2569,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Denied",
                     approvalSource: "Manual",
                     reason: "Denied in prompt",
-                    launcher: launcher
+                    launcher: promptLauncher
                 ))
                 self.reply(
                     peer,
@@ -2344,7 +2590,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Approved",
                     approvalSource: "Manual",
                     reason: "Approved in prompt",
-                    launcher: launcher
+                    launcher: promptLauncher
                 )
                 guard self.onAccessRequest(record) else {
                     self.reply(
@@ -2384,7 +2630,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     decision: "Failed",
                     approvalSource: "Manual",
                     reason: error.localizedDescription,
-                    launcher: launcher
+                    launcher: promptLauncher
                 ))
                 self.reply(
                     peer,
@@ -3179,6 +3425,61 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 }
 
+private func matchingDirectAccessLauncher(
+    request: ApprovalRequest,
+    configuredGate: SecretGate?,
+    trustedAVGateClient: Bool,
+    launchers: [LauncherIdentity],
+    rules: [DirectAccessRule]
+) -> LauncherIdentity? {
+    guard request.op == "inject", configuredGate == nil, trustedAVGateClient else { return nil }
+    return launchers.first {
+        directAccessAllows(
+            secretNames: request.keys,
+            launcherRequirement: $0.designatedRequirement,
+            runtimeProtection: $0.runtimeProtection,
+            rules: rules
+        )
+    }
+}
+
+private func retainedProvenanceWouldAuthorize(
+    request: ApprovalRequest,
+    configuredGate: SecretGate?,
+    classification: SecretGateRequestClassification?,
+    launcher: LauncherIdentity,
+    directAccessRules: [DirectAccessRule],
+    trustedAVGateClient: Bool
+) -> Bool {
+    if let configuredGate, let classification {
+        guard let policy = resolveSecretGatePolicy(
+            gate: configuredGate,
+            launchers: [launcher]
+        ) else { return false }
+        return secretGateProtectionAllows(
+            policy.protection,
+            classification: classification
+        )
+    }
+    return matchingDirectAccessLauncher(
+        request: request,
+        configuredGate: nil,
+        trustedAVGateClient: trustedAVGateClient,
+        launchers: [launcher],
+        rules: directAccessRules
+    ) != nil
+}
+
+private func retainedProcessApprovalExplanation(
+    match: RetainedProcessProvenanceMatch,
+    gateName: String
+) -> String {
+    let name = URL(fileURLWithPath: match.processPath).lastPathComponent
+    let process = name.isEmpty ? "detached" : name
+    let launcher = shortAppName(match.launcher.identifier)
+    return "Automic Vault previously verified this running \(process) process under \(launcher), but that parent chain is no longer available. Keep Launcher Access for Detached Processes is off; enabling it would have automically authorized this request under the current \(gateName) policy."
+}
+
 private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if isTrustedAvCaller(path: path, signing: signing) {
         return true
@@ -3971,6 +4272,91 @@ private func launcherAncestorStartPIDs(_ identity: AVProcessIdentity) -> [pid_t]
     return [identity.ppid, identity.sid].filter { $0 > 1 && seen.insert($0).inserted }
 }
 
+private func retainedProcessChains(for identity: AVProcessIdentity) -> [[RetainedProcessChainNode]] {
+    launcherAncestorStartPIDs(identity).map { startPID in
+        var nodes: [RetainedProcessChainNode] = []
+        var pid = startPID
+        var seen = Set<pid_t>()
+        for _ in 0..<32 {
+            guard pid > 1, seen.insert(pid).inserted else { break }
+            var current = AVProcessIdentity()
+            guard av_process_identity(pid, &current) else { break }
+            nodes.append(RetainedProcessChainNode(
+                pid: pid,
+                path: pathString(current),
+                execution: retainedProcessExecution(pid: pid, identity: current)
+            ))
+            pid = current.ppid
+        }
+        return nodes
+    }
+}
+
+private func retainedProcessExecution(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> RetainedProcessExecution? {
+    guard identity.pidversion > 0,
+          identity.euid == geteuid(),
+          let codeIdentity = liveCodeIdentity(pid: pid)
+    else { return nil }
+
+    var current = AVProcessIdentity()
+    guard av_process_identity(pid, &current),
+          current.pidversion == identity.pidversion,
+          current.start_usec == identity.start_usec,
+          current.euid == identity.euid,
+          current.audit_session_id == identity.audit_session_id
+    else { return nil }
+
+    return RetainedProcessExecution(
+        pid: pid,
+        pidVersion: identity.pidversion,
+        startUsec: identity.start_usec,
+        effectiveUserID: identity.euid,
+        auditSessionID: identity.audit_session_id,
+        codeIdentity: codeIdentity
+    )
+}
+
+private func retainedProcessExecutionIsLive(_ execution: RetainedProcessExecution) -> Bool {
+    func matches(_ identity: AVProcessIdentity) -> Bool {
+        identity.pidversion == execution.pidVersion
+            && identity.start_usec == execution.startUsec
+            && identity.euid == execution.effectiveUserID
+            && identity.audit_session_id == execution.auditSessionID
+    }
+    var before = AVProcessIdentity()
+    guard av_process_identity(execution.pid, &before),
+          matches(before),
+          liveCodeIdentity(pid: execution.pid) == execution.codeIdentity
+    else { return false }
+    var after = AVProcessIdentity()
+    return av_process_identity(execution.pid, &after) && matches(after)
+}
+
+private func retainedExecutions(
+    leadingTo launcherPID: pid_t,
+    in chains: [[RetainedProcessChainNode]]
+) -> [RetainedProcessExecution] {
+    guard let chain = chains.first(where: { $0.contains(where: { $0.pid == launcherPID }) }),
+          let launcherIndex = chain.firstIndex(where: { $0.pid == launcherPID })
+    else { return [] }
+    return chain[..<launcherIndex].compactMap(\.execution)
+}
+
+private func retainedExecutions(
+    leadingTo retainedExecution: RetainedProcessExecution,
+    in chains: [[RetainedProcessChainNode]]
+) -> [RetainedProcessExecution] {
+    guard let chain = chains.first(where: {
+        $0.contains(where: { $0.execution == retainedExecution })
+    }),
+    let retainedIndex = chain.firstIndex(where: { $0.execution == retainedExecution })
+    else { return [] }
+    return chain[...retainedIndex].compactMap(\.execution)
+}
+
 private func executionOrigin(
     among launchers: [LauncherIdentity],
     callerPID: pid_t,
@@ -4188,6 +4574,25 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
             SecCodeCheckValidity(code, [], $0)
         }
     )
+}
+
+private func liveCodeIdentity(pid: pid_t) -> Data? {
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+          let code,
+          SecCodeCheckValidity(code, [], nil) == errSecSuccess
+    else { return nil }
+
+    var staticCode: SecStaticCode?
+    guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+          let staticCode
+    else { return nil }
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any]
+    else { return nil }
+    return dictionary[kSecCodeInfoUnique] as? Data
 }
 
 private func executableSigningInfo(path: String) -> LiveSigningInfo? {
@@ -5481,6 +5886,28 @@ private func runApprovalSelfCheck() -> Int32 {
             detail: nil
         )
     }
+    let directRequest = ApprovalRequest(
+        op: "inject",
+        keys: ["HCLOUD_TOKEN"],
+        target: "/bin/sh",
+        args: ["-c", "hcloud server list"],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
+    let directRules = [DirectAccessRule(
+        secretName: "HCLOUD_TOKEN",
+        launcher: BlessedScriptLauncher(
+            bundleIdentifier: blockedLauncher.identifier,
+            requirement: blockedLauncher.designatedRequirement
+        )
+    )]
     guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
@@ -5512,6 +5939,34 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["apps", "list"])) == .readOnly,
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["deploy"])) == .mutating,
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["auth", "token"])) == .secretDump,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: true,
+              launchers: [blockedLauncher],
+              rules: directRules
+          )?.designatedRequirement == blockedLauncher.designatedRequirement,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: policyGate,
+              trustedAVGateClient: true,
+              launchers: [blockedLauncher],
+              rules: directRules
+          ) == nil,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: false,
+              launchers: [blockedLauncher],
+              rules: directRules
+          ) == nil,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: true,
+              launchers: [unhardenedLauncher],
+              rules: directRules
+          ) == nil,
           isTrustedStripeCaller(
               path: "/opt/homebrew/opt/stripe-cli/bin/stripe",
               signing: stripeSigning
@@ -6172,6 +6627,124 @@ private func runTransientApprovalSelfCheck() -> Int32 {
     return 0
 }
 
+private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
+    var currentIdentity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &currentIdentity),
+          currentIdentity.pidversion > 0,
+          currentIdentity.euid == geteuid(),
+          let currentExecution = retainedProcessExecution(
+              pid: getpid(),
+              identity: currentIdentity
+          ),
+          retainedProcessExecutionIsLive(currentExecution)
+    else { return 1 }
+
+    let launcher = LauncherIdentity(
+        pid: 300,
+        path: "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+        identifier: "com.mitchellh.ghostty",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.mitchellh.ghostty" and anchor apple generic"#,
+        runtimeProtection: .hardened
+    )
+    let herdr = RetainedProcessExecution(
+        pid: 200,
+        pidVersion: 9,
+        startUsec: 123,
+        effectiveUserID: 501,
+        auditSessionID: 10,
+        codeIdentity: Data([1, 2, 3])
+    )
+    let replacedHerdr = RetainedProcessExecution(
+        pid: herdr.pid,
+        pidVersion: herdr.pidVersion + 1,
+        startUsec: herdr.startUsec,
+        effectiveUserID: herdr.effectiveUserID,
+        auditSessionID: herdr.auditSessionID,
+        codeIdentity: herdr.codeIdentity
+    )
+    let chains = [[RetainedProcessChainNode(
+        pid: herdr.pid,
+        path: "/usr/local/bin/herdr",
+        execution: herdr
+    )]]
+    let request = ApprovalRequest(
+        op: "keys",
+        keys: ["GH_TOKEN_GITHUB_COM"],
+        target: "/opt/homebrew/bin/gh",
+        args: ["repo", "view"],
+        cwd: "/tmp",
+        replaceExistingEnv: true,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: "gh",
+        title: nil,
+        detail: nil
+    )
+    let gate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: launcher.identifier,
+            requirement: launcher.designatedRequirement,
+            protection: .readOnly
+        )]
+    )
+    var store = RetainedProcessProvenanceStore()
+    store.remember(
+        [herdr],
+        at: .secretGate("gh"),
+        launcher: launcher,
+        isLive: { _ in true }
+    )
+    guard store.match(
+        at: .secretGate("gh"),
+        in: chains,
+        isLive: { _ in true }
+    )?.launcher.designatedRequirement == launcher.designatedRequirement,
+    retainedProvenanceWouldAuthorize(
+        request: request,
+        configuredGate: gate,
+        classification: .readOnly,
+        launcher: launcher,
+        directAccessRules: [],
+        trustedAVGateClient: false
+    ),
+    !retainedProvenanceWouldAuthorize(
+        request: request,
+        configuredGate: gate,
+        classification: .mutating,
+        launcher: launcher,
+        directAccessRules: [],
+        trustedAVGateClient: false
+    ),
+    store.match(
+        at: .directSecret,
+        in: chains,
+        isLive: { _ in true }
+    ) == nil,
+    store.match(
+        at: .secretGate("gh"),
+        in: [[RetainedProcessChainNode(
+            pid: replacedHerdr.pid,
+            path: "/usr/local/bin/herdr",
+            execution: replacedHerdr
+        )]],
+        isLive: { _ in true }
+    ) == nil,
+    store.match(
+        at: .secretGate("gh"),
+        in: chains,
+        isLive: { _ in false }
+    ) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runLaunchAgentHandoffSelfCheck() -> Int32 {
     let template = try! PropertyListSerialization.data(
         fromPropertyList: [
@@ -6647,6 +7220,10 @@ if CommandLine.arguments.contains("--self-check-brew-read-only") {
 
 if CommandLine.arguments.contains("--self-check-transient-approvals") {
     exit(runTransientApprovalSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-retained-provenance") {
+    exit(runRetainedProcessProvenanceSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-dashboard-search") {

@@ -18,6 +18,10 @@ Unknown operation risk requires Approval. Missing or invalid identity, integrity
 
 Policies bind a Gate and Verified Launcher. Approval binds one complete request and process. Blessings bind exact script contents and a complete declaration.
 
+Optional Retained Launcher Provenance binds one Authorization Gate, one Verified
+Launcher, and one exact live process execution. It preserves attribution after
+ancestry loss; it does not preserve an Authorization Decision.
+
 ### The system is zeroconf above its boundary
 
 Developer tools and agent harnesses use their existing commands. Automic Vault discovers and hardens integrations beneath that interface. Configuration remains where user intent or a security tradeoff requires it.
@@ -39,6 +43,11 @@ Automic Vault stores named opaque Secrets in the macOS Data Protection Keychain.
 ### Runtime Authorization
 
 Authorization Gates verify the Launcher, bind the Gate Client and Target, classify the complete operation, apply the gate's Authorization Policy, request Approval when policy cannot allow it, and enforce the Authorization Decision.
+
+The Direct Secret Gate handles direct `av inject` requests that do not match a
+Tool-specific gate. It defaults to Approval Required. A user may add a Direct
+Access Rule for one exact Secret Name and Verified Launcher, knowingly allowing
+that Launcher to select the Target and arguments on future requests.
 
 ### Reviewed Automation
 
@@ -67,9 +76,23 @@ flowchart LR
 
 The Authorization Request is immutable across this flow. A cached decision may be reused only for the same live process and complete request identity. Reuse still requires an Authorization Record before Secret Application.
 
+After a successful policy decision, Automic Vault may record Retained Launcher
+Provenance for signed intermediary process executions.
+If ordinary ancestry later disappears, that provenance may restore the original
+Launcher only at the same Authorization Gate. The complete later request is
+classified against current policy and receives a new Authorization Decision and
+Authorization Record.
+
 ## Identity model
 
 The policy identity is the Launcher's designated requirement, checked against the live process and its launch chain. Paths, process identifiers, names, and icons help the user recognize software but do not establish identity. Hardened Runtime requirements and rejected entitlements form part of launcher eligibility.
+
+Retained Launcher Provenance identifies an intermediary by its macOS process
+execution identity, including PID version and process start time, and by its live
+code identity. PID alone, PID plus start time, a pathname, or a basename is not
+sufficient: `exec` preserves PID and start time while changing the executable
+generation. Retained records are memory-only, are revalidated before use, and
+expire when the process execution or menu bar helper exits.
 
 The Gate Client and Target remain separate roles. A signed client submits the request. The Target performs the operation and may receive the Secret. Conflating them hides confused-deputy and target-substitution risks.
 
@@ -84,7 +107,12 @@ Each Authorization Gate owns one Authorization Policy:
 5. Policy must permit every characteristic for automic authorization.
 6. Unknown prevents automic authorization.
 
-Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, and Secret Disclosure distinct.
+Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, Unconstrained Secret Application, and Secret Disclosure distinct.
+
+Direct Access is available only at the Direct Secret Gate. It permits
+Unconstrained Secret Application for exact Secret Names in the matching
+Launcher’s Direct Access Rules. It does not turn unknown Tool operations into
+recognized operations and does not apply to Tool-specific Gate Clients.
 
 ### Current compatibility model
 
@@ -103,6 +131,10 @@ The Homebrew migration intentionally broadens persisted `readOnly` rules to allo
 
 Secret bytes stay in the app's private Keychain access group. Gate policy and Authorization History use separate services. Availability controls whether Keychain may return a Secret while the device is locked. Authorization controls whether the operation may receive it. Both checks must pass.
 
+Direct Access Rules are authorization policy, not Secret Availability. They are
+stored separately from Secret bytes. Renaming or deleting a Secret revokes its
+rules so recreating an old Secret Name cannot silently restore authority.
+
 Human Approval requires an active user session and awake displays. Requests that still need a human decision are denied if the session becomes inactive or the displays sleep. Policy-authorized requests may proceed while locked only when every requested Secret has Available While Locked enabled.
 
 ## Recording before release
@@ -120,6 +152,19 @@ After Secret Application, the Target controls its own memory, plugins, helpers, 
 ## Secure defaults
 
 New Secret Gates start at Read Only. The Homebrew Execution Gate starts at Read & Update, which adds `brew update` without authorizing installation, upgrade, reinstall, removal, or other writes. Unknown operations and unverifiable Launchers require a human decision or denial according to the failed check. Every default and Launcher-specific rule is explicit and persisted.
+
+The Direct Secret Gate starts at Approval Required and has no broad default.
+Adding each Direct Access Rule requires an explicit warning and acknowledgement.
+Runtime signature or Hardened Runtime verification failure disables automic
+authorization and falls back to Approval when human approval is available.
+
+Detached-process access is off by default. While it is off, Retained Launcher
+Provenance may be observed in memory only to explain an Approval that the setting
+would have avoided; shadow records cannot authorize. Enabling the setting
+extends a verified Launcher's gate-specific attribution through a live signed
+descendant after its original parent chain exits. The UI must explain that this
+widens the lifetime of authority and that a Secure Launcher is safer for a
+recurring mutable or injectable harness.
 
 ## Source of truth
 

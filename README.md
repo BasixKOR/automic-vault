@@ -257,6 +257,15 @@ review.
 Launcher Endorsement can make the exact Blessed Script automically authorized
 for a specific Verified Launcher.
 
+> [!NOTE]
+> Blessed Scripts are designed for well-defined usage scenarios: they run a
+> reviewed set of steps and then exit, so you can reason about which Tools they
+> run and where they apply Secrets. Do not use them to inject Secrets into
+> long-running Tools. Use Authorization Gates with Verified Launchers:
+> [Hardened Tools](#hardening) for long-running use, or Blessed Scripts for
+> bounded automation. In rare cases, add Direct Access Rules for exact Secret
+> Names and specific Verified Launchers.
+
 > [!TIP]
 > Allowing specific signed launchers is powerful but requires careful
 > consideration. Potential uses:
@@ -443,3 +452,5 @@ For more ephemeral discussion,
 
 > We provide a Discord server as a more convenient way to engage in
 > *ephemeral* discussion. Hardly anybody is there and that is *fine*.
+
+[Documentation index](docs/index.md)

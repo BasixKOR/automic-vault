@@ -14,6 +14,9 @@ typedef struct {
     pid_t ppid;
     pid_t sid;
     uint64_t start_usec;
+    int pidversion;
+    uid_t euid;
+    uint32_t audit_session_id;
     char path[PROC_PIDPATHINFO_MAXSIZE];
 } AVProcessIdentity;
 

@@ -1,6 +1,9 @@
 #include "CProcessInfo.h"
 
+#include <bsm/libbsm.h>
 #include <libproc.h>
+#include <mach/mach.h>
+#include <mach/task_info.h>
 #include <string.h>
 #include <sys/sysctl.h>
 #include <sys/socket.h>
@@ -28,6 +31,19 @@ bool av_process_identity(pid_t pid, AVProcessIdentity *identity_out) {
     identity_out->start_usec =
         ((uint64_t)info.kp_proc.p_starttime.tv_sec * 1000000ULL) +
         (uint64_t)info.kp_proc.p_starttime.tv_usec;
+    identity_out->euid = info.kp_eproc.e_ucred.cr_uid;
+
+    mach_port_name_t task = MACH_PORT_NULL;
+    if (task_name_for_pid(mach_task_self(), pid, &task) == KERN_SUCCESS) {
+        audit_token_t token = {0};
+        mach_msg_type_number_t count = TASK_AUDIT_TOKEN_COUNT;
+        if (task_info(task, TASK_AUDIT_TOKEN, (task_info_t)&token, &count) == KERN_SUCCESS) {
+            identity_out->pidversion = audit_token_to_pidversion(token);
+            identity_out->euid = audit_token_to_euid(token);
+            identity_out->audit_session_id = audit_token_to_asid(token);
+        }
+        mach_port_deallocate(mach_task_self(), task);
+    }
     proc_pidpath(pid, identity_out->path, sizeof(identity_out->path));
     return true;
 }

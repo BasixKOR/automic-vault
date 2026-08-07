@@ -6,6 +6,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+let keepLauncherAccessForDetachedProcessesDefaultsKey = "keepLauncherAccessForDetachedProcesses"
+private let directAccessDocumentationURL = URL(
+    string: "https://github.com/automic-vault/automic-vault/blob/main/docs/direct-secret-access.md#safer-alternatives"
+)!
+private let secureLauncherDocumentationURL = URL(
+    string: "https://github.com/automic-vault/automic-vault/blob/main/docs/signed-cli-launchers.md"
+)!
 
 enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
     case notification
@@ -228,6 +235,12 @@ final class DashboardModel: ObservableObject {
                     title: "Automic Authorization",
                     subtitle: "Choose subtle feedback or none",
                     detail: "Control visual feedback after policy authorizes an operation."
+                ),
+                DashboardItem(
+                    id: "detached-process-access",
+                    title: "Detached Processes",
+                    subtitle: "Keep Launcher attribution after ancestry loss",
+                    detail: "Allow an exact live process execution to retain gate-specific Launcher attribution after its parent chain exits."
                 ),
                 DashboardItem(
                     id: "secret-name-access",
@@ -555,6 +568,34 @@ final class DashboardModel: ObservableObject {
         }
         errorMessage = "Could not update \(secret.account): \(status)"
         return false
+    }
+
+    func addDirectAccessLauncher(to secret: StoredSecret) {
+        chooseLauncher { [weak self] signing in
+            guard let self, let signing else { return }
+            guard signing.runtimeProtection.allowsSecretGateAccess else {
+                self.errorMessage = secretGateAdmissionError(
+                    appName: signing.identifier,
+                    protection: signing.runtimeProtection
+                )
+                return
+            }
+            let launcher = BlessedScriptLauncher(
+                bundleIdentifier: signing.identifier,
+                requirement: signing.requirement
+            )
+            self.finishPolicyUpdate(
+                allowDirectAccess(to: secret.account, for: launcher),
+                error: "Could not allow \(signing.identifier) to use \(secret.account)"
+            )
+        }
+    }
+
+    func removeDirectAccessLauncher(_ launcher: BlessedScriptLauncher, from secret: StoredSecret) {
+        finishPolicyUpdate(
+            removeDirectAccess(to: secret.account, for: launcher),
+            error: "Could not remove \(launcher.bundleIdentifier) from \(secret.account)"
+        )
     }
 
     func deleteSecret(account: String) {
@@ -956,7 +997,14 @@ func runDashboardSearchSelfCheck() -> Int32 {
         ],
         secretGates: [],
         secrets: [
-            StoredSecret(account: "AWS_TOKEN", accessibility: .afterFirstUnlock),
+            StoredSecret(
+                account: "AWS_TOKEN",
+                accessibility: .afterFirstUnlock,
+                directAccessLaunchers: [BlessedScriptLauncher(
+                    bundleIdentifier: "com.example.launcher",
+                    requirement: #"identifier "com.example.launcher" and anchor apple generic"#
+                )]
+            ),
             StoredSecret(account: "GITHUB_TOKEN"),
         ],
         accessRequests: [accessRequest],
@@ -993,6 +1041,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
         NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
     }
     let aboutHeight = NSHostingView(rootView: AboutSettingsView(guiPath: "/usr/bin:/bin")).fittingSize.height
+    let detachedProcessAccessHeight = NSHostingView(
+        rootView: DetachedProcessAccessSettingsView()
+    ).fittingSize.height
     guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
@@ -1000,9 +1051,11 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1,
           model.selectedStoredSecret?.accessibility == .afterFirstUnlock,
+          model.selectedStoredSecret?.directAccessLaunchers.count == 1,
           gateHeight > 0,
           secretDetailHeight.map({ $0 > 0 }) == true,
           aboutHeight > 0,
+          detachedProcessAccessHeight > 0,
           appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
@@ -1078,7 +1131,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     model.searchText = ""
     model.selectSection(.settings)
-    guard model.items.map(\.id) == ["automatic-approval-feedback", "secret-name-access", "about"],
+    guard model.items.map(\.id) == [
+        "automatic-approval-feedback",
+        "detached-process-access",
+        "secret-name-access",
+        "about",
+    ],
           guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
           guiPATH(environment: [:]) == "<unset>"
     else { return 1 }
@@ -1401,6 +1459,12 @@ private struct DashboardDetailView: View {
                         .padding(.top, 32)
                         .padding(.bottom, 28)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "detached-process-access" {
+                    DetachedProcessAccessSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.selectedItem?.id == "about" {
                     AboutSettingsView()
                         .padding(.horizontal, 22)
@@ -1614,6 +1678,7 @@ private struct StoredSecretDetailView: View {
     let secret: StoredSecret
     @State private var isAvailableWhileLocked: Bool
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingDirectAccess = false
 
     init(model: DashboardModel, secret: StoredSecret) {
         self.model = model
@@ -1642,6 +1707,34 @@ private struct StoredSecretDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                launcherList(
+                    secret.directAccessLaunchers,
+                    title: "Direct Secret Access",
+                    empty: "No Launchers have Direct Access to this Secret."
+                ) {
+                    model.removeDirectAccessLauncher($0, from: secret)
+                }
+                Button {
+                    isConfirmingDirectAccess = true
+                } label: {
+                    Label("Allow Launcher…", systemImage: "app.badge.checkmark")
+                }
+                .buttonStyle(.bordered)
+                Text("Hardening a Tool or blessing an exact script grants narrower authority.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Read the safer alternatives", destination: directAccessDocumentationURL)
+                    .font(.caption)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1681,6 +1774,12 @@ private struct StoredSecretDetailView: View {
         } message: {
             Text("This secret will be permanently deleted.")
         }
+        .sheet(isPresented: $isConfirmingDirectAccess) {
+            DirectAccessAcknowledgementView(secretName: secret.account) {
+                isConfirmingDirectAccess = false
+                model.addDirectAccessLauncher(to: secret)
+            }
+        }
     }
 
     private var availabilityBinding: Binding<Bool> {
@@ -1695,6 +1794,53 @@ private struct StoredSecretDetailView: View {
             if !model.setAccessibility(accessibility, for: secret) {
                 isAvailableWhileLocked = previous
             }
+        }
+    }
+}
+
+private struct DirectAccessAcknowledgementView: View {
+    let secretName: String
+    let confirm: () -> Void
+    @State private var understandsRisk = false
+    @State private var readAlternatives = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("This grants broad authority", systemImage: "exclamationmark.shield.fill")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                Text("The verified Launcher will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle(
+                    "I understand that Direct Secret Access is not the most secure way to use Automic Vault.",
+                    isOn: $understandsRisk
+                )
+                Toggle(
+                    "I have read the safer alternatives and determined they do not fit this use.",
+                    isOn: $readAlternatives
+                )
+                Link("Read the safer alternatives", destination: directAccessDocumentationURL)
+                    .font(.callout)
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .frame(width: 470, height: 260, alignment: .topLeading)
+            .navigationTitle("Allow Direct Secret Access?")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") { confirm() }
+                        .disabled(!understandsRisk || !readAlternatives)
+                }
+            }
+        }
+        .onAppear {
+            understandsRisk = false
+            readAlternatives = false
         }
     }
 }
@@ -2313,8 +2459,15 @@ private func launcherList(
         }
         ForEach(launchers, id: \.requirement) { launcher in
             HStack {
-                Text(launcher.bundleIdentifier)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(launcher.bundleIdentifier)
+                        .textSelection(.enabled)
+                    Text(codeSigningTeamIdentifier(from: launcher.requirement).map { "Team \($0)" }
+                        ?? "Verified designated requirement")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 Spacer()
                 Button {
                     remove(launcher)
@@ -2322,7 +2475,7 @@ private func launcherList(
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.plain)
-                .help("Remove Calling App")
+                .help("Remove Launcher")
             }
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
@@ -2379,6 +2532,37 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct DetachedProcessAccessSettingsView: View {
+    @AppStorage(keepLauncherAccessForDetachedProcessesDefaultsKey)
+    private var keepsLauncherAccess = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Detached Processes")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Control whether a live process keeps its verified Launcher attribution after its parent chain exits.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Toggle(
+                "Keep Launcher Access for Detached Processes",
+                isOn: $keepsLauncherAccess
+            )
+            Text("Off by default. When enabled, an exact signed process execution that participates in an automically authorized operation may continue using that Launcher’s current policy at the same Authorization Gate until the process or Automic Vault exits. New processes and other gates are not included.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            InfoBlock(
+                title: "Security tradeoff",
+                text: "This extends authority after the verified parent chain disappears. Ad-hoc signed tools can still be modified in memory by other same-user processes. A Secure Launcher with Hardened Runtime is safer for a recurring harness."
+            )
+            Link("Learn about Secure Launchers", destination: secureLauncherDocumentationURL)
+                .font(.caption)
         }
     }
 }
