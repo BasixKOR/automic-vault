@@ -1,15 +1,14 @@
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::{HardenerDetection, executable};
 
 const AV_PATH: &str = "/usr/local/bin/av";
-const CURL_PATH: &str = "/usr/bin/curl";
 const SUDO_PATH: &str = "/usr/bin/sudo";
 const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
 const TAP_FORMULA_ROOT: &str =
@@ -406,36 +405,38 @@ fn fetch(url: &str, timeout: u32) -> Result<String, String> {
     if let Some(contents) = crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA") {
         return Ok(contents);
     }
-    let output = Command::new(CURL_PATH)
-        .args([
-            "-fsSL",
-            "--proto",
-            "=https",
-            "--tlsv1.2",
-            "--max-time",
-            &timeout.to_string(),
-            url,
-        ])
-        .output()
-        .map_err(|err| format!("failed to fetch {url}: {err}"))?;
-    if !output.status.success() {
-        return Err(format!("failed to fetch {url}: {}", output.status));
-    }
-    String::from_utf8(output.stdout).map_err(|_| format!("{url} returned non-UTF-8 data"))
+    get(url, timeout)?
+        .into_with_config()
+        .limit(64 * 1024)
+        .read_to_string()
+        .map_err(|err| format!("failed to read {url}: {err}"))
 }
 
 fn download(url: &str, destination: &Path) -> Result<(), String> {
-    let status = Command::new(CURL_PATH)
-        .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "-o"])
-        .arg(destination)
-        .arg(url)
-        .status()
-        .map_err(|err| format!("failed to download {url}: {err}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("failed to download {url}: {status}"))
-    }
+    let mut body = get(url, 120)?.into_reader();
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
+    io::copy(&mut body, &mut output).map_err(|err| format!("failed to download {url}: {err}"))?;
+    output
+        .sync_all()
+        .map_err(|err| format!("failed to sync {}: {err}", destination.display()))
+}
+
+fn get(url: &str, timeout_secs: u32) -> Result<ureq::Body, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .https_only(true)
+        .max_redirects(5)
+        .timeout_global(Some(Duration::from_secs(timeout_secs.into())))
+        .build()
+        .into();
+    agent
+        .get(url)
+        .call()
+        .map(|response| response.into_body())
+        .map_err(|err| format!("failed to fetch {url}: {err}"))
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -611,6 +612,11 @@ fn now_nanos() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn isotope_downloads_require_https() {
+        assert!(get("http://example.com/isotope.tgz", 1).is_err());
+    }
 
     #[test]
     fn formula_parser_accepts_only_the_expected_release_and_digest() {
