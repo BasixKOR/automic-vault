@@ -570,8 +570,8 @@ final class DashboardModel: ObservableObject {
         return false
     }
 
-    func addDirectAccessLauncher(to secret: StoredSecret) {
-        chooseLauncher { [weak self] signing in
+    func chooseDirectAccessLauncher(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {
+        pickLauncher { [weak self] signing in
             guard let self, let signing else { return }
             guard signing.runtimeProtection.allowsSecretGateAccess else {
                 self.errorMessage = secretGateAdmissionError(
@@ -580,15 +580,18 @@ final class DashboardModel: ObservableObject {
                 )
                 return
             }
-            let launcher = BlessedScriptLauncher(
+            completion(BlessedScriptLauncher(
                 bundleIdentifier: signing.identifier,
                 requirement: signing.requirement
-            )
-            self.finishPolicyUpdate(
-                allowDirectAccess(to: secret.account, for: launcher),
-                error: "Could not allow \(signing.identifier) to use \(secret.account)"
-            )
+            ))
         }
+    }
+
+    func addDirectAccessLauncher(_ launcher: BlessedScriptLauncher, to secret: StoredSecret) {
+        finishPolicyUpdate(
+            allowDirectAccess(to: secret.account, for: launcher),
+            error: "Could not allow \(launcher.bundleIdentifier) to use \(secret.account)"
+        )
     }
 
     func removeDirectAccessLauncher(_ launcher: BlessedScriptLauncher, from secret: StoredSecret) {
@@ -1679,6 +1682,7 @@ private struct StoredSecretDetailView: View {
     @State private var isAvailableWhileLocked: Bool
     @State private var isConfirmingDelete = false
     @State private var isConfirmingDirectAccess = false
+    @State private var pendingDirectAccessLauncher: BlessedScriptLauncher?
 
     init(model: DashboardModel, secret: StoredSecret) {
         self.model = model
@@ -1724,7 +1728,11 @@ private struct StoredSecretDetailView: View {
                     model.removeDirectAccessLauncher($0, from: secret)
                 }
                 Button {
-                    isConfirmingDirectAccess = true
+                    model.chooseDirectAccessLauncher { launcher in
+                        guard let launcher else { return }
+                        pendingDirectAccessLauncher = launcher
+                        isConfirmingDirectAccess = true
+                    }
                 } label: {
                     Label("Allow Launcher…", systemImage: "app.badge.checkmark")
                 }
@@ -1774,10 +1782,17 @@ private struct StoredSecretDetailView: View {
         } message: {
             Text("This secret will be permanently deleted.")
         }
-        .sheet(isPresented: $isConfirmingDirectAccess) {
-            DirectAccessConfirmationView(secretName: secret.account) {
-                isConfirmingDirectAccess = false
-                model.addDirectAccessLauncher(to: secret)
+        .sheet(isPresented: $isConfirmingDirectAccess, onDismiss: {
+            pendingDirectAccessLauncher = nil
+        }) {
+            if let launcher = pendingDirectAccessLauncher {
+                DirectAccessConfirmationView(
+                    secretName: secret.account,
+                    launcherName: launcher.bundleIdentifier
+                ) {
+                    isConfirmingDirectAccess = false
+                    model.addDirectAccessLauncher(launcher, to: secret)
+                }
             }
         }
     }
@@ -1800,6 +1815,7 @@ private struct StoredSecretDetailView: View {
 
 private struct DirectAccessConfirmationView: View {
     let secretName: String
+    let launcherName: String
     let confirm: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -1809,7 +1825,7 @@ private struct DirectAccessConfirmationView: View {
                 Label("This grants broad authority", systemImage: "exclamationmark.shield.fill")
                     .font(.headline)
                     .foregroundStyle(.orange)
-                Text("The verified Launcher will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
+                Text("The verified Launcher “\(launcherName)” will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
                     .fixedSize(horizontal: false, vertical: true)
                 Link("Read the safer alternatives", destination: directAccessDocumentationURL)
                     .font(.callout)
@@ -2855,6 +2871,29 @@ private func secretGateAdmissionError(
 
 @MainActor
 private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
+    pickLauncher { signing in
+        guard let signing else {
+            completion(nil)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Allow \(signing.identifier)?"
+        alert.informativeText = """
+        Identifier: \(signing.identifier)
+        Team ID: \(signing.teamIdentifier)
+        Path: \(signing.path)
+
+        Designated requirement:
+        \(signing.requirement)
+        """
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Cancel")
+        completion(alert.runModal() == .alertFirstButtonReturn ? signing : nil)
+    }
+}
+
+@MainActor
+private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     let panel = NSOpenPanel()
     panel.title = "Allow Launcher"
     panel.prompt = "Choose"
@@ -2881,19 +2920,7 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
             completion(nil)
             return
         }
-        let alert = NSAlert()
-        alert.messageText = "Allow \(signing.identifier)?"
-        alert.informativeText = """
-        Identifier: \(signing.identifier)
-        Team ID: \(signing.teamIdentifier)
-        Path: \(signing.path)
-
-        Designated requirement:
-        \(signing.requirement)
-        """
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Cancel")
-        completion(alert.runModal() == .alertFirstButtonReturn ? signing : nil)
+        completion(signing)
     }
 }
 
