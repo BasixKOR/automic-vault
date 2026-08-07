@@ -6,6 +6,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+private let directAccessDocumentationURL = URL(
+    string: "https://github.com/automic-vault/automic-vault/blob/main/docs/direct-secret-access.md#safer-alternatives"
+)!
 
 enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
     case notification
@@ -557,6 +560,34 @@ final class DashboardModel: ObservableObject {
         return false
     }
 
+    func addDirectAccessLauncher(to secret: StoredSecret) {
+        chooseLauncher { [weak self] signing in
+            guard let self, let signing else { return }
+            guard signing.runtimeProtection.allowsSecretGateAccess else {
+                self.errorMessage = secretGateAdmissionError(
+                    appName: signing.identifier,
+                    protection: signing.runtimeProtection
+                )
+                return
+            }
+            let launcher = BlessedScriptLauncher(
+                bundleIdentifier: signing.identifier,
+                requirement: signing.requirement
+            )
+            self.finishPolicyUpdate(
+                allowDirectAccess(to: secret.account, for: launcher),
+                error: "Could not allow \(signing.identifier) to use \(secret.account)"
+            )
+        }
+    }
+
+    func removeDirectAccessLauncher(_ launcher: BlessedScriptLauncher, from secret: StoredSecret) {
+        finishPolicyUpdate(
+            removeDirectAccess(to: secret.account, for: launcher),
+            error: "Could not remove \(launcher.bundleIdentifier) from \(secret.account)"
+        )
+    }
+
     func deleteSecret(account: String) {
         let result = performInAppSecretMutation(.delete(account: account))
         guard let status = result.status else {
@@ -956,7 +987,14 @@ func runDashboardSearchSelfCheck() -> Int32 {
         ],
         secretGates: [],
         secrets: [
-            StoredSecret(account: "AWS_TOKEN", accessibility: .afterFirstUnlock),
+            StoredSecret(
+                account: "AWS_TOKEN",
+                accessibility: .afterFirstUnlock,
+                directAccessLaunchers: [BlessedScriptLauncher(
+                    bundleIdentifier: "com.example.launcher",
+                    requirement: #"identifier "com.example.launcher" and anchor apple generic"#
+                )]
+            ),
             StoredSecret(account: "GITHUB_TOKEN"),
         ],
         accessRequests: [accessRequest],
@@ -1000,6 +1038,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .allSecrets) == 2,
           model.count(for: .secretUsage) == 1,
           model.selectedStoredSecret?.accessibility == .afterFirstUnlock,
+          model.selectedStoredSecret?.directAccessLaunchers.count == 1,
           gateHeight > 0,
           secretDetailHeight.map({ $0 > 0 }) == true,
           aboutHeight > 0,
@@ -1614,6 +1653,7 @@ private struct StoredSecretDetailView: View {
     let secret: StoredSecret
     @State private var isAvailableWhileLocked: Bool
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingDirectAccess = false
 
     init(model: DashboardModel, secret: StoredSecret) {
         self.model = model
@@ -1642,6 +1682,34 @@ private struct StoredSecretDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                launcherList(
+                    secret.directAccessLaunchers,
+                    title: "Direct Secret Access",
+                    empty: "No Launchers have Direct Access to this Secret."
+                ) {
+                    model.removeDirectAccessLauncher($0, from: secret)
+                }
+                Button {
+                    isConfirmingDirectAccess = true
+                } label: {
+                    Label("Allow Launcher…", systemImage: "app.badge.checkmark")
+                }
+                .buttonStyle(.bordered)
+                Text("Hardening a Tool or blessing an exact script grants narrower authority.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Read the safer alternatives", destination: directAccessDocumentationURL)
+                    .font(.caption)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1681,6 +1749,12 @@ private struct StoredSecretDetailView: View {
         } message: {
             Text("This secret will be permanently deleted.")
         }
+        .sheet(isPresented: $isConfirmingDirectAccess) {
+            DirectAccessAcknowledgementView(secretName: secret.account) {
+                isConfirmingDirectAccess = false
+                model.addDirectAccessLauncher(to: secret)
+            }
+        }
     }
 
     private var availabilityBinding: Binding<Bool> {
@@ -1695,6 +1769,53 @@ private struct StoredSecretDetailView: View {
             if !model.setAccessibility(accessibility, for: secret) {
                 isAvailableWhileLocked = previous
             }
+        }
+    }
+}
+
+private struct DirectAccessAcknowledgementView: View {
+    let secretName: String
+    let confirm: () -> Void
+    @State private var understandsRisk = false
+    @State private var readAlternatives = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("This grants broad authority", systemImage: "exclamationmark.shield.fill")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                Text("The verified Launcher will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle(
+                    "I understand that Direct Secret Access is not the most secure way to use Automic Vault.",
+                    isOn: $understandsRisk
+                )
+                Toggle(
+                    "I have read the safer alternatives and determined they do not fit this use.",
+                    isOn: $readAlternatives
+                )
+                Link("Read the safer alternatives", destination: directAccessDocumentationURL)
+                    .font(.callout)
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .frame(width: 470, height: 260, alignment: .topLeading)
+            .navigationTitle("Allow Direct Secret Access?")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue") { confirm() }
+                        .disabled(!understandsRisk || !readAlternatives)
+                }
+            }
+        }
+        .onAppear {
+            understandsRisk = false
+            readAlternatives = false
         }
     }
 }
@@ -2313,8 +2434,15 @@ private func launcherList(
         }
         ForEach(launchers, id: \.requirement) { launcher in
             HStack {
-                Text(launcher.bundleIdentifier)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(launcher.bundleIdentifier)
+                        .textSelection(.enabled)
+                    Text(codeSigningTeamIdentifier(from: launcher.requirement).map { "Team \($0)" }
+                        ?? "Verified designated requirement")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 Spacer()
                 Button {
                     remove(launcher)
@@ -2322,7 +2450,7 @@ private func launcherList(
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.plain)
-                .help("Remove Calling App")
+                .help("Remove Launcher")
             }
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))

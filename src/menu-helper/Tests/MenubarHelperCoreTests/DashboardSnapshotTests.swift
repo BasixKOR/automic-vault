@@ -386,6 +386,142 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(loadStoredSecret(account: account, service: service) == "not json")
 }
 
+@Test func directAccessRequiresEveryExactSecretAndHardenedRuntime() {
+    let launcher = BlessedScriptLauncher(
+        bundleIdentifier: "com.example.launcher",
+        requirement: "designated requirement"
+    )
+    let rules = [
+        DirectAccessRule(secretName: "ALPHA_TOKEN", launcher: launcher),
+        DirectAccessRule(secretName: "BETA_TOKEN", launcher: launcher),
+    ]
+
+    #expect(directAccessAllows(
+        secretNames: ["ALPHA_TOKEN", "BETA_TOKEN"],
+        launcherRequirement: launcher.requirement,
+        runtimeProtection: .hardened,
+        rules: rules
+    ))
+    #expect(!directAccessAllows(
+        secretNames: ["ALPHA_TOKEN", "OTHER_TOKEN"],
+        launcherRequirement: launcher.requirement,
+        runtimeProtection: .hardened,
+        rules: rules
+    ))
+    #expect(!directAccessAllows(
+        secretNames: ["ALPHA_TOKEN"],
+        launcherRequirement: "another requirement",
+        runtimeProtection: .hardened,
+        rules: rules
+    ))
+    #expect(!directAccessAllows(
+        secretNames: ["ALPHA_TOKEN"],
+        launcherRequirement: launcher.requirement,
+        runtimeProtection: .hardenedRuntimeMissing,
+        rules: rules
+    ))
+    #expect(!directAccessAllows(
+        secretNames: [],
+        launcherRequirement: launcher.requirement,
+        runtimeProtection: .hardened,
+        rules: rules
+    ))
+}
+
+@Test func directAccessRulesArePersistedWithSecretsAndRevocable() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
+    let policyService = "com.automicvault.tests.direct.\(UUID().uuidString)"
+    let policyAccount = "rules"
+    let zeta = BlessedScriptLauncher(bundleIdentifier: "com.example.zeta", requirement: "zeta")
+    let alpha = BlessedScriptLauncher(bundleIdentifier: "com.example.alpha", requirement: "alpha")
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: secretService) }
+    defer { _ = deleteStoredSecret(account: policyAccount, service: policyService) }
+
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: secretService) == errSecSuccess)
+    #expect(allowDirectAccess(
+        to: "API_TOKEN", for: zeta, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(allowDirectAccess(
+        to: "API_TOKEN", for: alpha, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).map(\.launcher) == [alpha, zeta])
+    #expect(loadStoredSecrets(
+        service: secretService,
+        directAccessRules: loadDirectAccessRules(service: policyService, account: policyAccount)
+    ).first?.directAccessLaunchers == [alpha, zeta])
+    #expect(keychainAccessibility(account: policyAccount, service: policyService) == kSecAttrAccessibleAfterFirstUnlock as String)
+
+    #expect(removeDirectAccess(
+        to: "API_TOKEN", for: alpha, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).map(\.launcher) == [zeta])
+    #expect(revokeDirectAccess(
+        to: "API_TOKEN", service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).isEmpty)
+}
+
+@Test func malformedDirectAccessPolicyFailsClosedAndIsNotReplaced() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.direct.\(UUID().uuidString)"
+    let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
+    let account = "rules"
+    let launcher = BlessedScriptLauncher(bundleIdentifier: "com.example.app", requirement: "requirement")
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    defer { _ = deleteStoredSecret(account: "API_TOKEN", service: secretService) }
+    #expect(saveStoredSecret(account: account, value: "not json", service: service) == errSecSuccess)
+    #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: secretService) == errSecSuccess)
+
+    #expect(loadDirectAccessRules(service: service, account: account).isEmpty)
+    #expect(allowDirectAccess(
+        to: "API_TOKEN", for: launcher, service: service, account: account
+    ) == errSecDecode)
+    #expect(deleteStoredSecretRevokingDirectAccess(
+        account: "API_TOKEN",
+        service: secretService,
+        directAccessService: service,
+        directAccessAccount: account
+    ) == errSecDecode)
+    #expect(storedSecretExists(account: "API_TOKEN", service: secretService))
+    #expect(loadStoredSecret(account: account, service: service) == "not json")
+}
+
+@Test func deletingOrRenamingASecretRevokesDirectAccessFirst() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
+    let policyService = "com.automicvault.tests.direct.\(UUID().uuidString)"
+    let policyAccount = "rules"
+    let launcher = BlessedScriptLauncher(bundleIdentifier: "com.example.app", requirement: "requirement")
+    defer { _ = deleteStoredSecret(account: "OLD_TOKEN", service: secretService) }
+    defer { _ = deleteStoredSecret(account: "NEW_TOKEN", service: secretService) }
+    defer { _ = deleteStoredSecret(account: policyAccount, service: policyService) }
+
+    #expect(saveStoredSecret(account: "OLD_TOKEN", value: "secret", service: secretService) == errSecSuccess)
+    #expect(allowDirectAccess(
+        to: "OLD_TOKEN", for: launcher, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(renameStoredSecretRevokingDirectAccess(
+        account: "OLD_TOKEN",
+        to: "NEW_TOKEN",
+        service: secretService,
+        directAccessService: policyService,
+        directAccessAccount: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).isEmpty)
+
+    #expect(allowDirectAccess(
+        to: "NEW_TOKEN", for: launcher, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+    #expect(deleteStoredSecretRevokingDirectAccess(
+        account: "NEW_TOKEN",
+        service: secretService,
+        directAccessService: policyService,
+        directAccessAccount: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).isEmpty)
+}
+
 @Test func secretlessGateNormalizesLegacyFullPolicy() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"

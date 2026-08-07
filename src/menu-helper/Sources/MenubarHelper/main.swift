@@ -1300,9 +1300,9 @@ enum SecretMutation {
         case .saveIfAbsentOrEqual(let account, let value):
             saveStoredSecretIfAbsentOrEqual(account: account, value: value)
         case .delete(let account):
-            deleteStoredSecret(account: account)
+            deleteStoredSecretRevokingDirectAccess(account: account)
         case .rename(let account, let newAccount):
-            renameStoredSecret(account: account, to: newAccount)
+            renameStoredSecretRevokingDirectAccess(account: account, to: newAccount)
         case .setAccessibility(let account, let accessibility):
             setStoredSecretAccessibility(account: account, accessibility: accessibility)
         }
@@ -2095,6 +2095,13 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             hardeners: metadata
         )
+        let directAccessLauncher = matchingDirectAccessLauncher(
+            request: request,
+            configuredGate: configuredGate,
+            trustedAVGateClient: isTrustedAvCaller(path: callerPath, signing: signing),
+            launchers: launchers,
+            rules: loadDirectAccessRules()
+        )
         let resolvedPolicy = configuredGate.flatMap { resolveSecretGatePolicy(gate: $0, launchers: launchers) }
         let classification = configuredGate.map {
             classifySecretGateRequest(gateID: $0.id, request: request)
@@ -2117,6 +2124,54 @@ private final class ApprovalServer: @unchecked Sendable {
             automaticApprovalExplanation = failure.explanation
         } else {
             automaticApprovalExplanation = nil
+        }
+        if activeBlessing == nil, let directAccessLauncher {
+            do {
+                let payload = try approvedPayload(
+                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
+                )
+                let accessRequestID = UUID()
+                let record = accessRequestRecord(
+                    id: accessRequestID,
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Approved",
+                    approvalSource: "Auto",
+                    reason: "Direct Access from \(shortAppName(directAccessLauncher.identifier))",
+                    launcher: directAccessLauncher
+                )
+                guard onAccessRequest(record) else {
+                    reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                    return
+                }
+                Task { @MainActor in
+                    self.onAutoApproval(autoApprovalRecord(
+                        accessRequestID: accessRequestID,
+                        request: request,
+                        script: scriptApproval,
+                        launcher: directAccessLauncher
+                    ))
+                }
+                reply(
+                    peer,
+                    to: message,
+                    ok: true,
+                    error: nil,
+                    secrets: payload.secrets,
+                    value: payload.value
+                )
+            } catch {
+                _ = onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    approvalSource: "Auto",
+                    reason: error.localizedDescription,
+                    launcher: directAccessLauncher
+                ))
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+            }
+            return
         }
         if activeBlessing == nil,
            let configuredGate,
@@ -3176,6 +3231,24 @@ private final class ApprovalServer: @unchecked Sendable {
         let message = xpc_dictionary_create_empty()
         event.withCString { xpc_dictionary_set_string(message, "event", $0) }
         xpc_connection_send_message(peer, message)
+    }
+}
+
+private func matchingDirectAccessLauncher(
+    request: ApprovalRequest,
+    configuredGate: SecretGate?,
+    trustedAVGateClient: Bool,
+    launchers: [LauncherIdentity],
+    rules: [DirectAccessRule]
+) -> LauncherIdentity? {
+    guard request.op == "inject", configuredGate == nil, trustedAVGateClient else { return nil }
+    return launchers.first {
+        directAccessAllows(
+            secretNames: request.keys,
+            launcherRequirement: $0.designatedRequirement,
+            runtimeProtection: $0.runtimeProtection,
+            rules: rules
+        )
     }
 }
 
@@ -5481,6 +5554,28 @@ private func runApprovalSelfCheck() -> Int32 {
             detail: nil
         )
     }
+    let directRequest = ApprovalRequest(
+        op: "inject",
+        keys: ["HCLOUD_TOKEN"],
+        target: "/bin/sh",
+        args: ["-c", "hcloud server list"],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
+    let directRules = [DirectAccessRule(
+        secretName: "HCLOUD_TOKEN",
+        launcher: BlessedScriptLauncher(
+            bundleIdentifier: blockedLauncher.identifier,
+            requirement: blockedLauncher.designatedRequirement
+        )
+    )]
     guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
@@ -5512,6 +5607,34 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["apps", "list"])) == .readOnly,
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["deploy"])) == .mutating,
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["auth", "token"])) == .secretDump,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: true,
+              launchers: [blockedLauncher],
+              rules: directRules
+          )?.designatedRequirement == blockedLauncher.designatedRequirement,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: policyGate,
+              trustedAVGateClient: true,
+              launchers: [blockedLauncher],
+              rules: directRules
+          ) == nil,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: false,
+              launchers: [blockedLauncher],
+              rules: directRules
+          ) == nil,
+          matchingDirectAccessLauncher(
+              request: directRequest,
+              configuredGate: nil,
+              trustedAVGateClient: true,
+              launchers: [unhardenedLauncher],
+              rules: directRules
+          ) == nil,
           isTrustedStripeCaller(
               path: "/opt/homebrew/opt/stripe-cli/bin/stripe",
               signing: stripeSigning
