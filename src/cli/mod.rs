@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
 
 mod aws;
 mod bless;
@@ -193,12 +194,13 @@ where
                 }
             }
         }
-        Some("__install-env-wrapper") if rest.len() == 1 => {
+        Some("__install-env-wrapper") if rest.len() >= 2 => {
             let Some(target) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");
                 return 2;
             };
-            match hardeners::env_wrapper::install_target(target) {
+            let paths = rest[1..].iter().map(PathBuf::from).collect::<Vec<_>>();
+            match hardeners::env_wrapper::install_target(target, &paths) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av: {err}");
@@ -660,7 +662,7 @@ mod tests {
         assert_eq!(
             stderr,
             format!(
-                "av harden: flyctl is not installed at {}\n",
+                "av harden: flyctl is not an executable file: {}\n",
                 targets.join("flyctl").display()
             )
         );
@@ -826,8 +828,12 @@ mod tests {
 
     #[test]
     fn private_env_wrapper_installer_rejects_unknown_targets() {
-        let (code, stdout, stderr) =
-            run_args(&["av", "__install-env-wrapper", "definitely-not-a-hardener"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "definitely-not-a-hardener",
+            "/nix/store/example/bin/tool",
+        ]);
 
         assert_eq!(code, 1);
         assert_eq!(stdout, "");
@@ -852,7 +858,12 @@ mod tests {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501") };
 
-        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "doctl",
+            "/nix/store/example/bin/doctl",
+        ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
         assert_eq!(code, 1);
@@ -867,7 +878,12 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", "/tmp/stubs");
         }
 
-        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "doctl",
+            "/nix/store/example/bin/doctl",
+        ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
         assert_eq!(code, 1);
