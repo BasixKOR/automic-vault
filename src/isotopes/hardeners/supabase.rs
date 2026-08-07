@@ -3,22 +3,16 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute, isotope};
 
 const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
-const SUPABASE_CLI_PATH: &str = "/opt/homebrew/opt/supabase-cli/bin/supabase";
-const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/supabase-cli";
 const VAULT_KEY: &str = "SUPABASE_ACCESS_TOKEN";
 const KEYCHAIN_SERVICE: &str = "Supabase CLI";
 const KEYCHAIN_ACCOUNTS: &[&str] = &["supabase", "access-token"];
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     PRIVILEGE_MODE.require_user("supabase", false)?;
-    if !supabase_cli_path().exists() {
-        return Err(format!(
-            "supabase is not installed; run `{INSTALL_COMMAND}`"
-        ));
-    }
+    let install = isotope::plan(isotope::SUPABASE)?;
 
     let token_paths = supabase_token_paths()?;
     let mut tokens = read_plaintext_tokens(&token_paths)?;
@@ -30,7 +24,8 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     writeln!(stdout, "╭─ harden supabase").ok();
     writeln!(stdout, "│").ok();
-    if tokens.is_empty() {
+    install.write(stdout, isotope::SUPABASE);
+    if tokens.is_empty() && !install.needed() {
         writeln!(stdout, "╰─ no legacy Supabase credentials found").ok();
         super::write_secret_gate_notice(stdout, "supabase");
         return Ok(());
@@ -41,18 +36,28 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         );
     }
 
-    writeln!(
-        stdout,
-        "├─ migrate Supabase access token into Automic Vault"
-    )
-    .ok();
-    writeln!(stdout, "├─ remove plaintext fallback access-token files").ok();
+    if tokens.is_empty() {
+        writeln!(stdout, "├─ no legacy Supabase credentials found").ok();
+    } else {
+        writeln!(
+            stdout,
+            "├─ migrate Supabase access token into Automic Vault"
+        )
+        .ok();
+        writeln!(stdout, "├─ remove plaintext fallback access-token files").ok();
+    }
     writeln!(stdout, "│").ok();
     if !confirm(stdout, yes)? {
         writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
 
+    install.apply(isotope::SUPABASE)?;
+    if tokens.is_empty() {
+        writeln!(stdout, "╰─ installed supabase isotope").ok();
+        super::write_secret_gate_notice(stdout, "supabase");
+        return Ok(());
+    }
     crate::secrets::store_secret(VAULT_KEY, &tokens[0])?;
     for path in &token_paths {
         remove_plaintext_token(path)?;
@@ -66,10 +71,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 }
 
 pub(crate) fn detect() -> HardenerDetection {
-    let path = supabase_cli_path();
-    let exists = path.exists();
-    let path = path.display().to_string();
-    HardenerDetection::command(exists, "supabase", Some(path.clone()), path)
+    isotope::detect(isotope::SUPABASE)
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
@@ -79,7 +81,7 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
         routes: vec![SecretGateRoute {
             operation: "keys",
             script_path: None,
-            target_path: supabase_cli_path().display().to_string(),
+            target_path: isotope::target(isotope::SUPABASE).display().to_string(),
             caller_identifiers: vec!["supabase", "supabase-go", "com.supabase.cli"],
             key_patterns: vec![VAULT_KEY.to_string()],
             replace_existing_env: true,
@@ -108,12 +110,6 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
         input.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
-}
-
-fn supabase_cli_path() -> PathBuf {
-    crate::test_env_var("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(SUPABASE_CLI_PATH).to_path_buf())
 }
 
 fn supabase_token_paths() -> Result<Vec<PathBuf>, String> {

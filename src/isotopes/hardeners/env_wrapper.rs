@@ -11,11 +11,10 @@ use super::{
 
 const MARKER: &str = "AUTOMIC_VAULT_ENV_WRAPPER_STUB_V2";
 const STUB_DIR: &str = "/usr/local/bin";
-const TARGET_DIR: &str = "/opt/homebrew/bin";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
 const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::Mixed;
-const DOCUMENTATION: &str = "# Environment Wrapper\n\nMigrates supported existing credentials into Automic Vault, then runs the target tool through `av inject --allow-missing-keys` with those secrets. Automic Vault requests elevation only to install the launcher stub. This does not protect the target executable; anything that can replace it can read the injected credentials. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
+const DOCUMENTATION: &str = "# Environment Wrapper\n\nUses the target executable selected by your current `PATH`, shows its exact path for confirmation, and embeds that path in a launcher stub. Then it migrates supported existing credentials into Automic Vault and runs the target through `av inject --allow-missing-keys` with those secrets. Automic Vault requests elevation only to install the launcher stub. This does not protect the target executable; anything that can replace it can read the injected credentials. Run `av scan` after hardening to find unsupported credentials or secrets written later.\n";
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -29,17 +28,18 @@ pub(crate) fn run_target(
     Some(run(wrapper(target)?, stdout, yes))
 }
 
-pub(crate) fn install_target(target: &str) -> Result<(), String> {
-    let wrapper = wrapper(target).ok_or_else(|| format!("unknown hardener `{target}`"))?;
+pub(crate) fn install_target(name: &str, targets: &[PathBuf]) -> Result<(), String> {
+    let wrapper = wrapper(name).ok_or_else(|| format!("unknown hardener `{name}`"))?;
     if test_stub_dir().is_some() || test_target_dir().is_some() {
         return Err("test path overrides are forbidden during privileged installation".into());
     }
     if actual_uid() != 0 {
         return Err("env-wrapper installation requires root".into());
     }
-    preflight(wrapper)?;
-    for stub in stubs(wrapper) {
-        install_stub(stub)?;
+    let resolved = supplied_targets(wrapper, targets)?;
+    preflight(&resolved)?;
+    for target in &resolved {
+        install_stub(target.stub, &target.path)?;
     }
     Ok(())
 }
@@ -83,15 +83,17 @@ fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
 
 fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     PRIVILEGE_MODE.require_user(wrapper.name, test_stub_dir().is_some())?;
-    preflight(wrapper)?;
+    let targets = resolve_targets(wrapper)?;
+    preflight(&targets)?;
 
     writeln!(stdout, "╭─ harden {}", wrapper.name).ok();
     writeln!(stdout, "│").ok();
-    for stub in stubs(wrapper) {
+    for target in &targets {
+        writeln!(stdout, "├─ target {}", target.path.display()).ok();
         writeln!(
             stdout,
-            "├─ run sudo to write {}",
-            stub_path(stub.command).display()
+            "├─ install launcher {}",
+            stub_path(target.stub.command).display()
         )
         .ok();
     }
@@ -101,7 +103,7 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
         return Ok(());
     }
 
-    install_privileged(wrapper)?;
+    install_privileged(wrapper, &targets)?;
     writeln!(stdout, "├─ migrate existing credentials").ok();
     super::migrations::run(wrapper.name)
         .ok_or_else(|| format!("no credential migration registered for {}", wrapper.name))??;
@@ -110,18 +112,24 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
     Ok(())
 }
 
-fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
-    for stub in stubs(wrapper) {
-        let target = target_path(stub);
-        if !target.exists() {
+fn preflight(targets: &[ResolvedStub<'_>]) -> Result<(), String> {
+    for target in targets {
+        if !valid_target_path(&target.path, target.stub.command) {
             return Err(format!(
-                "{} is not installed at {}",
-                wrapper.name,
-                target.display()
+                "invalid target for {}: {}",
+                target.stub.command,
+                target.path.display()
             ));
         }
-        let stub_path = stub_path(stub.command);
-        if stub_path.exists() && !is_managed_stub(&stub_path, stub) {
+        if !super::executable(&target.path) {
+            return Err(format!(
+                "{} is not an executable file: {}",
+                target.stub.command,
+                target.path.display()
+            ));
+        }
+        let stub_path = stub_path(target.stub.command);
+        if stub_path.exists() && !is_managed_stub(&stub_path, target.stub) {
             return Err(format!(
                 "{} already exists and is not an Automic Vault env-wrapper stub",
                 stub_path.display()
@@ -131,16 +139,19 @@ fn preflight(wrapper: &EnvWrapper) -> Result<(), String> {
     Ok(())
 }
 
-fn install_privileged(wrapper: &EnvWrapper) -> Result<(), String> {
+fn install_privileged(wrapper: &EnvWrapper, targets: &[ResolvedStub<'_>]) -> Result<(), String> {
     if test_stub_dir().is_some() {
-        for stub in stubs(wrapper) {
-            install_stub(stub)?;
+        for target in targets {
+            install_stub(target.stub, &target.path)?;
         }
         return Ok(());
     }
     validate_privileged_av(Path::new(AV_PATH))?;
-    let status = Command::new(SUDO_PATH)
+    let mut command = Command::new(SUDO_PATH);
+    command
         .args([AV_PATH, "__install-env-wrapper", wrapper.name])
+        .args(targets.iter().map(|target| &target.path));
+    let status = command
         .status()
         .map_err(|err| format!("failed to run sudo: {err}"))?;
     if status.success() {
@@ -175,13 +186,19 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
     let commands = stubs(wrapper)
         .map(|stub| {
             let path = stub_path(stub.command);
-            let stub_valid = is_current_stub(&path, stub);
+            let target = embedded_target(&path).or_else(|| find_target_on_path(stub.command));
+            let stub_valid = target.as_deref().is_some_and(|target| {
+                super::executable(target) && is_current_stub(&path, stub, target)
+            });
             HardenerCommand {
                 name: stub.command.to_string(),
                 hardened: stub_valid,
                 stub_valid,
                 stub_path: Some(path.display().to_string()),
-                target_path: target_path(stub).display().to_string(),
+                target_path: target
+                    .unwrap_or_else(|| PathBuf::from(stub.command))
+                    .display()
+                    .to_string(),
                 required_paths: if test_stub_dir().is_some() {
                     Vec::new()
                 } else {
@@ -203,6 +220,7 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
                     .iter()
                     .map(|key| (*key).to_string())
                     .collect(),
+                isotope: None,
             }
         })
         .collect::<Vec<_>>();
@@ -240,11 +258,11 @@ fn root_stub_requirements(path: &Path) -> StubRequirements {
 
 fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
     if yes {
-        writeln!(stdout, "◇ Continue? yes (--yes)").ok();
+        writeln!(stdout, "◇ Use these targets? yes (--yes)").ok();
         return Ok(true);
     }
 
-    write!(stdout, "◇ Continue? [y/N] ").ok();
+    write!(stdout, "◇ Use these targets? [y/N] ").ok();
     stdout
         .flush()
         .map_err(|err| format!("failed to flush prompt: {err}"))?;
@@ -261,31 +279,29 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
     ))
 }
 
-fn install_stub(stub: &StubSpec) -> Result<(), String> {
+fn install_stub(stub: &StubSpec, target: &Path) -> Result<(), String> {
     let path = stub_path(stub.command);
-    fs::write(&path, stub_script(stub))
+    fs::write(&path, stub_script(stub, target))
         .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
         .map_err(|err| format!("failed to chmod {}: {err}", path.display()))
 }
 
 fn is_managed_stub(path: &Path, stub: &StubSpec) -> bool {
-    fs::read_to_string(path)
-        .map(|contents| {
-            contents.contains(MARKER)
-                && contents.contains(&format!(
-                    "original='{}'",
-                    shell_single_argument(&target_path(stub))
-                ))
-        })
-        .unwrap_or(false)
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Some(target) = embedded_target_from_contents(&contents) else {
+        return false;
+    };
+    contents == stub_script(stub, &target)
 }
 
-fn is_current_stub(path: &Path, stub: &StubSpec) -> bool {
-    fs::read_to_string(path).is_ok_and(|contents| contents == stub_script(stub))
+fn is_current_stub(path: &Path, stub: &StubSpec, target: &Path) -> bool {
+    fs::read_to_string(path).is_ok_and(|contents| contents == stub_script(stub, target))
 }
 
-fn stub_script(stub: &StubSpec) -> String {
+fn stub_script(stub: &StubSpec, target: &Path) -> String {
     let keys = stub
         .keys
         .iter()
@@ -296,7 +312,7 @@ fn stub_script(stub: &StubSpec) -> String {
 set -eu\n\
 # {MARKER}\n\
 original='{}'\n",
-        shell_single_argument(&target_path(stub))
+        shell_single_argument(target)
     );
     for key in stub.assignment_keys {
         script.push_str(&format!(
@@ -311,14 +327,113 @@ fn shell_single_argument(path: &Path) -> String {
     path.to_string_lossy().replace('\'', r#"'\''"#)
 }
 
+fn embedded_target(path: &Path) -> Option<PathBuf> {
+    embedded_target_from_contents(&fs::read_to_string(path).ok()?)
+}
+
+fn embedded_target_from_contents(contents: &str) -> Option<PathBuf> {
+    if !contents.lines().any(|line| line == format!("# {MARKER}")) {
+        return None;
+    }
+    contents
+        .lines()
+        .find_map(|line| line.strip_prefix("original='")?.strip_suffix('\''))
+        .map(PathBuf::from)
+}
+
 fn wrapper(name: &str) -> Option<&'static EnvWrapper> {
     WRAPPERS.iter().find(|wrapper| wrapper.name == name)
 }
 
-fn target_path(stub: &StubSpec) -> PathBuf {
-    test_target_dir()
-        .map(|dir| dir.join(stub.command))
-        .unwrap_or_else(|| Path::new(TARGET_DIR).join(stub.command))
+fn resolve_targets(wrapper: &EnvWrapper) -> Result<Vec<ResolvedStub<'_>>, String> {
+    stubs(wrapper)
+        .map(|stub| find_target(stub).map(|path| ResolvedStub { stub, path }))
+        .collect()
+}
+
+fn supplied_targets<'a>(
+    wrapper: &'a EnvWrapper,
+    targets: &[PathBuf],
+) -> Result<Vec<ResolvedStub<'a>>, String> {
+    if targets.len() != stubs(wrapper).count() {
+        return Err(format!("invalid target count for {}", wrapper.name));
+    }
+    stubs(wrapper)
+        .zip(targets)
+        .map(|(stub, path)| {
+            if !valid_target_path(path, stub.command) {
+                return Err(format!(
+                    "invalid target for {}: {}",
+                    stub.command,
+                    path.display()
+                ));
+            }
+            if same_path(path, &stub_path(stub.command)) {
+                return Err(format!(
+                    "{} target cannot be its launcher stub",
+                    stub.command
+                ));
+            }
+            Ok(ResolvedStub {
+                stub,
+                path: path.clone(),
+            })
+        })
+        .collect()
+}
+
+fn find_target(stub: &StubSpec) -> Result<PathBuf, String> {
+    if let Some(directory) = test_target_dir() {
+        let path = directory.join(stub.command);
+        return super::executable(&path)
+            .then_some(path.clone())
+            .ok_or_else(|| {
+                format!(
+                    "{} is not an executable file: {}",
+                    stub.command,
+                    path.display()
+                )
+            });
+    }
+    let launcher = stub_path(stub.command);
+    if let Some(target) = embedded_target(&launcher)
+        .filter(|path| !same_path(path, &launcher) && super::executable(path))
+    {
+        return Ok(target);
+    }
+    find_target_on_path(stub.command)
+        .ok_or_else(|| format!("{} is not installed on PATH", stub.command))
+}
+
+fn find_target_on_path(command: &str) -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| {
+            let directory = if directory.is_absolute() {
+                directory
+            } else {
+                cwd.join(directory)
+            };
+            directory.join(command)
+        })
+        .find(|candidate| candidate != &stub_path(command) && super::executable(candidate))
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .canonicalize()
+            .ok()
+            .zip(right.canonicalize().ok())
+            .is_some_and(|(left, right)| left == right)
+}
+
+fn valid_target_path(path: &Path, command: &str) -> bool {
+    path.is_absolute()
+        && path.file_name() == Some(command.as_ref())
+        && path
+            .to_str()
+            .is_some_and(|path| !path.contains(['\'', '\n', '\r']))
 }
 
 fn stub_path(command: &str) -> PathBuf {
@@ -351,6 +466,11 @@ struct StubSpec {
     command: &'static str,
     keys: &'static [&'static str],
     assignment_keys: &'static [&'static str],
+}
+
+struct ResolvedStub<'a> {
+    stub: &'a StubSpec,
+    path: PathBuf,
 }
 
 fn stubs(wrapper: &EnvWrapper) -> impl Iterator<Item = &StubSpec> {
@@ -523,16 +643,9 @@ mod tests {
     #[test]
     fn flyctl_wraps_both_commands() {
         let wrapper = wrapper("flyctl").unwrap();
-        let commands = stubs(wrapper)
-            .map(|stub| (stub.command, target_path(stub)))
-            .collect::<Vec<_>>();
-
         assert_eq!(
-            commands,
-            [
-                ("flyctl", PathBuf::from("/opt/homebrew/bin/flyctl")),
-                ("fly", PathBuf::from("/opt/homebrew/bin/fly")),
-            ]
+            stubs(wrapper).map(|stub| stub.command).collect::<Vec<_>>(),
+            ["flyctl", "fly"]
         );
     }
 
@@ -546,6 +659,7 @@ mod tests {
         fs::create_dir_all(&target_dir).unwrap();
         fs::create_dir_all(&stub_dir).unwrap();
         fs::write(target_dir.join("doctl"), "").unwrap();
+        fs::set_permissions(target_dir.join("doctl"), fs::Permissions::from_mode(0o755)).unwrap();
         unsafe {
             std::env::set_var("HOME", &dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &target_dir);
@@ -569,21 +683,80 @@ mod tests {
         assert!(script.contains(MARKER));
         assert!(script.contains("+DIGITALOCEAN_ACCESS_TOKEN"));
         assert!(script.contains("exec \"$original\" \"$@\""));
-        assert!(
-            String::from_utf8(output)
-                .unwrap()
-                .contains("run sudo to write")
-        );
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains(&format!("target {}", target_dir.join("doctl").display())));
+        assert!(output.contains("install launcher"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_target_from_the_users_path() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let previous_path = std::env::var_os("PATH");
+        let dir = temp_dir("env-wrapper-path");
+        let bin = dir.join("nix-profile/bin");
+        let stubs = dir.join("stubs");
+        fs::create_dir_all(&bin).unwrap();
+        fs::create_dir_all(&stubs).unwrap();
+        let hcloud = bin.join("hcloud");
+        fs::write(&hcloud, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&hcloud, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("PATH", &bin);
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &stubs);
+        }
+
+        let targets = resolve_targets(wrapper("hcloud").unwrap()).unwrap();
+
+        unsafe {
+            match previous_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
+        }
+        assert_eq!(targets[0].path, hcloud);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ignores_a_stub_that_embeds_itself_as_the_target() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let previous_path = std::env::var_os("PATH");
+        let dir = temp_dir("env-wrapper-self-target");
+        fs::create_dir_all(&dir).unwrap();
+        let launcher = dir.join("hcloud");
+        let spec = &wrapper("hcloud").unwrap().primary;
+        fs::write(&launcher, stub_script(spec, &launcher)).unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("PATH", "");
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &dir);
+        }
+
+        let error = resolve_targets(wrapper("hcloud").unwrap()).err().unwrap();
+
+        unsafe {
+            match previous_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
+        }
+        assert_eq!(error, "hcloud is not installed on PATH");
         fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn assignment_keys_are_exported() {
-        let script = stub_script(&stub(
-            "akamai",
-            &["AKAMAI_ENV_ASSIGNMENTS"],
-            &["AKAMAI_ENV_ASSIGNMENTS"],
-        ));
+        let script = stub_script(
+            &stub(
+                "akamai",
+                &["AKAMAI_ENV_ASSIGNMENTS"],
+                &["AKAMAI_ENV_ASSIGNMENTS"],
+            ),
+            Path::new("/nix/store/example/bin/akamai"),
+        );
 
         assert!(script.contains("+AKAMAI_ENV_ASSIGNMENTS"));
         assert!(script.contains("for assignment in ${AKAMAI_ENV_ASSIGNMENTS-}"));
@@ -593,14 +766,19 @@ mod tests {
     #[test]
     fn current_stub_validation_rejects_marker_preserving_edits() {
         let spec = stub("tool", &["TOOL_TOKEN"], &[]);
+        let target = Path::new("/nix/store/example/bin/tool");
         let path = temp_dir("env-wrapper-exact").join("tool");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, stub_script(&spec)).unwrap();
-        assert!(is_current_stub(&path, &spec));
+        fs::write(&path, stub_script(&spec, target)).unwrap();
+        assert!(is_current_stub(&path, &spec, target));
 
-        fs::write(&path, format!("{}\n# modified\n", stub_script(&spec))).unwrap();
-        assert!(is_managed_stub(&path, &spec));
-        assert!(!is_current_stub(&path, &spec));
+        fs::write(
+            &path,
+            format!("{}\n# modified\n", stub_script(&spec, target)),
+        )
+        .unwrap();
+        assert!(!is_managed_stub(&path, &spec));
+        assert!(!is_current_stub(&path, &spec, target));
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -613,6 +791,7 @@ mod tests {
         fs::create_dir_all(&target_dir).unwrap();
         fs::create_dir_all(&stub_dir).unwrap();
         fs::write(target_dir.join("doctl"), "").unwrap();
+        fs::set_permissions(target_dir.join("doctl"), fs::Permissions::from_mode(0o755)).unwrap();
         fs::write(stub_dir.join("doctl"), "#!/bin/sh\n").unwrap();
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &target_dir);
@@ -648,7 +827,7 @@ mod tests {
     #[test]
     fn install_entrypoint_rejects_unknown_hardeners() {
         assert_eq!(
-            install_target("not-a-hardener").unwrap_err(),
+            install_target("not-a-hardener", &[]).unwrap_err(),
             "unknown hardener `not-a-hardener`"
         );
     }

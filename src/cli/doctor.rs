@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 use crate::isotopes::hardeners::{
     self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, executable,
+    isotope,
 };
 
 use super::scan::Style;
@@ -315,7 +316,96 @@ fn diagnose_command(hardener: &str, command: &HardenerCommand, path: &OsStr) -> 
             issues.extend(path_issue(command, path));
         }
     }
+    if let Some(isotope) = &command.isotope {
+        if let Some(issue) = isotope_path_issue(command, path, |path, identifier| {
+            isotope::signature_valid(path, identifier)
+        }) {
+            issues.push(issue);
+        }
+        if let Some(issue) = isotope_update_issue(command, isotope) {
+            issues.push(issue);
+        }
+    }
     issues
+}
+
+fn isotope_path_issue(
+    command: &HardenerCommand,
+    path: &OsStr,
+    signature_valid: impl Fn(&Path, &str) -> bool,
+) -> Option<DoctorIssue> {
+    let isotope = command.isotope.as_ref()?;
+    let resolved = resolve(&command.name, path);
+    if resolved.as_deref().is_some_and(|path| {
+        path.file_name().and_then(|name| name.to_str()) == Some(command.name.as_str())
+            && signature_valid(path, isotope.identifier)
+    }) {
+        return None;
+    }
+    let resolved_path = resolved.as_ref().map(|path| path.display().to_string());
+    let message = resolved_path.as_ref().map_or_else(
+        || format!("{} is not available through PATH", command.name),
+        |resolved| {
+            format!(
+                "{} resolves to {resolved}, which is not the signed Automic Vault isotope",
+                command.name
+            )
+        },
+    );
+    Some(DoctorIssue {
+        kind: "isotope_not_first_on_path",
+        command: Some(command.name.clone()),
+        message,
+        remediation: format!(
+            "Put the signed Automic Vault `{}` isotope first in PATH, then rerun `av doctor {}`.",
+            command.name, command.name
+        ),
+        stub_path: command.stub_path.clone(),
+        target_path: Some(command.target_path.clone()),
+        resolved_path,
+    })
+}
+
+fn isotope_update_issue(
+    command: &HardenerCommand,
+    doctor: &isotope::Doctor,
+) -> Option<DoctorIssue> {
+    let receipt = doctor.receipt_path.as_deref()?;
+    let installed = fs::read_to_string(receipt).ok();
+    let current = isotope::current_sha(&doctor.formula_url);
+    match (installed.as_deref().map(str::trim), current) {
+        (Some(installed), Ok(current)) if installed == current => None,
+        (_, Ok(_)) => Some(DoctorIssue {
+            kind: "isotope_update_required",
+            command: Some(command.name.clone()),
+            message: format!(
+                "the directly installed {} isotope has an update available",
+                command.name
+            ),
+            remediation: format!(
+                "Run `av harden {}` to install the current signed isotope.",
+                command.name
+            ),
+            stub_path: command.stub_path.clone(),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        }),
+        (_, Err(error)) => Some(DoctorIssue {
+            kind: "isotope_update_check_failed",
+            command: Some(command.name.clone()),
+            message: format!(
+                "could not check the {} isotope for updates: {error}",
+                command.name
+            ),
+            remediation: format!(
+                "Check the network connection and rerun `av doctor {}`.",
+                command.name
+            ),
+            stub_path: command.stub_path.clone(),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        }),
+    }
 }
 
 fn target_issue(hardener: &str, command: &HardenerCommand) -> DoctorIssue {
@@ -1281,7 +1371,65 @@ mod tests {
             stub_requirements: None,
             injected_keys: Vec::new(),
             assignment_keys: Vec::new(),
+            isotope: None,
         }
+    }
+
+    #[test]
+    fn isotope_path_check_requires_the_signed_basename_on_path() {
+        let directory = temp_dir("isotope-path");
+        let gh = executable_file(&directory.join("gh"));
+        let mut command = command("gh", true, gh.to_str().unwrap(), gh.to_str().unwrap());
+        command.isotope = Some(isotope::Doctor {
+            identifier: "gh",
+            formula_url: "https://example.invalid/gh-cli.rb".into(),
+            receipt_path: None,
+        });
+        assert!(
+            isotope_path_issue(&command, directory.as_os_str(), |_, identifier| identifier
+                == "gh")
+            .is_none()
+        );
+        assert_eq!(
+            isotope_path_issue(&command, directory.as_os_str(), |_, _| false)
+                .unwrap()
+                .kind,
+            "isotope_not_first_on_path"
+        );
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn direct_isotope_update_check_uses_the_formula_digest() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let directory = temp_dir("isotope-update");
+        let receipt = directory.join("gh-cli.sha256");
+        let hash = "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070";
+        fs::write(&receipt, format!("{hash}\n")).unwrap();
+        unsafe {
+            std::env::set_var(
+                "AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA",
+                format!(
+                    "url \"https://github.com/automic-vault/gh-cli/releases/download/v1/cli.tgz\"\nsha256 \"{hash}\"\n"
+                ),
+            );
+        }
+        let command = command("gh", true, "/usr/local/bin/gh", "/usr/local/bin/gh");
+        let doctor = isotope::Doctor {
+            identifier: "gh",
+            formula_url: "https://example.invalid/gh-cli.rb".into(),
+            receipt_path: Some(receipt.display().to_string()),
+        };
+        assert!(isotope_update_issue(&command, &doctor).is_none());
+        fs::write(&receipt, "different\n").unwrap();
+        assert_eq!(
+            isotope_update_issue(&command, &doctor).unwrap().kind,
+            "isotope_update_required"
+        );
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA");
+        }
+        let _ = fs::remove_dir_all(directory);
     }
 
     fn executable_file(path: &Path) -> PathBuf {

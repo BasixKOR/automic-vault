@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::io::{IsTerminal, Write};
+use std::path::PathBuf;
 
 mod aws;
 mod bless;
@@ -38,7 +39,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 15;
+pub(crate) const INSTALL_REVISION: u32 = 16;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -193,12 +194,31 @@ where
                 }
             }
         }
-        Some("__install-env-wrapper") if rest.len() == 1 => {
+        Some("__install-env-wrapper") if rest.len() >= 2 => {
             let Some(target) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");
                 return 2;
             };
-            match hardeners::env_wrapper::install_target(target) {
+            let paths = rest[1..].iter().map(PathBuf::from).collect::<Vec<_>>();
+            match hardeners::env_wrapper::install_target(target, &paths) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
+        Some("__install-isotope") if rest.len() == 3 => {
+            let Some(hardener) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid isotope hardener name");
+                return 2;
+            };
+            let Some(sha256) = rest[1].to_str() else {
+                let _ = writeln!(stderr, "av: invalid isotope digest");
+                return 2;
+            };
+            let archive = PathBuf::from(&rest[2]);
+            match hardeners::isotope::install_privileged(hardener, sha256, &archive) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av: {err}");
@@ -257,48 +277,12 @@ where
                 return finish_hardening(result, "aws", stdout, stderr);
             }
             if target == "gh" || target == "gh-cli" {
-                return match hardeners::gh_cli::run(stdout, yes) {
-                    Ok(()) => {
-                        print_hardening_followup(stdout, "gh");
-                        0
-                    }
-                    Err(hardeners::gh_cli::HardenError::GhCliNotInstalled) => {
-                        print_isotope_install_guidance(
-                            stderr,
-                            style,
-                            "gh",
-                            "gh-cli",
-                            hardeners::gh_cli::INSTALL_COMMAND,
-                        );
-                        1
-                    }
-                    Err(hardeners::gh_cli::HardenError::Other(err)) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::gh_cli::run(stdout, yes);
+                return finish_hardening(result, "gh", stdout, stderr);
             }
             if target == "stripe" || target == "stripe-cli" {
-                return match hardeners::stripe_cli::run(stdout, yes) {
-                    Ok(()) => {
-                        print_hardening_followup(stdout, "stripe");
-                        0
-                    }
-                    Err(hardeners::stripe_cli::HardenError::StripeCliNotInstalled) => {
-                        print_isotope_install_guidance(
-                            stderr,
-                            style,
-                            "stripe",
-                            "stripe-cli",
-                            hardeners::stripe_cli::INSTALL_COMMAND,
-                        );
-                        1
-                    }
-                    Err(hardeners::stripe_cli::HardenError::Other(err)) => {
-                        let _ = writeln!(stderr, "av harden: {err}");
-                        1
-                    }
-                };
+                let result = hardeners::stripe_cli::run(stdout, yes);
+                return finish_hardening(result, "stripe", stdout, stderr);
             }
             if target == "brew" || target == "homebrew" {
                 let result = hardeners::homebrew::run(stdout, yes);
@@ -377,25 +361,6 @@ fn write_help(stdout: &mut dyn Write, style: scan::Style) {
             );
         }
     }
-}
-
-fn print_isotope_install_guidance(
-    stderr: &mut dyn Write,
-    style: scan::Style,
-    target: &str,
-    package: &str,
-    install_command: &str,
-) {
-    let _ = writeln!(stderr, "╭─ harden {target}");
-    let _ = writeln!(stderr, "│");
-    let _ = writeln!(
-        stderr,
-        "◆ {}",
-        style.paint("33", &format!("{package} is not installed"))
-    );
-    let _ = writeln!(stderr, "│");
-    let _ = writeln!(stderr, "├─ 1. run: `{install_command}`");
-    let _ = writeln!(stderr, "╰─ 2. run: `av harden {target}` again");
 }
 
 fn print_hardening_followup(stdout: &mut dyn Write, target: &str) {
@@ -545,49 +510,6 @@ mod tests {
     }
 
     #[test]
-    fn harden_gh_tells_user_to_install_isotope() {
-        let _guard = crate::global_test_env_lock().lock().unwrap();
-        let missing = std::env::temp_dir().join(format!("av-missing-gh-{}", std::process::id()));
-        unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
-        }
-
-        let (code, stdout, stderr) = run_args(&["av", "harden", "gh"]);
-
-        unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
-        }
-        assert_eq!(code, 1);
-        assert_eq!(stdout, "");
-        assert_eq!(
-            stderr,
-            "╭─ harden gh\n│\n◆ gh-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/gh-cli`\n╰─ 2. run: `av harden gh` again\n"
-        );
-    }
-
-    #[test]
-    fn harden_stripe_tells_user_to_install_isotope() {
-        let _guard = crate::global_test_env_lock().lock().unwrap();
-        let missing =
-            std::env::temp_dir().join(format!("av-missing-stripe-{}", std::process::id()));
-        unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH", &missing);
-        }
-
-        let (code, stdout, stderr) = run_args(&["av", "harden", "stripe"]);
-
-        unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH");
-        }
-        assert_eq!(code, 1);
-        assert_eq!(stdout, "");
-        assert_eq!(
-            stderr,
-            "╭─ harden stripe\n│\n◆ stripe-cli is not installed\n│\n├─ 1. run: `brew install automic-vault/isotopes/stripe-cli`\n╰─ 2. run: `av harden stripe` again\n"
-        );
-    }
-
-    #[test]
     fn harden_brew_is_routed() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let missing = std::env::temp_dir().join(format!("av-missing-brew-{}", std::process::id()));
@@ -660,7 +582,7 @@ mod tests {
         assert_eq!(
             stderr,
             format!(
-                "av harden: flyctl is not installed at {}\n",
+                "av harden: flyctl is not an executable file: {}\n",
                 targets.join("flyctl").display()
             )
         );
@@ -826,8 +748,12 @@ mod tests {
 
     #[test]
     fn private_env_wrapper_installer_rejects_unknown_targets() {
-        let (code, stdout, stderr) =
-            run_args(&["av", "__install-env-wrapper", "definitely-not-a-hardener"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "definitely-not-a-hardener",
+            "/nix/store/example/bin/tool",
+        ]);
 
         assert_eq!(code, 1);
         assert_eq!(stdout, "");
@@ -852,7 +778,12 @@ mod tests {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501") };
 
-        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "doctl",
+            "/nix/store/example/bin/doctl",
+        ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
         assert_eq!(code, 1);
@@ -867,7 +798,12 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", "/tmp/stubs");
         }
 
-        let (code, stdout, stderr) = run_args(&["av", "__install-env-wrapper", "doctl"]);
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-env-wrapper",
+            "doctl",
+            "/nix/store/example/bin/doctl",
+        ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
         assert_eq!(code, 1);

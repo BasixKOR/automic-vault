@@ -2,8 +2,9 @@
 
 ## How Automic Vault Hardens `gh`
 
-We provide a [patched version] of `gh` via our [tap]. The patches are concerned
-with:
+We provide a [patched version] of `gh`. `av harden gh` installs it from our
+[tap] when Homebrew is available, or installs the same signed release directly
+at `/usr/local/bin/gh`. The patches are concerned with:
 
 1. Is codesigned such that `gh` (and only `gh`) can access its
    secure credentials.
@@ -15,7 +16,9 @@ with:
 
 ## Credential Migration
 
-Use `av harden gh` to migrate existing `gh` credentials into Automic Vault.
+Use `av harden gh` to install the Isotope and migrate existing `gh` credentials
+into Automic Vault. Direct installs are updated by running the same command when
+`av doctor gh` reports a new release.
 
 ## Secret Gate
 

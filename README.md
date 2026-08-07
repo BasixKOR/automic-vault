@@ -17,12 +17,6 @@
   # ^^ read it first
   ```
 
-> [!NOTE]
-> At this time *some* parts of Automic Vault *require* Homebrew to be installed.
-> We intend to loosen this restriction in the future. If you don’t use Homebrew
-> much of Automic Vault will still work, but some hardening features will not be
-> available.
-
 > [!IMPORTANT]
 > Automic Vault is not associated or affiliated with any cryptocurrency or “token”.
 
@@ -61,8 +55,9 @@ The primary adversary is untrusted or compromised code already running with your
   Automic Vault is not a security layer for UNIX.
   It is an adapter for the macOS GUI security model applied to the command line.
 
-> † we patch tools to make them more secure and provide a [homebrew tap] to
-> install them. We install stubs in `/usr/local/bin` that federate access to
+> † we patch tools to make them more secure and distribute them through our
+> [homebrew tap] or directly through `av harden`. We install stubs in
+> `/usr/local/bin` that federate access to
 > secrets using the full breadth of the macOS security model, including
 > code signing, notarization, XPC, TCC and the keychain.
 
@@ -343,8 +338,9 @@ But we aren’t going to lie: it’s more friction than now. We minimize:
   - Though when security requires more, we say so: AWS hardening uses a native
     credential helper to convert your too-powerful AWS keys into short-lived
     session tokens for each invocation.
-  - Some tools need more, so we patch them and provide a homebrew tap to install
-    them (`gh`, `stripe`, `supabase` etc.). We try to upstream these patches.
+  - Some tools need more, so we patch them and let `av harden` install the
+    signed Isotope directly or through Homebrew (`gh`, `stripe`, `supabase`
+    etc.). We try to upstream these patches.
 - We make approval gates rare and specific.
   - By default, Secret Gates automically authorize recognized read-only commands.
   - Writes and sensitive secret operations require Approval unless the chosen

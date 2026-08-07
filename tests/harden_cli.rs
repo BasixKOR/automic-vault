@@ -158,6 +158,11 @@ fn prepare(root: &Path, command: &str) {
     fs::create_dir_all(root.join("stubs")).unwrap();
     fs::create_dir_all(root.join("home")).unwrap();
     fs::write(root.join("targets").join(command), "#!/bin/sh\n").unwrap();
+    fs::set_permissions(
+        root.join("targets").join(command),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
 }
 
 fn stderr(output: &Output) -> String {

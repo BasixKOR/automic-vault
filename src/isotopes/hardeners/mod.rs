@@ -3,6 +3,7 @@ pub(crate) mod codex;
 pub(crate) mod env_wrapper;
 pub(crate) mod gh_cli;
 pub(crate) mod homebrew;
+pub(crate) mod isotope;
 mod migrations;
 pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
@@ -96,6 +97,7 @@ pub(crate) struct HardenerCommand {
     pub(crate) stub_requirements: Option<StubRequirements>,
     pub(crate) injected_keys: Vec<String>,
     pub(crate) assignment_keys: Vec<String>,
+    pub(crate) isotope: Option<isotope::Doctor>,
 }
 
 #[derive(Clone)]
@@ -156,6 +158,7 @@ impl HardenerDetection {
                 stub_requirements: None,
                 injected_keys: Vec::new(),
                 assignment_keys: Vec::new(),
+                isotope: None,
             }],
             diagnostics: Vec::new(),
         }
