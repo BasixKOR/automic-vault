@@ -171,36 +171,6 @@ Level and optional rules for specific Verified Launchers:
 Hardened tools request secrets when they need them. Automic Vault releases those
 secrets only when your gate policy allows it or you approve.
 
-### AWS Without Ambient Credentials
-
-```sh
-$ av harden aws
-$ aws sts get-caller-identity
-# ^^ temporary credentials, issued for this exact aws process
-```
-
-`av harden aws` moves your default access key pair out of
-`~/.aws/credentials`, stores it in the macOS Keychain, and installs a native
-credential helper. Each `aws` invocation registers its arguments, profile,
-process identity, and config with the app. The helper answers only the immediate
-child of that registered, still-running process.
-
-Normal commands receive short-lived STS credentials. MFA and role profiles work
-without writing a session cache to disk. Commands that AWS requires long-lived
-keys for, including some IAM and STS operations, receive them only after the
-approval window presents a large Elevated Secret Application warning. Your
-normal Secret Gate Access Levels still apply; **Full Access includes the
-original reusable credentials**.
-
-> [!IMPORTANT]
-> AWS hardening supports a narrow profile model on purpose: the imported
-> `default` keys, regions, MFA, and roles rooted at `default`. Other credential
-> providers fail closed. End-to-end integrity also depends on protecting the
-> Homebrew AWS CLI and its interpreter. `av harden brew` remains optional, but
-> we recommend it.
-
-[Read why we think this is the best AWS credential manager in the world.](https://www.automicvault.com/blog/best-aws-credential-manager/)
-
 > [!IMPORTANT]
 > Human approval is available only while your macOS user session is active and
 > the screens are awake. Automic Vault aborts open approval windows and denies
@@ -316,6 +286,39 @@ automation and not the *entire* agentic harness).
 If you have any concept for how to achieve this in a secure fashion, please
 reach out to us. We are actively looking for ways to make this easier and more
 secure.
+
+&nbsp;
+
+
+## AWS Without Ambient Credentials
+
+```sh
+$ av harden aws
+$ aws sts get-caller-identity
+# ^^ temporary credentials, issued for this exact aws process
+```
+
+`av harden aws` moves your default access key pair out of
+`~/.aws/credentials`, stores it in the macOS Keychain, and installs a native
+credential helper. Each `aws` invocation registers its arguments, profile,
+process identity, and config with the app. The helper answers only the immediate
+child of that registered, still-running process.
+
+Normal commands receive short-lived STS credentials. MFA and role profiles work
+without writing a session cache to disk. Commands that AWS requires long-lived
+keys for, including some IAM and STS operations, receive them only after the
+approval window presents a large Elevated Secret Application warning. Your
+normal Secret Gate Access Levels still apply; **Full Access includes the
+original reusable credentials**.
+
+> [!IMPORTANT]
+> AWS hardening supports a narrow profile model on purpose: the imported
+> `default` keys, regions, MFA, and roles rooted at `default`. Other credential
+> providers fail closed. End-to-end integrity also depends on protecting the
+> Homebrew AWS CLI and its interpreter. `av harden brew` remains optional, but
+> we recommend it.
+
+[Read why we think this is the best AWS credential manager in the world.](https://www.automicvault.com/blog/best-aws-credential-manager/)
 
 &nbsp;
 
