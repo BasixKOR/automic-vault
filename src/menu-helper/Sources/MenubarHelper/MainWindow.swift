@@ -571,13 +571,13 @@ final class DashboardModel: ObservableObject {
     }
 
     func chooseDirectAccessLauncher(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {
-        pickLauncher { [weak self] signing in
-            guard let self, let signing else { return }
+        pickLauncher { signing in
+            guard let signing else { return }
             guard signing.runtimeProtection.allowsSecretGateAccess else {
-                self.errorMessage = secretGateAdmissionError(
+                showLauncherCannotBeAllowed(secretGateAdmissionError(
                     appName: signing.identifier,
                     protection: signing.runtimeProtection
-                )
+                ))
                 return
             }
             completion(BlessedScriptLauncher(
@@ -649,10 +649,10 @@ final class DashboardModel: ObservableObject {
         chooseLauncher { [weak self] signing in
             guard let self, let signing else { return }
             guard signing.runtimeProtection.allowsSecretGateAccess else {
-                self.errorMessage = secretGateAdmissionError(
+                showLauncherCannotBeAllowed(secretGateAdmissionError(
                     appName: signing.identifier,
                     protection: signing.runtimeProtection
-                )
+                ))
                 return
             }
             let status = setSecretGateAppProtection(
@@ -2870,6 +2870,14 @@ private func secretGateAdmissionError(
 }
 
 @MainActor
+private func showLauncherCannotBeAllowed(_ reason: String) {
+    let alert = NSAlert()
+    alert.messageText = "Launcher cannot be allowed"
+    alert.informativeText = reason
+    alert.runModal()
+}
+
+@MainActor
 private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     pickLauncher { signing in
         guard let signing else {
@@ -2913,10 +2921,7 @@ private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
         }
         let resolved = selected.resolvingSymlinksInPath().standardizedFileURL
         guard let signing = launcherSigning(resolved) else {
-            let alert = NSAlert()
-            alert.messageText = "Launcher cannot be allowed"
-            alert.informativeText = "Choose a valid Developer ID-signed executable or signed app."
-            alert.runModal()
+            showLauncherCannotBeAllowed("Choose a valid Developer ID-signed executable or signed app.")
             completion(nil)
             return
         }
