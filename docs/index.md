@@ -1,0 +1,18 @@
+# Documentation
+
+## Security model
+
+- [Domain Language](domain-language.md) — canonical product and security terms
+- [Architecture](architecture.md) — contexts, invariants, and authorization flow
+- [Architecture Decisions](adr/) — accepted security and design decisions
+- [Secret Gate Security Audit](secret-gate-security-audit.md) — mediation limits and reviewed risks
+
+## Using Automic Vault
+
+- [Direct Secret Access](direct-secret-access.md) — broad per-Secret Launcher access and safer alternatives
+- [Signed CLI Launchers](signed-cli-launchers.md) — signature requirements and verification
+- [Securing Git](securing-git.md) — protected Git credentials
+
+## Development
+
+- [Releasing](releasing.md) — release, notarization, and publication process

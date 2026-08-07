@@ -40,6 +40,11 @@ Automic Vault stores named opaque Secrets in the macOS Data Protection Keychain.
 
 Authorization Gates verify the Launcher, bind the Gate Client and Target, classify the complete operation, apply the gate's Authorization Policy, request Approval when policy cannot allow it, and enforce the Authorization Decision.
 
+The Direct Secret Gate handles direct `av inject` requests that do not match a
+Tool-specific gate. It defaults to Approval Required. A user may add a Direct
+Access Rule for one exact Secret Name and Verified Launcher, knowingly allowing
+that Launcher to select the Target and arguments on future requests.
+
 ### Reviewed Automation
 
 Script Blessings bind a canonical path, exact contents, Script Declaration, capabilities, and optional Launcher Endorsements. Execution uses a verified snapshot so file edits cannot race authorization.
@@ -84,7 +89,12 @@ Each Authorization Gate owns one Authorization Policy:
 5. Policy must permit every characteristic for automic authorization.
 6. Unknown prevents automic authorization.
 
-Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, and Secret Disclosure distinct.
+Access Levels are named presets over operation characteristics. The user sees a small set of presets and concrete Approval reasons. The policy engine's target model keeps Homebrew Update, Local Write, System Write, Remote Write, Elevated Secret Application, Unconstrained Secret Application, and Secret Disclosure distinct.
+
+Direct Access is available only at the Direct Secret Gate. It permits
+Unconstrained Secret Application for exact Secret Names in the matching
+Launcher’s Direct Access Rules. It does not turn unknown Tool operations into
+recognized operations and does not apply to Tool-specific Gate Clients.
 
 ### Current compatibility model
 
@@ -103,6 +113,10 @@ The Homebrew migration intentionally broadens persisted `readOnly` rules to allo
 
 Secret bytes stay in the app's private Keychain access group. Gate policy and Authorization History use separate services. Availability controls whether Keychain may return a Secret while the device is locked. Authorization controls whether the operation may receive it. Both checks must pass.
 
+Direct Access Rules are authorization policy, not Secret Availability. They are
+stored separately from Secret bytes. Renaming or deleting a Secret revokes its
+rules so recreating an old Secret Name cannot silently restore authority.
+
 Human Approval requires an active user session and awake displays. Requests that still need a human decision are denied if the session becomes inactive or the displays sleep. Policy-authorized requests may proceed while locked only when every requested Secret has Available While Locked enabled.
 
 ## Recording before release
@@ -120,6 +134,11 @@ After Secret Application, the Target controls its own memory, plugins, helpers, 
 ## Secure defaults
 
 New Secret Gates start at Read Only. The Homebrew Execution Gate starts at Read & Update, which adds `brew update` without authorizing installation, upgrade, reinstall, removal, or other writes. Unknown operations and unverifiable Launchers require a human decision or denial according to the failed check. Every default and Launcher-specific rule is explicit and persisted.
+
+The Direct Secret Gate starts at Approval Required and has no broad default.
+Adding each Direct Access Rule requires an explicit warning and acknowledgement.
+Runtime signature or Hardened Runtime verification failure disables automic
+authorization and falls back to Approval when human approval is available.
 
 ## Source of truth
 

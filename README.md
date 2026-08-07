@@ -443,3 +443,5 @@ For more ephemeral discussion,
 
 > We provide a Discord server as a more convenient way to engage in
 > *ephemeral* discussion. Hardly anybody is there and that is *fine*.
+
+[Documentation index](docs/index.md)

@@ -31,6 +31,17 @@ A boundary that decides whether an operation may proceed. Every gate owns one Au
 - A **Secret Gate** controls the application or disclosure of protected secrets.
 - An **Execution Gate** controls an operation without requiring a secret. Homebrew is the current example.
 
+### Direct Secret Gate
+
+The built-in Secret Gate for direct `av inject` requests that do not belong to a
+Tool-specific Secret Gate. Its default Access Level is Approval Required.
+
+A **Direct Access Rule** binds one exact Secret Name to one Verified Launcher and
+grants Direct Access. It does not use patterns and does not authorize Secret
+Disclosure, listing Secret Names, changing Secrets, or sibling Launchers. Because
+the Launcher may choose any Target and arguments for each request, Direct Access
+delegates more authority than a Tool-specific Secret Gate or Blessed Script.
+
 ### Local Execution Boundary
 
 The point on the Mac where Automic Vault decides whether a Verified Launcher may apply a protected Secret or perform a gated operation through a Target. Secret storage, identity verification, policy evaluation, enforcement, and Authorization History remain on the Mac. A companion device may carry an Approval, but the Mac enforces the resulting Authorization Decision.
@@ -143,6 +154,7 @@ The policy engine's target model describes an operation with a set of characteri
 - **System Write:** changes shared machine state, installed software, protected locations, or configuration outside the user's local project state.
 - **Remote Write:** changes state in a remote service.
 - **Elevated Secret Application:** applies a more powerful or reusable credential than the operation normally receives.
+- **Unconstrained Secret Application:** applies a Secret through direct `av inject` to a Target and arguments selected by the Verified Launcher, without Tool-specific operation policy.
 - **Secret Disclosure:** returns a raw Secret value to a general-purpose destination.
 - **Unknown:** the Tool policy cannot establish the operation's characteristics.
 
@@ -162,6 +174,7 @@ An **Access Level** is a named policy preset for one Launcher at one Authorizati
 | **Local Write** | Recognized Read Only and Local Write operations. |
 | **Write Access** | Recognized read and write operations. Elevated Secret Application and Secret Disclosure still require Approval. |
 | **Full Access** | Recognized operations, including Elevated Secret Application and Secret Disclosure. Unknown operations still require Approval. |
+| **Direct Access** | Unconstrained Secret Application for exact Secret Names named by Direct Access Rules. Available only at the Direct Secret Gate. |
 
 Every requested characteristic must fit the selected preset. Gates may omit presets that do not describe their operation set.
 
@@ -241,7 +254,12 @@ Automic Vault persists and verifies a record of allowed Secret Use before releas
 
 ## Least Authority
 
-Durable trust binds one Authorization Gate to one Verified Launcher. A Blessing binds one exact script and its capabilities. Approval binds one complete request and process. Authority does not propagate to sibling Launchers, changed scripts, or a broader operation.
+Durable trust binds one Authorization Gate to one Verified Launcher. A Direct
+Access Rule additionally binds one exact Secret Name, but intentionally leaves
+the Target and arguments under that Launcher’s control. A Blessing binds one
+exact script and its capabilities. Approval binds one complete request and
+process. Authority does not propagate to sibling Launchers, changed scripts, or
+a broader operation.
 
 ## Zeroconf above the security boundary
 
