@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V15";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V16";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -35,8 +35,14 @@ fn main() {
 
     validate_caller().unwrap_or_else(|err| fail(err));
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut command = approved_command(args, std::env::vars_os(), &cwd, xpc_authorize)
-        .unwrap_or_else(|err| fail(err));
+    let mut command = approved_command(
+        args,
+        std::env::vars_os(),
+        &cwd,
+        validate_cask_mutation,
+        xpc_authorize,
+    )
+    .unwrap_or_else(|err| fail(err));
     let status = command
         .status()
         .unwrap_or_else(|err| fail(format!("failed to run {TARGET}: {err}")));
@@ -50,23 +56,25 @@ fn fail(message: String) -> ! {
     std::process::exit(1);
 }
 
-fn approved_command<I, F>(
+fn approved_command<I, V, F>(
     args: Vec<OsString>,
     source_env: I,
     cwd: &Path,
+    validate_cask: V,
     approve: F,
 ) -> Result<Command, String>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
+    V: FnOnce(&CaskMutation, &Path) -> Result<(), String>,
     F: FnOnce(&AuthorizationRequest) -> Result<(), String>,
 {
     let mut request = authorization_request(&args, cwd)?;
     let (args, cask) = governed_args(&request.args)?;
     request.args = args;
-    approve(&request)?;
     if let Some(cask) = &cask {
-        validate_cask_mutation(cask, cwd)?;
+        validate_cask(cask, cwd)?;
     }
+    approve(&request)?;
     let mut command = Command::new(TARGET);
     command
         .args(request.args)
@@ -581,6 +589,7 @@ mod tests {
             vec!["install".into(), "ack".into()],
             [],
             Path::new("/tmp"),
+            |_, _| Ok(()),
             |_| Err("denied".into()),
         );
 
@@ -593,6 +602,7 @@ mod tests {
             vec!["install".into(), "tree".into()],
             [],
             Path::new("/tmp"),
+            |_, _| Ok(()),
             |request| {
                 assert_eq!(request.args, ["install", "--formula", "tree"]);
                 Ok(())
@@ -625,6 +635,7 @@ mod tests {
                 ("SECRET".into(), "nope".into()),
             ],
             Path::new("/tmp"),
+            |_, _| Ok(()),
             |_| Ok(()),
         )
         .unwrap();
@@ -636,6 +647,34 @@ mod tests {
         assert!(env.contains(&("HOME".into(), "/opt/homebrew/var/automic".into())));
         assert!(env.contains(&("TERM".into(), "xterm-256color".into())));
         assert!(!env.iter().any(|(key, _)| key == "SECRET"));
+    }
+
+    #[test]
+    fn unsupported_cask_is_rejected_before_authorization() {
+        let mut authorized = false;
+        let expected = "Hardened Homebrew does not support cask `zed`: its `uninstall` artifact is outside Automic Vault's CLI-only cask support";
+        let error = approved_command(
+            vec!["install".into(), "--cask".into(), "zed".into()],
+            [],
+            Path::new("/tmp"),
+            |cask, _| {
+                av::brew_cask_policy::validate_info_cask(
+                    &cask.names[0],
+                    &serde_json::json!({
+                        "tap": "homebrew/cask",
+                        "artifacts": [{"uninstall": [{"quit": "dev.zed.Zed"}]}]
+                    }),
+                )
+            },
+            |_| {
+                authorized = true;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, expected);
+        assert!(!authorized);
     }
 
     #[test]

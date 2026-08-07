@@ -97,7 +97,7 @@ fn validate_artifacts(name: &str, value: &Value, receipt: bool) -> Result<(), St
             }
             kind => {
                 return Err(format!(
-                    "cask `{name}` is not CLI-only: unsupported `{kind}` artifact"
+                    "Hardened Homebrew does not support cask `{name}`: its `{kind}` artifact is outside Automic Vault's CLI-only cask support"
                 ));
             }
         }
