@@ -207,7 +207,10 @@ A verifier for Automic Vault's intervention. Doctor checks declared invariants s
 
 ### Isotope
 
-An Automic Vault-compatible build or wrapper of a third-party Tool, distributed through the Isotopes Homebrew tap in most cases. An Isotope is not a Detector, Hardener, or Secret.
+An Automic Vault-compatible build or wrapper of a third-party Tool. A Hardener
+installs an Isotope through the Isotopes Homebrew tap when Homebrew is available,
+or installs the same signed release directly and assumes responsibility for its
+updates. An Isotope is not a Detector, Hardener, or Secret.
 
 ## Reviewed automation
 

@@ -30,7 +30,7 @@ Detectors inspect the developer environment without changing it. A Scan produces
 
 ### Tool Hardening
 
-Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary.
+Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. The Hardener delegates Isotope updates to Homebrew when the Isotope came from the tap. For a direct install, it verifies the release digest and Automic Vault code signature, installs into `/usr/local/bin`, and Doctor directs the user back to the Hardener when the tap publishes a new digest.
 
 ### Secret Custody
 
@@ -46,7 +46,10 @@ Script Blessings bind a canonical path, exact contents, Script Declaration, capa
 
 ### Distribution
 
-The app, CLI, signed helpers, Isotopes tap, website, and companion app distribute and present the system. Distribution supports the security contexts but does not define competing domain language or policy semantics.
+The app, CLI, signed helpers, Isotopes tap and signed direct Isotope releases,
+website, and companion app distribute and present the system. Distribution
+supports the security contexts but does not define competing domain language or
+policy semantics.
 
 ## Authorization flow
 

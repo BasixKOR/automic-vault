@@ -3,25 +3,11 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute, isotope};
 
 const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
-const STRIPE_CLI_PATH: &str = "/opt/homebrew/opt/stripe-cli/bin/stripe";
 const KEYCHAIN_SERVICE: &str = "StripeCLI";
-pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/stripe-cli";
 const API_KEY_FIELDS: [&str; 2] = ["test_mode_api_key", "live_mode_api_key"];
-
-#[derive(Debug)]
-pub(crate) enum HardenError {
-    StripeCliNotInstalled,
-    Other(String),
-}
-
-impl From<String> for HardenError {
-    fn from(error: String) -> Self {
-        Self::Other(error)
-    }
-}
 
 #[derive(Clone)]
 struct Credential {
@@ -29,11 +15,9 @@ struct Credential {
     legacy_accounts: BTreeSet<String>,
 }
 
-pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
+pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     PRIVILEGE_MODE.require_user("stripe", false)?;
-    if !stripe_cli_path().exists() {
-        return Err(HardenError::StripeCliNotInstalled);
-    }
+    let install = isotope::plan(isotope::STRIPE)?;
 
     let config_dir = stripe_config_dir()?;
     let config_path = config_dir.join("config.toml");
@@ -42,7 +26,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
         Ok(config) => config,
         Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
         Err(err) => {
-            return Err(format!("failed to read {}: {err}", config_path.display()).into());
+            return Err(format!("failed to read {}: {err}", config_path.display()));
         }
     };
     let profiles = parse_profiles(&config);
@@ -93,25 +77,37 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
 
     writeln!(stdout, "╭─ harden stripe").ok();
     writeln!(stdout, "│").ok();
-    if credentials.is_empty() {
+    install.write(stdout, isotope::STRIPE);
+    if credentials.is_empty() && !install.needed() {
         remove_fallback(&credentials_path)?;
         writeln!(stdout, "╰─ no legacy Stripe credentials found").ok();
         super::write_secret_gate_notice(stdout, "stripe");
         return Ok(());
     }
-    writeln!(
-        stdout,
-        "├─ migrate {} Stripe credential(s) into Automic Vault",
-        credentials.len()
-    )
-    .ok();
-    writeln!(stdout, "├─ remove legacy Keychain and plaintext copies").ok();
+    if credentials.is_empty() {
+        writeln!(stdout, "├─ no legacy Stripe credentials found").ok();
+    } else {
+        writeln!(
+            stdout,
+            "├─ migrate {} Stripe credential(s) into Automic Vault",
+            credentials.len()
+        )
+        .ok();
+        writeln!(stdout, "├─ remove legacy Keychain and plaintext copies").ok();
+    }
     writeln!(stdout, "│").ok();
     if !super::gh_cli::confirm(stdout, yes)? {
         writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
 
+    install.apply(isotope::STRIPE)?;
+    if credentials.is_empty() {
+        remove_fallback(&credentials_path)?;
+        writeln!(stdout, "╰─ installed stripe isotope").ok();
+        super::write_secret_gate_notice(stdout, "stripe");
+        return Ok(());
+    }
     for (key, credential) in &credentials {
         crate::secrets::store_secret(key, &credential.value)?;
     }
@@ -128,10 +124,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
 }
 
 pub(crate) fn detect() -> HardenerDetection {
-    let path = stripe_cli_path();
-    let exists = path.exists();
-    let path = path.display().to_string();
-    HardenerDetection::command(exists, "stripe", Some(path.clone()), path)
+    isotope::detect(isotope::STRIPE)
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
@@ -141,19 +134,13 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
         routes: vec![SecretGateRoute {
             operation: "keys",
             script_path: None,
-            target_path: stripe_cli_path().display().to_string(),
+            target_path: isotope::target(isotope::STRIPE).display().to_string(),
             caller_identifiers: vec!["stripe"],
             key_patterns: vec!["STRIPE_CLI_*".to_string()],
             replace_existing_env: true,
             allow_missing_keys: false,
         }],
     }
-}
-
-fn stripe_cli_path() -> PathBuf {
-    crate::test_env_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(STRIPE_CLI_PATH).to_path_buf())
 }
 
 fn stripe_config_dir() -> Result<PathBuf, String> {

@@ -4,23 +4,9 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute};
+use super::{HardenerDetection, SecretGateDescriptor, SecretGateRoute, isotope};
 
 const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::UserOnly;
-const GH_CLI_PATH: &str = "/opt/homebrew/opt/gh-cli/bin/gh";
-pub(crate) const INSTALL_COMMAND: &str = "brew install automic-vault/isotopes/gh-cli";
-
-#[derive(Debug)]
-pub(crate) enum HardenError {
-    GhCliNotInstalled,
-    Other(String),
-}
-
-impl From<String> for HardenError {
-    fn from(error: String) -> Self {
-        Self::Other(error)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct GhCredential {
@@ -29,11 +15,9 @@ struct GhCredential {
     token: String,
 }
 
-pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> {
+pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     PRIVILEGE_MODE.require_user("gh", false)?;
-    if !gh_cli_path().exists() {
-        return Err(HardenError::GhCliNotInstalled);
-    }
+    let install = isotope::plan(isotope::GH)?;
 
     let hosts_paths = gh_hosts_paths()?;
     let configured_hosts = configured_hosts(&hosts_paths);
@@ -51,7 +35,8 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
 
     writeln!(stdout, "╭─ harden gh").ok();
     writeln!(stdout, "│").ok();
-    if credentials.is_empty() {
+    install.write(stdout, isotope::GH);
+    if credentials.is_empty() && !install.needed() {
         writeln!(stdout, "╰─ no legacy gh credentials found").ok();
         super::write_secret_gate_notice(stdout, "gh");
         return Ok(());
@@ -60,12 +45,16 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
     let destinations = migration_destinations(&credentials, &configured_hosts)?;
     preflight_destinations(&destinations)?;
 
-    writeln!(
-        stdout,
-        "├─ migrate {} GitHub token(s) into Automic Vault",
-        credentials.len()
-    )
-    .ok();
+    if credentials.is_empty() {
+        writeln!(stdout, "├─ no legacy gh credentials found").ok();
+    } else {
+        writeln!(
+            stdout,
+            "├─ migrate {} GitHub token(s) into Automic Vault",
+            credentials.len()
+        )
+        .ok();
+    }
     if !plaintext_credentials.is_empty() {
         writeln!(
             stdout,
@@ -87,6 +76,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
         return Ok(());
     }
 
+    install.apply(isotope::GH)?;
+    if credentials.is_empty() {
+        writeln!(stdout, "╰─ installed gh isotope").ok();
+        super::write_secret_gate_notice(stdout, "gh");
+        return Ok(());
+    }
     store_and_verify_destinations(&destinations)?;
     for path in &hosts_paths {
         remove_plaintext_tokens(path)?;
@@ -101,10 +96,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), HardenError> 
 }
 
 pub(crate) fn detect() -> HardenerDetection {
-    let path = gh_cli_path();
-    let exists = path.exists();
-    let path = path.display().to_string();
-    HardenerDetection::command(exists, "gh", Some(path.clone()), path)
+    isotope::detect(isotope::GH)
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {
@@ -114,7 +106,7 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
         routes: vec![SecretGateRoute {
             operation: "keys",
             script_path: None,
-            target_path: gh_cli_path().display().to_string(),
+            target_path: isotope::target(isotope::GH).display().to_string(),
             caller_identifiers: vec!["gh", "com.github.cli"],
             key_patterns: vec!["GH_TOKEN_*".to_string()],
             replace_existing_env: true,
@@ -144,12 +136,6 @@ pub(super) fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String>
         input.trim().to_ascii_lowercase().as_str(),
         "y" | "yes"
     ))
-}
-
-fn gh_cli_path() -> PathBuf {
-    crate::test_env_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(GH_CLI_PATH).to_path_buf())
 }
 
 fn gh_hosts_paths() -> Result<Vec<PathBuf>, String> {
@@ -646,22 +632,6 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn missing_gh_cli_tells_user_to_install_isotope() {
-        let _guard = crate::global_test_env_lock().lock().unwrap();
-        let missing = temp_path("missing-gh-cli");
-        unsafe {
-            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
-        }
-
-        let err = run(&mut Vec::new(), true).err().unwrap();
-
-        unsafe {
-            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
-        }
-        assert!(matches!(err, HardenError::GhCliNotInstalled));
-    }
-
-    #[test]
     fn detect_reports_full_gh_path() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let missing = temp_path("missing-gh-cli-detect");
@@ -876,9 +846,7 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
         }
-        assert!(
-            matches!(error, HardenError::Other(message) if message.contains("refusing to replace"))
-        );
+        assert!(error.contains("refusing to replace"));
         assert_eq!(
             fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM")).unwrap(),
             "working"

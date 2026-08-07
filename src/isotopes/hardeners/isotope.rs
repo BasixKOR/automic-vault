@@ -1,0 +1,697 @@
+use std::collections::BTreeSet;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::{HardenerDetection, executable};
+
+const AV_PATH: &str = "/usr/local/bin/av";
+const CURL_PATH: &str = "/usr/bin/curl";
+const SUDO_PATH: &str = "/usr/bin/sudo";
+const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
+const TAP_FORMULA_ROOT: &str =
+    "https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula";
+
+pub(crate) const GH: Spec = Spec {
+    hardener: "gh",
+    formula: "gh-cli",
+    repository: "gh-cli",
+    primary: "gh",
+    binaries: &["gh"],
+    test_path: "AUTOMIC_VAULT_TEST_GH_CLI_PATH",
+};
+pub(crate) const STRIPE: Spec = Spec {
+    hardener: "stripe",
+    formula: "stripe-cli",
+    repository: "stripe-cli",
+    primary: "stripe",
+    binaries: &["stripe"],
+    test_path: "AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH",
+};
+pub(crate) const SUPABASE: Spec = Spec {
+    hardener: "supabase",
+    formula: "supabase-cli",
+    repository: "supabase-cli",
+    primary: "supabase",
+    binaries: &["supabase-go", "supabase"],
+    test_path: "AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH",
+};
+
+#[derive(Clone, Copy)]
+pub(crate) struct Spec {
+    pub(crate) hardener: &'static str,
+    formula: &'static str,
+    repository: &'static str,
+    primary: &'static str,
+    binaries: &'static [&'static str],
+    test_path: &'static str,
+}
+
+#[derive(Clone)]
+pub(crate) struct Doctor {
+    pub(crate) identifier: &'static str,
+    pub(crate) formula_url: String,
+    pub(crate) receipt_path: Option<String>,
+}
+
+pub(crate) enum InstallPlan {
+    Ready,
+    Homebrew { brew: PathBuf },
+    Direct { manifest: Manifest, update: bool },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Manifest {
+    url: String,
+    sha256: String,
+}
+
+impl InstallPlan {
+    pub(crate) fn needed(&self) -> bool {
+        !matches!(self, Self::Ready)
+    }
+
+    pub(crate) fn write(&self, stdout: &mut dyn Write, spec: Spec) {
+        match self {
+            Self::Ready => {}
+            Self::Homebrew { brew } => {
+                writeln!(
+                    stdout,
+                    "├─ run `{} install automic-vault/isotopes/{}`",
+                    brew.display(),
+                    spec.formula
+                )
+                .ok();
+            }
+            Self::Direct { update, .. } => {
+                let verb = if *update { "update" } else { "install" };
+                for binary in spec.binaries {
+                    writeln!(stdout, "├─ {verb} /usr/local/bin/{binary}").ok();
+                }
+            }
+        }
+    }
+
+    pub(crate) fn apply(self, spec: Spec) -> Result<(), String> {
+        match self {
+            Self::Ready => Ok(()),
+            Self::Homebrew { brew } => install_with_homebrew(spec, &brew),
+            Self::Direct { manifest, .. } => install_direct(spec, &manifest),
+        }
+    }
+}
+
+pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
+    let target = target(spec);
+    if installed(spec, &target) {
+        if is_direct_target(spec, &target) {
+            let manifest = current_manifest(spec)?;
+            let current = fs::read_to_string(receipt_path(spec)).ok();
+            if current.as_deref().map(str::trim) != Some(manifest.sha256.as_str()) {
+                return Ok(InstallPlan::Direct {
+                    manifest,
+                    update: true,
+                });
+            }
+        }
+        return Ok(InstallPlan::Ready);
+    }
+    if let Some(brew) = brew_path() {
+        return Ok(InstallPlan::Homebrew { brew });
+    }
+    Ok(InstallPlan::Direct {
+        manifest: current_manifest(spec)?,
+        update: false,
+    })
+}
+
+pub(crate) fn target(spec: Spec) -> PathBuf {
+    if let Some(path) = crate::test_env_var(spec.test_path) {
+        return path.into();
+    }
+    brew_targets(spec)
+        .into_iter()
+        .find(|path| executable(path))
+        .or_else(|| executable(&direct_target(spec)).then(|| direct_target(spec)))
+        .unwrap_or_else(|| {
+            if brew_path().is_some() {
+                brew_targets(spec).remove(0)
+            } else {
+                direct_target(spec)
+            }
+        })
+}
+
+pub(crate) fn detect(spec: Spec) -> HardenerDetection {
+    let target = target(spec);
+    let exists = installed(spec, &target);
+    let target_text = target.display().to_string();
+    let mut detection =
+        HardenerDetection::command(exists, spec.primary, Some(target_text.clone()), target_text);
+    detection.commands[0].isotope = Some(Doctor {
+        identifier: spec.primary,
+        formula_url: formula_url(spec),
+        receipt_path: is_direct_target(spec, &target)
+            .then(|| receipt_path(spec).display().to_string()),
+    });
+    detection
+}
+
+pub(crate) fn current_sha(formula_url: &str) -> Result<String, String> {
+    let formula = fetch(formula_url, 5)?;
+    parse_formula(&formula, None).map(|manifest| manifest.sha256)
+}
+
+pub(crate) fn signature_valid(path: &Path, identifier: &str) -> bool {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR").is_some() {
+        return executable(path);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let requirement = format!(
+            "=identifier \"{identifier}\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"{TEAM_IDENTIFIER}\""
+        );
+        Command::new("/usr/bin/codesign")
+            .args(["--verify", "--strict", "-R", &requirement])
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
+pub(crate) fn install_privileged(
+    hardener: &str,
+    sha256: &str,
+    archive: &Path,
+) -> Result<(), String> {
+    let spec = spec(hardener).ok_or_else(|| format!("unknown isotope `{hardener}`"))?;
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR").is_none()
+        && super::effective_uid() != 0
+    {
+        return Err("isotope installation requires root".into());
+    }
+    validate_sha256(sha256)?;
+    let bin_dir = direct_bin_dir();
+    let receipt_dir = direct_receipt_dir();
+    prepare_install_directory(&bin_dir)?;
+    prepare_install_directory(&receipt_dir)?;
+    let suffix = format!("{}.{}", std::process::id(), now_nanos());
+    let root_stage = TemporaryDirectory::new_in(&receipt_dir, spec.hardener)?;
+    let trusted_archive = root_stage.path.join("isotope.tgz");
+    copy_new(archive, &trusted_archive)?;
+    let actual = sha256_file(&trusted_archive)?;
+    if actual != sha256 {
+        return Err(format!(
+            "downloaded {} digest {actual}, expected {sha256}",
+            spec.formula
+        ));
+    }
+    let sources = extract_and_verify(spec, &trusted_archive, &root_stage.path)?;
+    let mut staged = Vec::new();
+    for (source, binary) in sources.iter().zip(spec.binaries) {
+        if source.file_name().and_then(|name| name.to_str()) != Some(*binary) {
+            return Err(format!(
+                "refusing isotope binary with unexpected basename: {}",
+                source.display()
+            ));
+        }
+        let stage = bin_dir.join(format!(".{binary}.av-{suffix}"));
+        copy_new(source, &stage)?;
+        fs::set_permissions(&stage, fs::Permissions::from_mode(0o755))
+            .map_err(|err| format!("failed to protect {}: {err}", stage.display()))?;
+        if !signature_valid(&stage, binary) {
+            let _ = fs::remove_file(&stage);
+            return Err(format!(
+                "refusing {} because its Automic Vault code signature is invalid",
+                source.display()
+            ));
+        }
+        staged.push((stage, bin_dir.join(binary)));
+    }
+    for (stage, destination) in &staged {
+        fs::rename(stage, destination).map_err(|err| {
+            format!(
+                "failed to install {} at {}: {err}",
+                stage.display(),
+                destination.display()
+            )
+        })?;
+    }
+    let receipt = receipt_path(spec);
+    let staged_receipt = receipt_dir.join(format!(".{}.sha256.av-{suffix}", spec.formula));
+    fs::write(&staged_receipt, format!("{sha256}\n"))
+        .map_err(|err| format!("failed to write {}: {err}", staged_receipt.display()))?;
+    fs::set_permissions(&staged_receipt, fs::Permissions::from_mode(0o644))
+        .map_err(|err| format!("failed to protect {}: {err}", staged_receipt.display()))?;
+    fs::rename(&staged_receipt, &receipt)
+        .map_err(|err| format!("failed to install {}: {err}", receipt.display()))?;
+    Ok(())
+}
+
+fn install_with_homebrew(spec: Spec, brew: &Path) -> Result<(), String> {
+    let package = format!("automic-vault/isotopes/{}", spec.formula);
+    let status = Command::new(brew)
+        .args(["install", &package])
+        .status()
+        .map_err(|err| format!("failed to run {}: {err}", brew.display()))?;
+    if !status.success() {
+        return Err(format!("Homebrew isotope installation failed: {status}"));
+    }
+    let target = target(spec);
+    if !executable(&target) || !signature_valid(&target, spec.primary) {
+        return Err(format!(
+            "Homebrew installed {}, but {} is missing or has an invalid Automic Vault code signature",
+            spec.formula,
+            target.display()
+        ));
+    }
+    Ok(())
+}
+
+fn install_direct(spec: Spec, manifest: &Manifest) -> Result<(), String> {
+    let temporary = TemporaryDirectory::new(spec.hardener)?;
+    let archive = temporary.path.join("isotope.tgz");
+    download(&manifest.url, &archive)?;
+    let actual = sha256_file(&archive)?;
+    if actual != manifest.sha256 {
+        return Err(format!(
+            "downloaded {} digest {actual}, expected {}",
+            spec.formula, manifest.sha256
+        ));
+    }
+    extract_and_verify(spec, &archive, &temporary.path)?;
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR").is_some() {
+        return install_privileged(spec.hardener, &manifest.sha256, &archive);
+    }
+    super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
+    let status = Command::new(SUDO_PATH)
+        .args([
+            AV_PATH,
+            "__install-isotope",
+            spec.hardener,
+            &manifest.sha256,
+        ])
+        .arg(archive)
+        .status()
+        .map_err(|err| format!("failed to run sudo: {err}"))?;
+    if !status.success() {
+        return Err(format!("isotope installation failed: {status}"));
+    }
+    Ok(())
+}
+
+fn extract_and_verify(
+    spec: Spec,
+    archive: &Path,
+    destination: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let expected = spec
+        .binaries
+        .iter()
+        .map(|binary| format!("bin/{binary}"))
+        .collect::<BTreeSet<_>>();
+    let listing = Command::new("/usr/bin/tar")
+        .args(["-tzf"])
+        .arg(archive)
+        .output()
+        .map_err(|err| format!("failed to inspect {}: {err}", archive.display()))?;
+    if !listing.status.success() {
+        return Err(format!("invalid isotope archive: {}", archive.display()));
+    }
+    let entries = String::from_utf8(listing.stdout)
+        .map_err(|_| "isotope archive contains non-UTF-8 paths".to_string())?
+        .lines()
+        .filter(|entry| *entry != "bin/")
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    if entries != expected {
+        return Err("isotope archive contains unexpected paths".into());
+    }
+    let status = Command::new("/usr/bin/tar")
+        .args(["-xzf"])
+        .arg(archive)
+        .arg("-C")
+        .arg(destination)
+        .status()
+        .map_err(|err| format!("failed to unpack isotope archive: {err}"))?;
+    if !status.success() {
+        return Err(format!("failed to unpack isotope archive: {status}"));
+    }
+    let sources = spec
+        .binaries
+        .iter()
+        .map(|binary| destination.join("bin").join(binary))
+        .collect::<Vec<_>>();
+    for (source, binary) in sources.iter().zip(spec.binaries) {
+        if !source
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_file())
+            || !signature_valid(source, binary)
+        {
+            return Err(format!(
+                "refusing {} because its Automic Vault code signature is invalid",
+                source.display()
+            ));
+        }
+    }
+    Ok(sources)
+}
+
+fn current_manifest(spec: Spec) -> Result<Manifest, String> {
+    let formula = fetch(&formula_url(spec), 15)?;
+    parse_formula(&formula, Some(spec))
+}
+
+fn parse_formula(contents: &str, spec: Option<Spec>) -> Result<Manifest, String> {
+    let values = |prefix: &str| {
+        contents
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix(prefix))
+            .filter_map(|value| value.strip_suffix('"'))
+            .collect::<Vec<_>>()
+    };
+    let urls = values("url \"");
+    let hashes = values("sha256 \"");
+    if urls.len() != 1 || hashes.len() != 1 {
+        return Err("isotope formula must contain exactly one URL and SHA-256".into());
+    }
+    let url = urls[0];
+    if let Some(spec) = spec {
+        let prefix = format!(
+            "https://github.com/automic-vault/{}/releases/download/",
+            spec.repository
+        );
+        if !url.starts_with(&prefix) || !url.ends_with(".tgz") {
+            return Err(format!("refusing unexpected isotope URL: {url}"));
+        }
+    } else if !url.starts_with("https://github.com/automic-vault/") || !url.ends_with(".tgz") {
+        return Err(format!("refusing unexpected isotope URL: {url}"));
+    }
+    validate_sha256(hashes[0])?;
+    Ok(Manifest {
+        url: url.to_string(),
+        sha256: hashes[0].to_string(),
+    })
+}
+
+fn fetch(url: &str, timeout: u32) -> Result<String, String> {
+    if let Some(contents) = crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA") {
+        return Ok(contents);
+    }
+    let output = Command::new(CURL_PATH)
+        .args([
+            "-fsSL",
+            "--proto",
+            "=https",
+            "--tlsv1.2",
+            "--max-time",
+            &timeout.to_string(),
+            url,
+        ])
+        .output()
+        .map_err(|err| format!("failed to fetch {url}: {err}"))?;
+    if !output.status.success() {
+        return Err(format!("failed to fetch {url}: {}", output.status));
+    }
+    String::from_utf8(output.stdout).map_err(|_| format!("{url} returned non-UTF-8 data"))
+}
+
+fn download(url: &str, destination: &Path) -> Result<(), String> {
+    let status = Command::new(CURL_PATH)
+        .args(["-fsSL", "--proto", "=https", "--tlsv1.2", "-o"])
+        .arg(destination)
+        .arg(url)
+        .status()
+        .map_err(|err| format!("failed to download {url}: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to download {url}: {status}"))
+    }
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let output = Command::new("/usr/bin/shasum")
+        .args(["-a", "256"])
+        .arg(path)
+        .output()
+        .map_err(|err| format!("failed to hash {}: {err}", path.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to hash {}: {}",
+            path.display(),
+            output.status
+        ));
+    }
+    let hash = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    validate_sha256(&hash)?;
+    Ok(hash)
+}
+
+fn validate_sha256(value: &str) -> Result<(), String> {
+    if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err("invalid isotope SHA-256".into())
+    }
+}
+
+fn brew_path() -> Option<PathBuf> {
+    if let Some(path) = crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH") {
+        return (!path.is_empty()).then(|| path.into());
+    }
+    ["/usr/local/bin/brew", "/opt/homebrew/bin/brew"]
+        .map(PathBuf::from)
+        .into_iter()
+        .find(|path| executable(path))
+}
+
+fn brew_targets(spec: Spec) -> Vec<PathBuf> {
+    ["/opt/homebrew/opt", "/usr/local/opt"]
+        .map(|root| {
+            Path::new(root)
+                .join(spec.formula)
+                .join("bin")
+                .join(spec.primary)
+        })
+        .to_vec()
+}
+
+fn direct_target(spec: Spec) -> PathBuf {
+    direct_bin_dir().join(spec.primary)
+}
+
+fn direct_bin_dir() -> PathBuf {
+    crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/usr/local/bin"))
+}
+
+fn direct_receipt_dir() -> PathBuf {
+    crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR")
+        .map(PathBuf::from)
+        .map(|path| path.join(".automic-vault-isotopes"))
+        .unwrap_or_else(|| PathBuf::from("/usr/local/share/automic-vault/isotopes"))
+}
+
+fn receipt_path(spec: Spec) -> PathBuf {
+    direct_receipt_dir().join(format!("{}.sha256", spec.formula))
+}
+
+fn is_direct_target(spec: Spec, path: &Path) -> bool {
+    path == direct_target(spec)
+}
+
+fn installed(spec: Spec, path: &Path) -> bool {
+    executable(path) || crate::test_env_var(spec.test_path).is_some() && path.exists()
+}
+
+fn formula_url(spec: Spec) -> String {
+    format!("{TAP_FORMULA_ROOT}/{}.rb", spec.formula)
+}
+
+fn spec(hardener: &str) -> Option<Spec> {
+    [GH, STRIPE, SUPABASE]
+        .into_iter()
+        .find(|spec| spec.hardener == hardener)
+}
+
+fn prepare_install_directory(path: &Path) -> Result<(), String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR").is_some() {
+        fs::create_dir_all(path)
+            .map_err(|err| format!("failed to create {}: {err}", path.display()))?;
+        return Ok(());
+    }
+    for ancestor in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata)
+                if metadata.file_type().is_dir()
+                    && metadata.uid() == 0
+                    && metadata.permissions().mode() & 0o022 == 0 => {}
+            Ok(_) => {
+                return Err(format!(
+                    "refusing to install through unsafe directory {}",
+                    ancestor.display()
+                ));
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(ancestor)
+                    .map_err(|err| format!("failed to create {}: {err}", ancestor.display()))?;
+                fs::set_permissions(ancestor, fs::Permissions::from_mode(0o755))
+                    .map_err(|err| format!("failed to protect {}: {err}", ancestor.display()))?;
+            }
+            Err(err) => return Err(format!("cannot trust {}: {err}", ancestor.display())),
+        }
+    }
+    Ok(())
+}
+
+fn copy_new(source: &Path, destination: &Path) -> Result<(), String> {
+    let mut input = fs::File::open(source)
+        .map_err(|err| format!("failed to open {}: {err}", source.display()))?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
+    std::io::copy(&mut input, &mut output)
+        .map_err(|err| format!("failed to copy {}: {err}", source.display()))?;
+    output
+        .sync_all()
+        .map_err(|err| format!("failed to sync {}: {err}", destination.display()))
+}
+
+struct TemporaryDirectory {
+    path: PathBuf,
+}
+
+impl TemporaryDirectory {
+    fn new(label: &str) -> Result<Self, String> {
+        Self::new_in(&std::env::temp_dir(), label)
+    }
+
+    fn new_in(parent: &Path, label: &str) -> Result<Self, String> {
+        let path = parent.join(format!(
+            "av-isotope-{label}-{}-{}",
+            std::process::id(),
+            now_nanos()
+        ));
+        fs::create_dir(&path)
+            .map_err(|err| format!("failed to create {}: {err}", path.display()))?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .map_err(|err| format!("failed to protect {}: {err}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn now_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formula_parser_accepts_only_the_expected_release_and_digest() {
+        let formula = r#"
+          url "https://github.com/automic-vault/gh-cli/releases/download/v2.97.0/cli-2.97.0.tgz"
+          sha256 "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070"
+        "#;
+        assert_eq!(
+            parse_formula(formula, Some(GH)).unwrap(),
+            Manifest {
+                url: "https://github.com/automic-vault/gh-cli/releases/download/v2.97.0/cli-2.97.0.tgz".into(),
+                sha256: "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070".into(),
+            }
+        );
+        assert!(
+            parse_formula(
+                &formula.replace("automic-vault/gh-cli", "evil/gh-cli"),
+                Some(GH)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn missing_isotope_with_homebrew_plans_the_tap_install() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = std::env::temp_dir().join("av-test-missing-gh-isotope");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &missing);
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH", "/test/bin/brew");
+        }
+        let plan = plan(GH).unwrap();
+        let mut output = Vec::new();
+        plan.write(&mut output, GH);
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+        }
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "├─ run `/test/bin/brew install automic-vault/isotopes/gh-cli`\n"
+        );
+    }
+
+    #[test]
+    fn privileged_installer_binds_the_receipt_to_the_archive() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let directory = TemporaryDirectory::new("install-test").unwrap();
+        let source = directory.path.join("source");
+        let bin = source.join("bin");
+        let destination = directory.path.join("destination");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("gh"), "#!/bin/sh\n").unwrap();
+        fs::set_permissions(bin.join("gh"), fs::Permissions::from_mode(0o755)).unwrap();
+        let archive = directory.path.join("gh.tgz");
+        let status = Command::new("/usr/bin/tar")
+            .args(["-czf"])
+            .arg(&archive)
+            .arg("-C")
+            .arg(&source)
+            .arg("bin")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let digest = sha256_file(&archive).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR", &destination);
+        }
+        install_privileged("gh", &digest, &archive).unwrap();
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR");
+        }
+        assert!(executable(&destination.join("gh")));
+        assert_eq!(
+            fs::read_to_string(
+                destination
+                    .join(".automic-vault-isotopes")
+                    .join("gh-cli.sha256")
+            )
+            .unwrap(),
+            format!("{digest}\n")
+        );
+    }
+}

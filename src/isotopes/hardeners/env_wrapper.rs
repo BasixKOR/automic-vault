@@ -220,6 +220,7 @@ fn detect(wrapper: &EnvWrapper) -> HardenerDetection {
                     .iter()
                     .map(|key| (*key).to_string())
                     .collect(),
+                isotope: None,
             }
         })
         .collect::<Vec<_>>();
