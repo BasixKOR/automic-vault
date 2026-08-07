@@ -6,8 +6,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+let keepLauncherAccessForDetachedProcessesDefaultsKey = "keepLauncherAccessForDetachedProcesses"
 private let directAccessDocumentationURL = URL(
     string: "https://github.com/automic-vault/automic-vault/blob/main/docs/direct-secret-access.md#safer-alternatives"
+)!
+private let secureLauncherDocumentationURL = URL(
+    string: "https://github.com/automic-vault/automic-vault/blob/main/docs/signed-cli-launchers.md"
 )!
 
 enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
@@ -231,6 +235,12 @@ final class DashboardModel: ObservableObject {
                     title: "Automic Authorization",
                     subtitle: "Choose subtle feedback or none",
                     detail: "Control visual feedback after policy authorizes an operation."
+                ),
+                DashboardItem(
+                    id: "detached-process-access",
+                    title: "Detached Processes",
+                    subtitle: "Keep Launcher attribution after ancestry loss",
+                    detail: "Allow an exact live process execution to retain gate-specific Launcher attribution after its parent chain exits."
                 ),
                 DashboardItem(
                     id: "secret-name-access",
@@ -1031,6 +1041,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
         NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
     }
     let aboutHeight = NSHostingView(rootView: AboutSettingsView(guiPath: "/usr/bin:/bin")).fittingSize.height
+    let detachedProcessAccessHeight = NSHostingView(
+        rootView: DetachedProcessAccessSettingsView()
+    ).fittingSize.height
     guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
@@ -1042,6 +1055,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           gateHeight > 0,
           secretDetailHeight.map({ $0 > 0 }) == true,
           aboutHeight > 0,
+          detachedProcessAccessHeight > 0,
           appRowHeight < 140
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
@@ -1117,7 +1131,12 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     model.searchText = ""
     model.selectSection(.settings)
-    guard model.items.map(\.id) == ["automatic-approval-feedback", "secret-name-access", "about"],
+    guard model.items.map(\.id) == [
+        "automatic-approval-feedback",
+        "detached-process-access",
+        "secret-name-access",
+        "about",
+    ],
           guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
           guiPATH(environment: [:]) == "<unset>"
     else { return 1 }
@@ -1436,6 +1455,12 @@ private struct DashboardDetailView: View {
             } else if model.selectedSection == .settings {
                 if model.selectedItem?.id == "automatic-approval-feedback" {
                     AutomaticApprovalFeedbackSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "detached-process-access" {
+                    DetachedProcessAccessSettingsView()
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -2507,6 +2532,37 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct DetachedProcessAccessSettingsView: View {
+    @AppStorage(keepLauncherAccessForDetachedProcessesDefaultsKey)
+    private var keepsLauncherAccess = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Detached Processes")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Control whether a live process keeps its verified Launcher attribution after its parent chain exits.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Toggle(
+                "Keep Launcher Access for Detached Processes",
+                isOn: $keepsLauncherAccess
+            )
+            Text("Off by default. When enabled, an exact signed process execution that participates in an automically authorized operation may continue using that Launcher’s current policy at the same Authorization Gate until the process or Automic Vault exits. New processes and other gates are not included.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            InfoBlock(
+                title: "Security tradeoff",
+                text: "This extends authority after the verified parent chain disappears. Ad-hoc signed tools can still be modified in memory by other same-user processes. A Secure Launcher with Hardened Runtime is safer for a recurring harness."
+            )
+            Link("Learn about Secure Launchers", destination: secureLauncherDocumentationURL)
+                .font(.caption)
         }
     }
 }

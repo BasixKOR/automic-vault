@@ -18,6 +18,10 @@ Unknown operation risk requires Approval. Missing or invalid identity, integrity
 
 Policies bind a Gate and Verified Launcher. Approval binds one complete request and process. Blessings bind exact script contents and a complete declaration.
 
+Optional Retained Launcher Provenance binds one Authorization Gate, one Verified
+Launcher, and one exact live process execution. It preserves attribution after
+ancestry loss; it does not preserve an Authorization Decision.
+
 ### The system is zeroconf above its boundary
 
 Developer tools and agent harnesses use their existing commands. Automic Vault discovers and hardens integrations beneath that interface. Configuration remains where user intent or a security tradeoff requires it.
@@ -72,9 +76,23 @@ flowchart LR
 
 The Authorization Request is immutable across this flow. A cached decision may be reused only for the same live process and complete request identity. Reuse still requires an Authorization Record before Secret Application.
 
+After a successful policy decision, Automic Vault may record Retained Launcher
+Provenance for signed intermediary process executions.
+If ordinary ancestry later disappears, that provenance may restore the original
+Launcher only at the same Authorization Gate. The complete later request is
+classified against current policy and receives a new Authorization Decision and
+Authorization Record.
+
 ## Identity model
 
 The policy identity is the Launcher's designated requirement, checked against the live process and its launch chain. Paths, process identifiers, names, and icons help the user recognize software but do not establish identity. Hardened Runtime requirements and rejected entitlements form part of launcher eligibility.
+
+Retained Launcher Provenance identifies an intermediary by its macOS process
+execution identity, including PID version and process start time, and by its live
+code identity. PID alone, PID plus start time, a pathname, or a basename is not
+sufficient: `exec` preserves PID and start time while changing the executable
+generation. Retained records are memory-only, are revalidated before use, and
+expire when the process execution or menu bar helper exits.
 
 The Gate Client and Target remain separate roles. A signed client submits the request. The Target performs the operation and may receive the Secret. Conflating them hides confused-deputy and target-substitution risks.
 
@@ -139,6 +157,14 @@ The Direct Secret Gate starts at Approval Required and has no broad default.
 Adding each Direct Access Rule requires an explicit warning and acknowledgement.
 Runtime signature or Hardened Runtime verification failure disables automic
 authorization and falls back to Approval when human approval is available.
+
+Detached-process access is off by default. While it is off, Retained Launcher
+Provenance may be observed in memory only to explain an Approval that the setting
+would have avoided; shadow records cannot authorize. Enabling the setting
+extends a verified Launcher's gate-specific attribution through a live signed
+descendant after its original parent chain exits. The UI must explain that this
+widens the lifetime of authority and that a Secure Launcher is safer for a
+recurring mutable or injectable harness.
 
 ## Source of truth
 

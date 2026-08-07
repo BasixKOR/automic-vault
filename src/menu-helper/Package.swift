@@ -20,7 +20,11 @@ let package = Package(
                 .product(name: "GraphQL", package: "GraphQL"),
             ]
         ),
-        .target(name: "CProcessInfo", publicHeadersPath: "include"),
+        .target(
+            name: "CProcessInfo",
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedLibrary("bsm")]
+        ),
         .executableTarget(
             name: "MenubarHelper",
             dependencies: [

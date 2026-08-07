@@ -64,6 +64,20 @@ A live Launcher whose code signature, designated requirement, and runtime protec
 
 The designated requirement stored when the user establishes trust and revalidated for each request. A path, display name, process identifier, or icon is metadata, not identity.
 
+### Retained Launcher Provenance
+
+Ephemeral evidence that Automic Vault recorded one exact live process execution
+between a Gate Client and a Verified Launcher during a successful automic
+authorization at one Authorization Gate. If the original parent chain later
+disappears, detached-process access can recover the same Launcher attribution at
+the same gate.
+
+Retained Launcher Provenance is not an Approval, Authorization Policy, or new
+Launcher Identity. Every later request is classified again under the gate's
+current policy. It does not apply to another gate, process execution, user
+session, or system boot, and uncertainty about the live process execution denies
+reuse.
+
 ### Gate Client
 
 The signed component that submits an Authorization Request, such as `av`, a patched `gh`, or the Homebrew stub.
@@ -258,7 +272,10 @@ Durable trust binds one Authorization Gate to one Verified Launcher. A Direct
 Access Rule additionally binds one exact Secret Name, but intentionally leaves
 the Target and arguments under that Launcher’s control. A Blessing binds one
 exact script and its capabilities. Approval binds one complete request and
-process. Authority does not propagate to sibling Launchers, changed scripts, or
+process. When detached-process access is enabled, Retained Launcher Provenance
+may preserve the same gate-and-Launcher attribution for one exact live process
+execution after its parent chain disappears. Authority does not propagate to
+sibling Launchers, changed scripts, another gate, a later process execution, or
 a broader operation.
 
 ## Zeroconf above the security boundary
