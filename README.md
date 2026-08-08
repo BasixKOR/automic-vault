@@ -1,4 +1,4 @@
-# Automic Vault
+# Automic Vault [![Knock Knock](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
 
 > A new kind of secrets manager for a new era of development.
 
@@ -433,20 +433,11 @@ approve a request itself, they cannot.
 &nbsp;
 
 
-## User Manual
+## Other Links
 
-https://www.automicvault.com/docs/
-
-The authoritative project vocabulary and security boundaries live in
-[Domain Language](docs/domain-language.md), [Architecture](docs/architecture.md),
-and the [architecture decisions](docs/adr/).
-
-## Discord
-
-For more ephemeral discussion,
-[join our Discord server](https://discord.gg/NQJDMhcrCU).
-
-> We provide a Discord server as a more convenient way to engage in
-> *ephemeral* discussion. Hardly anybody is there and that is *fine*.
-
-[Documentation index](docs/index.md)
+- [User Manual](https://www.automicvault.com/docs/)
+-  The authoritative project vocabulary and security boundaries live in
+  [Domain Language](docs/domain-language.md), [Architecture](docs/architecture.md),
+  and the [architecture decisions](docs/adr/).
+- [Documentation Index](docs/index.md)
+- [Ephermeral Chat](https://outclaw.dev/automic-vault/automic-vault)
