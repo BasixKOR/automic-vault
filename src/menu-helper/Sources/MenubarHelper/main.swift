@@ -6303,7 +6303,8 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         appSigning: { _ in nil },
         allowsStandaloneFallback: false
     ).first
-    guard satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
+    guard launcherPickerAllows(filenameExtension: "226"),
+          satisfiesDeveloperIDRequirement({ _ in errSecSuccess }),
           let launcher = launcherIdentity(
               pid: 42,
               path: developerID.mainExecutable,
