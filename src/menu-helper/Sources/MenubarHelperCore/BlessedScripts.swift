@@ -75,6 +75,18 @@ public struct BlessedScriptLauncher: Codable, Equatable, Sendable {
     }
 }
 
+public func launcherEndorsementsForReblessing(
+    previouslyEndorsed: [BlessedScriptLauncher],
+    requestedLauncher: BlessedScriptLauncher?
+) -> [BlessedScriptLauncher] {
+    guard let requestedLauncher,
+          !previouslyEndorsed.contains(where: { $0.requirement == requestedLauncher.requirement })
+    else {
+        return previouslyEndorsed
+    }
+    return previouslyEndorsed + [requestedLauncher]
+}
+
 public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
     public let path: String
     public let checksum: String

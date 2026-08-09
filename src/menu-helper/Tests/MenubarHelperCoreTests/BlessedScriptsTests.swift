@@ -129,6 +129,35 @@ import Testing
     #expect(!script.matchesBlessing(path: "/tmp/script", checksum: "changed"))
 }
 
+@Test func reblessingPreservesLauncherEndorsementsAndAddsTheRequestedLauncher() {
+    let terminal = BlessedScriptLauncher(
+        bundleIdentifier: "com.apple.Terminal",
+        requirement: #"identifier "com.apple.Terminal""#
+    )
+    let codex = BlessedScriptLauncher(
+        bundleIdentifier: "com.openai.codex",
+        requirement: #"identifier "com.openai.codex""#
+    )
+    let visualStudioCode = BlessedScriptLauncher(
+        bundleIdentifier: "com.microsoft.VSCode",
+        requirement: #"identifier "com.microsoft.VSCode""#
+    )
+    let previouslyEndorsed = [terminal, visualStudioCode]
+
+    #expect(launcherEndorsementsForReblessing(
+        previouslyEndorsed: previouslyEndorsed,
+        requestedLauncher: nil
+    ) == previouslyEndorsed)
+    #expect(launcherEndorsementsForReblessing(
+        previouslyEndorsed: previouslyEndorsed,
+        requestedLauncher: codex
+    ) == [terminal, visualStudioCode, codex])
+    #expect(launcherEndorsementsForReblessing(
+        previouslyEndorsed: previouslyEndorsed,
+        requestedLauncher: terminal
+    ) == previouslyEndorsed)
+}
+
 @Test(arguments: [
     """
     #!/bin/sh

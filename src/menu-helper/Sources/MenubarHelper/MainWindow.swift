@@ -363,7 +363,13 @@ final class DashboardModel: ObservableObject {
             return
         }
         pendingBlessing = request
-        pendingBlessingLaunchers = request.launcher.map { [$0] } ?? []
+        let previouslyEndorsed = loadBlessedScripts()
+            .first(where: { $0.path == request.path })?
+            .launchers ?? []
+        pendingBlessingLaunchers = launcherEndorsementsForReblessing(
+            previouslyEndorsed: previouslyEndorsed,
+            requestedLauncher: request.launcher
+        )
         blessingCompletion = completion
         selectedSection = .blessedScripts
         selectedItemID = request.path
