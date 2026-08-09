@@ -3604,8 +3604,9 @@ private func resolveSecretGatePolicy(
 ) -> ResolvedSecretGatePolicy? {
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
-            let runtimeProtectionFailure = policy.requiresHardenedRuntime
-                && !launcher.runtimeProtection.allowsSecretGateAccess
+            let runtimeProtectionFailure = !policy.runtimeRequirement.allows(
+                launcher.runtimeProtection
+            )
                 ? launcher.runtimeProtection
                 : nil
             return ResolvedSecretGatePolicy(
@@ -3656,6 +3657,8 @@ private func launcherRuntimeProtectionApprovalExplanation(
     switch failure {
     case .hardened:
         return nil
+    case .hardenedWithLibraryValidationDisabled:
+        return "\(name) disables library validation, so third-party code can run inside the Launcher. Automic Vault cannot apply the Authorization Gate’s configured Access Level because this rule requires a stricter runtime posture. Approval is required."
     case .hardenedRuntimeMissing:
         return "\(name) does not enable Hardened Runtime, so Automic Vault cannot apply the Authorization Gate’s configured Access Level. Approval is required."
     case .unsafeEntitlements(let entitlements):
@@ -6351,13 +6354,25 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .hardenedRuntimeMissing,
         isStandalone: true
     )
-    let unsafeLauncher = LauncherIdentity(
+    let libraryValidationLauncher = LauncherIdentity(
         pid: launcher.pid,
         path: launcher.path,
         identifier: launcher.identifier,
         teamIdentifier: launcher.teamIdentifier,
         designatedRequirement: launcher.designatedRequirement,
-        runtimeProtection: .unsafeEntitlements(["com.apple.security.cs.disable-library-validation"]),
+        runtimeProtection: .hardenedWithLibraryValidationDisabled,
+        isStandalone: true
+    )
+    let injectableLauncher = LauncherIdentity(
+        pid: launcher.pid,
+        path: launcher.path,
+        identifier: launcher.identifier,
+        teamIdentifier: launcher.teamIdentifier,
+        designatedRequirement: launcher.designatedRequirement,
+        runtimeProtection: .unsafeEntitlements([
+            "com.apple.security.cs.allow-dyld-environment-variables",
+            "com.apple.security.cs.disable-library-validation",
+        ]),
         isStandalone: true
     )
     let bundledLauncher = LauncherIdentity(
@@ -6400,6 +6415,18 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
             requiresHardenedRuntime: true
         )]
     )
+    let libraryLoadingGate = SecretGate(
+        id: "test",
+        keyPatterns: [],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: developerID.identifier,
+            requirement: requirement,
+            protection: .readOnly,
+            runtimeRequirement: .hardenedAllowingLibraryValidationDisabled
+        )]
+    )
     let defaultRuntimeBlockedPolicy = resolveSecretGatePolicy(
         gate: unconfiguredGate,
         launchers: [unhardenedLauncher]
@@ -6414,14 +6441,23 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
     )
     let unsafeRuntimeBlockedPolicy = resolveSecretGatePolicy(
         gate: unconfiguredGate,
-        launchers: [unsafeLauncher]
+        launchers: [injectableLauncher]
+    )
+    let strictLibraryValidationPolicy = resolveSecretGatePolicy(
+        gate: configuredGate,
+        launchers: [libraryValidationLauncher]
     )
     guard let defaultRuntimeBlockedPolicy,
           let explicitRuntimeBlockedPolicy,
           let explicitlyNoAccessPolicy,
           let unsafeRuntimeBlockedPolicy,
+          let strictLibraryValidationPolicy,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.protection == .fullIncludingSecretDumps,
+          resolveSecretGatePolicy(
+              gate: unconfiguredGate,
+              launchers: [libraryValidationLauncher]
+          )?.protection == .fullIncludingSecretDumps,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.launcher?.designatedRequirement == requirement,
           resolveSecretGatePolicy(
               gate: unconfiguredGate,
@@ -6457,11 +6493,29 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               policy: explicitlyNoAccessPolicy,
               classification: .readOnly
           ) == nil,
+          strictLibraryValidationPolicy.protection == .noAccess,
+          strictLibraryValidationPolicy.runtimeProtectionFailure == .hardenedWithLibraryValidationDisabled,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: strictLibraryValidationPolicy,
+              classification: .readOnly
+          )?.contains("disables library validation") == true,
+          resolveSecretGatePolicy(
+              gate: libraryLoadingGate,
+              launchers: [launcher]
+          )?.protection == .readOnly,
+          resolveSecretGatePolicy(
+              gate: libraryLoadingGate,
+              launchers: [libraryValidationLauncher]
+          )?.protection == .readOnly,
+          resolveSecretGatePolicy(
+              gate: libraryLoadingGate,
+              launchers: [injectableLauncher]
+          )?.protection == .noAccess,
           unsafeRuntimeBlockedPolicy.protection == .noAccess,
           launcherRuntimeProtectionApprovalExplanation(
               policy: unsafeRuntimeBlockedPolicy,
               classification: .readOnly
-          )?.contains("com.apple.security.cs.disable-library-validation") == true
+          )?.contains("com.apple.security.cs.allow-dyld-environment-variables") == true
     else { return 1 }
     return 0
 }
