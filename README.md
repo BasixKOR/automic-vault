@@ -285,11 +285,17 @@ for a specific Verified Launcher.
 
 ### Blessing Agent Automations
 
-It would be sweet to enable scripts for specific automations (ie. a specific
-automation and not the *entire* agentic harness).
-If you have any concept for how to achieve this in a secure fashion, please
-reach out to us. We are actively looking for ways to make this easier and more
-secure.
+Create a Blessed Script whose reviewed steps and Script Declaration precisely
+map the actions an automation requires. From the agent harness, bless that
+script and include a Launcher Endorsement:
+
+```sh
+$ av bless --endorse-launcher ./scripts/my_automation.sh
+```
+
+The Launcher Endorsement gives that Verified Launcher automic authorization
+only for the exact Blessing. Editing the script or its Script Declaration
+invalidates the Blessing.
 
 &nbsp;
 
