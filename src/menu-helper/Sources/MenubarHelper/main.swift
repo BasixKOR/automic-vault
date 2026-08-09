@@ -5097,12 +5097,20 @@ private struct ApprovalPromptView: View {
     var body: some View {
         VStack(spacing: 18) {
             VStack(spacing: 8) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .accessibilityLabel(content.requesterName)
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([
+                        URL(fileURLWithPath: content.requesterIconPath),
+                    ])
+                } label: {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+                .help("Reveal in Finder")
                 Text(content.requesterName)
                     .font(.title2.weight(.bold))
                 Text("WANTS TO RUN")
