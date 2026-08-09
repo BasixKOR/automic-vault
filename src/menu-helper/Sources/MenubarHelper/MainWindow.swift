@@ -696,6 +696,13 @@ final class DashboardModel: ObservableObject {
         )
     }
 
+    func removeAppPolicy(_ app: SecretGatePolicy, from gate: SecretGate) {
+        finishPolicyUpdate(
+            removeSecretGateAppPolicy(app, from: gate),
+            error: "Could not delete the Launcher-specific rule for \(app.bundleIdentifier)"
+        )
+    }
+
     private func finishPolicyUpdate(_ status: OSStatus, error: String) {
         if status == errSecSuccess {
             errorMessage = nil
@@ -1045,7 +1052,8 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let appRowHeight = NSHostingView(rootView: ApprovedAppRow(
         app: appPolicy,
         gate: gate,
-        setProtection: { _ in }
+        setProtection: { _ in },
+        remove: {}
     ).frame(width: 500)).fittingSize.height
     let secretDetailHeight = model.selectedStoredSecret.map {
         NSHostingView(rootView: StoredSecretDetailView(model: model, secret: $0)).fittingSize.height
@@ -2657,7 +2665,8 @@ private struct SecretGateDetailView: View {
                         ApprovedAppRow(
                             app: app,
                             gate: gate,
-                            setProtection: { model.setProtection($0, for: app, in: gate) }
+                            setProtection: { model.setProtection($0, for: app, in: gate) },
+                            remove: { model.removeAppPolicy(app, from: gate) }
                         )
                         if app.requirement != gate.appPolicies.last?.requirement {
                             hairline
@@ -2705,6 +2714,8 @@ private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
     let gate: SecretGate
     let setProtection: (SecretGateProtection) -> Void
+    let remove: () -> Void
+    @State private var isConfirmingDelete = false
 
     private var display: ApprovedAppDisplay {
         ApprovedAppDisplay(app)
@@ -2737,6 +2748,18 @@ private struct ApprovedAppRow: View {
                 .frame(width: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Delete", role: .destructive) {
+                isConfirmingDelete = true
+            }
+        }
+        .alert("Delete \(display.name)?", isPresented: $isConfirmingDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive, action: remove)
+        } message: {
+            Text("This deletes the Launcher-specific rule. Future requests from this Verified Launcher at the \(gate.id) Authorization Gate will use the default \(gate.protectionTitle(gate.defaultProtection)) Access Level.")
+        }
     }
 }
 
