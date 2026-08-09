@@ -31,6 +31,17 @@ the signature is missing, ad-hoc, invalid, or not Developer ID for a standalone
 executable, selection fails. If the identity cannot be verified later, automatic
 approval fails closed and requires manual approval.
 
+## Default and launcher-specific access
+
+An Authorization Gate's default Access Level applies to every Verified Launcher
+without a matching launcher-specific rule, including eligible standalone
+executables. A launcher-specific rule takes precedence over the default.
+Standalone executables receive default access only while their live Developer ID
+identity and Hardened Runtime protections remain valid. New launcher-specific
+rules enforce the same eligibility; persisted older rules retain their recorded
+runtime requirement for compatibility. Unknown operations still require
+Approval at every Access Level.
+
 Some package formats start a signed native payload through a wrapper. Prefer a
 standalone installer or Homebrew cask when available because the live launcher
 identity and `av doctor` result are clearer. Always verify the installed command;

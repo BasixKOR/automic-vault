@@ -3604,7 +3604,9 @@ private func resolveSecretGatePolicy(
             )
         }
     }
-    guard let firstLauncher = launchers.first(where: { !$0.isStandalone }) else { return nil }
+    guard let firstLauncher = launchers.first(where: {
+        !$0.isStandalone || $0.runtimeProtection.allowsSecretGateAccess
+    }) else { return nil }
     return ResolvedSecretGatePolicy(
         protection: gate.defaultProtection,
         source: gate.defaultPolicyLabel,
@@ -6308,6 +6310,18 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         defaultProtection: .fullIncludingSecretDumps,
         appPolicies: []
     )
+    let explicitlyBlockedGate = SecretGate(
+        id: "test",
+        keyPatterns: [],
+        routes: [],
+        defaultProtection: .fullIncludingSecretDumps,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: developerID.identifier,
+            requirement: requirement,
+            protection: .noAccess,
+            requiresHardenedRuntime: true
+        )]
+    )
     let configuredGate = SecretGate(
         id: "test",
         keyPatterns: [],
@@ -6320,7 +6334,11 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
             requiresHardenedRuntime: true
         )]
     )
-    guard resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher]) == nil,
+    guard resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
+          resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.protection == .fullIncludingSecretDumps,
+          resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.launcher?.designatedRequirement == requirement,
+          resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [unhardenedLauncher]) == nil,
+          resolveSecretGatePolicy(gate: explicitlyBlockedGate, launchers: [launcher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly,
           resolveSecretGatePolicy(gate: configuredGate, launchers: [unhardenedLauncher])?.protection == .noAccess
     else { return 1 }
