@@ -23,13 +23,25 @@ Placing such an executable inside an unsigned app does not make it eligible.
 2. In Automic Vault Settings, add a launcher to the relevant tool or blessed
    script policy.
 3. Select the resolved native executable, not a shell or package-manager shim.
+   The picker starts in `/Applications`; press Command-Shift-G to enter another
+   path directly. Version-numbered executables such as `2.1.226` are supported.
 4. Review the identifier, Team ID, path, and designated requirement before
    allowing it.
 
-Automic Vault resolves symlinks and verifies the selected executable itself. If
-the signature is missing, ad-hoc, invalid, or not Developer ID for a standalone
-executable, selection fails. If the identity cannot be verified later, automatic
-approval fails closed and requires manual approval.
+The picker permits generic files because macOS may classify an executable with
+a version-number filename extension as data. Selection alone grants nothing:
+Automic Vault resolves symlinks and verifies that the selected file is executable
+and has an eligible signature. If the signature is missing, ad-hoc, invalid, or
+not Developer ID for a standalone executable, selection fails. If the identity
+cannot be verified later, Automic authorization fails closed and requires
+manual approval.
+
+Launcher-specific rules match the exact designated requirement, which binds the
+signing identifier and Team ID together. A rule does not match a sibling product
+from the same signing team, and it is not bound to the selected path. The
+`av bless --endorse-launcher` option instead records a Launcher Endorsement while
+blessing the script at the command's path; it does not enroll that path as a
+launcher executable.
 
 Some package formats start a signed native payload through a wrapper. Prefer a
 standalone installer or Homebrew cask when available because the live launcher

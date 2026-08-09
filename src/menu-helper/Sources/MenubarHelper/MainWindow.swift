@@ -2855,6 +2855,13 @@ private struct LauncherSigning {
     let runtimeProtection: LauncherRuntimeProtection
 }
 
+private let launcherPickerAllowedContentTypes: [UTType] = [.applicationBundle, .data]
+
+func launcherPickerAllows(filenameExtension: String) -> Bool {
+    guard let type = UTType(filenameExtension: filenameExtension) else { return false }
+    return launcherPickerAllowedContentTypes.contains { type.conforms(to: $0) }
+}
+
 private func secretGateAdmissionError(
     appName: String,
     protection: LauncherRuntimeProtection
@@ -2906,7 +2913,7 @@ private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     panel.title = "Allow Launcher"
     panel.prompt = "Choose"
     panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-    panel.allowedContentTypes = [.applicationBundle, .unixExecutable]
+    panel.allowedContentTypes = launcherPickerAllowedContentTypes
     panel.canChooseFiles = true
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
