@@ -26,6 +26,10 @@ final class PostHogTelemetry: @unchecked Sendable {
         capture("automic_vault_detector_triggered", properties: ["count": count])
     }
 
+    func captureExplicitApproval() {
+        capture("approve")
+    }
+
     private func capture(_ event: String, properties: [String: Any] = [:]) {
         guard let apiKey, apiKey.isEmpty == false else { return }
         capture(event, apiKey: apiKey, properties: properties)

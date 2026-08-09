@@ -4918,6 +4918,11 @@ private func showApprovalAlert(
             allowsPersistentApproval: allowsPersistentApproval,
             decide: {
                 decision = $0
+                #if !DEBUG
+                if decision == .approved || decision == .alwaysApproved {
+                    PostHogTelemetry.shared.captureExplicitApproval()
+                }
+                #endif
                 NSApp.stopModal()
             },
             contentSizeDidChange: { [weak panel] in
