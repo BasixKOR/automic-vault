@@ -33,8 +33,8 @@ a version-number filename extension as data. Selection alone grants nothing:
 Automic Vault resolves symlinks and verifies that the selected file is executable
 and has an eligible signature. If the signature is missing, ad-hoc, invalid, or
 not Developer ID for a standalone executable, selection fails. If the identity
-cannot be verified later, automic authorization fails closed and requires
-Approval.
+cannot be verified later, Automic authorization fails closed and requires
+manual approval.
 
 Launcher-specific rules match the exact designated requirement, which binds the
 signing identifier and Team ID together. A rule does not match a sibling product
