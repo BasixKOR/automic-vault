@@ -3617,14 +3617,14 @@ private func resolveSecretGatePolicy(
             )
         }
     }
-    if let firstLauncher = launchers.first(where: {
-        !$0.isStandalone || $0.runtimeProtection.allowsSecretGateAccess
-    }) {
+    let defaultLauncher = launchers.first(where: { !$0.isStandalone })
+        ?? launchers.first(where: { $0.runtimeProtection.allowsSecretGateAccess })
+    if let defaultLauncher {
         return ResolvedSecretGatePolicy(
             protection: gate.defaultProtection,
             configuredProtection: gate.defaultProtection,
             source: gate.defaultPolicyLabel,
-            launcher: firstLauncher,
+            launcher: defaultLauncher,
             runtimeProtectionFailure: nil
         )
     }
@@ -6360,6 +6360,14 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .unsafeEntitlements(["com.apple.security.cs.disable-library-validation"]),
         isStandalone: true
     )
+    let bundledLauncher = LauncherIdentity(
+        pid: 40,
+        path: "/Applications/Example.app/Contents/MacOS/Example",
+        identifier: "com.example.app",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.example.app" and anchor apple generic"#,
+        runtimeProtection: .hardened
+    )
 
     let unconfiguredGate = SecretGate(
         id: "test",
@@ -6415,6 +6423,14 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.protection == .fullIncludingSecretDumps,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.launcher?.designatedRequirement == requirement,
+          resolveSecretGatePolicy(
+              gate: unconfiguredGate,
+              launchers: [launcher, bundledLauncher]
+          )?.launcher?.designatedRequirement == bundledLauncher.designatedRequirement,
+          resolveSecretGatePolicy(
+              gate: unconfiguredGate,
+              launchers: [unhardenedLauncher, bundledLauncher]
+          )?.launcher?.designatedRequirement == bundledLauncher.designatedRequirement,
           defaultRuntimeBlockedPolicy.protection == .noAccess,
           defaultRuntimeBlockedPolicy.configuredProtection == .fullIncludingSecretDumps,
           defaultRuntimeBlockedPolicy.runtimeProtectionFailure == .hardenedRuntimeMissing,
@@ -6428,6 +6444,10 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ) == nil,
           resolveSecretGatePolicy(gate: explicitlyBlockedGate, launchers: [launcher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly,
+          resolveSecretGatePolicy(
+              gate: configuredGate,
+              launchers: [bundledLauncher, launcher]
+          )?.launcher?.designatedRequirement == launcher.designatedRequirement,
           explicitRuntimeBlockedPolicy.protection == .noAccess,
           launcherRuntimeProtectionApprovalExplanation(
               policy: explicitRuntimeBlockedPolicy,

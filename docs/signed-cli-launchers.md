@@ -42,6 +42,12 @@ rules enforce the same eligibility; persisted older rules retain their recorded
 runtime requirement for compatibility. Unknown operations still require
 Approval at every Access Level.
 
+When a verified launch chain contains both an app bundle and a standalone
+executable, the app bundle retains default-policy attribution. The standalone
+executable supplies the default only when no app-bundle Launcher is present. An
+exact launcher-specific rule for the standalone executable still overrides the
+default across the chain.
+
 Some package formats start a signed native payload through a wrapper. Prefer a
 standalone installer or Homebrew cask when available because the live launcher
 identity and `av doctor` result are clearer. Always verify the installed command;

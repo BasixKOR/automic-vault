@@ -24,6 +24,13 @@ the existing live Developer ID identity checks and Hardened Runtime protections.
 An unsigned, ad-hoc signed, invalid, or runtime-ineligible standalone executable
 receives no default authority.
 
+When a verified launch chain contains an app-bundle Launcher, that Launcher
+retains default-policy attribution. A standalone Launcher supplies the default
+only when the chain contains no app-bundle Launcher. This preserves existing
+Authorization History and Retained Launcher Provenance semantics for mixed
+chains. An exact launcher-specific rule for a standalone Launcher still takes
+precedence across the chain.
+
 Launcher-specific rules continue to match the exact designated requirement and
 take precedence across the verified launch chain. A path, display name, or Team
 ID alone does not establish a match. Existing launcher-specific rules retain
@@ -40,5 +47,8 @@ Record before release.
   from a hardened standalone launcher that previously required Approval.
 - Explicit Approval Required rules still narrow the default for one exact
   Launcher Identity.
+- Mixed app-bundle and standalone chains retain their existing app-bundle
+  attribution unless an exact launcher-specific rule selects the standalone
+  Launcher.
 - Failure to verify standalone identity or runtime protection continues to fail
   closed rather than falling back to broader access.
