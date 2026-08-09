@@ -2855,7 +2855,7 @@ private struct LauncherSigning {
     let runtimeProtection: LauncherRuntimeProtection
 }
 
-let launcherPickerAllowedContentTypes: [UTType] = [.applicationBundle, .data]
+private let launcherPickerAllowedContentTypes: [UTType] = [.applicationBundle, .data]
 
 func launcherPickerAllows(filenameExtension: String) -> Bool {
     guard let type = UTType(filenameExtension: filenameExtension) else { return false }
