@@ -2279,7 +2279,15 @@ private final class ApprovalServer: @unchecked Sendable {
             retainedProcessExplanation = nil
         }
         let automaticApprovalExplanation: String?
-        if let configuredGate,
+        if let resolvedPolicy,
+           let classification,
+           let explanation = launcherRuntimeProtectionApprovalExplanation(
+               policy: resolvedPolicy,
+               classification: classification
+           )
+        {
+            automaticApprovalExplanation = explanation
+        } else if let configuredGate,
            let resolvedPolicy,
            let classification,
            !secretGateProtectionAllows(resolvedPolicy.protection, classification: classification),
@@ -3523,8 +3531,10 @@ private func isTrustedBrewStubCaller(path: String, signing: SigningInfo) -> Bool
 
 private struct ResolvedSecretGatePolicy {
     let protection: SecretGateProtection
+    let configuredProtection: SecretGateProtection
     let source: String
     let launcher: LauncherIdentity?
+    let runtimeProtectionFailure: LauncherRuntimeProtection?
 }
 
 private func matchingSecretGate(
@@ -3594,24 +3604,63 @@ private func resolveSecretGatePolicy(
 ) -> ResolvedSecretGatePolicy? {
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: { $0.requirement == launcher.designatedRequirement }) {
+            let runtimeProtectionFailure = policy.requiresHardenedRuntime
+                && !launcher.runtimeProtection.allowsSecretGateAccess
+                ? launcher.runtimeProtection
+                : nil
             return ResolvedSecretGatePolicy(
-                protection: policy.requiresHardenedRuntime
-                    && !launcher.runtimeProtection.allowsSecretGateAccess
-                    ? .noAccess
-                    : policy.protection,
+                protection: runtimeProtectionFailure == nil ? policy.protection : .noAccess,
+                configuredProtection: policy.protection,
                 source: shortAppName(launcher.identifier),
-                launcher: launcher
+                launcher: launcher,
+                runtimeProtectionFailure: runtimeProtectionFailure
             )
         }
     }
-    guard let firstLauncher = launchers.first(where: {
+    if let firstLauncher = launchers.first(where: {
         !$0.isStandalone || $0.runtimeProtection.allowsSecretGateAccess
+    }) {
+        return ResolvedSecretGatePolicy(
+            protection: gate.defaultProtection,
+            configuredProtection: gate.defaultProtection,
+            source: gate.defaultPolicyLabel,
+            launcher: firstLauncher,
+            runtimeProtectionFailure: nil
+        )
+    }
+    guard let firstLauncher = launchers.first(where: {
+        $0.isStandalone && !$0.runtimeProtection.allowsSecretGateAccess
     }) else { return nil }
     return ResolvedSecretGatePolicy(
-        protection: gate.defaultProtection,
+        protection: .noAccess,
+        configuredProtection: gate.defaultProtection,
         source: gate.defaultPolicyLabel,
-        launcher: firstLauncher
+        launcher: firstLauncher,
+        runtimeProtectionFailure: firstLauncher.runtimeProtection
     )
+}
+
+private func launcherRuntimeProtectionApprovalExplanation(
+    policy: ResolvedSecretGatePolicy,
+    classification: SecretGateRequestClassification
+) -> String? {
+    guard let launcher = policy.launcher,
+          let failure = policy.runtimeProtectionFailure,
+          secretGateProtectionAllows(
+              policy.configuredProtection,
+              classification: classification
+          )
+    else { return nil }
+
+    let name = shortAppName(launcher.identifier)
+    switch failure {
+    case .hardened:
+        return nil
+    case .hardenedRuntimeMissing:
+        return "\(name) does not enable Hardened Runtime, so Automic Vault cannot apply the Authorization Gate’s configured Access Level. Approval is required."
+    case .unsafeEntitlements(let entitlements):
+        return "\(name) weakens Hardened Runtime with these entitlements: \(entitlements.joined(separator: ", ")). Automic Vault cannot apply the Authorization Gate’s configured Access Level, so approval is required."
+    }
 }
 
 private func secretGateProtectionAllows(
@@ -6302,6 +6351,15 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .hardenedRuntimeMissing,
         isStandalone: true
     )
+    let unsafeLauncher = LauncherIdentity(
+        pid: launcher.pid,
+        path: launcher.path,
+        identifier: launcher.identifier,
+        teamIdentifier: launcher.teamIdentifier,
+        designatedRequirement: launcher.designatedRequirement,
+        runtimeProtection: .unsafeEntitlements(["com.apple.security.cs.disable-library-validation"]),
+        isStandalone: true
+    )
 
     let unconfiguredGate = SecretGate(
         id: "test",
@@ -6334,13 +6392,56 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
             requiresHardenedRuntime: true
         )]
     )
-    guard resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
+    let defaultRuntimeBlockedPolicy = resolveSecretGatePolicy(
+        gate: unconfiguredGate,
+        launchers: [unhardenedLauncher]
+    )
+    let explicitRuntimeBlockedPolicy = resolveSecretGatePolicy(
+        gate: configuredGate,
+        launchers: [unhardenedLauncher]
+    )
+    let explicitlyNoAccessPolicy = resolveSecretGatePolicy(
+        gate: explicitlyBlockedGate,
+        launchers: [unhardenedLauncher]
+    )
+    let unsafeRuntimeBlockedPolicy = resolveSecretGatePolicy(
+        gate: unconfiguredGate,
+        launchers: [unsafeLauncher]
+    )
+    guard let defaultRuntimeBlockedPolicy,
+          let explicitRuntimeBlockedPolicy,
+          let explicitlyNoAccessPolicy,
+          let unsafeRuntimeBlockedPolicy,
+          resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.protection == .fullIncludingSecretDumps,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.launcher?.designatedRequirement == requirement,
-          resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [unhardenedLauncher]) == nil,
+          defaultRuntimeBlockedPolicy.protection == .noAccess,
+          defaultRuntimeBlockedPolicy.configuredProtection == .fullIncludingSecretDumps,
+          defaultRuntimeBlockedPolicy.runtimeProtectionFailure == .hardenedRuntimeMissing,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: defaultRuntimeBlockedPolicy,
+              classification: .readOnly
+          )?.contains("does not enable Hardened Runtime") == true,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: defaultRuntimeBlockedPolicy,
+              classification: .unknown
+          ) == nil,
           resolveSecretGatePolicy(gate: explicitlyBlockedGate, launchers: [launcher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: configuredGate, launchers: [launcher])?.protection == .readOnly,
-          resolveSecretGatePolicy(gate: configuredGate, launchers: [unhardenedLauncher])?.protection == .noAccess
+          explicitRuntimeBlockedPolicy.protection == .noAccess,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: explicitRuntimeBlockedPolicy,
+              classification: .readOnly
+          )?.contains("Approval is required") == true,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: explicitlyNoAccessPolicy,
+              classification: .readOnly
+          ) == nil,
+          unsafeRuntimeBlockedPolicy.protection == .noAccess,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: unsafeRuntimeBlockedPolicy,
+              classification: .readOnly
+          )?.contains("com.apple.security.cs.disable-library-validation") == true
     else { return 1 }
     return 0
 }

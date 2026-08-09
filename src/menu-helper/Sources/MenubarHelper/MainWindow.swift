@@ -2742,7 +2742,7 @@ private struct DefaultAppPolicyRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(gate.defaultPolicyLabel)
                     .font(.system(size: 13, weight: .medium))
-                Text("Default protection")
+                Text("Requires Hardened Runtime")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
