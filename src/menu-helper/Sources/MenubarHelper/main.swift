@@ -3618,26 +3618,19 @@ private func resolveSecretGatePolicy(
             )
         }
     }
-    let defaultLauncher = launchers.first(where: { !$0.isStandalone })
+    guard let defaultLauncher = launchers.first(where: { !$0.isStandalone })
         ?? launchers.first(where: { $0.runtimeProtection.allowsSecretGateAccess })
-    if let defaultLauncher {
-        return ResolvedSecretGatePolicy(
-            protection: gate.defaultProtection,
-            configuredProtection: gate.defaultProtection,
-            source: gate.defaultPolicyLabel,
-            launcher: defaultLauncher,
-            runtimeProtectionFailure: nil
-        )
-    }
-    guard let firstLauncher = launchers.first(where: {
-        $0.isStandalone && !$0.runtimeProtection.allowsSecretGateAccess
-    }) else { return nil }
+        ?? launchers.first
+    else { return nil }
+    let runtimeProtectionFailure = !defaultLauncher.runtimeProtection.allowsSecretGateAccess
+        ? defaultLauncher.runtimeProtection
+        : nil
     return ResolvedSecretGatePolicy(
-        protection: .noAccess,
+        protection: runtimeProtectionFailure == nil ? gate.defaultProtection : .noAccess,
         configuredProtection: gate.defaultProtection,
         source: gate.defaultPolicyLabel,
-        launcher: firstLauncher,
-        runtimeProtectionFailure: firstLauncher.runtimeProtection
+        launcher: defaultLauncher,
+        runtimeProtectionFailure: runtimeProtectionFailure
     )
 }
 
@@ -6383,6 +6376,22 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         designatedRequirement: #"identifier "com.example.app" and anchor apple generic"#,
         runtimeProtection: .hardened
     )
+    let unhardenedBundledLauncher = LauncherIdentity(
+        pid: bundledLauncher.pid,
+        path: bundledLauncher.path,
+        identifier: bundledLauncher.identifier,
+        teamIdentifier: bundledLauncher.teamIdentifier,
+        designatedRequirement: bundledLauncher.designatedRequirement,
+        runtimeProtection: .hardenedRuntimeMissing
+    )
+    let injectableBundledLauncher = LauncherIdentity(
+        pid: bundledLauncher.pid,
+        path: bundledLauncher.path,
+        identifier: bundledLauncher.identifier,
+        teamIdentifier: bundledLauncher.teamIdentifier,
+        designatedRequirement: bundledLauncher.designatedRequirement,
+        runtimeProtection: injectableLauncher.runtimeProtection
+    )
 
     let unconfiguredGate = SecretGate(
         id: "test",
@@ -6447,11 +6456,26 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         gate: configuredGate,
         launchers: [libraryValidationLauncher]
     )
+    let unhardenedBundledPolicy = resolveSecretGatePolicy(
+        gate: unconfiguredGate,
+        launchers: [unhardenedBundledLauncher]
+    )
+    let injectableBundledPolicy = resolveSecretGatePolicy(
+        gate: unconfiguredGate,
+        launchers: [injectableBundledLauncher]
+    )
+    let mixedRuntimeBlockedPolicy = resolveSecretGatePolicy(
+        gate: unconfiguredGate,
+        launchers: [launcher, unhardenedBundledLauncher]
+    )
     guard let defaultRuntimeBlockedPolicy,
           let explicitRuntimeBlockedPolicy,
           let explicitlyNoAccessPolicy,
           let unsafeRuntimeBlockedPolicy,
           let strictLibraryValidationPolicy,
+          let unhardenedBundledPolicy,
+          let injectableBundledPolicy,
+          let mixedRuntimeBlockedPolicy,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: unconfiguredGate, launchers: [launcher])?.protection == .fullIncludingSecretDumps,
           resolveSecretGatePolicy(
@@ -6499,6 +6523,16 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               policy: strictLibraryValidationPolicy,
               classification: .readOnly
           )?.contains("disables library validation") == true,
+          unhardenedBundledPolicy.protection == .noAccess,
+          unhardenedBundledPolicy.runtimeProtectionFailure == .hardenedRuntimeMissing,
+          launcherRuntimeProtectionApprovalExplanation(
+              policy: unhardenedBundledPolicy,
+              classification: .readOnly
+          )?.contains("does not enable Hardened Runtime") == true,
+          injectableBundledPolicy.protection == .noAccess,
+          injectableBundledPolicy.runtimeProtectionFailure == injectableLauncher.runtimeProtection,
+          mixedRuntimeBlockedPolicy.protection == .noAccess,
+          mixedRuntimeBlockedPolicy.launcher?.designatedRequirement == bundledLauncher.designatedRequirement,
           resolveSecretGatePolicy(
               gate: libraryLoadingGate,
               launchers: [launcher]
