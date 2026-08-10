@@ -16,7 +16,8 @@ Keychain authority would combine two unnecessary privileges.
 
 `av proxy +NAME -- TARGET` creates a manually approved Proxy Session bound to
 the complete command and the Gate Client's PID version and start time across its
-`exec` transition. The launched Target receives one random Secret Reference per
+`exec` transition. A valid live Target code identity is also revalidated when
+macOS provides one. The launched Target receives one random Secret Reference per
 Secret Name and a separate random Proxy Credential. Neither contains Secret
 bytes.
 

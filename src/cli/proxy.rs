@@ -335,10 +335,14 @@ fn start_session(request: &StartRequest) -> Result<SessionEnvironment, String> {
     }
 
     unsafe fn set_array(object: XpcObject, key: &[u8], values: &[String]) -> Result<(), String> {
+        let values = values
+            .iter()
+            .map(|value| {
+                CString::new(value.as_str()).map_err(|_| "XPC array value contains NUL".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let array = unsafe { xpc_array_create_empty() };
         for value in values {
-            let value = CString::new(value.as_str())
-                .map_err(|_| "XPC array value contains NUL".to_string())?;
             let string = unsafe { xpc_string_create(value.as_ptr()) };
             unsafe {
                 xpc_array_append_value(array, string);
@@ -387,19 +391,21 @@ fn start_session(request: &StartRequest) -> Result<SessionEnvironment, String> {
         }
         return Err("failed to create Proxy Session request".into());
     }
-    let encoded = unsafe {
-        set_string(message, b"op\0", "proxy-start")?;
-        set_string(message, b"target\0", &request.target)?;
-        set_string(message, b"cwd\0", &request.cwd)?;
-        xpc_dictionary_set_bool(
-            message,
-            b"replace_existing_env\0".as_ptr().cast(),
-            request.replace_existing_env,
-        );
-        set_array(message, b"keys\0", &request.keys)?;
-        set_array(message, b"args\0", &request.args)?;
-        set_array(message, b"env_conflicts\0", &request.env_conflicts)
-    };
+    let encoded = (|| -> Result<(), String> {
+        unsafe {
+            set_string(message, b"op\0", "proxy-start")?;
+            set_string(message, b"target\0", &request.target)?;
+            set_string(message, b"cwd\0", &request.cwd)?;
+            xpc_dictionary_set_bool(
+                message,
+                b"replace_existing_env\0".as_ptr().cast(),
+                request.replace_existing_env,
+            );
+            set_array(message, b"keys\0", &request.keys)?;
+            set_array(message, b"args\0", &request.args)?;
+            set_array(message, b"env_conflicts\0", &request.env_conflicts)
+        }
+    })();
     if let Err(error) = encoded {
         unsafe {
             xpc_release(message);
@@ -418,53 +424,55 @@ fn start_session(request: &StartRequest) -> Result<SessionEnvironment, String> {
     if reply.is_null() {
         return Err("Automic Vault did not reply to the Proxy Session request".into());
     }
-    let result = unsafe {
-        if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
-            let value = xpc_dictionary_get_string(reply, _xpc_error_key_description);
-            Err(if value.is_null() {
-                "Proxy Session XPC connection failed".into()
-            } else {
-                CStr::from_ptr(value).to_string_lossy().into_owned()
-            })
-        } else if !xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
-            Err(get_string(reply, b"error\0").unwrap_or_else(|| "Proxy Session denied".into()))
-        } else {
-            let proxy_url = get_string(reply, b"proxy_url\0")
-                .ok_or_else(|| "Proxy Session reply omitted the proxy URL".to_string())?;
-            let ca_certificate_path = get_string(reply, b"ca_certificate_path\0")
-                .ok_or_else(|| "Proxy Session reply omitted the CA certificate".to_string())?;
-            let values = xpc_dictionary_get_dictionary(reply, b"references\0".as_ptr().cast());
-            if values.is_null() {
-                Err("Proxy Session reply omitted Secret References".into())
-            } else {
-                let mut references = BTreeMap::new();
-                let mut missing = None;
-                for key in &request.keys {
-                    let key_c = CString::new(key.as_str()).unwrap();
-                    let value = xpc_dictionary_get_string(values, key_c.as_ptr());
-                    if value.is_null() {
-                        missing = Some(key);
-                        break;
-                    }
-                    references.insert(
-                        key.clone(),
-                        CStr::from_ptr(value).to_string_lossy().into_owned(),
-                    );
-                }
-                if let Some(key) = missing {
-                    Err(format!(
-                        "Proxy Session reply omitted Secret Reference {key}"
-                    ))
+    let result = (|| -> Result<SessionEnvironment, String> {
+        unsafe {
+            if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
+                let value = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+                Err(if value.is_null() {
+                    "Proxy Session XPC connection failed".into()
                 } else {
-                    Ok(SessionEnvironment {
-                        proxy_url,
-                        ca_certificate_path: PathBuf::from(ca_certificate_path),
-                        references,
-                    })
+                    CStr::from_ptr(value).to_string_lossy().into_owned()
+                })
+            } else if !xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
+                Err(get_string(reply, b"error\0").unwrap_or_else(|| "Proxy Session denied".into()))
+            } else {
+                let proxy_url = get_string(reply, b"proxy_url\0")
+                    .ok_or_else(|| "Proxy Session reply omitted the proxy URL".to_string())?;
+                let ca_certificate_path = get_string(reply, b"ca_certificate_path\0")
+                    .ok_or_else(|| "Proxy Session reply omitted the CA certificate".to_string())?;
+                let values = xpc_dictionary_get_dictionary(reply, b"references\0".as_ptr().cast());
+                if values.is_null() {
+                    Err("Proxy Session reply omitted Secret References".into())
+                } else {
+                    let mut references = BTreeMap::new();
+                    let mut missing = None;
+                    for key in &request.keys {
+                        let key_c = CString::new(key.as_str()).unwrap();
+                        let value = xpc_dictionary_get_string(values, key_c.as_ptr());
+                        if value.is_null() {
+                            missing = Some(key);
+                            break;
+                        }
+                        references.insert(
+                            key.clone(),
+                            CStr::from_ptr(value).to_string_lossy().into_owned(),
+                        );
+                    }
+                    if let Some(key) = missing {
+                        Err(format!(
+                            "Proxy Session reply omitted Secret Reference {key}"
+                        ))
+                    } else {
+                        Ok(SessionEnvironment {
+                            proxy_url,
+                            ca_certificate_path: PathBuf::from(ca_certificate_path),
+                            references,
+                        })
+                    }
                 }
             }
         }
-    };
+    })();
     unsafe { xpc_release(reply) };
     result
 }

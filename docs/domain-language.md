@@ -67,8 +67,8 @@ authority lasts at most for that session.
 ### Proxy Session
 
 A live, memory-only Secret Proxy Gate context bound to one complete command and
-one exact process identity: PID version, process start time, and live Target
-code identity. It ends when that execution exits, Automic Vault or its proxy
+one exact process identity: PID version, process start time, and, when macOS can
+provide one, live Target code identity. It ends when that execution exits, Automic Vault or its proxy
 helper exits, or the user terminates it.
 
 A Proxy Session binds lifetime, not the provenance of each loopback TCP

@@ -285,7 +285,7 @@ a Secret confidential.
 For `av proxy`, the CLI remains the Gate Client and the signed proxy helper is
 the immediate Secret Target. The launched executable is bound as the Proxy
 Session Target and receives bearer Secret References. Its PID version, start
-time, and live code identity constrain session lifetime. They do not prove the
+time, and available live code identity constrain session lifetime. They do not prove the
 origin of an individual loopback TCP connection.
 
 ## Policy model

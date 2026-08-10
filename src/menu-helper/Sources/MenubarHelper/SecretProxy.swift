@@ -90,6 +90,7 @@ actor SecretProxyCoordinator {
         let output: FileHandle
         let approveDestination: DestinationApproval
         var identity: ProxyTargetIdentity
+        var codeIdentity: Data?
         var awaitsTargetExec: Bool
         var rules: Set<DestinationRule>
         var authorizedRequestCount: Int
@@ -177,6 +178,7 @@ actor SecretProxyCoordinator {
                 output: outputPipe.fileHandleForReading,
                 approveDestination: approveDestination,
                 identity: launch.identity,
+                codeIdentity: liveCodeIdentity(pid: launch.identity.pid),
                 awaitsTargetExec: true,
                 rules: [],
                 authorizedRequestCount: 0,
@@ -247,7 +249,7 @@ actor SecretProxyCoordinator {
               current.audit_session_id == session.identity.auditSessionID
         else { return false }
         if current.pidversion == session.identity.pidVersion {
-            return true
+            return session.codeIdentity.map { liveCodeIdentity(pid: current.pid) == $0 } ?? true
         }
         guard session.awaitsTargetExec,
               current.pidversion > 0,
@@ -260,6 +262,7 @@ actor SecretProxyCoordinator {
             effectiveUserID: current.euid,
             auditSessionID: current.audit_session_id
         )
+        session.codeIdentity = liveCodeIdentity(pid: current.pid)
         session.awaitsTargetExec = false
         sessions[id] = session
         return true
@@ -274,6 +277,7 @@ actor SecretProxyCoordinator {
               let wireSessionID = frame["session_id"] as? String,
               wireSessionID == sessionID.uuidString.lowercased(),
               let requestID = frame["request_id"] as? UInt64 ?? (frame["request_id"] as? NSNumber)?.uint64Value,
+              requestID > 0,
               let method = frame["method"] as? String,
               let origin = frame["origin"] as? String,
               let path = frame["path"] as? String,
@@ -366,6 +370,13 @@ actor SecretProxyCoordinator {
             deny(sessionID: sessionID, requestID: requestID, reason: "destination denied")
             return
         }
+        guard refreshTargetIdentity(id: sessionID),
+              let current = sessions[sessionID]
+        else {
+            deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired during approval")
+            return
+        }
+        session = current
         if decision == .allowForSession { session.rules.insert(rule) }
         let record = proxyRecord(
             session: session,
@@ -390,9 +401,16 @@ actor SecretProxyCoordinator {
             }
             secrets[name] = value
         }
-        session.authorizedRequestCount += 1
-        session.authorizedOrigins.insert(origin)
-        sessions[sessionID] = session
+        guard refreshTargetIdentity(id: sessionID),
+              var liveSession = sessions[sessionID]
+        else {
+            deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired before release")
+            return
+        }
+        if decision == .allowForSession { liveSession.rules.insert(rule) }
+        liveSession.authorizedRequestCount += 1
+        liveSession.authorizedOrigins.insert(origin)
+        sessions[sessionID] = liveSession
         publishSessions()
         do {
             try writeFrame([
@@ -400,7 +418,7 @@ actor SecretProxyCoordinator {
                 "request_id": requestID,
                 "allowed": true,
                 "secrets": secrets,
-            ], to: session.input)
+            ], to: liveSession.input)
         } catch {
             terminate(id: sessionID)
         }
@@ -508,6 +526,23 @@ actor SecretProxyCoordinator {
         }
     }
 
+    private func liveCodeIdentity(pid: pid_t) -> Data? {
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+              let code,
+              SecCodeCheckValidity(code, [], nil) == errSecSuccess
+        else { return nil }
+        var staticCode: SecStaticCode?
+        var info: CFDictionary?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
+              let staticCode,
+              SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
+              let dictionary = info as? [CFString: Any]
+        else { return nil }
+        return dictionary[kSecCodeInfoUnique] as? Data
+    }
+
     private func verifiedHelperURL() throws -> URL {
         guard let executableDirectory = Bundle.main.executableURL?.deletingLastPathComponent() else {
             throw SecretProxyError("Automic Vault bundle path is unavailable")
@@ -569,7 +604,16 @@ actor SecretProxyCoordinator {
         entitlements["com.apple.security.network.client"] as? Bool == true,
         entitlements["com.apple.security.network.server"] as? Bool == true
         else { return false }
+        let prohibited = [
+            "com.apple.security.get-task-allow",
+            "com.apple.security.cs.allow-dyld-environment-variables",
+            "com.apple.security.cs.allow-jit",
+            "com.apple.security.cs.allow-unsigned-executable-memory",
+            "com.apple.security.cs.disable-library-validation",
+            "com.apple.security.cs.debugger",
+        ]
         return entitlements["keychain-access-groups"] == nil
+            && prohibited.allSatisfy { entitlements[$0] as? Bool != true }
     }
 
     private func selfTeamID() -> String? {
