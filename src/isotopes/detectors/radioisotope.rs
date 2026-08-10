@@ -38,7 +38,7 @@ pub(crate) fn findings(
         .collect()
 }
 
-fn affected(reason: &str) -> Vec<AffectedFile> {
+pub(super) fn affected(reason: &str) -> Vec<AffectedFile> {
     reason
         .rsplit_once(": ")
         .map(|(_, path)| path.trim())

@@ -379,7 +379,58 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
         }
         findings.extend(detected);
     }
-    findings
+    merge_duplicate_shell_path_findings(findings)
+}
+
+const SHELL_PATH_FINDING_SOURCES: &[&str] = &["bash", "zsh"];
+const SHELL_PATH_FINDING_MARKER: &str =
+    "PATH has a user-writable directory before protected system directories";
+const MERGED_SHELL_PATH_SOURCE: &str = "bash+zsh";
+const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary user programs and shared environment configuration. Automic Vault cannot rewrite them without changing shell behavior or guessing which commands need each secret. Move the reported value with `av save KEY`, then inject it only into the command that needs it. For an unsafe `PATH`, move every protected system directory before the reported user-writable directories and remove empty or relative entries.";
+
+/// `bash` and `zsh` each detect the same process-wide `$PATH` independently,
+/// so an insecure directory is reported once per shell. Collapse those
+/// duplicates into a single finding that names every affected shell instead
+/// of doubling the audit for anyone with both shells configured.
+fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    let mut merged: Vec<Finding> = Vec::with_capacity(findings.len());
+    for finding in findings {
+        let existing = shell_path_entry(&finding).and_then(|entry| {
+            merged.iter_mut().find(|candidate| {
+                candidate.source != finding.source && shell_path_entry(candidate) == Some(entry)
+            })
+        });
+        match existing {
+            Some(existing) => merge_shell_path_finding(existing),
+            None => merged.push(finding),
+        }
+    }
+    merged
+}
+
+/// The PATH entry a shell PATH finding reports, taken from the explanation
+/// rather than `affected`: `affected` keeps only entries starting with `/` or
+/// `~`, so it is empty for the relative and empty entries `path_security`
+/// deliberately reports, and cannot distinguish one from another.
+fn shell_path_entry(finding: &Finding) -> Option<&str> {
+    if !SHELL_PATH_FINDING_SOURCES.contains(&finding.source) {
+        return None;
+    }
+    finding
+        .explanation
+        .split_once(SHELL_PATH_FINDING_MARKER)?
+        .1
+        .strip_prefix(": ")
+}
+
+fn merge_shell_path_finding(existing: &mut Finding) {
+    if let Some(entry) = shell_path_entry(existing) {
+        existing.explanation = format!(
+            "Bash and zsh PATH have a user-writable directory before protected system directories: {entry}"
+        );
+    }
+    existing.source = MERGED_SHELL_PATH_SOURCE;
+    existing.solution = MERGED_SHELL_PATH_SOLUTION.to_string();
 }
 
 pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
@@ -506,5 +557,185 @@ mod tests {
             ),
             Some("Foo needs a temporary secret file. That is not sufficient.".to_string())
         );
+    }
+
+    fn shell_path_finding(shell: &'static str, path: &str) -> Finding {
+        let explanation = format!(
+            "{} PATH has a user-writable directory before protected system directories: {path}",
+            if shell == "bash" { "Bash" } else { "Zsh" },
+        );
+        Finding {
+            source: shell,
+            homepage: "https://example.test/",
+            severity: "high",
+            // Built by the same function the detectors use, so relative and
+            // empty entries have no affected path here either.
+            affected: super::radioisotope::affected(&explanation),
+            explanation,
+            solution: format!("{shell} startup files contain arbitrary user programs."),
+            docs_url: "https://example.test/docs.md",
+        }
+    }
+
+    #[test]
+    fn merges_bash_and_zsh_findings_for_the_same_path_directory() {
+        let findings = vec![
+            shell_path_finding("bash", "/opt/homebrew/bin"),
+            shell_path_finding("zsh", "/opt/homebrew/bin"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "bash+zsh");
+        assert_eq!(
+            merged[0].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: /opt/homebrew/bin"
+        );
+        assert_eq!(merged[0].affected[0].path, "/opt/homebrew/bin");
+    }
+
+    #[test]
+    fn keeps_shell_path_findings_for_different_directories_separate() {
+        let findings = vec![
+            shell_path_finding("bash", "/opt/homebrew/bin"),
+            shell_path_finding("zsh", "/opt/homebrew/bin"),
+            shell_path_finding("bash", "/Users/tester/.bun/bin"),
+            shell_path_finding("zsh", "/Users/tester/.bun/bin"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|finding| finding.source == "bash+zsh"));
+    }
+
+    /// Regression: `PATH="first:second:/usr/bin:/bin"`. Both relative entries
+    /// have an empty `affected`, so keying the merge on `affected` collapsed
+    /// them into one finding and `second` disappeared from the scan.
+    #[test]
+    fn keeps_relative_path_entries_separate_when_merging() {
+        let findings = vec![
+            shell_path_finding("bash", "first"),
+            shell_path_finding("bash", "second"),
+            shell_path_finding("zsh", "first"),
+            shell_path_finding("zsh", "second"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|finding| finding.source == "bash+zsh"));
+        assert_eq!(
+            merged[0].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: first"
+        );
+        assert_eq!(
+            merged[1].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: second"
+        );
+    }
+
+    #[test]
+    fn merges_the_empty_path_entry_reported_as_a_dot() {
+        let findings = vec![
+            shell_path_finding("bash", "."),
+            shell_path_finding("zsh", "."),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "bash+zsh");
+        assert_eq!(
+            merged[0].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: ."
+        );
+        assert!(merged[0].affected.is_empty());
+    }
+
+    #[test]
+    fn does_not_merge_two_findings_from_the_same_shell() {
+        let findings = vec![
+            shell_path_finding("bash", "relative"),
+            shell_path_finding("bash", "relative"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|finding| finding.source == "bash"));
+    }
+
+    #[test]
+    fn does_not_merge_a_lone_shell_path_finding() {
+        let findings = vec![shell_path_finding("zsh", "/opt/homebrew/bin")];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "zsh");
+    }
+
+    #[test]
+    fn does_not_merge_non_path_bash_and_zsh_findings() {
+        let findings = vec![
+            Finding {
+                source: "bash",
+                homepage: "https://example.test/",
+                severity: "high",
+                explanation: "Bash startup file contains plaintext-looking credential assignment: /home/user/.bashrc".to_string(),
+                solution: "Move the reported value with `av save KEY`.".to_string(),
+                affected: vec![crate::AffectedFile {
+                    path: "/home/user/.bashrc".to_string(),
+                    line: None,
+                }],
+                docs_url: "https://example.test/docs.md",
+            },
+            Finding {
+                source: "zsh",
+                homepage: "https://example.test/",
+                severity: "high",
+                explanation: "Zsh startup file contains plaintext-looking credential assignment: /home/user/.zshrc".to_string(),
+                solution: "Move the reported value with `av save KEY`.".to_string(),
+                affected: vec![crate::AffectedFile {
+                    path: "/home/user/.zshrc".to_string(),
+                    line: None,
+                }],
+                docs_url: "https://example.test/docs.md",
+            },
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].source, "bash");
+        assert_eq!(merged[1].source, "zsh");
+    }
+
+    #[test]
+    fn does_not_merge_the_macos_gui_path_finding_with_shell_findings() {
+        let findings = vec![
+            shell_path_finding("bash", "/opt/homebrew/bin"),
+            shell_path_finding("zsh", "/opt/homebrew/bin"),
+            Finding {
+                source: "macOS",
+                homepage: "https://example.test/",
+                severity: "high",
+                explanation: "macOS GUI PATH has a user-writable directory before protected system directories: /opt/homebrew/bin".to_string(),
+                solution: "Move protected system directories before user-writable directories in the launchd PATH.".to_string(),
+                affected: vec![crate::AffectedFile {
+                    path: "/opt/homebrew/bin".to_string(),
+                    line: None,
+                }],
+                docs_url: "https://example.test/docs.md",
+            },
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].source, "bash+zsh");
+        assert_eq!(merged[1].source, "macOS");
     }
 }
