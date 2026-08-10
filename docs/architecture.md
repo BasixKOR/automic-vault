@@ -147,6 +147,14 @@ The Homebrew migration intentionally broadens persisted `readOnly` rules to allo
 
 Secret bytes stay in the app's private Keychain access group. Gate policy and Authorization History use separate services. Availability controls whether Keychain may return a Secret while the device is locked. Authorization controls whether the operation may receive it. Both checks must pass.
 
+A Gate Client's code signature authenticates the component but grants no
+authority to retrieve an existing Secret. The approval service exposes no
+generic Secret-load operation. Existing Secret bytes may leave custody only as
+the payload of a complete Secret Application or Secret Disclosure after its
+Authorization Decision and verified Authorization Record. Checks used while
+storing or migrating Secrets compare and verify values inside the menu bar app
+and return status only.
+
 Direct Access Rules are authorization policy, not Secret Availability. They are
 stored separately from Secret bytes. Renaming or deleting a Secret revokes its
 rules so recreating an old Secret Name cannot silently restore authority.
@@ -156,6 +164,11 @@ Human Approval requires an active user session and awake displays. Requests that
 ## Recording before release
 
 An allowed Secret Use must produce a persisted, verified Authorization Record before the secret bytes leave custody. A failure to write or read back the record denies release. Denial and internal-failure records are best effort because recording failure must not replace the original denial with authority.
+
+No trusted-client shortcut may bypass this ordering. A signed Gate Client may
+submit an Authorization Request or an approved Secret mutation; it may not ask
+the menu bar app to return an arbitrary existing Secret for client-side
+inspection or migration.
 
 Authorization History is bounded local operational history. Same-user compromise or storage failure can damage it. Product copy must not promise an append-only audit trail or complete forensic evidence.
 

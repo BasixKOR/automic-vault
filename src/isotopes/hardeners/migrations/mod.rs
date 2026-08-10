@@ -140,47 +140,6 @@ unsafe extern "C" fn isotope_store_generic_password_json(
 }
 
 #[unsafe(no_mangle)]
-unsafe extern "C" fn isotope_copy_generic_password_json(
-    service: *const std::ffi::c_char,
-    account: *const std::ffi::c_char,
-    error: *mut *mut std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    let result = (|| {
-        if service.is_null() || account.is_null() {
-            return Err("invalid secret storage arguments".to_string());
-        }
-        let service = unsafe { std::ffi::CStr::from_ptr(service) }
-            .to_str()
-            .map_err(|_| "invalid secret storage service".to_string())?;
-        if service != "com.automicvault.isotope" {
-            return Err(format!("invalid secret storage service: {service}"));
-        }
-        let account = unsafe { std::ffi::CStr::from_ptr(account) }
-            .to_str()
-            .map_err(|_| "invalid secret name".to_string())?;
-        crate::secrets::load_secret(account)
-    })();
-
-    match result.and_then(|value| {
-        std::ffi::CString::new(value).map_err(|_| "invalid secret value".to_string())
-    }) {
-        Ok(value) => value.into_raw(),
-        Err(message) => {
-            set_bridge_error(error, message);
-            std::ptr::null_mut()
-        }
-    }
-}
-
-fn set_bridge_error(error: *mut *mut std::ffi::c_char, message: String) {
-    if !error.is_null() {
-        let message = std::ffi::CString::new(message)
-            .unwrap_or_else(|_| std::ffi::CString::new("secret storage request failed").unwrap());
-        unsafe { *error = message.into_raw() };
-    }
-}
-
-#[unsafe(no_mangle)]
 unsafe extern "C" fn isotope_free_c_string(value: *mut std::ffi::c_char) {
     if !value.is_null() {
         drop(unsafe { std::ffi::CString::from_raw(value) });

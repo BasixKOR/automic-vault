@@ -53,6 +53,18 @@ Automic Vault commits:
 - `4c3e734` Protect approval audit records in Keychain
 - `e779532` Require launcher identity for auto approval
 
+### Ungated trusted-client load
+
+The follow-up review found that the approval service accepted a generic `load`
+operation from the signed `av` Gate Client and returned an arbitrary existing
+Secret without an Authorization Decision or Authorization Record. GitHub and
+Argo CD migration code used the operation for comparison and compatibility.
+
+The operation is removed. Equality and read-back verification now happen
+inside the menu bar app and return only status. GitHub migration uses that
+approved mutation path, and the legacy `ARGOCD_CONFIG_YAML` automatic migration
+is retired. See [ADR 0010](adr/0010-no-ungated-secret-retrieval.md).
+
 Isotope commits:
 
 - GH CLI `d80395cbb` Pin approval service to signing team

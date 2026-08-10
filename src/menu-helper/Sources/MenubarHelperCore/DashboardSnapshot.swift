@@ -1707,14 +1707,29 @@ func saveKeychainDataIfAbsentOrEqual(
         kSecAttrAccessible as String: StoredSecretAccessibility.whenUnlocked.keychainValue,
     ]
     addCanonicalAccessGroup(to: &query)
-    let status = SecItemAdd(query as CFDictionary, nil)
-    guard status == errSecDuplicateItem else { return status }
-    guard case .success(let existing) = loadKeychainDataResult(service: service, account: account),
-          existing == data
-    else {
-        return errSecDuplicateItem
+    return verifyKeychainDataAfterConditionalAdd(
+        status: SecItemAdd(query as CFDictionary, nil),
+        expected: data
+    ) {
+        loadKeychainDataResult(service: service, account: account)
     }
-    return errSecSuccess
+}
+
+func verifyKeychainDataAfterConditionalAdd(
+    status: OSStatus,
+    expected: Data,
+    load: () -> KeychainDataLoad
+) -> OSStatus {
+    guard status == errSecSuccess || status == errSecDuplicateItem else { return status }
+    // A successful add is not sufficient: mutation success means the final stored bytes were verified.
+    switch load() {
+    case .success(let existing):
+        return existing == expected ? errSecSuccess : errSecDuplicateItem
+    case .notFound:
+        return errSecItemNotFound
+    case .failure(let status):
+        return status
+    }
 }
 
 private func addCanonicalAccessGroup(to query: inout [String: Any]) {

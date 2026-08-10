@@ -1875,7 +1875,10 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid XPC request")
             return
         }
-        let op = String(cString: opPointer)
+        guard let op = ApprovalServiceOperation(rawValue: String(cString: opPointer)) else {
+            reply(peer, to: message, ok: false, error: "invalid XPC operation")
+            return
+        }
 
         guard isAllowedCaller(path: callerPath, signing: signing) else {
             reply(peer, to: message, ok: false, error: "Gate Client is not trusted")
@@ -1889,9 +1892,9 @@ private final class ApprovalServer: @unchecked Sendable {
         )
 
         switch op {
-        case "aws-helper-version" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .awsHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             reply(peer, to: message, ok: true, error: nil, value: String(awsHelperProtocolVersion))
-        case "inject", "keys", "authorize":
+        case .inject, .keys, .authorize:
             handleInject(
                 message,
                 on: peer,
@@ -1901,9 +1904,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case "aws-credentials" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .awsCredentials where isTrustedAvCaller(path: callerPath, signing: signing):
             handleAWSCredentials(message, on: peer, pid: pid, identity: identity)
-        case "list" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .list where isTrustedAvCaller(path: callerPath, signing: signing):
             handleList(
                 message,
                 on: peer,
@@ -1913,9 +1916,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case "save" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .save where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "save-if-absent" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .saveIfAbsentOrEqual where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(
                 message,
                 on: peer,
@@ -1923,23 +1926,21 @@ private final class ApprovalServer: @unchecked Sendable {
                 caller: mutationCaller,
                 ifAbsentOrEqual: true
             )
-        case "load" where isTrustedAvCaller(path: callerPath, signing: signing):
-            handleLoad(message, on: peer)
-        case "bless" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .bless where isTrustedAvCaller(path: callerPath, signing: signing):
             handleBless(message, on: peer, identity: identity)
-        case "delete" where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .delete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "save" where isTrustedGhCaller(path: callerPath, signing: signing):
+        case .save where isTrustedGhCaller(path: callerPath, signing: signing):
             handleGhSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "gh-save" where isTrustedGhCaller(path: callerPath, signing: signing):
+        case .ghSave where isTrustedGhCaller(path: callerPath, signing: signing):
             handleGhSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "delete" where isTrustedGhCaller(path: callerPath, signing: signing):
+        case .delete where isTrustedGhCaller(path: callerPath, signing: signing):
             handleGhDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "gh-delete" where isTrustedGhCaller(path: callerPath, signing: signing):
+        case .ghDelete where isTrustedGhCaller(path: callerPath, signing: signing):
             handleGhDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "stripe-save" where isTrustedStripeCaller(path: callerPath, signing: signing):
+        case .stripeSave where isTrustedStripeCaller(path: callerPath, signing: signing):
             handleStripeSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case "stripe-delete" where isTrustedStripeCaller(path: callerPath, signing: signing):
+        case .stripeDelete where isTrustedStripeCaller(path: callerPath, signing: signing):
             handleStripeDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         default:
             reply(peer, to: message, ok: false, error: "invalid XPC operation")
@@ -2848,23 +2849,6 @@ private final class ApprovalServer: @unchecked Sendable {
             cancellation: cancellation,
             caller: caller
         )
-    }
-
-    private func handleLoad(_ message: xpc_object_t, on peer: xpc_connection_t) {
-        guard let keyPointer = xpc_dictionary_get_string(message, "key") else {
-            reply(peer, to: message, ok: false, error: "invalid load request")
-            return
-        }
-        let key = String(cString: keyPointer)
-        guard validSecretKeyName(key) else {
-            reply(peer, to: message, ok: false, error: "invalid secret name: \(key)")
-            return
-        }
-        guard let value = loadStoredSecret(account: key) else {
-            reply(peer, to: message, ok: false, error: "failed to load secret \(key): \(errSecItemNotFound)")
-            return
-        }
-        reply(peer, to: message, ok: true, error: nil, value: value)
     }
 
     private func handleBless(
@@ -5545,6 +5529,7 @@ private func showAutomaticAccessToast(
 private func runSecretMutationSelfCheck() -> Int32 {
     for mutation in [
         SecretMutation.save(account: "TEST_SECRET", value: "secret", accessibility: .whenUnlocked),
+        SecretMutation.saveIfAbsentOrEqual(account: "TEST_SECRET", value: "secret"),
         SecretMutation.delete(account: "TEST_SECRET"),
     ] {
         var performed = false
@@ -5565,6 +5550,27 @@ private func runSecretMutationSelfCheck() -> Int32 {
         )
         guard result.status == nil, !performed else { return 1 }
     }
+
+    var performedWhileInactive = false
+    let inactive = performApprovedSecretMutation(
+        .saveIfAbsentOrEqual(account: "TEST_SECRET", value: "secret"),
+        callerPath: "/usr/local/bin/av",
+        pid: 42,
+        signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+        launcher: nil,
+        launcherFallbackPath: "/Applications/Terminal.app",
+        canRequestHumanApproval: { false },
+        onAccessRequest: { _ in true },
+        decision: { _ in .approved },
+        perform: { _ in
+            performedWhileInactive = true
+            return errSecSuccess
+        }
+    )
+    guard inactive.status == nil,
+          inactive.error == "secret mutation denied while user session is inactive",
+          !performedWhileInactive
+    else { return 1 }
 
     var cancellationRecord: AccessRequestRecord?
     var performedAfterCancellation = false

@@ -777,6 +777,29 @@ func protectionPolicyMatrix(
     #expect(loadStoredSecret(account: account, service: service) == "first")
 }
 
+@Test func conditionalSecretSaveVerifiesNewValueBeforeSuccess() {
+    let expected = Data("secret".utf8)
+    var performedReadback = false
+
+    let status = verifyKeychainDataAfterConditionalAdd(status: errSecSuccess, expected: expected) {
+        performedReadback = true
+        return .success(expected)
+    }
+
+    #expect(performedReadback)
+    #expect(status == errSecSuccess)
+}
+
+@Test func conditionalSecretSavePropagatesNewValueReadbackFailure() {
+    let expected = Data("secret".utf8)
+
+    let status = verifyKeychainDataAfterConditionalAdd(status: errSecSuccess, expected: expected) {
+        .failure(errSecInteractionNotAllowed)
+    }
+
+    #expect(status == errSecInteractionNotAllowed)
+}
+
 @Test func conditionalSecretSavePreservesExistingAccessibility() {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.conditional-save.\(UUID().uuidString)"

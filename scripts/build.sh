@@ -94,6 +94,8 @@ DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
 ICON_BUILD="$SWIFT_TARGET/icon"
 MENU_HELPER_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/Automic_Vault_Developer_ID.provisionprofile"
 MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
+SIGNED_MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/signed-menu-helper.entitlements.plist"
+PRIVATE_KEYCHAIN_ACCESS_GROUP="ZU76A67LGU.com.automicvault"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -102,6 +104,47 @@ LAUNCH_AGENTS="$CONTENTS/Library/LaunchAgents"
 LAUNCH_AGENT_NAME="com.automicvault.menubar-helper"
 LAUNCH_AGENT_PLIST="$LAUNCH_AGENTS/$LAUNCH_AGENT_NAME.plist"
 INSTALLED_LAUNCH_AGENT="$HOME/Library/LaunchAgents/$LAUNCH_AGENT_NAME.plist"
+
+assert_no_embedded_entitlements() {
+  local executable="$1"
+  local entitlements
+  if ! entitlements="$(codesign -d --entitlements :- "$executable" 2>/dev/null)"; then
+    echo "error: failed to inspect signed entitlements for $executable" >&2
+    exit 1
+  fi
+  if [[ -n "$entitlements" ]]; then
+    echo "error: Gate Client must not have embedded entitlements: $executable" >&2
+    exit 1
+  fi
+}
+
+assert_private_keychain_entitlement() {
+  local application="$1"
+  if ! codesign -d --entitlements :- "$application" \
+    2>/dev/null >"$SIGNED_MENU_HELPER_ENTITLEMENTS"; then
+    echo "error: failed to inspect signed entitlements for $application" >&2
+    exit 1
+  fi
+  if ! plutil -lint "$SIGNED_MENU_HELPER_ENTITLEMENTS" >/dev/null; then
+    echo "error: menu bar app has no valid signed entitlements" >&2
+    exit 1
+  fi
+  local groups
+  if ! groups="$(
+    plutil -extract keychain-access-groups json -o - "$SIGNED_MENU_HELPER_ENTITLEMENTS"
+  )"; then
+    echo "error: menu bar app has no Keychain access group" >&2
+    exit 1
+  fi
+  if [[ "$groups" == *"*"* ]]; then
+    echo "error: menu bar app must not have a wildcard Keychain access group" >&2
+    exit 1
+  fi
+  if [[ "$groups" != "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\"]" ]]; then
+    echo "error: menu bar app must have exactly $PRIVATE_KEYCHAIN_ACCESS_GROUP; found $groups" >&2
+    exit 1
+  fi
+}
 
 cargo build --release --locked --manifest-path "$ROOT/Cargo.toml"
 AV_CLI_REVISION="$("$ROOT/target/release/av" __version)"
@@ -178,22 +221,29 @@ fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
+assert_no_embedded_entitlements "$ROOT/target/release/av"
+assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 cp "$ROOT/target/release/av" "$MACOS/av"
 cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
+assert_no_embedded_entitlements "$MACOS/av"
+assert_no_embedded_entitlements "$MACOS/av-brew-stub"
 app_codesign_args=("${codesign_args[@]}")
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
   security cms -D -i "$MENU_HELPER_PROFILE" |
     plutil -extract Entitlements xml1 -o "$MENU_HELPER_ENTITLEMENTS" -
   plutil -replace keychain-access-groups -json \
-    "[\"${APPLE_TEAM_ID}.com.automicvault\"]" \
+    "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\"]" \
     "$MENU_HELPER_ENTITLEMENTS"
   app_codesign_args+=(--entitlements "$MENU_HELPER_ENTITLEMENTS")
 fi
 codesign "${app_codesign_args[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
+if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
+  assert_private_keychain_entitlement "$APP"
+fi
 if [[ "$dmg" -eq 1 ]]; then
   rm -rf "$DMG" "$DMG_STAGE"
   mkdir -p "$DMG_STAGE"
