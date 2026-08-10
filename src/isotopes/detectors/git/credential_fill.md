@@ -2,8 +2,14 @@
 
 ## Trigger Conditions
 
-- Git config delegates GitHub credentials to `gh auth git-credential`.
+- Git config delegates GitHub credentials to an untrusted `gh auth
+  git-credential` helper.
 - `git credential fill` returns a GitHub password or token for github.com.
+
+A GitHub helper is not a Finding when an empty helper first resets inherited
+helpers and every effective helper is an absolute path to the signed Automic
+Vault `gh` Isotope. That helper requests the token through the `gh` Secret Gate
+instead of making it ambient authority.
 
 ## Sensitive Files
 
@@ -13,8 +19,9 @@
 
 ## Mitigation
 
-Remove the helper that returned the GitHub token, reject the cached credential,
-and move GitHub remotes to SSH.
+For an untrusted helper, remove the helper that returned the GitHub token,
+reject the cached credential, and move GitHub remotes to SSH. A signed Automic
+Vault `gh` Isotope may remain when it is the complete effective helper chain.
 
 ## Confirm the Finding
 
@@ -34,11 +41,13 @@ token.
 
 Git does not identify the helper that supplied a live credential. Inspect the
 affected Git config when `av scan` reports a file and line. Otherwise, review
-the configured helpers:
+the configured helpers. `av doctor gh` verifies whether `gh` resolves to the
+signed Isotope:
 
 ```sh
 git config --global --get-all credential.helper
 git config --global --get-all credential.https://github.com.helper
+av doctor gh
 ```
 
 ## Remove GitHub HTTPS Credential Access
@@ -61,7 +70,7 @@ If Git still returns a password, open the affected config:
 git config --global --edit
 ```
 
-Delete helper lines that provide GitHub HTTPS credentials, including:
+Delete untrusted helper lines that provide GitHub HTTPS credentials, including:
 
 ```gitconfig
 [credential "https://github.com"]
@@ -127,3 +136,7 @@ because Git does not report which helper returned the credential. SSH agent
 access remains available to processes in your login session after you unlock
 the key, but Git no longer exposes a reusable HTTPS token through its helper
 protocol.
+
+The signed-Isotope exception fails closed. Relative helper commands, a missing
+reset, other effective helpers, config includes, an invalid signature, or any
+other uncertainty preserve the live probe or Finding.

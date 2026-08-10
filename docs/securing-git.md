@@ -5,7 +5,9 @@ Use SSH transport with a passphrase-protected key stored in the macOS Keychain.
 > [!IMPORTANT]
 > If Git can fetch or push over HTTPS without prompting a human, some credential
 > helper can probably return a plaintext token to `git credential fill`.
-> That is convenient. It is also ambient authority.
+> That is convenient. It is also ambient authority unless the helper is the
+> signed Automic Vault `gh` Isotope and the `gh` Secret Gate authorizes each
+> request.
 
 `av scan` reports Git configurations that expose credentials to ordinary
 same-user processes, including agent subprocesses.
@@ -16,7 +18,8 @@ Detected hazards:
 - global `credential.helper = store --file ...` paths
 - `printf 'protocol=https\nhost=github.com\n\n' | git credential fill`
   returning a non-empty `password=` for `github.com`
-- Git config that delegates GitHub credentials to `gh auth git-credential`
+- Git config that delegates GitHub credentials to an untrusted `gh auth
+  git-credential` helper
 - Git config that enables `git-credential-oauth`
 - plaintext `oauthClientSecret` values in Git config
 
@@ -25,8 +28,10 @@ not always say which helper returned the token. File-backed findings do include
 the affected path and line.
 
 
-The fix is not "use a better HTTPS credential helper". On macOS, if Git can ask
-a helper for an HTTPS token non-interactively, an agent command can ask too.
+The fix is not merely "use a better HTTPS credential helper". On macOS, if Git
+can ask an ordinary helper for an HTTPS token non-interactively, an agent
+command can ask too. The signed Automic Vault `gh` Isotope is different because
+the `gh` Secret Gate evaluates the request before applying the token.
 
 Use SSH.
 
@@ -98,7 +103,9 @@ The target state on macOS:
 - repository remotes use SSH URLs, eg. `git@github.com:user/repo.git`
 - your SSH private key has a real passphrase
 - macOS stores that passphrase in the Keychain after you enter it once
-- Git does not have a useful HTTPS token available through `git credential fill`
+- Git either has no useful HTTPS token available through `git credential fill`,
+  or its complete effective GitHub helper chain is the signed Automic Vault
+  `gh` Isotope behind the `gh` Secret Gate
 - no `credential.helper = store` plaintext files contain tokens
 
 This is the practical boundary:
@@ -313,7 +320,7 @@ credentials you no longer need:
 $ rm -i ~/.custom-git-credentials
 ```
 
-## Remove `gh auth git-credential` Exposure
+## Secure `gh auth git-credential`
 
 The GitHub CLI can act as a Git credential helper:
 
@@ -322,10 +329,21 @@ The GitHub CLI can act as a Git credential helper:
   helper = !gh auth git-credential
 ```
 
-That lets Git ask `gh` for a token. It also lets any same-user command ask Git
-for the same token.
+With upstream or unsigned `gh`, that lets Git ask `gh` for a token and lets any
+same-user command ask Git for the same token.
 
-If your remotes use SSH, remove the helper:
+`av harden gh` installs a signed `gh` Isotope that requests the token through
+the `gh` Secret Gate. `gh auth setup-git` configures an absolute helper path and
+an empty helper value that resets inherited helpers. `av scan` accepts that
+configuration only when the absolute executable has the Automic Vault Isotope
+signature and it is the complete effective GitHub helper chain. Verify it with:
+
+```sh
+$ av doctor gh
+```
+
+If `gh` is not hardened, or your remotes use SSH and do not need the helper,
+remove it:
 
 ```sh
 $ git config --global --unset-all credential.https://github.com.helper

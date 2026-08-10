@@ -14,8 +14,11 @@
 //! - A GitHub token exposed this way may carry broad repository authority.
 //!
 //! Evidence used:
-//! - A GitHub-scoped `credential.helper` command invoking
+//! - A GitHub-scoped `credential.helper` command invoking an untrusted
 //!   `gh auth git-credential` produces a finding.
+//! - A helper chain is exempt only when an empty helper resets inherited
+//!   helpers and every effective helper is an absolute, executable `gh` path
+//!   carrying the Automic Vault Isotope signature.
 //! - The affected file list points at the Git config line that enables the
 //!   helper.
 //! - Otherwise, the detector runs `git credential fill` with prompts disabled
@@ -32,6 +35,8 @@
 //! - This relies on the shared Git config parser and inherits its limitations.
 //! - The detector may report a helper command even when `gh` is no longer
 //!   installed.
+//! - Config includes make the effective helper chain uncertain, so they disable
+//!   the signed-Isotope exemption and preserve the live probe.
 //!
 //! Known omissions:
 //! - Live `git credential fill` findings may have no affected file because Git
@@ -54,6 +59,7 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::isotopes::hardeners::{executable, isotope};
 use crate::{AffectedFile, Finding};
 
 use super::config::{self, git_config_paths, read_to_string};
@@ -84,24 +90,88 @@ fn affected(path: &Path, line: usize) -> AffectedFile {
 }
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
+    findings_with(
+        home,
+        |path| executable(path) && isotope::signature_valid(path, "gh"),
+        || git_credential_fill_exposes_github_token().unwrap_or(false),
+    )
+}
+
+fn findings_with(
+    home: &Path,
+    trusted_gh_isotope: impl Fn(&Path) -> bool,
+    credential_fill_exposes_token: impl Fn() -> bool,
+) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let mut effective_helpers = Vec::new();
+    let mut saw_reset = false;
+    let mut config_chain_is_complete = git_config_environment_is_default();
     for path in git_config_paths(home) {
         let Some(contents) = read_to_string(&path) else {
             continue;
         };
-        for line in config::gh_auth_git_credential_lines(&contents) {
-            findings.push(high(
-                GH_HELPER_MESSAGE,
-                GH_HELPER_SOLUTION,
-                vec![affected(&path, line)],
-            ));
+        if config::has_include_directive(&contents) {
+            config_chain_is_complete = false;
+        }
+        for helper in config::github_credential_helpers(&contents) {
+            if helper.value.is_empty() {
+                effective_helpers.clear();
+                saw_reset = true;
+                continue;
+            }
+            effective_helpers.push((path.clone(), helper.line, helper.value.to_string()));
         }
     }
-    if findings.is_empty() && git_credential_fill_exposes_github_token().unwrap_or(false) {
+
+    let mut all_effective_helpers_are_trusted_isotopes = !effective_helpers.is_empty();
+    for (path, line, value) in &effective_helpers {
+        let Some(helper_executable) = config::gh_auth_git_credential_executable(value) else {
+            all_effective_helpers_are_trusted_isotopes = false;
+            continue;
+        };
+        let exact_helper_executable = config::exact_gh_auth_git_credential_executable(value);
+        if exact_helper_executable.as_deref() == Some(helper_executable.as_str())
+            && gh_helper_is_trusted_isotope(&helper_executable, &trusted_gh_isotope)
+        {
+            continue;
+        }
+        all_effective_helpers_are_trusted_isotopes = false;
+        findings.push(high(
+            GH_HELPER_MESSAGE,
+            GH_HELPER_SOLUTION,
+            vec![affected(path, *line)],
+        ));
+    }
+
+    let trusted_isotope_chain =
+        saw_reset && config_chain_is_complete && all_effective_helpers_are_trusted_isotopes;
+    if findings.is_empty() && !trusted_isotope_chain && credential_fill_exposes_token() {
         findings.push(high_unattributed(FILL_MESSAGE, FILL_SOLUTION));
     }
 
     findings
+}
+
+fn gh_helper_is_trusted_isotope(
+    helper_executable: &str,
+    trusted_gh_isotope: impl Fn(&Path) -> bool,
+) -> bool {
+    let path = Path::new(helper_executable);
+    path.is_absolute()
+        && path.file_name().is_some_and(|name| name == "gh")
+        && trusted_gh_isotope(path)
+}
+
+fn git_config_environment_is_default() -> bool {
+    [
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_SYSTEM",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+    ]
+    .into_iter()
+    .all(|key| std::env::var_os(key).is_none())
 }
 
 fn git_credential_fill_exposes_github_token() -> Result<bool, String> {
@@ -240,6 +310,112 @@ mod tests {
             )]
         );
 
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn accepts_reset_chain_containing_only_signed_gh_isotope() {
+        let home = temp_home("signed-gh-helper");
+        let gh = Path::new("/opt/homebrew/bin/gh");
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential \"https://github.com\"]\nhelper =\nhelper = !/opt/homebrew/bin/gh auth git-credential\n",
+        )
+        .unwrap();
+        let probe_ran = std::cell::Cell::new(false);
+
+        let findings = findings_with(
+            &home,
+            |path| path == gh,
+            || {
+                probe_ran.set(true);
+                true
+            },
+        );
+
+        assert!(findings.is_empty());
+        assert!(!probe_ran.get());
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn signed_gh_without_reset_does_not_hide_live_exposure() {
+        let home = temp_home("signed-gh-without-reset");
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential \"https://github.com\"]\nhelper = !/opt/homebrew/bin/gh auth git-credential\n",
+        )
+        .unwrap();
+
+        let findings = findings_with(
+            &home,
+            |path| path == Path::new("/opt/homebrew/bin/gh"),
+            || true,
+        );
+
+        assert_eq!(
+            findings,
+            vec![high_unattributed(FILL_MESSAGE, FILL_SOLUTION)]
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn unsigned_absolute_gh_helper_remains_a_finding() {
+        let home = temp_home("unsigned-gh-helper");
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential \"https://github.com\"]\nhelper =\nhelper = !/usr/local/bin/gh auth git-credential\n",
+        )
+        .unwrap();
+
+        let findings = findings_with(&home, |_| false, || false);
+
+        assert_eq!(
+            findings,
+            vec![high(
+                GH_HELPER_MESSAGE,
+                GH_HELPER_SOLUTION,
+                vec![affected(&home.join(".gitconfig"), 3)]
+            )]
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn signed_gh_with_trailing_shell_command_remains_a_finding() {
+        let home = temp_home("signed-gh-shell-command");
+        fs::write(
+            home.join(".gitconfig"),
+            "[credential \"https://github.com\"]\nhelper =\nhelper = !/opt/homebrew/bin/gh auth git-credential ; printf password=stolen\n",
+        )
+        .unwrap();
+
+        let findings = findings_with(&home, |_| true, || false);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].affected,
+            vec![affected(&home.join(".gitconfig"), 3)]
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn config_include_disables_signed_isotope_exemption() {
+        let home = temp_home("included-helper");
+        fs::write(
+            home.join(".gitconfig"),
+            "[include]\npath = ~/.gitconfig-extra\n[credential \"https://github.com\"]\nhelper =\nhelper = !/opt/homebrew/bin/gh auth git-credential\n",
+        )
+        .unwrap();
+
+        let findings = findings_with(&home, |_| true, || true);
+
+        assert_eq!(
+            findings,
+            vec![high_unattributed(FILL_MESSAGE, FILL_SOLUTION)]
+        );
         let _ = fs::remove_dir_all(home);
     }
 

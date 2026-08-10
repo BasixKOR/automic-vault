@@ -5,6 +5,8 @@
 //! - Resolving whether helper configuration applies to `github.com`.
 //! - Finding plaintext `store` helper file paths.
 //! - Recognizing `gh auth git-credential` helper commands.
+//! - Preserving the ordered GitHub helper chain, including empty values that
+//!   reset helpers inherited from lower-precedence config files.
 //!
 //! Why this matters:
 //! - Multiple Git detectors need the same boundary logic: which helper applies,
@@ -25,7 +27,7 @@
 //! - It does not implement Git's escape rules, include directives, conditional
 //!   includes, multiline values, or platform-specific config precedence.
 //! - Shell parsing for helper commands is minimal and only needs enough to
-//!   identify `gh auth git-credential`.
+//!   identify `gh auth git-credential` and its executable path.
 //!
 //! Known omissions:
 //! - Repository-local config is not represented here.
@@ -79,15 +81,19 @@ pub(crate) fn affected(path: &Path, line: usize) -> AffectedFile {
 }
 
 pub(crate) fn git_config_paths(home: &Path) -> Vec<PathBuf> {
-    let mut paths = vec![home.join(".gitconfig")];
+    // Git reads the XDG file before ~/.gitconfig, so preserve that precedence:
+    // empty helper values in the latter must reset helpers from the former.
+    let mut paths = Vec::new();
     if let Some(config_home) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty())
     {
         paths.push(PathBuf::from(config_home).join("git/config"));
     } else {
         paths.push(home.join(".config/git/config"));
     }
-    paths.sort();
-    paths.dedup();
+    let dot_gitconfig = home.join(".gitconfig");
+    if paths.first() != Some(&dot_gitconfig) {
+        paths.push(dot_gitconfig);
+    }
     paths
 }
 
@@ -119,14 +125,42 @@ pub(crate) fn store_paths(home: &Path, contents: &str) -> Vec<PathBuf> {
     paths
 }
 
-pub(crate) fn gh_auth_git_credential_lines(contents: &str) -> Vec<usize> {
+pub(crate) struct GithubCredentialHelper<'a> {
+    pub(crate) value: &'a str,
+    pub(crate) line: usize,
+}
+
+pub(crate) fn github_credential_helpers(contents: &str) -> Vec<GithubCredentialHelper<'_>> {
     credential_helpers(contents)
         .into_iter()
         .filter_map(|helper| {
-            (helper.applies_to_github && helper_invokes_gh_auth_git_credential(helper.value))
-                .then_some(helper.line)
+            helper.applies_to_github.then_some(GithubCredentialHelper {
+                value: helper.value,
+                line: helper.line,
+            })
         })
         .collect()
+}
+
+pub(crate) fn has_include_directive(contents: &str) -> bool {
+    contents.lines().any(|line| {
+        let trimmed = line.trim();
+        if let Some(section) = trimmed
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+        {
+            let name = section
+                .split([' ', '\t', '"', '\''])
+                .next()
+                .unwrap_or_default();
+            return name.eq_ignore_ascii_case("include") || name.eq_ignore_ascii_case("includeif");
+        }
+        trimmed.split_once('=').is_some_and(|(key, _)| {
+            let key = key.trim();
+            key.eq_ignore_ascii_case("include.path")
+                || key.to_ascii_lowercase().starts_with("includeif.")
+        })
+    })
 }
 
 struct CredentialHelper<'a> {
@@ -168,9 +202,12 @@ fn credential_helpers(contents: &str) -> Vec<CredentialHelper<'_>> {
 
 fn git_config_section(trimmed: &str) -> Option<GitConfigSection> {
     let name = trimmed.strip_prefix('[')?.strip_suffix(']')?.trim();
-    let Some(rest) = name.strip_prefix("credential") else {
+    if name.len() < "credential".len()
+        || !name[.."credential".len()].eq_ignore_ascii_case("credential")
+    {
         return Some(GitConfigSection::Other);
-    };
+    }
+    let rest = &name["credential".len()..];
     let rest = rest.trim();
     if rest.is_empty() {
         return Some(GitConfigSection::Credential {
@@ -188,18 +225,20 @@ fn git_config_value(value: &str) -> &str {
 }
 
 fn credential_helper_applies_to_github(key: &str, section: GitConfigSection) -> Option<bool> {
-    if key == "helper" {
+    if key.eq_ignore_ascii_case("helper") {
         return match section {
             GitConfigSection::Credential { applies_to_github } => Some(applies_to_github),
             GitConfigSection::Other => None,
         };
     }
-    if key == "credential.helper" {
+    if key.eq_ignore_ascii_case("credential.helper") {
         return Some(true);
     }
-    let scope = key
+    let lower = key.to_ascii_lowercase();
+    let scope = lower
         .strip_prefix("credential.")
-        .and_then(|rest| rest.strip_suffix(".helper"))?;
+        .and_then(|rest| rest.strip_suffix(".helper"))
+        .map(|scope| &key["credential.".len().."credential.".len() + scope.len()])?;
     Some(credential_scope_applies_to_github(scope))
 }
 
@@ -220,15 +259,26 @@ fn credential_scope_applies_to_github(scope: &str) -> bool {
     host.eq_ignore_ascii_case("github.com")
 }
 
-fn helper_invokes_gh_auth_git_credential(value: &str) -> bool {
+pub(crate) fn gh_auth_git_credential_executable(value: &str) -> Option<String> {
     let Some(command) = value.trim().strip_prefix('!') else {
-        return false;
+        return None;
     };
-    let words = shell_words(command);
-    words.len() >= 3
+    let words = shell_words(command)?;
+    (words.len() >= 3
         && command_name_is_gh(&words[0])
         && words[1] == "auth"
-        && words[2] == "git-credential"
+        && words[2] == "git-credential")
+        .then(|| words[0].clone())
+}
+
+pub(crate) fn exact_gh_auth_git_credential_executable(value: &str) -> Option<String> {
+    let command = value.trim().strip_prefix('!')?;
+    let words = shell_words(command)?;
+    (words.len() == 3
+        && command_name_is_gh(&words[0])
+        && words[1] == "auth"
+        && words[2] == "git-credential")
+        .then(|| words[0].clone())
 }
 
 fn command_name_is_gh(command: &str) -> bool {
@@ -238,7 +288,7 @@ fn command_name_is_gh(command: &str) -> bool {
         .is_some_and(|name| name == "gh" || name == "gh.exe")
 }
 
-fn shell_words(value: &str) -> Vec<String> {
+fn shell_words(value: &str) -> Option<Vec<String>> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut quote = None;
@@ -275,13 +325,13 @@ fn shell_words(value: &str) -> Vec<String> {
         current.push(ch);
     }
 
-    if escaped {
-        current.push('\\');
+    if escaped || quote.is_some() {
+        return None;
     }
     if !current.is_empty() {
         words.push(current);
     }
-    words
+    Some(words)
 }
 
 fn store_helper_file_path(home: &Path, value: &str) -> Option<PathBuf> {
@@ -331,16 +381,66 @@ mod tests {
     #[test]
     fn detects_github_gh_helper_only_for_github_scope() {
         assert_eq!(
-            gh_auth_git_credential_lines(
+            github_credential_helpers(
                 "[credential \"https://github.com\"]\nhelper = !'/Applications/GitHub CLI.app/Contents/MacOS/gh' auth git-credential\n"
-            ),
+            )
+            .into_iter()
+            .filter_map(|helper| gh_auth_git_credential_executable(helper.value).map(|_| helper.line))
+            .collect::<Vec<_>>(),
             vec![2]
         );
         assert!(
-            gh_auth_git_credential_lines(
+            github_credential_helpers(
                 "[credential \"https://example.com\"]\nhelper = !gh auth git-credential\n"
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn preserves_github_helper_resets_and_executable_paths() {
+        let helpers = github_credential_helpers(
+            "[credential \"https://github.com\"]\nhelper =\nhelper = !'/opt/homebrew/bin/gh' auth git-credential\n",
+        );
+
+        assert_eq!(helpers.len(), 2);
+        assert_eq!(helpers[0].value, "");
+        assert_eq!(helpers[0].line, 2);
+        assert_eq!(
+            gh_auth_git_credential_executable(helpers[1].value).as_deref(),
+            Some("/opt/homebrew/bin/gh")
+        );
+        assert_eq!(
+            exact_gh_auth_git_credential_executable(helpers[1].value).as_deref(),
+            Some("/opt/homebrew/bin/gh")
+        );
+        assert_eq!(helpers[1].line, 3);
+    }
+
+    #[test]
+    fn exact_gh_helper_rejects_trailing_shell_commands() {
+        let value = "!/opt/homebrew/bin/gh auth git-credential ; printf password=stolen";
+
+        assert_eq!(
+            gh_auth_git_credential_executable(value).as_deref(),
+            Some("/opt/homebrew/bin/gh")
+        );
+        assert!(exact_gh_auth_git_credential_executable(value).is_none());
+        assert!(gh_auth_git_credential_executable("!'unterminated auth git-credential").is_none());
+    }
+
+    #[test]
+    fn recognizes_case_insensitive_git_config_names_and_includes() {
+        assert_eq!(
+            github_credential_helpers(
+                "[CrEdEnTiAl \"https://github.com\"]\nHeLpEr = !gh auth git-credential\n"
+            )
+            .len(),
+            1
+        );
+        assert!(has_include_directive(
+            "[IncludeIf \"gitdir:~/src/\"]\npath = work.gitconfig\n"
+        ));
+        assert!(has_include_directive("include.path = ~/.gitconfig-extra\n"));
     }
 }
