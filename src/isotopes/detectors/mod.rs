@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::Finding;
+use crate::path_security::USER_WRITABLE_PATH_REASON;
 
 mod acli;
 mod akamai;
@@ -383,8 +384,6 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
 }
 
 const SHELL_PATH_FINDING_SOURCES: &[&str] = &["bash", "zsh"];
-const SHELL_PATH_FINDING_MARKER: &str =
-    "PATH has a user-writable directory before protected system directories";
 const MERGED_SHELL_PATH_SOURCE: &str = "bash+zsh";
 const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary user programs and shared environment configuration. Automic Vault cannot rewrite them without changing shell behavior or guessing which commands need each secret. Move the reported value with `av save KEY`, then inject it only into the command that needs it. For an unsafe `PATH`, move every protected system directory before the reported user-writable directories and remove empty or relative entries.";
 
@@ -418,7 +417,7 @@ fn shell_path_entry(finding: &Finding) -> Option<&str> {
     }
     finding
         .explanation
-        .split_once(SHELL_PATH_FINDING_MARKER)?
+        .split_once(USER_WRITABLE_PATH_REASON)?
         .1
         .strip_prefix(": ")
 }
