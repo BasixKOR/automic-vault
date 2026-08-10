@@ -395,10 +395,9 @@ const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary 
 fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
     let mut merged: Vec<Finding> = Vec::with_capacity(findings.len());
     for finding in findings {
-        let source = finding.source;
         let existing = shell_path_entry(&finding).and_then(|entry| {
             merged.iter_mut().find(|candidate| {
-                candidate.source != source && shell_path_entry(candidate) == Some(entry)
+                candidate.source != finding.source && shell_path_entry(candidate) == Some(entry)
             })
         });
         match existing {
@@ -425,7 +424,7 @@ fn shell_path_entry(finding: &Finding) -> Option<&str> {
 }
 
 fn merge_shell_path_finding(existing: &mut Finding) {
-    if let Some(entry) = shell_path_entry(existing).map(str::to_owned) {
+    if let Some(entry) = shell_path_entry(existing) {
         existing.explanation = format!(
             "Bash and zsh PATH have a user-writable directory before protected system directories: {entry}"
         );
@@ -561,25 +560,19 @@ mod tests {
     }
 
     fn shell_path_finding(shell: &'static str, path: &str) -> Finding {
+        let explanation = format!(
+            "{} PATH has a user-writable directory before protected system directories: {path}",
+            if shell == "bash" { "Bash" } else { "Zsh" },
+        );
         Finding {
             source: shell,
             homepage: "https://example.test/",
             severity: "high",
-            explanation: format!(
-                "{} PATH has a user-writable directory before protected system directories: {path}",
-                if shell == "bash" { "Bash" } else { "Zsh" },
-            ),
+            // Built by the same function the detectors use, so relative and
+            // empty entries have no affected path here either.
+            affected: super::radioisotope::affected(&explanation),
+            explanation,
             solution: format!("{shell} startup files contain arbitrary user programs."),
-            // Mirrors `radioisotope::affected`: only entries starting with `/`
-            // or `~` are recorded, so relative and empty entries have none.
-            affected: if path.starts_with('/') || path.starts_with('~') {
-                vec![crate::AffectedFile {
-                    path: path.to_string(),
-                    line: None,
-                }]
-            } else {
-                Vec::new()
-            },
             docs_url: "https://example.test/docs.md",
         }
     }
