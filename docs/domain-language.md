@@ -56,6 +56,50 @@ Disclosure, listing Secret Names, changing Secrets, or sibling Launchers. Becaus
 the Launcher may choose any Target and arguments for each request, Direct Access
 delegates more authority than a Tool-specific Secret Gate or Blessed Script.
 
+### Secret Proxy Gate
+
+The built-in Secret Gate for `av proxy`. It applies exact named Secrets to
+approved public HTTP origins without placing raw Secret values in the launched
+Target's environment. The gate has no durable Authorization Policy in its
+initial form: starting every Proxy Session requires Approval, and destination
+authority lasts at most for that session.
+
+### Proxy Session
+
+A live, memory-only Secret Proxy Gate context bound to one complete command and
+one exact process identity: PID version, process start time, and live Target
+code identity. It ends when that execution exits, Automic Vault or its proxy
+helper exits, or the user terminates it.
+
+A Proxy Session binds lifetime, not the provenance of each loopback TCP
+connection. A normal HTTP proxy cannot securely attribute an individual request
+to the approved PID. Code that obtains the session's Proxy Credential and
+Secret References may exercise authority already granted to that session.
+
+### Secret Reference
+
+A high-entropy, session-specific placeholder for one Secret Name. A Secret
+Reference contains no Secret bytes. It is a bearer value: possession together
+with the session's Proxy Credential permits requesting Secret Application
+within that Proxy Session's authorized destinations.
+
+### Proxy Credential
+
+A high-entropy bearer credential required to connect to one loopback Secret
+Proxy. It prevents accidental or unauthenticated use; it does not identify the
+process that opened a TCP connection.
+
+### Destination Rule
+
+A memory-only rule created when the user selects Allow for Session while
+approving a complete proxy request. It binds exact Secret Names to one canonical
+HTTP origin and may authorize later requests only within the same Proxy Session
+and origin. The initial request is approved by the user; later matching requests
+receive decisions from the Destination Rule. The rule is not a Blessing,
+Launcher Endorsement, or durable Authorization Policy. Selecting Allow Once
+creates no rule. Every allowed Secret Application still requires its own
+Authorization Record before release.
+
 ### Local Execution Boundary
 
 The point on the Mac where Automic Vault decides whether a Verified Launcher may apply a protected Secret or perform a gated operation through a Target. Secret storage, identity verification, policy evaluation, enforcement, and Authorization History remain on the Mac. A companion device may carry an Approval, but the Mac enforces the resulting Authorization Decision.
@@ -229,6 +273,11 @@ released.
 ### Secret Application
 
 The release of a Secret to its designated Target for an authorized operation. This is the normal way Automic Vault uses secrets.
+
+For the Secret Proxy Gate, the signed proxy helper is the immediate Target of
+Secret Application. The launched Target receives only Secret References. The
+helper applies a Secret to an authorized outbound request and must discard its
+request-scoped copy when that request completes.
 
 ### Secret Disclosure
 
