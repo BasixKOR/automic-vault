@@ -118,6 +118,20 @@ fn release_builds_are_actions_only_and_fail_closed() {
 }
 
 #[test]
+fn release_build_asserts_secret_custody_entitlements() {
+    assert!(BUILD_SCRIPT.contains("PRIVATE_KEYCHAIN_ACCESS_GROUP=\"ZU76A67LGU.com.automicvault\""));
+    assert!(BUILD_SCRIPT.contains(
+        "assert_no_embedded_entitlements \"$ROOT/target/release/av\""
+    ));
+    assert!(BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$MACOS/av\""));
+    assert!(BUILD_SCRIPT.contains("assert_private_keychain_entitlement \"$APP\""));
+    assert!(BUILD_SCRIPT.contains("menu bar app must not have a wildcard Keychain access group"));
+    assert!(BUILD_SCRIPT.contains(
+        "menu bar app must have exactly $PRIVATE_KEYCHAIN_ACCESS_GROUP"
+    ));
+}
+
+#[test]
 fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(!RELEASE_WORKFLOW.contains("aws-actions/"));
     assert!(!RELEASE_WORKFLOW.contains("aws "));
