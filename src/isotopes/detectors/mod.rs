@@ -395,12 +395,13 @@ const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary 
 fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
     let mut merged: Vec<Finding> = Vec::with_capacity(findings.len());
     for finding in findings {
-        let existing = is_shell_path_finding(&finding).then(|| {
+        let source = finding.source;
+        let existing = shell_path_entry(&finding).and_then(|entry| {
             merged.iter_mut().find(|candidate| {
-                is_shell_path_finding(candidate) && candidate.affected == finding.affected
+                candidate.source != source && shell_path_entry(candidate) == Some(entry)
             })
         });
-        match existing.flatten() {
+        match existing {
             Some(existing) => merge_shell_path_finding(existing),
             None => merged.push(finding),
         }
@@ -408,22 +409,28 @@ fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
     merged
 }
 
-fn is_shell_path_finding(finding: &Finding) -> bool {
-    SHELL_PATH_FINDING_SOURCES.contains(&finding.source)
-        && finding.explanation.contains(SHELL_PATH_FINDING_MARKER)
+/// The PATH entry a shell PATH finding reports, taken from the explanation
+/// rather than `affected`: `affected` keeps only entries starting with `/` or
+/// `~`, so it is empty for the relative and empty entries `path_security`
+/// deliberately reports, and cannot distinguish one from another.
+fn shell_path_entry(finding: &Finding) -> Option<&str> {
+    if !SHELL_PATH_FINDING_SOURCES.contains(&finding.source) {
+        return None;
+    }
+    finding
+        .explanation
+        .split_once(SHELL_PATH_FINDING_MARKER)?
+        .1
+        .strip_prefix(": ")
 }
 
 fn merge_shell_path_finding(existing: &mut Finding) {
-    existing.source = MERGED_SHELL_PATH_SOURCE;
-    if let Some(path) = existing
-        .affected
-        .first()
-        .map(|affected| affected.path.clone())
-    {
+    if let Some(entry) = shell_path_entry(existing).map(str::to_owned) {
         existing.explanation = format!(
-            "Bash and zsh PATH have a user-writable directory before protected system directories: {path}"
+            "Bash and zsh PATH have a user-writable directory before protected system directories: {entry}"
         );
     }
+    existing.source = MERGED_SHELL_PATH_SOURCE;
     existing.solution = MERGED_SHELL_PATH_SOLUTION.to_string();
 }
 
@@ -563,10 +570,16 @@ mod tests {
                 if shell == "bash" { "Bash" } else { "Zsh" },
             ),
             solution: format!("{shell} startup files contain arbitrary user programs."),
-            affected: vec![crate::AffectedFile {
-                path: path.to_string(),
-                line: None,
-            }],
+            // Mirrors `radioisotope::affected`: only entries starting with `/`
+            // or `~` are recorded, so relative and empty entries have none.
+            affected: if path.starts_with('/') || path.starts_with('~') {
+                vec![crate::AffectedFile {
+                    path: path.to_string(),
+                    line: None,
+                }]
+            } else {
+                Vec::new()
+            },
             docs_url: "https://example.test/docs.md",
         }
     }
@@ -602,6 +615,63 @@ mod tests {
 
         assert_eq!(merged.len(), 2);
         assert!(merged.iter().all(|finding| finding.source == "bash+zsh"));
+    }
+
+    /// Regression: `PATH="first:second:/usr/bin:/bin"`. Both relative entries
+    /// have an empty `affected`, so keying the merge on `affected` collapsed
+    /// them into one finding and `second` disappeared from the scan.
+    #[test]
+    fn keeps_relative_path_entries_separate_when_merging() {
+        let findings = vec![
+            shell_path_finding("bash", "first"),
+            shell_path_finding("bash", "second"),
+            shell_path_finding("zsh", "first"),
+            shell_path_finding("zsh", "second"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|finding| finding.source == "bash+zsh"));
+        assert_eq!(
+            merged[0].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: first"
+        );
+        assert_eq!(
+            merged[1].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: second"
+        );
+    }
+
+    #[test]
+    fn merges_the_empty_path_entry_reported_as_a_dot() {
+        let findings = vec![
+            shell_path_finding("bash", "."),
+            shell_path_finding("zsh", "."),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "bash+zsh");
+        assert_eq!(
+            merged[0].explanation,
+            "Bash and zsh PATH have a user-writable directory before protected system directories: ."
+        );
+        assert!(merged[0].affected.is_empty());
+    }
+
+    #[test]
+    fn does_not_merge_two_findings_from_the_same_shell() {
+        let findings = vec![
+            shell_path_finding("bash", "relative"),
+            shell_path_finding("bash", "relative"),
+        ];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|finding| finding.source == "bash"));
     }
 
     #[test]
