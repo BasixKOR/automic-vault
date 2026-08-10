@@ -4335,7 +4335,7 @@ private final class ApprovalServer: @unchecked Sendable {
                                 shebangScript: nil,
                                 scriptData: nil,
                                 tool: "Secret Proxy",
-                                title: "Allow secrets for (destination.origin)?",
+                                title: "Allow secrets for \(destination.origin)?",
                                 detail: destination.queryNames.isEmpty
                                     ? "The proxy will request these secrets on demand for this URL."
                                     : "The proxy will request these secrets on demand. Query values remain hidden; names: \(destination.queryNames.sorted().joined(separator: ", "))."

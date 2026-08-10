@@ -220,7 +220,7 @@ fn validate_bootstrap(bootstrap: Bootstrap) -> Result<Bootstrap, String> {
             || reference.len() < 32
             || !reference
                 .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
             || !unique.insert(reference)
         {
             return Err("bootstrap contains an invalid secret reference".into());
@@ -304,6 +304,16 @@ mod tests {
             "avref_01234567890123456789012345".into(),
         );
         assert!(validate_bootstrap(duplicate).is_err());
+    }
+
+    #[test]
+    fn accepts_base64url_secret_references() {
+        let mut value = bootstrap();
+        value.references.insert(
+            "API_TOKEN".into(),
+            "avref_-01234567890123456789012345".into(),
+        );
+        assert!(validate_bootstrap(value).is_ok());
     }
 
     #[tokio::test]
