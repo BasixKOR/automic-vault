@@ -644,6 +644,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     public let date: Date
     public let tool: String
     public let command: String
+    public let displayCommand: String?
     public let decision: String
     public let approvalSource: String?
     public let reason: String
@@ -659,6 +660,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         date: Date,
         tool: String,
         command: String,
+        displayCommand: String? = nil,
         decision: String,
         approvalSource: String? = nil,
         reason: String,
@@ -673,6 +675,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.date = date
         self.tool = tool
         self.command = command
+        self.displayCommand = displayCommand
         self.decision = decision
         self.approvalSource = approvalSource
         self.reason = reason
@@ -682,6 +685,10 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.cwd = cwd
         self.keys = keys
         self.detail = detail
+    }
+
+    public var commandForDisplay: String {
+        displayCommand ?? "\(tool.isEmpty ? "tool" : tool) <arguments hidden>"
     }
 
     public var approvalSourceLabel: String {

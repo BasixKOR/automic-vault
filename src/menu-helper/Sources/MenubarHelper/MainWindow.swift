@@ -2299,7 +2299,7 @@ private struct AccessRequestRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                Text(record.command.isEmpty ? record.target : record.command)
+                Text(record.commandForDisplay)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
