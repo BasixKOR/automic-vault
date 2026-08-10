@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::Path;
 
-use crate::path_security::USER_WRITABLE_PATH_REASON;
+use crate::path_security::{user_writable_entries_before_system_paths, user_writable_path_reason};
 use crate::{AffectedFile, Finding};
 
 const DOCS_URL: &str = "https://github.com/automic-vault/automic-vault/blob/main/src/isotopes/detectors/macos/detector.md";
@@ -18,13 +18,13 @@ fn findings_for_gui_path(path: &std::ffi::OsStr) -> Vec<Finding> {
         return Vec::new();
     }
 
-    crate::path_security::user_writable_entries_before_system_paths(path)
+    user_writable_entries_before_system_paths(path)
         .into_iter()
         .map(|entry| Finding {
             source: "macOS",
             homepage: DOCS_URL,
             severity: "high",
-            explanation: format!("macOS GUI {USER_WRITABLE_PATH_REASON}: {}", entry.display()),
+            explanation: user_writable_path_reason("macOS GUI", &entry),
             solution: "Move protected system directories before user-writable directories in the launchd PATH, then log out and back in.".to_string(),
             affected: vec![AffectedFile {
                 path: entry.display().to_string(),

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::path_security::USER_WRITABLE_PATH_REASON;
+use crate::path_security::{user_writable_entries_before_system_paths, user_writable_path_reason};
 
 pub(crate) fn bash_reasons() -> Result<Vec<String>, String> {
     let home = home_dir()?;
@@ -39,9 +39,9 @@ pub(crate) fn zsh_reasons() -> Result<Vec<String>, String> {
 
 fn path_reasons(shell: &str) -> Vec<String> {
     let path = std::env::var_os("PATH").unwrap_or_default();
-    crate::path_security::user_writable_entries_before_system_paths(&path)
+    user_writable_entries_before_system_paths(&path)
         .into_iter()
-        .map(|entry| format!("{shell} {USER_WRITABLE_PATH_REASON}: {}", entry.display()))
+        .map(|entry| user_writable_path_reason(shell, &entry))
         .collect()
 }
 

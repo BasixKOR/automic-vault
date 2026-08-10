@@ -3,13 +3,18 @@ use std::ffi::{CString, OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-/// The shared half of every reason reporting an entry from
-/// [`user_writable_entries_before_system_paths`]. Producers prefix the source
-/// (`Bash`, `Zsh`, `macOS GUI`) and append `": {entry}"`. Consumers recognise
-/// those reasons by matching this text, so it needs one definition rather than
-/// a copy per call site.
+/// The wording consumers match on to recognise a user-writable PATH reason.
+/// Producers build reasons with [`user_writable_path_reason`] rather than
+/// composing this by hand.
 pub(crate) const USER_WRITABLE_PATH_REASON: &str =
     "PATH has a user-writable directory before protected system directories";
+
+/// The reason reporting one entry from
+/// [`user_writable_entries_before_system_paths`], prefixed by the source that
+/// found it (`Bash`, `Zsh`, `macOS GUI`).
+pub(crate) fn user_writable_path_reason(source: &str, entry: &Path) -> String {
+    format!("{source} {USER_WRITABLE_PATH_REASON}: {}", entry.display())
+}
 
 pub(crate) fn user_writable_entries_before_system_paths(path: &OsStr) -> Vec<PathBuf> {
     let entries = std::env::split_paths(path)
