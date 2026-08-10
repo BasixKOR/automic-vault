@@ -7,13 +7,19 @@ edition = "2024"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
 futures-util = "0.3"
+http-body-util = "0.1"
+hudsucker = "=0.25.0"
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls"] }
 ring = "0.17"
+percent-encoding = "2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+subtle = "2.6"
+tokio = { version = "1.53", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tower-service = "0.3"
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
+zeroize = "1.8"
 
 [lib]
 path = "src/lib.rs"
@@ -33,3 +39,7 @@ path = "src/scanner/main.rs"
 [[bin]]
 name = "av-approval-relay"
 path = "src/approval_relay/main.rs"
+
+[[bin]]
+name = "av-proxy-helper"
+path = "src/proxy_helper/main.rs"
