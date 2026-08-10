@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::path_security::USER_WRITABLE_PATH_REASON;
+
 pub(crate) fn bash_reasons() -> Result<Vec<String>, String> {
     let home = home_dir()?;
     let mut paths = vec![
@@ -39,12 +41,7 @@ fn path_reasons(shell: &str) -> Vec<String> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     crate::path_security::user_writable_entries_before_system_paths(&path)
         .into_iter()
-        .map(|entry| {
-            format!(
-                "{shell} PATH has a user-writable directory before protected system directories: {}",
-                entry.display()
-            )
-        })
+        .map(|entry| format!("{shell} {USER_WRITABLE_PATH_REASON}: {}", entry.display()))
         .collect()
 }
 
