@@ -6,7 +6,7 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case awsCredentials = "aws-credentials"
     case list
     case save
-    case saveIfAbsent = "save-if-absent"
+    case saveIfAbsentOrEqual = "save-if-absent"
     case bless
     case delete
     case ghSave = "gh-save"

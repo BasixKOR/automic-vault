@@ -222,11 +222,13 @@ fi
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
 assert_no_embedded_entitlements "$ROOT/target/release/av"
+assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 cp "$ROOT/target/release/av" "$MACOS/av"
 cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
 assert_no_embedded_entitlements "$MACOS/av"
+assert_no_embedded_entitlements "$MACOS/av-brew-stub"
 app_codesign_args=("${codesign_args[@]}")
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"

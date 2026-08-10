@@ -1709,6 +1709,7 @@ func saveKeychainDataIfAbsentOrEqual(
     addCanonicalAccessGroup(to: &query)
     let status = SecItemAdd(query as CFDictionary, nil)
     guard status == errSecSuccess || status == errSecDuplicateItem else { return status }
+    // A successful add is not sufficient: mutation success means the final stored bytes were verified.
     switch loadKeychainDataResult(service: service, account: account) {
     case .success(let existing):
         return existing == data ? errSecSuccess : errSecDuplicateItem

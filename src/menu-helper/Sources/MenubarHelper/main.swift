@@ -1918,7 +1918,7 @@ private final class ApprovalServer: @unchecked Sendable {
             )
         case .save where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
-        case .saveIfAbsent where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .saveIfAbsentOrEqual where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(
                 message,
                 on: peer,
