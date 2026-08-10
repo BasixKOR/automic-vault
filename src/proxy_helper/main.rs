@@ -41,6 +41,9 @@ async fn main() {
 }
 
 async fn run() -> Result<(), String> {
+    hudsucker::rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| "failed to install the proxy TLS crypto provider".to_string())?;
     let (mut control_reader, mut control_writer) = inherited_control_channels()?;
     let bootstrap =
         tokio::time::timeout(Duration::from_secs(5), read_bootstrap(&mut control_reader))
@@ -189,7 +192,7 @@ where
         let credential = credential.clone();
         async move {
             let failure = if request.method() == Method::CONNECT
-                && CanonicalDestination::from_uri(request.uri()).is_err()
+                && CanonicalDestination::from_connect_uri(request.uri()).is_err()
             {
                 Some(ProxyFailure::forbidden(
                     "private or unsupported destination",

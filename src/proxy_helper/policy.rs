@@ -9,6 +9,16 @@ pub(crate) struct CanonicalDestination {
 }
 
 impl CanonicalDestination {
+    pub(crate) fn from_connect_uri(uri: &Uri) -> Result<Self, String> {
+        let authority = uri
+            .authority()
+            .ok_or_else(|| "CONNECT request has no authority".to_string())?;
+        let absolute = format!("https://{authority}")
+            .parse::<Uri>()
+            .map_err(|_| "CONNECT request has an invalid authority".to_string())?;
+        Self::from_uri(&absolute)
+    }
+
     pub(crate) fn from_uri(uri: &Uri) -> Result<Self, String> {
         let scheme = uri
             .scheme_str()
@@ -148,6 +158,10 @@ mod tests {
             CanonicalDestination::from_uri(&"https://api.example.com:8443/v1".parse().unwrap())
                 .unwrap();
         assert_eq!(destination.origin(), "https://api.example.com:8443");
+        let destination =
+            CanonicalDestination::from_connect_uri(&"api.example.com:443".parse().unwrap())
+                .unwrap();
+        assert_eq!(destination.origin(), "https://api.example.com");
     }
 
     #[test]
