@@ -281,6 +281,16 @@ final class DashboardModel: ObservableObject {
                     date: $0.date
                 )
             }
+        case .proxySessions:
+            ProxySessionViewModel.shared.sessions.map {
+                DashboardItem(
+                    id: $0.id.uuidString,
+                    title: URL(fileURLWithPath: $0.target).lastPathComponent,
+                    subtitle: "pid \($0.pid) • \($0.authorizedRequestCount) authorized requests",
+                    detail: "Secrets: \($0.secretNames.joined(separator: ", "))",
+                    date: $0.startedAt
+                )
+            }
         case .settings:
             [
                 DashboardItem(
@@ -387,6 +397,15 @@ final class DashboardModel: ObservableObject {
         return snapshot.accessRequests.first
     }
 
+    var selectedProxySession: ProxySessionSummary? {
+        let sessions = ProxySessionViewModel.shared.sessions
+        if let selectedItemID,
+           let session = sessions.first(where: { $0.id.uuidString == selectedItemID }) {
+            return session
+        }
+        return sessions.first
+    }
+
     func count(for section: DashboardSection) -> Int {
         guard searchQuery.isEmpty else { return items(for: section).count }
         return switch section {
@@ -402,6 +421,7 @@ final class DashboardModel: ObservableObject {
         case .launcherBundles: launcherBundles.count
         case .allSecrets: snapshot.secrets.count
         case .secretUsage: snapshot.accessRequests.count
+        case .proxySessions: ProxySessionViewModel.shared.sessions.count
         case .settings: 0
         }
     }
@@ -1558,6 +1578,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case blessedScripts
     case launcherBundles
     case allSecrets
+    case proxySessions
     case secretUsage
     case doctor
     case settings
@@ -1573,6 +1594,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .blessedScripts: "Blessed Scripts"
         case .launcherBundles: "Launcher Bundles"
         case .allSecrets: "Secrets"
+        case .proxySessions: "Active Proxies"
         case .secretUsage: "Authorization History"
         case .settings: "Settings"
         }
@@ -1587,6 +1609,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .blessedScripts: "checkmark.seal"
         case .launcherBundles: "shippingbox"
         case .allSecrets: "key"
+        case .proxySessions: "arrow.left.arrow.right.circle"
         case .secretUsage: "clock.arrow.circlepath"
         case .settings: "gearshape"
         }
@@ -1625,6 +1648,7 @@ struct DashboardItem: Identifiable, Equatable {
 
 struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
+    @ObservedObject private var proxySessions = ProxySessionViewModel.shared
     let checkForUpdates: () -> Void
     let requestScan: () -> Void
 
@@ -1874,6 +1898,13 @@ private struct DashboardDetailView: View {
                     .padding(.top, 32)
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .proxySessions,
+                      let session = model.selectedProxySession {
+                ProxySessionDetailView(session: session)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .settings {
                 if model.selectedItem?.id == "touch-id-approval" {
                     TouchIDApprovalSettingsView()
@@ -2058,6 +2089,7 @@ private struct EmptyListView: View {
         case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
         case .launcherBundles: "Create a Verified Launcher from one unsigned Mach-O command-line tool"
         case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
+        case .proxySessions: "Active Proxy Sessions appear here while their target process is running"
         case .secretUsage: "Authorization History records requests and their authorization decisions"
         case .settings: "Settings control how Automic Vault behaves"
         }
@@ -2282,6 +2314,64 @@ private struct LauncherBundleDetailView: View {
             }
         } message: {
             Text("Its enrollment and Launcher-specific authorization rules will be revoked, then the bundle will be moved to Trash.")
+        }
+    }
+}
+
+private struct ProxySessionDetailView: View {
+    let session: ProxySessionSummary
+
+    private var records: [AccessRequestRecord] {
+        let detail = "Proxy Session \(session.id.uuidString.lowercased())"
+        return loadAccessRequestRecords().filter { $0.detail == detail }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(URL(fileURLWithPath: session.target).lastPathComponent)
+                        .font(.system(size: 24, weight: .semibold))
+                    Text("Active Proxy Session • pid \(session.pid)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Terminate", role: .destructive) {
+                    ProxySessionViewModel.shared.terminate(session.id)
+                }
+            }
+            InfoBlock(
+                title: "Authorized Secrets",
+                text: session.secretNames.joined(separator: "\n")
+            )
+            InfoBlock(
+                title: "Statistics",
+                text: [
+                    "Started: \(session.startedAt.formatted(date: .abbreviated, time: .standard))",
+                    "Authorized requests: \(session.authorizedRequestCount)",
+                    "Origins: \(session.authorizedOrigins.isEmpty ? "(none)" : session.authorizedOrigins.joined(separator: ", "))",
+                ].joined(separator: "\n")
+            )
+            if !records.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Session Requests")
+                        .font(.headline)
+                    ForEach(records) { record in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(record.displayCommand ?? record.command)
+                                .font(.system(.callout, design: .monospaced))
+                                .textSelection(.enabled)
+                            Text("\(record.decision) • \(record.keys.joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
         }
     }
 }

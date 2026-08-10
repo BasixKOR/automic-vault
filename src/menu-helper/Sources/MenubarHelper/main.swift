@@ -2810,6 +2810,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
+        case .proxyStart where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleProxyStart(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
         case .awsCredentials where isTrustedAvCaller(path: callerPath, signing: signing):
             handleAWSCredentials(message, on: peer, pid: pid, identity: identity)
         case .dockerSave where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -4199,6 +4209,171 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func handleProxyStart(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) {
+        guard let parsed = approvalRequest(from: message),
+              parsed.op == "proxy-start",
+              !parsed.keys.isEmpty,
+              Set(parsed.keys).count == parsed.keys.count,
+              parsed.target.hasPrefix("/"),
+              parsed.envConflicts.isEmpty || parsed.replaceExistingEnv,
+              identity.pidversion > 0,
+              identity.start_usec > 0,
+              identity.euid == geteuid()
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Proxy Session request")
+            return
+        }
+        let request = ApprovalRequest(
+            op: parsed.op,
+            keys: parsed.keys.sorted(),
+            target: parsed.target,
+            args: parsed.args,
+            cwd: parsed.cwd,
+            replaceExistingEnv: parsed.replaceExistingEnv,
+            allowMissingKeys: false,
+            envConflicts: parsed.envConflicts,
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "Secret Proxy",
+            title: "Start this Proxy Session?",
+            detail: "The target receives random Secret References. Automic Vault will ask before releasing secrets to each new destination."
+        )
+        let launchers = launcherIdentities(for: identity)
+        let ancestorFallbackPath = launcherFallbackPath(for: identity)
+        let launcher = executionOrigin(
+            among: launchers,
+            callerPID: pid,
+            ancestorFallbackPath: ancestorFallbackPath
+        )
+        let targetProtection = executableSigningInfo(path: request.target)?.runtimeProtection
+        let warning = targetProtection?.allowsSecretGateAccess == true ? nil :
+            "The target does not meet Automic Vault’s Hardened Runtime requirements. Code injected into it may steal this Proxy Session’s references and credential, then reuse destinations you allow for the session."
+
+        DispatchQueue.main.async {
+            guard !cancellation.isCanceled, self.canRequestHumanApproval() else {
+                self.reply(peer, to: message, ok: false, error: "Proxy Session approval unavailable")
+                return
+            }
+            let decision = showApprovalAlert(
+                request: request,
+                callerPath: callerPath,
+                pid: pid,
+                signing: signing,
+                scriptApproval: nil,
+                launcher: launcher,
+                launcherFallbackPath: ancestorFallbackPath ?? callerPath,
+                automaticApprovalExplanation: warning,
+                cancellation: cancellation
+            )
+            guard decision == .approved else {
+                let canceled = decision == .canceled
+                _ = self.onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: canceled ? "Canceled" : "Denied",
+                    approvalSource: "Manual",
+                    reason: canceled ? "Approval canceled" : "Denied in prompt",
+                    launcher: launcher
+                ))
+                if !canceled {
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "Proxy Session denied",
+                        humanApprovalDecision: "denied"
+                    )
+                }
+                return
+            }
+            guard self.onAccessRequest(accessRequestRecord(
+                request: request,
+                callerPath: callerPath,
+                decision: "Approved",
+                approvalSource: "Manual",
+                reason: "Proxy Session approved once",
+                launcher: launcher
+            )) else {
+                self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                return
+            }
+            let launch = ProxySessionLaunch(
+                keys: request.keys,
+                target: request.target,
+                arguments: request.args,
+                cwd: request.cwd,
+                identity: ProxyTargetIdentity(
+                    pid: identity.pid,
+                    pidVersion: identity.pidversion,
+                    startUsec: identity.start_usec,
+                    effectiveUserID: identity.euid,
+                    auditSessionID: identity.audit_session_id
+                )
+            )
+            Task {
+                do {
+                    let material = try await SecretProxyCoordinator.shared.start(
+                        launch: launch,
+                        approveDestination: { destination in
+                            let destinationRequest = ApprovalRequest(
+                                op: "proxy-destination",
+                                keys: destination.secretNames,
+                                target: destination.target,
+                                args: [destination.method, destination.origin + destination.path],
+                                cwd: destination.cwd,
+                                replaceExistingEnv: false,
+                                allowMissingKeys: false,
+                                envConflicts: [],
+                                shebangScript: nil,
+                                scriptData: nil,
+                                tool: "Secret Proxy",
+                                title: "Allow secrets for (destination.origin)?",
+                                detail: destination.queryNames.isEmpty
+                                    ? "The proxy will request these secrets on demand for this URL."
+                                    : "The proxy will request these secrets on demand. Query values remain hidden; names: \(destination.queryNames.sorted().joined(separator: ", "))."
+                            )
+                            return switch showApprovalAlert(
+                                request: destinationRequest,
+                                callerPath: callerPath,
+                                pid: pid,
+                                signing: signing,
+                                scriptApproval: nil,
+                                launcher: launcher,
+                                launcherFallbackPath: ancestorFallbackPath ?? callerPath,
+                                automaticApprovalExplanation: warning,
+                                allowsPersistentApproval: true,
+                                persistentApprovalLabel: "Allow for Session"
+                            ) {
+                            case .approved: ProxyDestinationDecision.allowOnce
+                            case .alwaysApproved: ProxyDestinationDecision.allowForSession
+                            case .canceled, .denied: ProxyDestinationDecision.deny
+                            }
+                        }
+                    )
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: true,
+                        error: nil,
+                        proxySession: material,
+                        humanApprovalDecision: "approved"
+                    )
+                } catch {
+                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                }
+            }
+        }
+    }
+    }
+
     private func matchingBlessedScript(
         request: ApprovalRequest,
         approval: ScriptApproval,
@@ -5310,7 +5485,9 @@ private final class ApprovalServer: @unchecked Sendable {
             return nil
         }
         let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize" || op == "docker-get" else { return nil }
+        guard op == "inject" || op == "keys" || op == "authorize"
+            || op == "docker-get" || op == "proxy-start"
+        else { return nil }
         let scriptData: Data?
         if xpc_dictionary_get_value(message, "script_data") != nil {
             guard let data = xpcData(message, key: "script_data") else { return nil }
@@ -5371,6 +5548,7 @@ private final class ApprovalServer: @unchecked Sendable {
         value: String? = nil,
         names: [String]? = nil,
         protocolVersion: UInt64? = nil,
+        proxySession: ProxySessionMaterial? = nil,
         humanApprovalDecision: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
@@ -5403,6 +5581,26 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if let protocolVersion {
             xpc_dictionary_set_uint64(response, "protocol_version", protocolVersion)
+        }
+        if let proxySession {
+            proxySession.proxyURL.withCString {
+                xpc_dictionary_set_string(response, "proxy_url", $0)
+            }
+            proxySession.caCertificatePath.withCString {
+                xpc_dictionary_set_string(response, "ca_certificate_path", $0)
+            }
+            proxySession.sessionID.uuidString.lowercased().withCString {
+                xpc_dictionary_set_string(response, "session_id", $0)
+            }
+            let values = xpc_dictionary_create_empty()
+            for (key, value) in proxySession.references {
+                key.withCString { keyPointer in
+                    value.withCString { valuePointer in
+                        xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                    }
+                }
+            }
+            xpc_dictionary_set_value(response, "references", values)
         }
         if let humanApprovalDecision {
             humanApprovalDecision.withCString {
@@ -7321,6 +7519,7 @@ private func showApprovalAlert(
     automaticApprovalExplanation: String?,
     temporaryGrantCandidate: TemporaryAccessGrantCandidate? = nil,
     allowsPersistentApproval: Bool = false,
+    persistentApprovalLabel: String = "Always Allow",
     classification: SecretGateRequestClassification? = nil,
     cancellation: ApprovalCancellation? = nil,
     compact: Bool = false
@@ -7375,6 +7574,7 @@ private func showApprovalAlert(
             maximumHeight: maximumHeight,
             allowsPersistentApproval: allowsPersistentApproval,
             temporaryGrantCandidate: temporaryGrantCandidate,
+            persistentApprovalLabel: persistentApprovalLabel,
             usesIPhoneApproval: usesIPhoneApproval,
             usesTouchIDApproval: usesTouchIDApproval,
             compact: compact,
@@ -7941,6 +8141,7 @@ private struct ApprovalPromptApprovalMenu: View {
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
     var title = "Approve Once"
     var systemImage: String?
+    var persistentApprovalLabel = "Always Allow"
     let decide: (ApprovalDecision) -> Void
 
     var body: some View {
@@ -7960,7 +8161,7 @@ private struct ApprovalPromptApprovalMenu: View {
                         )
                     }
                     if allowsPersistentApproval {
-                        Button("Always Allow") { decide(.alwaysApproved) }
+                        Button(persistentApprovalLabel) { decide(.alwaysApproved) }
                     }
                 } label: {
                     buttonLabel
@@ -8005,6 +8206,7 @@ private struct ApprovalPromptView: View {
     var maximumHeight: CGFloat? = nil
     var allowsPersistentApproval = false
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
+    var persistentApprovalLabel = "Always Allow"
     var usesIPhoneApproval = false
     var usesTouchIDApproval = false
     var compact = false
@@ -8121,6 +8323,7 @@ private struct ApprovalPromptView: View {
                         ApprovalPromptApprovalMenu(
                             allowsPersistentApproval: allowsPersistentApproval,
                             temporaryGrantCandidate: temporaryGrantCandidate,
+                            persistentApprovalLabel: persistentApprovalLabel,
                             decide: decide
                         )
                         Text(compact
@@ -8134,7 +8337,9 @@ private struct ApprovalPromptView: View {
                 }
             }
             if allowsPersistentApproval {
-                Text("Manage this Verified Launcher's Access Level in Automic Vault.")
+                Text(persistentApprovalLabel == "Allow for Session"
+                    ? "Session approval expires when this Proxy Session ends"
+                    : "Manage this Verified Launcher's Access Level in Automic Vault.")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

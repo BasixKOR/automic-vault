@@ -134,30 +134,24 @@ async fn serve_connection<C>(
                 return Ok::<_, Infallible>(ProxyFailure::proxy_auth_required().response());
             }
             let request = request.map(hudsucker::Body::from);
-            let request = match handler.prepare_request(request).await {
-                Ok(request) => request,
-                Err(failure) => return Ok(failure.response()),
+            let transaction = async {
+                let request = handler.prepare_request(request).await?;
+                let response = client
+                    .request(request)
+                    .await
+                    .map_err(|_| ProxyFailure::bad_gateway("upstream request failed"))?
+                    .map(hudsucker::Body::from);
+                handler.prepare_response(response).await
             };
-            let response = match tokio::time::timeout(
-                Duration::from_secs(30),
-                client.request(request),
+            Ok(
+                match tokio::time::timeout(Duration::from_secs(30), transaction).await {
+                    Ok(Ok(response)) => response,
+                    Ok(Err(failure)) => failure.response(),
+                    Err(_) => {
+                        ProxyFailure::gateway_timeout("proxy transaction timed out").response()
+                    }
+                },
             )
-            .await
-            {
-                Ok(Ok(response)) => response.map(hudsucker::Body::from),
-                Ok(Err(_)) => {
-                    return Ok(ProxyFailure::bad_gateway("upstream request failed").response());
-                }
-                Err(_) => {
-                    return Ok(
-                        ProxyFailure::gateway_timeout("upstream request timed out").response()
-                    );
-                }
-            };
-            Ok(match handler.prepare_response(response).await {
-                Ok(response) => response,
-                Err(failure) => failure.response(),
-            })
         }
     });
     let outer = authenticated_service(
