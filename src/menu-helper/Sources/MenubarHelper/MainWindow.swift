@@ -2024,7 +2024,7 @@ private func detectorSummary(for item: DashboardItem) -> String {
     case "shell history":
         "Shell history can preserve secrets typed into commands. Those values remain readable long after the command finishes."
     case "system integrity":
-        "System Integrity Protection prevents even root processes from modifying protected macOS components. Disabling any part of it weakens a machine-wide security boundary."
+        "System integrity controls protect privileged operations and trusted macOS components. Strong authentication and built-in macOS protections reduce opportunities for compromised code to gain root access or tamper with the system."
     default:
         "Sensitive local files can expose credentials or weaken a trust boundary. If another process can read or change them, it may impersonate you or run untrusted code."
     }
