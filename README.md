@@ -184,6 +184,19 @@ av inject +DOTENV_PRIVATE_KEY -- dotenvx run -- npm test
 dotenvx decrypts the project file only after Automic Vault authorizes applying
 its project-selected key to that operation.
 
+## Secret Proxy
+
+```sh
+av proxy +API_TOKEN -- node app.js
+```
+
+The Target receives a random Secret Reference instead of the Secret Value. The
+signed, sandboxed proxy requests the Secret on demand only for an approved
+HTTP/S destination, then records the use. Approval is required for the Proxy
+Session and each new destination. Compatibility depends on the Target respecting
+proxy and scoped CA environment variables; see [Secret Proxy](docs/secret-proxy.md)
+for limits and its exact security boundary.
+
 ## Varlock
 
 Install [Varlock](https://varlock.dev) and the published

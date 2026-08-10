@@ -98,6 +98,7 @@ MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
 SIGNED_MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/signed-menu-helper.entitlements.plist"
 PRIVATE_KEYCHAIN_ACCESS_GROUP="ZU76A67LGU.com.automicvault"
 APPROVAL_KEYCHAIN_ACCESS_GROUP="ZU76A67LGU.com.automicvault.approval"
+PROXY_HELPER_ENTITLEMENTS="$MENU_HELPER/Resources/ProxyHelper.entitlements"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -242,8 +243,21 @@ assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 assert_no_embedded_entitlements "$RESOURCES/AutomicVaultVarlockPlugin"
 cp "$ROOT/target/release/av" "$MACOS/av"
 cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
+cp "$ROOT/target/release/av-proxy-helper" "$MACOS/av-proxy-helper"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
+codesign "${codesign_args[@]}" \
+  --entitlements "$PROXY_HELPER_ENTITLEMENTS" \
+  --identifier com.automicvault.av-proxy-helper \
+  "$MACOS/av-proxy-helper"
+set +e
+AV_PROXY_CONTROL=1 "$MACOS/av-proxy-helper" </dev/null >/dev/null 2>&1
+proxy_helper_status=$?
+set -e
+if [[ "$proxy_helper_status" -ne 1 ]]; then
+  echo "error: signed sandboxed proxy helper failed its launch probe ($proxy_helper_status)" >&2
+  exit 1
+fi
 assert_no_embedded_entitlements "$MACOS/av"
 assert_no_embedded_entitlements "$MACOS/av-brew-stub"
 "$MACOS/av" __version >/dev/null
@@ -258,7 +272,10 @@ if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   app_codesign_args+=(--entitlements "$MENU_HELPER_ENTITLEMENTS")
 fi
 codesign "${app_codesign_args[@]}" "$APP"
-codesign --verify --deep --strict "$APP"
+codesign --verify --strict "$MACOS/av"
+codesign --verify --strict "$MACOS/av-brew-stub"
+codesign --verify --strict "$MACOS/av-proxy-helper"
+codesign --verify --strict "$APP"
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   assert_private_keychain_entitlement "$APP"
 fi

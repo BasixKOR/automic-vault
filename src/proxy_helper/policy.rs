@@ -115,6 +115,9 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
     if value >> 32 == 0x0064_ff9b_0000_0000_0000_0000_0000_0000_u128 >> 32 {
         return is_public_ipv4(Ipv4Addr::from(value as u32));
     }
+    if value >> 125 != 0b001 {
+        return false;
+    }
     ![
         (0x0064_ff9b_0001_0000_0000_0000_0000_0000_u128, 48), // local-use translation
         (0x0100_0000_0000_0000_0000_0000_0000_0000_u128, 64), // discard-only
@@ -175,6 +178,8 @@ mod tests {
             "http://10.0.0.1/",
             "http://[::1]/",
             "http://[fc00::1]/",
+            "http://[::7f00:1]/",
+            "http://[4000::1]/",
             "http://192.0.2.1/",
         ] {
             assert!(

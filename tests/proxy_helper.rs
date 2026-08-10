@@ -16,12 +16,14 @@ struct Helper {
 impl Helper {
     fn start() -> Self {
         let credential = "credential_0123456789012345678901".to_string();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_av-proxy-helper"))
+        let binary = std::env::var_os("AV_PROXY_HELPER_TEST_BINARY")
+            .unwrap_or_else(|| env!("CARGO_BIN_EXE_av-proxy-helper").into());
+        let mut child = Command::new(binary)
             .env_clear()
             .env("AV_PROXY_CONTROL", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
         let mut input = child.stdin.take().unwrap();
@@ -42,7 +44,20 @@ impl Helper {
                 }
             }),
         );
-        let ready = read_frame(&mut output);
+        let ready = match try_read_frame(&mut output) {
+            Ok(ready) => ready,
+            Err(error) => {
+                let status = child.wait().unwrap();
+                let mut stderr = String::new();
+                child
+                    .stderr
+                    .take()
+                    .unwrap()
+                    .read_to_string(&mut stderr)
+                    .unwrap();
+                panic!("proxy helper exited {status}: {stderr} ({error})");
+            }
+        };
         assert_eq!(ready["type"], "ready");
         let port = ready["port"].as_u64().unwrap() as u16;
         Self {
@@ -129,12 +144,12 @@ fn write_frame(writer: &mut impl Write, value: &serde_json::Value) {
     writer.flush().unwrap();
 }
 
-fn read_frame(reader: &mut impl Read) -> serde_json::Value {
+fn try_read_frame(reader: &mut impl Read) -> std::io::Result<serde_json::Value> {
     let mut length = [0_u8; 4];
-    reader.read_exact(&mut length).unwrap();
+    reader.read_exact(&mut length)?;
     let mut payload = vec![0; u32::from_be_bytes(length) as usize];
-    reader.read_exact(&mut payload).unwrap();
-    serde_json::from_slice(&payload).unwrap()
+    reader.read_exact(&mut payload)?;
+    Ok(serde_json::from_slice(&payload).unwrap())
 }
 
 fn read_headers(stream: &mut TcpStream) -> String {

@@ -5,6 +5,8 @@ const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 const BUILD_SCANNER_SCRIPT: &str = include_str!("../scripts/build-scanner.sh");
 const INSTALL_SCRIPT: &str = include_str!("../scripts/dist/install.sh");
 const SCANNER_SCRIPT: &str = include_str!("../scripts/dist/scanner.sh");
+const PROXY_HELPER_ENTITLEMENTS: &str =
+    include_str!("../src/menu-helper/Resources/ProxyHelper.entitlements");
 
 #[test]
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
@@ -140,6 +142,44 @@ fn release_build_asserts_secret_custody_entitlements() {
         BUILD_SCRIPT
             .contains("menu bar app must have exactly its Secret and Approval Keychain groups")
     );
+}
+
+#[test]
+fn proxy_helper_is_sandboxed_signed_inside_out_and_has_no_keychain_authority() {
+    assert!(
+        BUILD_SCRIPT
+            .contains("cp \"$ROOT/target/release/av-proxy-helper\" \"$MACOS/av-proxy-helper\"")
+    );
+    assert!(BUILD_SCRIPT.contains("--identifier com.automicvault.av-proxy-helper"));
+    assert!(BUILD_SCRIPT.contains("--entitlements \"$PROXY_HELPER_ENTITLEMENTS\""));
+    assert!(
+        BUILD_SCRIPT.contains("codesign_args=(--force --sign \"$identity\" --options runtime)")
+    );
+    let helper = BUILD_SCRIPT
+        .find("--identifier com.automicvault.av-proxy-helper")
+        .unwrap();
+    let app = BUILD_SCRIPT
+        .find("codesign \"${app_codesign_args[@]}\" \"$APP\"")
+        .unwrap();
+    assert!(helper < app);
+    assert!(BUILD_SCRIPT.contains("codesign --verify --strict \"$MACOS/av-proxy-helper\""));
+    assert!(
+        BUILD_SCRIPT
+            .contains("AV_PROXY_CONTROL=1 \"$MACOS/av-proxy-helper\" </dev/null >/dev/null 2>&1")
+    );
+    assert!(BUILD_SCRIPT.contains("proxy helper failed its launch probe"));
+    assert!(!BUILD_SCRIPT.contains("codesign --verify --deep --strict \"$APP\""));
+
+    for entitlement in [
+        "com.apple.security.app-sandbox",
+        "com.apple.security.network.client",
+        "com.apple.security.network.server",
+    ] {
+        assert!(PROXY_HELPER_ENTITLEMENTS.contains(entitlement));
+    }
+    assert!(!PROXY_HELPER_ENTITLEMENTS.contains("keychain-access-groups"));
+    assert!(!PROXY_HELPER_ENTITLEMENTS.contains("get-task-allow"));
+    assert_eq!(PROXY_HELPER_ENTITLEMENTS.matches("<true/>").count(), 3);
 }
 
 #[test]

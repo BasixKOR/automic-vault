@@ -14,6 +14,14 @@ fn main() {
         return;
     }
 
+    let proxy_info =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/proxy_helper/Info.plist");
+    println!(
+        "cargo:rustc-link-arg-bin=av-proxy-helper=-Wl,-sectcreate,__TEXT,__info_plist,{}",
+        proxy_info.display()
+    );
+    println!("cargo:rerun-if-changed={}", proxy_info.display());
+
     let object = out.join("xpc_shim.o");
     let library = out.join("libav_xpc_shim.a");
 
