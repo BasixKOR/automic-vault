@@ -863,7 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]
         )
         title.append(NSAttributedString(
-            string: record.command.replacingOccurrences(of: " \\\n  ", with: " "),
+            string: record.displayCommand.replacingOccurrences(of: " \\\n  ", with: " "),
             attributes: [.font: NSFont.menuFont(ofSize: 0)]
         ))
         item.attributedTitle = title
@@ -951,7 +951,7 @@ private struct AutoApprovalRecord {
     let launcher: String
     let launcherIconPath: String
     let tool: String
-    let command: String
+    let displayCommand: String
     let keys: [String]
     let wasCanceled: Bool
     let wasDenied: Bool
@@ -1024,7 +1024,7 @@ private func autoApprovalRecord(
         launcher: requester.name,
         launcherIconPath: requester.iconPath,
         tool: autoApprovalToolName(request, scriptPath: script?.path),
-        command: autoApprovalCommand(request, scriptPath: script?.path),
+        displayCommand: authorizationHistoryCommand(request, scriptPath: script?.path),
         keys: request.keys,
         wasCanceled: false,
         wasDenied: false
@@ -1041,7 +1041,7 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
         launcher: record.launcher ?? "Unknown app",
         launcherIconPath: "",
         tool: record.tool,
-        command: record.command,
+        displayCommand: record.commandForDisplay,
         keys: record.keys,
         wasCanceled: wasCanceled,
         wasDenied: wasDenied
@@ -1071,7 +1071,8 @@ private func accessRequestRecord(
         id: id,
         date: Date(),
         tool: autoApprovalToolName(request),
-        command: autoApprovalCommand(request),
+        command: exactAuthorizationCommand(request),
+        displayCommand: authorizationHistoryCommand(request),
         decision: decision,
         approvalSource: approvalSource,
         reason: reason,
@@ -1102,7 +1103,15 @@ private func autoApprovalToolName(_ request: ApprovalRequest, scriptPath: String
     return URL(fileURLWithPath: request.target).lastPathComponent
 }
 
-private func autoApprovalCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+private struct AuthorizationCommandParts {
+    let tool: String
+    let arguments: [String]
+}
+
+private func authorizationCommandParts(
+    _ request: ApprovalRequest,
+    scriptPath: String? = nil
+) -> AuthorizationCommandParts {
     let scriptPath = scriptPath ?? resolvedShebangScriptPath(request)
     var args = request.args
     if let scriptPath,
@@ -1110,7 +1119,23 @@ private func autoApprovalCommand(_ request: ApprovalRequest, scriptPath: String?
     {
         args.removeFirst(scriptIndex + 1)
     }
-    return prettyShellCommand(target: autoApprovalToolName(request, scriptPath: scriptPath), args: args)
+    return AuthorizationCommandParts(
+        tool: autoApprovalToolName(request, scriptPath: scriptPath),
+        arguments: args
+    )
+}
+
+private func exactAuthorizationCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    let parts = authorizationCommandParts(request, scriptPath: scriptPath)
+    return prettyShellCommand(target: parts.tool, args: parts.arguments)
+}
+
+private func authorizationHistoryCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    let parts = authorizationCommandParts(request, scriptPath: scriptPath)
+    return prettyShellCommand(
+        target: parts.tool,
+        args: redactedAuthorizationArguments(tool: parts.tool, arguments: parts.arguments)
+    )
 }
 
 private func approvalCommandPath(_ request: ApprovalRequest) -> String {
@@ -4877,7 +4902,7 @@ private func showApprovalAlert(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
         credentialConsumer: autoApprovalToolName(request),
-        command: autoApprovalCommand(request),
+        command: exactAuthorizationCommand(request),
         commandPath: approvalCommandPath(request),
         title: request.title,
         detail: request.detail,
@@ -5390,6 +5415,10 @@ private func automaticAccessDecisionSymbol(wasDenied: Bool) -> String {
     wasDenied ? "xmark.shield.fill" : "checkmark.shield.fill"
 }
 
+private func automaticAccessToastAccessibilityLabel(_ record: AutoApprovalRecord) -> String {
+    "Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(record.displayCommand)"
+}
+
 private struct AutomaticAccessToastView: View {
     let record: AutoApprovalRecord
     let dismiss: () -> Void
@@ -5399,7 +5428,7 @@ private struct AutomaticAccessToastView: View {
             content
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(record.command)")
+        .accessibilityLabel(automaticAccessToastAccessibilityLabel(record))
     }
 
     private var content: some View {
@@ -5428,7 +5457,7 @@ private struct AutomaticAccessToastView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(record.command)
+                Text(record.displayCommand)
                     .font(.system(.callout, design: .monospaced).weight(.medium))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -7088,7 +7117,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
     func menuRecord(
         _ time: TimeInterval,
         launcher: String = "ChatGPT",
-        command: String = """
+        displayCommand: String = """
         gh \\
           repo \\
           view
@@ -7100,7 +7129,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
             launcher: launcher,
             launcherIconPath: "",
             tool: "gh",
-            command: command,
+            displayCommand: displayCommand,
             keys: ["GH_TOKEN"],
             wasCanceled: false,
             wasDenied: false
@@ -7108,7 +7137,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
     }
     let groupedMenuRecords = groupedAutoApprovals([
         menuRecord(19_800),
-        menuRecord(18_900, command: "gh issue list"),
+        menuRecord(18_900, displayCommand: "gh issue list"),
         menuRecord(18_000, launcher: "Codex"),
         menuRecord(17_100),
     ])
@@ -7116,7 +7145,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
     guard let groupedSubmenuTitle = groupedMenuItem.submenu?.items.first?.attributedTitle else {
         return 1
     }
-    let groupedCommand = groupedMenuRecords[0].record.command.replacingOccurrences(of: " \\\n  ", with: " ")
+    let groupedCommand = groupedMenuRecords[0].record.displayCommand.replacingOccurrences(of: " \\\n  ", with: " ")
     let groupedCommandStart = groupedSubmenuTitle.length - (groupedCommand as NSString).length
     let request = ApprovalRequest(
         op: "inject",
@@ -7148,6 +7177,37 @@ private func runMenuStatusSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let rawCredential = ["ghp", String(repeating: "a", count: 24)].joined(separator: "_")
+    let sensitiveRequest = ApprovalRequest(
+        op: "inject",
+        keys: ["GH_TOKEN"],
+        target: "/opt/homebrew/bin/gh",
+        args: ["api", "-H", "Authorization: Bearer \(rawCredential)"],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: "gh",
+        title: nil,
+        detail: nil
+    )
+    let sensitiveRecord = accessRequestRecord(
+        request: sensitiveRequest,
+        callerPath: "/usr/local/bin/av",
+        decision: "Approved",
+        approvalSource: "Auto",
+        reason: "Read Only from app policy",
+        launcher: nil
+    )
+    guard let sensitiveRetrospectiveRecord = autoApprovalRecord(sensitiveRecord) else { return 1 }
+    let sensitiveMenuItem = AppDelegate().autoApprovalMenuItem(
+        groupedAutoApprovals([sensitiveRetrospectiveRecord, sensitiveRetrospectiveRecord])[0]
+    )
+    guard let sensitiveMenuTitle = sensitiveMenuItem.submenu?.items.first?.attributedTitle?.string else {
+        return 1
+    }
     let recordedApproval = AccessRequestRecord(
         date: Date(timeIntervalSince1970: 18_900),
         tool: "aws",
@@ -7179,11 +7239,21 @@ private func runMenuStatusSelfCheck() -> Int32 {
           autoApprovalToolName(request) == "aws",
           approvalCommandPath(request) == "/usr/local/bin/aws",
           approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",
-          autoApprovalCommand(envWrapperRequest) == """
+          exactAuthorizationCommand(envWrapperRequest) == """
           pulumi \\
             stack \\
             ls
           """,
+          exactAuthorizationCommand(sensitiveRequest).contains(rawCredential),
+          sensitiveRecord.command.contains(rawCredential),
+          !sensitiveRecord.commandForDisplay.contains(rawCredential),
+          sensitiveRecord.commandForDisplay.contains("<redacted>"),
+          !sensitiveRetrospectiveRecord.displayCommand.contains(rawCredential),
+          sensitiveRetrospectiveRecord.displayCommand.contains("<redacted>"),
+          !sensitiveMenuTitle.contains(rawCredential),
+          sensitiveMenuTitle.contains("<redacted>"),
+          !automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains(rawCredential),
+          automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains("<redacted>"),
           scanAlertLevel([["severity": "medium"]]) == .medium,
           scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
           doctorStatusTitle(count: 0) == nil,
@@ -7192,7 +7262,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           vulnerabilityStatusTitle(count: 1) == "One Vulnerability Detected",
           vulnerabilityStatusTitle(count: 2) == "Two Vulnerabilities Detected",
           groupedMenuRecords.map(\.count) == [2, 1, 1],
-          groupedMenuRecords[0].records[1].command == "gh issue list",
+          groupedMenuRecords[0].records[1].displayCommand == "gh issue list",
           groupedMenuItem.representedObject == nil,
           groupedMenuItem.submenu?.items.compactMap({ $0.representedObject as? String })
               == groupedMenuRecords[0].records.map({ $0.accessRequestID.uuidString }),
@@ -7217,7 +7287,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
                   launcher: "Codex",
                   launcherIconPath: "/Applications/Codex.app",
                   tool: "aws",
-                  command: "aws s3 ls",
+                  displayCommand: "aws s3 ls",
                   keys: ["AWS_SECRET_ACCESS_KEY"],
                   wasCanceled: false,
                   wasDenied: false
@@ -7228,7 +7298,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           restoredApproval.accessRequestID == recordedApproval.id,
           restoredApproval.launcher == "Codex",
           restoredApproval.tool == "aws",
-          restoredApproval.command == "aws s3 ls",
+          restoredApproval.displayCommand == "aws <arguments hidden>",
           restoredApproval.keys == ["AWS_SECRET_ACCESS_KEY"],
           let restoredDenial = autoApprovalRecord(AccessRequestRecord(
               id: recordedApproval.id,
@@ -7297,7 +7367,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           automaticAccessDecisionLabel(wasDenied: restoredApproval.wasDenied) == "AUTO APPROVED",
           automaticAccessDecisionSymbol(wasDenied: restoredApproval.wasDenied) == "checkmark.shield.fill",
           autoApprovalTitle(restoredDenial, formatter: formatter) == "5:15 AM – Codex was denied use of gh",
-          autoApprovalCommand(request) == """
+          exactAuthorizationCommand(request) == """
           aws \\
             s3 \\
             ls
