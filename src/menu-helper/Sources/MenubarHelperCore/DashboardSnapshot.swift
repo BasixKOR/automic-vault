@@ -1708,13 +1708,15 @@ func saveKeychainDataIfAbsentOrEqual(
     ]
     addCanonicalAccessGroup(to: &query)
     let status = SecItemAdd(query as CFDictionary, nil)
-    guard status == errSecDuplicateItem else { return status }
-    guard case .success(let existing) = loadKeychainDataResult(service: service, account: account),
-          existing == data
-    else {
-        return errSecDuplicateItem
+    guard status == errSecSuccess || status == errSecDuplicateItem else { return status }
+    switch loadKeychainDataResult(service: service, account: account) {
+    case .success(let existing):
+        return existing == data ? errSecSuccess : errSecDuplicateItem
+    case .notFound:
+        return errSecItemNotFound
+    case .failure(let status):
+        return status
     }
-    return errSecSuccess
 }
 
 private func addCanonicalAccessGroup(to query: inout [String: Any]) {

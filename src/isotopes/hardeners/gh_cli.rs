@@ -43,7 +43,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
 
     let destinations = migration_destinations(&credentials, &configured_hosts)?;
-    preflight_destinations(&destinations)?;
 
     if credentials.is_empty() {
         writeln!(stdout, "├─ no legacy gh credentials found").ok();
@@ -76,13 +75,14 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    install.apply(isotope::GH)?;
     if credentials.is_empty() {
+        install.apply(isotope::GH)?;
         writeln!(stdout, "╰─ installed gh isotope").ok();
         super::write_secret_gate_notice(stdout, "gh");
         return Ok(());
     }
-    store_and_verify_destinations(&destinations)?;
+    store_destinations(&destinations)?;
+    install.apply(isotope::GH)?;
     for path in &hosts_paths {
         remove_plaintext_tokens(path)?;
     }
@@ -496,28 +496,9 @@ fn insert_destination(
     Ok(())
 }
 
-fn preflight_destinations(destinations: &BTreeMap<String, String>) -> Result<(), String> {
-    let existing = crate::secrets::list_secret_names()?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    for (key, expected) in destinations {
-        if existing.contains(key) && crate::secrets::load_secret(key)? != *expected {
-            return Err(format!(
-                "refusing to replace differing existing GitHub credential {key}"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn store_and_verify_destinations(destinations: &BTreeMap<String, String>) -> Result<(), String> {
+fn store_destinations(destinations: &BTreeMap<String, String>) -> Result<(), String> {
     for (key, token) in destinations {
         crate::secrets::store_secret_if_absent_or_equal(key, token)?;
-    }
-    for (key, expected) in destinations {
-        if crate::secrets::load_secret(key)? != *expected {
-            return Err(format!("failed to verify GitHub credential {key}"));
-        }
     }
     Ok(())
 }
@@ -856,6 +837,53 @@ mod tests {
                 .unwrap()
                 .contains("oauth_token: incoming")
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn harden_preserves_sources_and_skips_install_after_partial_store_failure() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("gh-partial-store-failure");
+        let config = dir.join("config");
+        let keychain = dir.join("keychain");
+        let gh = dir.join("gh");
+        fs::create_dir_all(&config).unwrap();
+        fs::create_dir_all(&keychain).unwrap();
+        fs::write(&gh, "original").unwrap();
+        fs::write(
+            config.join("hosts.yml"),
+            "github.com:\n    user: monalisa\n    oauth_token: incoming\n",
+        )
+        .unwrap();
+        fs::write(keychain.join("GH_TOKEN_GITHUB_COM_MONALISA"), "existing").unwrap();
+        unsafe {
+            std::env::set_var("GH_CONFIG_DIR", &config);
+            std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", &gh);
+        }
+
+        let error = run(&mut Vec::new(), true).unwrap_err();
+
+        unsafe {
+            std::env::remove_var("GH_CONFIG_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+        }
+        assert!(error.contains("refusing to replace"));
+        assert_eq!(
+            fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM")).unwrap(),
+            "incoming"
+        );
+        assert_eq!(
+            fs::read_to_string(keychain.join("GH_TOKEN_GITHUB_COM_MONALISA")).unwrap(),
+            "existing"
+        );
+        assert!(
+            fs::read_to_string(config.join("hosts.yml"))
+                .unwrap()
+                .contains("oauth_token: incoming")
+        );
+        assert_eq!(fs::read_to_string(&gh).unwrap(), "original");
         let _ = fs::remove_dir_all(dir);
     }
 

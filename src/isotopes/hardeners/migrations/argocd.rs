@@ -5,14 +5,9 @@ use std::path::{Path, PathBuf};
 
 const KEYCHAIN_SERVICE: &str = "com.automicvault.isotope";
 const ARGOCD_AUTH_TOKEN_ENV_KEY: &str = "ARGOCD_AUTH_TOKEN";
-const ARGOCD_CONFIG_ENV_KEY: &str = "ARGOCD_CONFIG_YAML";
 
 pub trait CredentialStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String>;
-
-    fn load_secret(&self, _key: &str) -> Result<String, String> {
-        Err("secret not found".to_string())
-    }
 }
 
 pub struct KeychainCredentialStore;
@@ -27,9 +22,6 @@ pub fn migrate_credentials() -> Result<(), String> {
         if migrate_credentials_file(path, &KeychainCredentialStore)? {
             return Ok(());
         }
-    }
-    if let Some(path) = paths.first() {
-        migrate_legacy_keychain_config(path, &KeychainCredentialStore)?;
     }
     Ok(())
 }
@@ -47,28 +39,6 @@ pub fn migrate_credentials_file(path: &Path, store: &dyn CredentialStore) -> Res
     store.store_secret(ARGOCD_AUTH_TOKEN_ENV_KEY, &token)?;
     fs::write(path, sanitized_argocd_config(&contents))
         .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
-    Ok(true)
-}
-
-fn migrate_legacy_keychain_config(
-    restore_path: &Path,
-    store: &dyn CredentialStore,
-) -> Result<bool, String> {
-    let contents = match store.load_secret(ARGOCD_CONFIG_ENV_KEY) {
-        Ok(contents) => contents,
-        Err(_) => return Ok(false),
-    };
-    let Some(token) = migratable_auth_token(&contents)? else {
-        return Ok(false);
-    };
-
-    store.store_secret(ARGOCD_AUTH_TOKEN_ENV_KEY, &token)?;
-    if let Some(parent) = restore_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
-    }
-    fs::write(restore_path, sanitized_argocd_config(&contents))
-        .map_err(|err| format!("failed to write {}: {err}", restore_path.display()))?;
     Ok(true)
 }
 
@@ -190,44 +160,6 @@ impl CredentialStore for KeychainCredentialStore {
     fn store_secret(&self, key: &str, value: &str) -> Result<(), String> {
         keychain_store_secret(KEYCHAIN_SERVICE, key, value)
     }
-
-    fn load_secret(&self, key: &str) -> Result<String, String> {
-        keychain_load_secret(KEYCHAIN_SERVICE, key)
-    }
-}
-
-#[cfg(all(target_os = "macos", not(coverage)))]
-fn keychain_load_secret(service: &str, account: &str) -> Result<String, String> {
-    unsafe extern "C" {
-        fn isotope_copy_generic_password_json(
-            service_cstr: *const c_char,
-            account_cstr: *const c_char,
-            error_cstr: *mut *mut c_char,
-        ) -> *mut c_char;
-    }
-
-    let service_cstr =
-        CString::new(service).map_err(|_| "invalid keychain service name".to_string())?;
-    let account_cstr =
-        CString::new(account).map_err(|_| "invalid keychain account name".to_string())?;
-    let mut error = std::ptr::null_mut();
-    let value = unsafe {
-        isotope_copy_generic_password_json(service_cstr.as_ptr(), account_cstr.as_ptr(), &mut error)
-    };
-    if value.is_null() {
-        let message = unsafe { take_bridge_string(error) }
-            .unwrap_or_else(|| "keychain lookup failed".to_string());
-        return Err(format!("failed to load secret {account}: {message}"));
-    }
-
-    let secret = unsafe { take_bridge_string(value) }
-        .ok_or_else(|| format!("failed to load secret {account}: invalid keychain data"))?;
-    Ok(secret)
-}
-
-#[cfg(any(not(target_os = "macos"), coverage))]
-fn keychain_load_secret(_service: &str, _account: &str) -> Result<String, String> {
-    Err("Automic Vault secret storage is only available on macOS".to_string())
 }
 
 #[cfg(all(target_os = "macos", not(coverage)))]
@@ -295,7 +227,6 @@ mod tests {
     #[derive(Default)]
     struct TestCredentialStore {
         values: RefCell<Vec<(String, String)>>,
-        legacy_config: RefCell<Option<String>>,
     }
 
     impl CredentialStore for TestCredentialStore {
@@ -304,16 +235,6 @@ mod tests {
                 .borrow_mut()
                 .push((key.to_string(), value.to_string()));
             Ok(())
-        }
-
-        fn load_secret(&self, key: &str) -> Result<String, String> {
-            if key != ARGOCD_CONFIG_ENV_KEY {
-                return Err("missing test key".to_string());
-            }
-            self.legacy_config
-                .borrow()
-                .clone()
-                .ok_or_else(|| "missing test key".to_string())
         }
     }
 
@@ -353,31 +274,6 @@ mod tests {
         let err = migratable_auth_token(contents).unwrap_err();
 
         assert!(err.contains("multiple auth tokens"));
-    }
-
-    #[test]
-    fn migrates_legacy_keychain_config() {
-        let temp = std::env::temp_dir().join(format!(
-            "{}-legacy-keychain-{}",
-            module_path!().replace(':', "_"),
-            std::process::id()
-        ));
-        let path = temp.join(".argocd/config");
-        let contents = "contexts:\n- name: prod\n  server: https://argocd.example.com\n  user: prod\nusers:\n- name: prod\n  auth-token: token\n";
-        let store = TestCredentialStore::default();
-        *store.legacy_config.borrow_mut() = Some(contents.to_string());
-
-        assert!(migrate_legacy_keychain_config(&path, &store).unwrap());
-
-        assert_eq!(
-            store.values.borrow().as_slice(),
-            &[(ARGOCD_AUTH_TOKEN_ENV_KEY.to_string(), "token".to_string())]
-        );
-        assert_eq!(
-            fs::read_to_string(&path).unwrap(),
-            "contexts:\n- name: prod\n  server: https://argocd.example.com\n  user: prod\nusers:\n- name: prod\n  auth-token: \"\"\n"
-        );
-        fs::remove_dir_all(temp).unwrap();
     }
 
     #[test]

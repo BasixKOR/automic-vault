@@ -59,17 +59,6 @@ pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Res
     }
 }
 
-pub(crate) fn load_secret(account: &str) -> Result<String, String> {
-    if let Some(dir) = crate::test_keychain_dir() {
-        let path = PathBuf::from(dir).join(account);
-        return std::fs::read_to_string(&path)
-            .map_err(|err| format!("failed to read {}: {err}", path.display()));
-    }
-    xpc_request("load", Some((b"key\0", account)), None, None)?
-        .value
-        .ok_or_else(|| format!("failed to load secret {account}"))
-}
-
 pub(crate) fn bless_script(path: &str, endorse_launcher: bool) -> Result<bool, String> {
     xpc_request(
         "bless",
