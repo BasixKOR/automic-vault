@@ -39,7 +39,7 @@ pub(crate) fn substitute_uri(
     let mut value = path_and_query.to_string();
     for reference in ordered_references(references) {
         let Some(secret) = secrets.get(&reference.name) else {
-            return Err(format!("missing authorized secret {}", reference.name));
+            continue;
         };
         value = value.replace(
             &reference.reference,
@@ -57,7 +57,7 @@ pub(crate) fn substitute_bytes(
     let mut result = value.to_vec();
     for reference in ordered_references(references) {
         let Some(secret) = secrets.get(&reference.name) else {
-            return Err(format!("missing authorized secret {}", reference.name));
+            continue;
         };
         result = replace_all(&result, reference.reference.as_bytes(), secret.as_bytes());
     }

@@ -114,7 +114,10 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "http-body-util",
+ "http-mitm-proxy",
  "hudsucker",
+ "hyper-rustls",
+ "hyper-util",
  "libc",
  "percent-encoding",
  "reqwest",
@@ -780,6 +783,25 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+]
+
+[[package]]
+name = "http-mitm-proxy"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65029632aa142f33073069bf7138dc9499fb06310e7a10401cb900d1d5a83689"
+dependencies = [
+ "bytes",
+ "futures",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "moka",
+ "rcgen",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -1950,6 +1972,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
