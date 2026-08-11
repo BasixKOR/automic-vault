@@ -1,4 +1,4 @@
-# ADR 0010: Process-bound Secret proxy
+# ADR 0011: Process-bound Secret proxy
 
 ## Context
 
