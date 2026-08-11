@@ -212,10 +212,24 @@ func malformedBlessedScriptManifestsFailClosed(_ source: String) {
     let canonicalPath = script.resolvingSymlinksInPath().path
 
     try Data(repeating: 0, count: 1024 * 1024 + 1).write(to: script)
-    #expect(throws: (any Error).self) { try readBlessedScript(path: canonicalPath) }
+    do {
+        _ = try readBlessedScript(path: canonicalPath)
+        Issue.record("expected an oversized script to be rejected")
+    } catch {
+        #expect(error.localizedDescription == "script exceeds the 1 MiB size limit")
+    }
 
     try Data("ok".utf8).write(to: script)
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: script)
     #expect(throws: (any Error).self) { try readBlessedScript(path: link.path) }
     #expect(try readBlessedScript(path: canonicalPath) == Data("ok".utf8))
+}
+
+@Test func blessedScriptParseErrorsExplainWhyTheScriptWasRejected() {
+    do {
+        _ = try blessedScriptDeclaration(data: Data("#!/bin/sh\n".utf8))
+        Issue.record("expected a non-av shebang to be rejected")
+    } catch {
+        #expect(error.localizedDescription == "invalid av inject shebang")
+    }
 }

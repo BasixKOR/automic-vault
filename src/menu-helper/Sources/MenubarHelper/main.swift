@@ -2868,10 +2868,11 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "script path must be canonical")
             return
         }
-        guard let data = try? readBlessedScript(path: path),
-              let declaration = try? blessedScriptDeclaration(data: data)
-        else {
-            reply(peer, to: message, ok: false, error: "script is not a valid blessable file")
+        let declaration: BlessedScriptDeclaration
+        do {
+            declaration = try blessedScriptDeclaration(data: readBlessedScript(path: path))
+        } catch {
+            reply(peer, to: message, ok: false, error: "script cannot be blessed: \(error.localizedDescription)")
             return
         }
         let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())

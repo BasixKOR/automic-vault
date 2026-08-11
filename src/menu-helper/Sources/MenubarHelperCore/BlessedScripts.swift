@@ -7,13 +7,31 @@ public let blessedScriptsKeychainService = "com.automicvault.blessed-scripts"
 public let blessedScriptsKeychainAccount = "BlessedScriptsV1"
 public let blessedScriptMaximumBytes = 1024 * 1024
 
-private enum BlessedScriptFileError: Error {
-    case invalid
+private enum BlessedScriptFileError: Error, LocalizedError {
+    case cannotOpen
+    case cannotVerifyPath
+    case cannotReadMetadata
+    case notRegularFile
+    case tooLarge
+    case pathChanged
+    case cannotRead
+
+    var errorDescription: String? {
+        switch self {
+        case .cannotOpen: "script could not be opened securely"
+        case .cannotVerifyPath: "script path could not be verified"
+        case .cannotReadMetadata: "script metadata could not be read"
+        case .notRegularFile: "script is not a regular file"
+        case .tooLarge: "script exceeds the 1 MiB size limit"
+        case .pathChanged: "script path changed while it was being verified"
+        case .cannotRead: "script contents could not be read"
+        }
+    }
 }
 
 public func readBlessedScript(path: String) throws -> Data {
     let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-    guard descriptor >= 0 else { throw BlessedScriptFileError.invalid }
+    guard descriptor >= 0 else { throw BlessedScriptFileError.cannotOpen }
     defer { close(descriptor) }
 
     var info = stat()
@@ -22,7 +40,7 @@ public func readBlessedScript(path: String) throws -> Data {
     guard fcntl(descriptor, F_GETPATH, &resolvedPath) == 0,
           path.withCString({ realpath($0, &canonicalPath) }) != nil
     else {
-        throw BlessedScriptFileError.invalid
+        throw BlessedScriptFileError.cannotVerifyPath
     }
     let openedPath = String(
         decoding: resolvedPath.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) },
@@ -32,13 +50,10 @@ public func readBlessedScript(path: String) throws -> Data {
         decoding: canonicalPath.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) },
         as: UTF8.self
     )
-    guard fstat(descriptor, &info) == 0,
-          info.st_mode & S_IFMT == S_IFREG,
-          info.st_size <= blessedScriptMaximumBytes,
-          openedPath == canonicalPathString
-    else {
-        throw BlessedScriptFileError.invalid
-    }
+    guard fstat(descriptor, &info) == 0 else { throw BlessedScriptFileError.cannotReadMetadata }
+    guard info.st_mode & S_IFMT == S_IFREG else { throw BlessedScriptFileError.notRegularFile }
+    guard info.st_size <= blessedScriptMaximumBytes else { throw BlessedScriptFileError.tooLarge }
+    guard openedPath == canonicalPathString else { throw BlessedScriptFileError.pathChanged }
 
     var data = Data()
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
@@ -50,11 +65,11 @@ public func readBlessedScript(path: String) throws -> Data {
         if count == 0 { return data }
         if count < 0 {
             if errno == EINTR { continue }
-            throw BlessedScriptFileError.invalid
+            throw BlessedScriptFileError.cannotRead
         }
         data.append(contentsOf: buffer.prefix(count))
     }
-    throw BlessedScriptFileError.invalid
+    throw BlessedScriptFileError.tooLarge
 }
 
 public struct BlessedScriptManifest: Equatable, Sendable {
