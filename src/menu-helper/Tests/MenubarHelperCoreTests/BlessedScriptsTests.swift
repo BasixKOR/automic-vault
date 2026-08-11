@@ -38,6 +38,18 @@ import Testing
 
     #expect(declaration.keys == ["TOKEN"])
     #expect(declaration.manifest.capabilities.isEmpty)
+    #expect(declaration.snapshotIncompatibleInterpreter == nil)
+}
+
+@Test func blessedScriptDetectsSnapshotIncompatibleInterpreterChains() throws {
+    let data = Data("""
+    #!/usr/local/bin/av inject +TOKEN -- /usr/local/bin/dotenvx run -- /opt/homebrew/bin/uv run --script
+    print("ok")
+    """.utf8)
+
+    let declaration = try blessedScriptDeclaration(data: data)
+
+    #expect(declaration.snapshotIncompatibleInterpreter == "uv")
 }
 
 @Test func blessedScriptCanDeclareCapabilitiesWithoutSecrets() throws {
@@ -127,6 +139,42 @@ import Testing
     #expect(script.matchesBlessing(path: "/tmp/script", checksum: "checksum"))
     #expect(!script.matchesBlessing(path: "/tmp/other", checksum: "checksum"))
     #expect(!script.matchesBlessing(path: "/tmp/script", checksum: "changed"))
+}
+
+@Test func canonicalPathExecutionRequiresAnExplicitBlessingOverride() {
+    let strict = BlessedScript(
+        path: "/tmp/script",
+        checksum: "checksum",
+        keys: [],
+        target: "/opt/homebrew/bin/uv",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: [:],
+        launchers: []
+    )
+    let overridden = BlessedScript(
+        path: strict.path,
+        checksum: strict.checksum,
+        keys: strict.keys,
+        target: strict.target,
+        replaceExistingEnv: strict.replaceExistingEnv,
+        allowMissingKeys: strict.allowMissingKeys,
+        allowsCanonicalPathExecution: true,
+        capabilities: strict.capabilities,
+        launchers: strict.launchers
+    )
+
+    #expect(strict.allowsExecution(snapshotIncompatibleInterpreter: nil))
+    #expect(!strict.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
+    #expect(overridden.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
+}
+
+@Test func existingBlessingsDoNotImplicitlyAllowCanonicalPathExecution() throws {
+    let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/opt/homebrew/bin/uv","replaceExistingEnv":false,"allowMissingKeys":false,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
+
+    let script = try JSONDecoder().decode(BlessedScript.self, from: data)
+
+    #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
 }
 
 @Test func reblessingPreservesLauncherEndorsementsAndAddsTheRequestedLauncher() {

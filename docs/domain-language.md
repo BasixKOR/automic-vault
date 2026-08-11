@@ -269,6 +269,13 @@ A durable record of human review bound to a script's canonical path, exact conte
 
 A script whose current file still matches its Blessing. Any content or declaration change invalidates the Blessing.
 
+Execution normally uses a verified snapshot. If an interpreter cannot execute
+that snapshot, the user may accept canonical-path execution while creating the
+Blessing. Automic Vault warns during review and on every run because another
+same-user process can change the file after verification and before the
+interpreter opens it. The Blessing records the user's choice; an existing
+Blessing cannot gain this exception during an upgrade.
+
 ### Capability
 
 The maximum Access Level a Blessed Script may receive through one Authorization Gate.

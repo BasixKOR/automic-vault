@@ -1256,9 +1256,42 @@ private struct ApprovalRequest {
     let envConflicts: [String]
     let shebangScript: String?
     let scriptData: Data?
+    let snapshotIncompatibleInterpreter: String?
     let tool: String?
     let title: String?
     let detail: String?
+
+    init(
+        op: String,
+        keys: [String],
+        target: String,
+        args: [String],
+        cwd: String,
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool,
+        envConflicts: [String],
+        shebangScript: String?,
+        scriptData: Data?,
+        snapshotIncompatibleInterpreter: String? = nil,
+        tool: String?,
+        title: String?,
+        detail: String?
+    ) {
+        self.op = op
+        self.keys = keys
+        self.target = target
+        self.args = args
+        self.cwd = cwd
+        self.replaceExistingEnv = replaceExistingEnv
+        self.allowMissingKeys = allowMissingKeys
+        self.envConflicts = envConflicts
+        self.shebangScript = shebangScript
+        self.scriptData = scriptData
+        self.snapshotIncompatibleInterpreter = snapshotIncompatibleInterpreter
+        self.tool = tool
+        self.title = title
+        self.detail = detail
+    }
 }
 
 enum SecretMutation {
@@ -1667,6 +1700,9 @@ private func blessedScriptMatches(
 ) -> Bool {
     request.op == "inject"
         && request.scriptData != nil
+        && script.allowsExecution(
+            snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter
+        )
         && script.matchesExecution(
             path: approval.path,
             checksum: approval.checksum,
@@ -2709,7 +2745,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) -> BlessedScript? {
         guard request.op == "inject", request.scriptData != nil else { return nil }
         return loadBlessedScripts().first {
-            $0.matchesExecution(
+            $0.allowsExecution(
+                snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter
+            )
+                && $0.matchesExecution(
                 path: approval.path,
                 checksum: approval.checksum,
                 keys: request.keys,
@@ -2895,6 +2934,9 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if loadBlessedScripts().contains(where: {
             $0.matchesBlessing(path: path, checksum: declaration.checksum)
+                && $0.allowsExecution(
+                    snapshotIncompatibleInterpreter: declaration.snapshotIncompatibleInterpreter
+                )
         }) {
             reply(peer, to: message, ok: true, error: nil, value: "already blessed")
             return
@@ -3362,6 +3404,10 @@ private final class ApprovalServer: @unchecked Sendable {
             envConflicts: envConflicts,
             shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
             scriptData: scriptData,
+            snapshotIncompatibleInterpreter: xpc_dictionary_get_string(
+                message,
+                "snapshot_incompatible_interpreter"
+            ).map(String.init(cString:)),
             tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
             title: xpc_dictionary_get_string(message, "title").map(String.init(cString:)),
             detail: xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
@@ -3726,6 +3772,7 @@ private func approvalRequestWithCredentialContext(_ request: ApprovalRequest) ->
         envConflicts: request.envConflicts,
         shebangScript: request.shebangScript,
         scriptData: request.scriptData,
+        snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter,
         tool: request.tool,
         title: "Use long-lived AWS credentials?",
         detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will provide your original AWS access keys directly to AWS CLI; they retain every IAM permission assigned to those keys."

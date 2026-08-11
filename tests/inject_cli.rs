@@ -118,9 +118,9 @@ fn av_inject_uses_the_script_path_for_uv_and_preserves_stdin() {
     )));
     assert!(stdout(&output).contains("CALLER_STDIN\n"));
     assert!(!stdout(&output).contains("print('UV_STDIN_OK')\n"));
-    assert!(
-        stderr(&output).contains("using the canonical script path through the Direct Secret Gate")
-    );
+    assert!(stderr(&output).contains(
+        "Blessed Script authorization requires a Blessing created with this exception, and another process can change the script between verification and execution"
+    ));
     let _ = fs::remove_dir_all(home);
 }
 

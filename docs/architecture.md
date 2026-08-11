@@ -51,7 +51,14 @@ that Launcher to select the Target and arguments on future requests.
 
 ### Reviewed Automation
 
-Script Blessings bind a canonical path, exact contents, Script Declaration, capabilities, and optional Launcher Endorsements. Execution uses a verified snapshot so file edits cannot race authorization.
+Script Blessings bind a canonical path, exact contents, Script Declaration,
+capabilities, and optional Launcher Endorsements. Execution normally uses a
+verified snapshot so file edits cannot race authorization. A user may bless a
+script whose interpreter cannot execute the snapshot after accepting a warning.
+That script executes from its canonical path, remains vulnerable to edits
+between verification and execution, and warns on every run. The Blessing stores
+the override, so existing Blessings must be reviewed again before they can use
+canonical-path execution.
 
 ### Distribution
 

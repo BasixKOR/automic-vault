@@ -109,6 +109,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
     public let target: String
     public let replaceExistingEnv: Bool
     public let allowMissingKeys: Bool
+    public let allowsCanonicalPathExecution: Bool?
     public let capabilities: [String: SecretGateProtection]
     public let launchers: [BlessedScriptLauncher]
     public let blessedAt: Date
@@ -117,6 +118,10 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
 
     public func matchesBlessing(path: String, checksum: String) -> Bool {
         self.path == path && self.checksum == checksum
+    }
+
+    public func allowsExecution(snapshotIncompatibleInterpreter: String?) -> Bool {
+        snapshotIncompatibleInterpreter == nil || allowsCanonicalPathExecution == true
     }
 
     public func matchesExecution(
@@ -164,6 +169,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         target: String,
         replaceExistingEnv: Bool,
         allowMissingKeys: Bool,
+        allowsCanonicalPathExecution: Bool = false,
         capabilities: [String: SecretGateProtection],
         launchers: [BlessedScriptLauncher],
         blessedAt: Date = Date()
@@ -174,6 +180,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         self.target = target
         self.replaceExistingEnv = replaceExistingEnv
         self.allowMissingKeys = allowMissingKeys
+        self.allowsCanonicalPathExecution = allowsCanonicalPathExecution
         self.capabilities = capabilities
         self.launchers = launchers
         self.blessedAt = blessedAt
@@ -204,6 +211,7 @@ public struct BlessedScriptDeclaration: Equatable, Sendable {
     public let target: String
     public let replaceExistingEnv: Bool
     public let allowMissingKeys: Bool
+    public let snapshotIncompatibleInterpreter: String?
     public let manifest: BlessedScriptManifest
 }
 
@@ -223,13 +231,20 @@ public func blessedScriptDeclaration(data: Data) throws -> BlessedScriptDeclarat
         target: injection.target,
         replaceExistingEnv: injection.replaceExistingEnv,
         allowMissingKeys: injection.allowMissingKeys,
+        snapshotIncompatibleInterpreter: injection.snapshotIncompatibleInterpreter,
         manifest: manifest
     )
 }
 
 private func parseInjectShebang(
     _ line: String
-) throws -> (keys: [String], target: String, replaceExistingEnv: Bool, allowMissingKeys: Bool) {
+) throws -> (
+    keys: [String],
+    target: String,
+    replaceExistingEnv: Bool,
+    allowMissingKeys: Bool,
+    snapshotIncompatibleInterpreter: String?
+) {
     var words = line.dropFirst(2).split(whereSeparator: \.isWhitespace).map(String.init)
     guard let interpreter = words.first,
           interpreter.hasPrefix("/"),
@@ -255,7 +270,10 @@ private func parseInjectShebang(
             guard let target = words.first, target.hasPrefix("/") else {
                 throw BlessedScriptManifestError.invalidShebang
             }
-            return (keys.sorted(), target, replaceExistingEnv, allowMissingKeys)
+            return (
+                keys.sorted(), target, replaceExistingEnv, allowMissingKeys,
+                snapshotIncompatibleInterpreter(in: words)
+            )
         default:
             if word.hasPrefix("+") {
                 let key = String(word.dropFirst())
@@ -266,11 +284,20 @@ private func parseInjectShebang(
                 guard !keys.isEmpty, word.hasPrefix("/") else {
                     throw BlessedScriptManifestError.invalidShebang
                 }
-                return (keys.sorted(), word, replaceExistingEnv, allowMissingKeys)
+                return (
+                    keys.sorted(), word, replaceExistingEnv, allowMissingKeys,
+                    snapshotIncompatibleInterpreter(in: [word] + words)
+                )
             }
         }
     }
     throw BlessedScriptManifestError.invalidShebang
+}
+
+private func snapshotIncompatibleInterpreter(in command: [String]) -> String? {
+    command.lazy
+        .map { URL(fileURLWithPath: $0).lastPathComponent }
+        .first { $0 == "uv" }
 }
 
 private func validBlessedSecretKey(_ key: String) -> Bool {

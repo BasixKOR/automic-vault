@@ -39,6 +39,7 @@ struct ApprovalRequest {
     env_conflicts: Vec<String>,
     shebang_script: Option<String>,
     script_data: Option<Vec<u8>>,
+    snapshot_incompatible_interpreter: Option<&'static str>,
 }
 
 unsafe extern "C" {
@@ -201,14 +202,12 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
                 options.args[index] = script.path.clone().into_os_string();
             }
         }
-        options.shebang_script = path_interpreter
-            .is_none()
-            .then(|| script.path.clone().into_os_string());
+        options.shebang_script = Some(script.path.clone().into_os_string());
     }
     if let Some(interpreter) = path_interpreter {
         let _ = writeln!(
             stderr,
-            "av inject: warning: {interpreter} cannot execute verified /dev/fd scripts; using the canonical script path through the Direct Secret Gate instead"
+            "av inject: warning: {interpreter} cannot execute the verified /dev/fd snapshot; using the canonical script path instead; Blessed Script authorization requires a Blessing created with this exception, and another process can change the script between verification and execution"
         );
     }
 
@@ -217,8 +216,8 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         stderr,
         verified_script
             .as_ref()
-            .filter(|_| path_interpreter.is_none())
             .map(|script| script.data.as_slice()),
+        path_interpreter,
         approve_injection,
         build_env,
     ) {
@@ -277,6 +276,7 @@ fn prepare_injection<A, B>(
     options: &Options,
     stderr: &mut dyn Write,
     script_data: Option<&[u8]>,
+    snapshot_incompatible_interpreter: Option<&'static str>,
     approve: A,
     build: B,
 ) -> Result<(PathBuf, BTreeMap<OsString, OsString>), String>
@@ -289,7 +289,12 @@ where
     ) -> Result<BTreeMap<OsString, OsString>, String>,
 {
     let target = resolve_target(&options.target)?;
-    let request = approval_request(options, &target, script_data)?;
+    let request = approval_request(
+        options,
+        &target,
+        script_data,
+        snapshot_incompatible_interpreter,
+    )?;
     let secrets = approve(&request)?;
     let env = build(options, stderr, secrets)?;
     Ok((target, env))
@@ -299,6 +304,7 @@ fn approval_request(
     options: &Options,
     target: &Path,
     script_data: Option<&[u8]>,
+    snapshot_incompatible_interpreter: Option<&'static str>,
 ) -> Result<ApprovalRequest, String> {
     let current_env = std::env::vars_os().collect::<BTreeMap<_, _>>();
     let env_conflicts = options
@@ -320,6 +326,7 @@ fn approval_request(
         env_conflicts,
         shebang_script: options.shebang_script.as_ref().map(os_display),
         script_data: script_data.map(<[u8]>::to_vec),
+        snapshot_incompatible_interpreter,
     })
 }
 
@@ -598,6 +605,9 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
                 data.len(),
             );
         }
+        if let Some(interpreter) = request.snapshot_incompatible_interpreter {
+            set_string(message, b"snapshot_incompatible_interpreter\0", interpreter)?;
+        }
         xpc_dictionary_set_bool(
             message,
             b"replace_existing_env\0".as_ptr().cast(),
@@ -807,6 +817,7 @@ mod tests {
             &options,
             &mut stderr,
             None,
+            None,
             |_| Err("user denied injection".into()),
             |_, _, _| panic!("approval denial must happen before loading secrets"),
         )
@@ -825,7 +836,13 @@ mod tests {
             args: os(&["hi"]),
             shebang_script: Some("/tmp/tool".into()),
         };
-        let request = approval_request(&options, Path::new("/bin/echo"), Some(b"script")).unwrap();
+        let request = approval_request(
+            &options,
+            Path::new("/bin/echo"),
+            Some(b"script"),
+            Some("uv"),
+        )
+        .unwrap();
 
         assert_eq!(request.keys, ["A", "B"]);
         assert_eq!(request.target, "/bin/echo");
@@ -834,6 +851,7 @@ mod tests {
         assert!(request.allow_missing_keys);
         assert_eq!(request.shebang_script.as_deref(), Some("/tmp/tool"));
         assert_eq!(request.script_data.as_deref(), Some(b"script".as_slice()));
+        assert_eq!(request.snapshot_incompatible_interpreter, Some("uv"));
     }
 
     #[test]

@@ -385,6 +385,7 @@ final class DashboardModel: ObservableObject {
             target: declaration.target,
             replaceExistingEnv: declaration.replaceExistingEnv,
             allowMissingKeys: declaration.allowMissingKeys,
+            allowsCanonicalPathExecution: declaration.snapshotIncompatibleInterpreter != nil,
             capabilities: declaration.manifest.capabilities,
             launchers: pendingBlessingLaunchers
         )
@@ -428,6 +429,7 @@ final class DashboardModel: ObservableObject {
                 target: script.target,
                 replaceExistingEnv: script.replaceExistingEnv,
                 allowMissingKeys: script.allowMissingKeys,
+                allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
                 capabilities: script.capabilities,
                 launchers: script.launchers + [launcher],
                 blessedAt: script.blessedAt
@@ -462,6 +464,7 @@ final class DashboardModel: ObservableObject {
             target: script.target,
             replaceExistingEnv: script.replaceExistingEnv,
             allowMissingKeys: script.allowMissingKeys,
+            allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
             capabilities: script.capabilities,
             launchers: launchers,
             blessedAt: script.blessedAt
@@ -2394,10 +2397,18 @@ private struct BlessedScriptReviewView: View {
                     text: "This script requests access to operations that may reveal protected secret values."
                 )
             }
+            if let interpreter = request.declaration.snapshotIncompatibleInterpreter {
+                InfoBlock(
+                    title: "Verified Snapshot Unavailable",
+                    text: "\(interpreter) cannot execute Automic Vault’s verified script snapshot. If you continue, Automic Vault will verify the script, then run its canonical path. Another process can change the file before \(interpreter) opens it. Automic Vault will warn on every run."
+                )
+            }
             HStack {
                 Button("Cancel", role: .cancel) { model.cancelPendingBlessing() }
                 Spacer()
-                Button("Bless Script") { model.approvePendingBlessing() }
+                Button(request.declaration.snapshotIncompatibleInterpreter == nil ? "Bless Script" : "Bless Anyway") {
+                    model.approvePendingBlessing()
+                }
                     .buttonStyle(.borderedProminent)
             }
             if let error = model.errorMessage {
