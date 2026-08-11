@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V16";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V17";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
@@ -34,7 +34,7 @@ fn main() {
     }
 
     validate_caller().unwrap_or_else(|err| fail(err));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = effective_cwd(std::env::current_dir());
     let mut command = approved_command(
         args,
         std::env::vars_os(),
@@ -78,6 +78,7 @@ where
     let mut command = Command::new(TARGET);
     command
         .args(request.args)
+        .current_dir(cwd)
         .env_clear()
         .envs(stub_env(source_env));
     if cask.is_some() {
@@ -87,6 +88,12 @@ where
         command.pre_exec(drop_to_effective_identity);
     }
     Ok(command)
+}
+
+fn effective_cwd(cwd: io::Result<PathBuf>) -> PathBuf {
+    cwd.ok()
+        .filter(|cwd| fs::read_dir(cwd).is_ok())
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 fn drop_to_effective_identity() -> io::Result<()> {
@@ -581,6 +588,32 @@ mod tests {
         assert_eq!(request.target, TARGET);
         assert_eq!(request.args, ["install", "--cask", "Visual Studio Code"]);
         assert_eq!(request.cwd, "/tmp/a project");
+    }
+
+    #[test]
+    fn unreadable_working_directory_falls_back_to_root() {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            effective_cwd(Err(io::Error::from(io::ErrorKind::PermissionDenied))),
+            Path::new("/")
+        );
+        let unreadable = temp_path("unreadable-cwd");
+        fs::create_dir(&unreadable).unwrap();
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        assert_eq!(effective_cwd(Ok(unreadable.clone())), Path::new("/"));
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_dir(unreadable).unwrap();
+
+        let command = approved_command(
+            vec!["--version".into()],
+            [],
+            Path::new("/"),
+            |_, _| Ok(()),
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(command.get_current_dir(), Some(Path::new("/")));
     }
 
     #[test]
