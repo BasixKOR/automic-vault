@@ -216,6 +216,28 @@ runtime request.
 > : "${API_TOKEN:?set API_TOKEN or install Automic Vault}"
 > ```
 
+### Project Secrets (`.env` files)
+
+[dotenvx](https://dotenvx.com) keeps encrypted secrets in `.env` files. Store
+its decryption key in Automic Vault instead of leaving `.env.keys` in your
+project:
+
+```sh
+$ av save DOTENV_PRIVATE_KEY
+# Paste DOTENV_PRIVATE_KEY from .env.keys
+```
+
+Then use `av inject` with `dotenvx run` in your project script’s shebang:
+
+```sh
+#!/usr/local/bin/av inject +DOTENV_PRIVATE_KEY -- /usr/local/bin/dotenvx run -- /bin/sh
+
+exec your-command "$@"
+```
+
+`av` applies the decryption key to dotenvx after authorization. dotenvx then
+decrypts `.env` and injects its values into the command’s environment.
+
 #### Blessed Scripts
 
 <img src="./docs/blessed-script.png" style="width: 589px; height: auto" />
