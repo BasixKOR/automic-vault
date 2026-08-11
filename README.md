@@ -216,60 +216,6 @@ runtime request.
 > : "${API_TOKEN:?set API_TOKEN or install Automic Vault}"
 > ```
 
-### Project Secrets (`.env` files)
-
-[dotenvx](https://dotenvx.com) keeps encrypted secrets in `.env` files. Store
-its decryption key in Automic Vault instead of leaving `.env.keys` in your
-project:
-
-```sh
-$ av save DOTENV_PRIVATE_KEY
-# Paste DOTENV_PRIVATE_KEY from .env.keys
-```
-
-Add a project script using `av inject` with `dotenvx run` in its shebang. For
-example, `scripts/build-env`:
-
-```sh
-#!/usr/local/bin/av inject +DOTENV_PRIVATE_KEY -- /usr/local/bin/dotenvx run -- /bin/sh
-
-exec node ./scripts/build.mjs "$@"
-```
-
-`av` applies the decryption key to dotenvx after authorization. dotenvx then
-decrypts `.env` and injects its values into the command’s environment.
-
-Point `package.json` at the executable script:
-
-```json
-{
-  "scripts": {
-    "build:env": "./scripts/build-env"
-  }
-}
-```
-
-Make the script executable, then bless it and endorse the current verified app
-Launcher in the same review:
-
-```sh
-$ chmod +x ./scripts/build-env
-$ av bless --endorse-launcher ./scripts/build-env
-# Review the exact script and current Launcher in Automic Vault
-
-$ npm run build:env
-```
-
-`--endorse-launcher` adds a Launcher Endorsement for the verified app running
-`av bless`. To endorse another app Launcher, open **Blessed Scripts** in
-Automic Vault, select the script, then click **+** (**Add Calling App**).
-Endorse the app that starts `npm run`, such as Terminal or the Codex app, not
-`npm` itself.
-
-The Authorization Gate still verifies the exact Blessing and Launcher identity
-on every run. Policy automically authorizes a match without an Approval prompt.
-If you edit the script, run `av bless` again to review the changed contents.
-
 #### Blessed Scripts
 
 <img src="./docs/blessed-script.png" style="width: 589px; height: auto" />
@@ -354,6 +300,60 @@ $ av bless --endorse-launcher ./scripts/my_automation.sh
 The Launcher Endorsement gives that Verified Launcher automic authorization
 only for the exact Blessing. Editing the script or its Script Declaration
 invalidates the Blessing.
+
+### Project Secrets (`.env` files)
+
+[dotenvx](https://dotenvx.com) keeps encrypted secrets in `.env` files. Store
+its decryption key in Automic Vault instead of leaving `.env.keys` in your
+project:
+
+```sh
+$ av save DOTENV_PRIVATE_KEY
+# Paste DOTENV_PRIVATE_KEY from .env.keys
+```
+
+Add a project script using `av inject` with `dotenvx run` in its shebang. For
+example, `scripts/build-env`:
+
+```sh
+#!/usr/local/bin/av inject +DOTENV_PRIVATE_KEY -- /usr/local/bin/dotenvx run -- /bin/sh
+
+exec node ./scripts/build.mjs "$@"
+```
+
+`av` applies the decryption key to dotenvx after authorization. dotenvx then
+decrypts `.env` and injects its values into the command’s environment.
+
+Point `package.json` at the executable script:
+
+```json
+{
+  "scripts": {
+    "build:env": "./scripts/build-env"
+  }
+}
+```
+
+Make the script executable, then bless it and endorse the current verified app
+Launcher in the same review:
+
+```sh
+$ chmod +x ./scripts/build-env
+$ av bless --endorse-launcher ./scripts/build-env
+# Review the exact script and current Launcher in Automic Vault
+
+$ npm run build:env
+```
+
+`--endorse-launcher` adds a Launcher Endorsement for the verified app running
+`av bless`. To endorse another app Launcher, open **Blessed Scripts** in
+Automic Vault, select the script, then click **+** (**Add Calling App**).
+Endorse the app that starts `npm run`, such as Terminal or the Codex app, not
+`npm` itself.
+
+The Authorization Gate still verifies the exact Blessing and Launcher identity
+on every run. Policy automically authorizes a match without an Approval prompt.
+If you edit the script, run `av bless` again to review the changed contents.
 
 &nbsp;
 
