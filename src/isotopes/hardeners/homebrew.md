@@ -4,6 +4,7 @@
 
 - Only `brew` can alter `/opt/homebrew`.
 - Hardened Homebrew manages formulae and a narrow class of CLI-only casks.
+- Homebrew services are incompatible with hardened Homebrew.
 - Approval gates can be configured to stop agents installing things behind your
   back.
 
@@ -69,6 +70,14 @@ is that solution.
 - Do not add `/opt/homebrew/share/zsh/site-functions` to `fpath` or bypass zsh's
   ownership checks. Older user-owned Automic Vault completion mirrors are no
   longer updated and may be removed.
+
+## Caveats
+
+- Hardening refuses to run while any Homebrew service is loaded or registered.
+  Stop each service with `/opt/homebrew/bin/brew services stop <formula>` before
+  hardening.
+- If the protected `automic` account cannot read the current working directory,
+  the hardened launcher runs Homebrew from `/` instead.
 
 ## Casks
 

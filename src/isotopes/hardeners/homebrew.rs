@@ -24,8 +24,8 @@ const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V16";
-const STUB_VERSION: u32 = 16;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V17";
+const STUB_VERSION: u32 = 17;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -217,6 +217,13 @@ fn preflight() -> Result<(PathBuf, PathBuf, PathBuf, SourceUser), String> {
         ));
     }
     let source_user = source_user()?;
+    let services = homebrew_services(&target, &source_user)?;
+    if !services.is_empty() {
+        return Err(format!(
+            "these Homebrew services are incompatible with hardened Homebrew: {}. Stop each one with `/opt/homebrew/bin/brew services stop <formula>`, then rerun `av harden brew`",
+            services.join(", ")
+        ));
+    }
     let casks = incompatible_installed_casks(&prefix)?;
     if !casks.is_empty() {
         return Err(format!(
@@ -225,6 +232,58 @@ fn preflight() -> Result<(PathBuf, PathBuf, PathBuf, SourceUser), String> {
         ));
     }
     Ok((prefix, stub, source, source_user))
+}
+
+fn homebrew_services(target: &Path, source_user: &SourceUser) -> Result<Vec<String>, String> {
+    let mut command = if super::effective_uid() == 0 {
+        let mut command = Command::new(SUDO_PATH);
+        command
+            .args(["-H", "-u", &source_user.name, "--", "/usr/bin/env"])
+            .args(["HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_NO_ANALYTICS=1"])
+            .arg(target);
+        command
+    } else {
+        Command::new(target)
+    };
+    let output = command
+        .args(["services", "list", "--json"])
+        .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+        .env("HOMEBREW_NO_ANALYTICS", "1")
+        .output()
+        .map_err(|err| format!("failed to inspect Homebrew services: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to inspect Homebrew services: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_homebrew_services(&output.stdout)
+}
+
+fn parse_homebrew_services(json: &[u8]) -> Result<Vec<String>, String> {
+    let services = serde_json::from_slice::<serde_json::Value>(json)
+        .map_err(|err| format!("Homebrew returned malformed services JSON: {err}"))?;
+    let services = services
+        .as_array()
+        .ok_or_else(|| "Homebrew returned malformed services JSON".to_string())?;
+    let mut names = Vec::new();
+    for service in services {
+        let malformed = || "Homebrew returned malformed services JSON".to_string();
+        let service = service.as_object().ok_or_else(malformed)?;
+        let name = service
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(malformed)?;
+        let status = service
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(malformed)?;
+        let user = service.get("user").ok_or_else(malformed)?;
+        if status != "none" || !user.is_null() {
+            names.push(name.to_string());
+        }
+    }
+    Ok(names)
 }
 
 pub(crate) fn unharden(stdout: &mut dyn Write) -> Result<super::RootOnlyOutcome, String> {
@@ -1378,6 +1437,21 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn identifies_loaded_and_registered_homebrew_services() {
+        let services = parse_homebrew_services(
+            br#"[
+                {"name":"dnsmasq","status":"none","user":null},
+                {"name":"postgresql@17","status":"started","user":"alice"},
+                {"name":"redis","status":"none","user":"alice"}
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(services, ["postgresql@17", "redis"]);
+        assert!(parse_homebrew_services(br#"[{"name":"redis"}]"#).is_err());
+    }
+
+    #[test]
     fn detects_stub_marker_owner_group_and_mode() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let path = temp_path("brew-stub-detect");
@@ -1442,7 +1516,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V17 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V18 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [
