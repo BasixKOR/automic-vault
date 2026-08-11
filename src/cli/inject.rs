@@ -15,6 +15,7 @@ Usage: av inject [--replace-existing-env] [--allow-missing-keys] +KEY [+KEY...] 
 Injects named Keychain secrets into COMMAND's environment.";
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+const PATH_SCRIPT_INTERPRETERS: &[&str] = &["uv"];
 type SecretValues = BTreeMap<String, String>;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -186,8 +187,29 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         }
     };
     let original_script = options.shebang_script.clone();
+    let mut path_interpreter = None;
     if let Some(script) = &verified_script {
-        options.shebang_script = Some(script.path.clone().into_os_string());
+        if let Some(index) = options.args.iter().position(|arg| {
+            original_script
+                .as_ref()
+                .is_some_and(|original| arg == original)
+                || std::fs::canonicalize(arg).is_ok_and(|path| path == script.path)
+        }) {
+            path_interpreter =
+                path_script_interpreter(Path::new(&options.target), &options.args[..index]);
+            if path_interpreter.is_some() {
+                options.args[index] = script.path.clone().into_os_string();
+            }
+        }
+        options.shebang_script = path_interpreter
+            .is_none()
+            .then(|| script.path.clone().into_os_string());
+    }
+    if let Some(interpreter) = path_interpreter {
+        let _ = writeln!(
+            stderr,
+            "av inject: warning: {interpreter} cannot execute verified /dev/fd scripts; using the canonical script path through the Direct Secret Gate instead"
+        );
     }
 
     let (target, mut env) = match prepare_injection(
@@ -195,6 +217,7 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         stderr,
         verified_script
             .as_ref()
+            .filter(|_| path_interpreter.is_none())
             .map(|script| script.data.as_slice()),
         approve_injection,
         build_env,
@@ -208,9 +231,11 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
 
     let mut args = options.args.clone();
     if let (Some(script), Some(original)) = (&verified_script, original_script) {
-        if let Some(index) = args.iter().position(|arg| {
-            arg == &original || std::fs::canonicalize(arg).is_ok_and(|path| path == script.path)
-        }) {
+        if path_interpreter.is_none()
+            && let Some(index) = args.iter().position(|arg| {
+                arg == &original || std::fs::canonicalize(arg).is_ok_and(|path| path == script.path)
+            })
+        {
             args[index] = OsString::from(format!("/dev/fd/{}", script.file.as_raw_fd()));
         }
         env.insert(
@@ -234,6 +259,18 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         target.display()
     );
     1
+}
+
+fn path_script_interpreter(target: &Path, args_before_script: &[OsString]) -> Option<&'static str> {
+    std::iter::once(target.as_os_str())
+        .chain(args_before_script.iter().map(OsString::as_os_str))
+        .filter_map(|arg| Path::new(arg).file_name()?.to_str())
+        .find_map(|name| {
+            PATH_SCRIPT_INTERPRETERS
+                .iter()
+                .copied()
+                .find(|interpreter| name == *interpreter)
+        })
 }
 
 fn prepare_injection<A, B>(
@@ -811,6 +848,25 @@ mod tests {
         assert_eq!(script.data, b"approved");
         assert_eq!(executed, "approved");
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn uv_uses_the_canonical_script_path() {
+        assert_eq!(
+            path_script_interpreter(Path::new("/opt/homebrew/bin/uv"), &[]),
+            Some("uv")
+        );
+        assert_eq!(
+            path_script_interpreter(
+                Path::new("/usr/local/bin/dotenvx"),
+                &os(&["run", "--", "/opt/homebrew/bin/uv", "run", "--script"])
+            ),
+            Some("uv")
+        );
+        assert_eq!(
+            path_script_interpreter(Path::new("/opt/homebrew/bin/python3"), &[]),
+            None
+        );
     }
 
     #[test]

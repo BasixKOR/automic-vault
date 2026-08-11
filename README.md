@@ -275,10 +275,12 @@ for a specific Verified Launcher.
 >   chain attacks are more likely to occur).
 
 > [!NOTE]
-> Blessed scripts run from a verified `/dev/fd/N` snapshot
-> (to avoid races between approval and potential file edits),
-> so `$0` is not the
-> original file path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path
+> Blessed scripts run from a verified snapshot to avoid races between Approval
+> and potential file edits. Most Targets receive a `/dev/fd/N` path. Automic
+> Vault warns when a Target cannot execute that path, uses the canonical script
+> path instead, and routes the request through the Direct Secret Gate rather
+> than treating it as a Blessed Script. `$0` is not normally the original file
+> path. Automic Vault sets `AV_SCRIPT_PATH` to the canonical path
 > and `AV_SCRIPT_DIR` to its containing directory. Use `AV_SCRIPT_DIR` to find
 > files relative to the script, or `${AV_SCRIPT_PATH:-$0}` when compatibility
 > with systems without `av` is desired.

@@ -70,6 +70,61 @@ fn av_inject_accepts_shebang_dispatch() {
 }
 
 #[test]
+fn av_inject_uses_the_script_path_for_uv_and_preserves_stdin() {
+    let home = temp_home("inject-uv");
+    let keychain = home.join("keychain");
+    fs::create_dir_all(&keychain).unwrap();
+    let uv = home.join("uv");
+    fs::write(&uv, "#!/bin/sh\nprintf 'args:%s\\n' \"$*\"\ncat\n").unwrap();
+    fs::set_permissions(&uv, fs::Permissions::from_mode(0o755)).unwrap();
+    let dotenvx = home.join("dotenvx");
+    fs::write(
+        &dotenvx,
+        "#!/bin/sh\nwhile [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&dotenvx, fs::Permissions::from_mode(0o755)).unwrap();
+    let script = home.join("tool");
+    fs::write(
+        &script,
+        format!(
+            "#!{} inject -- {} run -- {} run --script\nprint('UV_STDIN_OK')\n",
+            env!("CARGO_BIN_EXE_av"),
+            dotenvx.display(),
+            uv.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let input = home.join("input");
+    fs::write(&input, "CALLER_STDIN\n").unwrap();
+
+    let output = Command::new(&script)
+        .env("HOME", &home)
+        .env("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain)
+        .stdin(fs::File::open(input).unwrap())
+        .output()
+        .unwrap();
+
+    if unsafe { libc::geteuid() } == 0 {
+        assert!(!output.status.success());
+        return;
+    }
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout(&output).contains(&format!(
+        "args:run --script {}\n",
+        script.canonicalize().unwrap().display()
+    )));
+    assert!(stdout(&output).contains("CALLER_STDIN\n"));
+    assert!(!stdout(&output).contains("print('UV_STDIN_OK')\n"));
+    assert!(
+        stderr(&output).contains("using the canonical script path through the Direct Secret Gate")
+    );
+    let _ = fs::remove_dir_all(home);
+}
+
+#[test]
 fn av_inject_preserves_existing_env_without_replace() {
     let home = temp_home("inject-existing");
     let keychain = home.join("keychain");
