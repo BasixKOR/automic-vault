@@ -50,7 +50,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "│").ok();
     writeln!(
         stdout,
-        "◆ APPLICATION AND INSTALLER CASKS ARE NOT SUPPORTED"
+        "◆ casks are (mostly) UNSUPPORTED"
     )
     .ok();
     writeln!(
@@ -61,6 +61,11 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(
         stdout,
         "│  Only CLI-only casks that link protected executables into /opt/homebrew/bin are allowed."
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "◆ `brew services` is UNSUPPORTED"
     )
     .ok();
     writeln!(stdout, "│").ok();
