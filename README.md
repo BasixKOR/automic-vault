@@ -54,6 +54,8 @@ The primary adversary is untrusted or compromised code already running with your
 - Not protection against `rm -rf $HOME` or other destructive *local* commands.
   Automic Vault is not a security layer for UNIX.
   It is an adapter for the macOS GUI security model applied to the command line.
+- Not a encrypted `.env` solution. We provide secure ways to provide secrets
+  to solutions like [`dotenvx`] and [Varlock].
 
 > † we patch tools to make them more secure and distribute them through our
 > [homebrew tap] or directly through `av harden`. We install stubs in
@@ -62,6 +64,8 @@ The primary adversary is untrusted or compromised code already running with your
 > code signing, notarization, XPC, TCC and the keychain.
 
 [homebrew tap]: https://github.com/automic-vault/homebrew-isotopes
+[`dotenvx`]: https://dotenvx.com
+[Varlock]: https://varlock.dev
 
 &nbsp;
 
