@@ -48,6 +48,9 @@ INTERNAL_VERSION_METADATA=""
 INTERNAL_VERSION_FILES=()
 RESUME_RELEASE=0
 RECOVERED_RELEASE=0
+RESUMED_DRAFT=0
+DRAFT_HEAD=""
+DRAFT_URL=""
 if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" == "$CURRENT_VERSION" ]]; then
   RESUME_RELEASE=1
 fi
@@ -472,6 +475,17 @@ resume_published_release() {
     return 0
   fi
   read -r is_draft is_immutable head release_url <<<"$release_info"
+  if [[ "$is_draft" == "true" && "$is_immutable" == "false" ]]; then
+    if [[ "$REQUESTED_VERSION" != "$CURRENT_VERSION" ]]; then
+      echo "error: draft release $REQUESTED_VERSION does not match checkout version $CURRENT_VERSION" >&2
+      exit 64
+    fi
+    VERSION="$REQUESTED_VERSION"
+    DRAFT_HEAD="$head"
+    DRAFT_URL="$release_url"
+    RESUMED_DRAFT=1
+    return 0
+  fi
   if [[ "$is_draft" != "false" || "$is_immutable" != "true" ]]; then
     return 0
   fi
@@ -749,62 +763,72 @@ if [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
   echo "error: publish requires main to match origin/main" >&2
   exit 64
 fi
-generate_release_metadata "$source_head"
-if [[ "$RESUME_RELEASE" -eq 0 ]] && ! version_is_greater "$VERSION" "$CURRENT_VERSION"; then
-  echo "error: release version $VERSION must be newer than $CURRENT_VERSION" >&2
-  exit 64
-fi
-if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1 ||
-  git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-  echo "error: release or tag $VERSION already exists; publish a new version" >&2
-  exit 64
-fi
-if [[ -n "$INTERNAL_VERSION_METADATA" ]]; then
-  update_internal_versions "$INTERNAL_VERSION_METADATA"
-  rm -f "$INTERNAL_VERSION_METADATA"
-  INTERNAL_VERSION_METADATA=""
-fi
-if [[ "$RESUME_RELEASE" -eq 0 ]]; then
-  write_cargo_version "$VERSION"
-  git -C "$ROOT" add -- Cargo.toml Cargo.lock
-fi
-if [[ "${#INTERNAL_VERSION_FILES[@]}" -gt 0 ]]; then
-  git -C "$ROOT" add -- "${INTERNAL_VERSION_FILES[@]}"
-fi
-if [[ "$RESUME_RELEASE" -eq 0 || "${#INTERNAL_VERSION_FILES[@]}" -gt 0 ]]; then
-  git -C "$ROOT" diff --cached --check
-  git -C "$ROOT" commit -m "Release $VERSION"
-  git -C "$ROOT" push origin HEAD:main
-fi
-head="$(git -C "$ROOT" rev-parse HEAD)"
-run_url="$(
-  gh workflow run release.yml \
-    --repo "$REPOSITORY" \
-    --ref main \
-    -f version="$VERSION" \
-    -f commit="$head" \
-    -f notes="$(<"$RELEASE_NOTES")"
-)"
-run_url="${run_url##*$'\n'}"
-if [[ ! "$run_url" =~ /actions/runs/([0-9]+)$ ]]; then
-  echo "error: could not determine dispatched workflow run from: $run_url" >&2
-  exit 1
-fi
-run_id="${BASH_REMATCH[1]}"
-echo "Release workflow: $run_url"
-if ! gh run watch "$run_id" --repo "$REPOSITORY" --compact --exit-status; then
-  echo "Release workflow failed; after fixing main, retry with: $0 --version $VERSION" >&2
-  exit 1
-fi
-read -r is_draft target_commitish release_url < <(
-  gh release view "$VERSION" \
-    --repo "$REPOSITORY" \
-    --json isDraft,targetCommitish,url \
-    --jq '[.isDraft, .targetCommitish, .url] | @tsv'
-)
-if [[ "$is_draft" != "true" || "$target_commitish" != "$head" ]]; then
-  echo "error: workflow did not create the expected draft release" >&2
-  exit 1
+if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
+  if [[ ! "$DRAFT_HEAD" =~ ^[0-9a-f]{40}$ || "$DRAFT_HEAD" != "$source_head" ]]; then
+    echo "error: draft release $VERSION does not target the current main commit" >&2
+    exit 1
+  fi
+  head="$DRAFT_HEAD"
+  release_url="$DRAFT_URL"
+  echo "Resuming draft release $VERSION."
+else
+  generate_release_metadata "$source_head"
+  if [[ "$RESUME_RELEASE" -eq 0 ]] && ! version_is_greater "$VERSION" "$CURRENT_VERSION"; then
+    echo "error: release version $VERSION must be newer than $CURRENT_VERSION" >&2
+    exit 64
+  fi
+  if gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1 ||
+    git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+    echo "error: release or tag $VERSION already exists; publish a new version" >&2
+    exit 64
+  fi
+  if [[ -n "$INTERNAL_VERSION_METADATA" ]]; then
+    update_internal_versions "$INTERNAL_VERSION_METADATA"
+    rm -f "$INTERNAL_VERSION_METADATA"
+    INTERNAL_VERSION_METADATA=""
+  fi
+  if [[ "$RESUME_RELEASE" -eq 0 ]]; then
+    write_cargo_version "$VERSION"
+    git -C "$ROOT" add -- Cargo.toml Cargo.lock
+  fi
+  if [[ "${#INTERNAL_VERSION_FILES[@]}" -gt 0 ]]; then
+    git -C "$ROOT" add -- "${INTERNAL_VERSION_FILES[@]}"
+  fi
+  if [[ "$RESUME_RELEASE" -eq 0 || "${#INTERNAL_VERSION_FILES[@]}" -gt 0 ]]; then
+    git -C "$ROOT" diff --cached --check
+    git -C "$ROOT" commit -m "Release $VERSION"
+    git -C "$ROOT" push origin HEAD:main
+  fi
+  head="$(git -C "$ROOT" rev-parse HEAD)"
+  run_url="$(
+    gh workflow run release.yml \
+      --repo "$REPOSITORY" \
+      --ref main \
+      -f version="$VERSION" \
+      -f commit="$head" \
+      -f notes="$(<"$RELEASE_NOTES")"
+  )"
+  run_url="${run_url##*$'\n'}"
+  if [[ ! "$run_url" =~ /actions/runs/([0-9]+)$ ]]; then
+    echo "error: could not determine dispatched workflow run from: $run_url" >&2
+    exit 1
+  fi
+  run_id="${BASH_REMATCH[1]}"
+  echo "Release workflow: $run_url"
+  if ! gh run watch "$run_id" --repo "$REPOSITORY" --compact --exit-status; then
+    echo "Release workflow failed; after fixing main, retry with: $0 --version $VERSION" >&2
+    exit 1
+  fi
+  read -r is_draft target_commitish release_url < <(
+    gh release view "$VERSION" \
+      --repo "$REPOSITORY" \
+      --json isDraft,targetCommitish,url \
+      --jq '[.isDraft, .targetCommitish, .url] | @tsv'
+  )
+  if [[ "$is_draft" != "true" || "$target_commitish" != "$head" ]]; then
+    echo "error: workflow did not create the expected draft release" >&2
+    exit 1
+  fi
 fi
 verify_draft_update "$VERSION" "$head"
 echo "Draft release ready for review and publication:"

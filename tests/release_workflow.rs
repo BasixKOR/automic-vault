@@ -179,12 +179,22 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     let upload = PUBLISH_SCRIPT.find("aws s3 cp \"$archive\"").unwrap();
     assert!(build < verify && verify < upload);
     assert!(PUBLISH_SCRIPT.contains("RECOVERED_RELEASE=1"));
+    assert!(PUBLISH_SCRIPT.contains("RESUMED_DRAFT=1"));
+    assert!(PUBLISH_SCRIPT.contains("Resuming draft release $VERSION."));
+    assert!(PUBLISH_SCRIPT.contains(
+        "draft release $VERSION does not target the current main commit"
+    ));
     assert!(!PUBLISH_SCRIPT.contains("if resume_published_release; then"));
     let resume = PUBLISH_SCRIPT
         .rfind("\nresume_published_release\n")
         .unwrap();
     let codex = PUBLISH_SCRIPT.rfind("if ! command -v codex").unwrap();
     assert!(resume < codex);
+    let resumed_draft = PUBLISH_SCRIPT
+        .rfind("if [[ \"$RESUMED_DRAFT\" -eq 1 ]]")
+        .unwrap();
+    let generate = PUBLISH_SCRIPT.rfind("generate_release_metadata \"$source_head\"").unwrap();
+    assert!(resumed_draft < generate);
 }
 
 #[test]
