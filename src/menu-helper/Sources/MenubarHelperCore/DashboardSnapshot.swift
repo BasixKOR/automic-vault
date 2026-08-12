@@ -1804,7 +1804,12 @@ public func loadDoctorIssues(avExecutableURL: URL) -> [DoctorIssue] {
     )
     return data.flatMap {
         try? doctorIssues(from: $0, loginShellPATHAvailable: false)
-    } ?? []
+    } ?? [DoctorIssue(
+        hardener: "Doctor",
+        kind: "doctor_unavailable",
+        message: "Doctor results are unavailable",
+        remediation: "Run `av doctor` in Terminal to inspect the failure."
+    )]
 }
 
 func loadJSON(

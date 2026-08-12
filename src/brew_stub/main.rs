@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V18";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V19";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const SHELLENV_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -112,6 +112,9 @@ fn drop_to_effective_identity() -> io::Result<()> {
 }
 
 fn governed_args(args: &[String]) -> Result<(Vec<String>, Option<CaskMutation>), String> {
+    if args.iter().any(|arg| arg == "--") {
+        return Err("`--` is unavailable in hardened Homebrew commands".into());
+    }
     let Some(command_index) = command_index(args) else {
         return Ok((args.to_vec(), None));
     };
@@ -167,8 +170,7 @@ fn governed_args(args: &[String]) -> Result<(Vec<String>, Option<CaskMutation>),
 }
 
 fn command_index(args: &[String]) -> Option<usize> {
-    args.iter()
-        .position(|arg| arg == "--" || !arg.starts_with('-'))
+    args.iter().position(|arg| !arg.starts_with('-'))
 }
 
 fn cask_operands(args: &[String], command_index: usize) -> Result<Vec<String>, String> {
@@ -775,8 +777,14 @@ mod tests {
             (vec!["info".into(), "install".into()], None)
         );
         assert_eq!(
-            governed_args(&["--".into(), "install".into()]).unwrap(),
-            (vec!["--".into(), "install".into()], None)
+            governed_args(&[
+                "--".into(),
+                "install".into(),
+                "--cask".into(),
+                "codex".into(),
+            ])
+            .unwrap_err(),
+            "`--` is unavailable in hardened Homebrew commands"
         );
     }
 

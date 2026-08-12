@@ -186,6 +186,15 @@ import Testing
     #expect(try doctorIssues(from: data).isEmpty)
 }
 
+@Test func doctorLoadFailureIsReportedDirectly() {
+    let issues = loadDoctorIssues(
+        avExecutableURL: URL(fileURLWithPath: "/no/such/automic-vault-av")
+    )
+
+    #expect(issues.map(\.kind) == ["doctor_unavailable"])
+    #expect(issues.first?.message == "Doctor results are unavailable")
+}
+
 @Test func detectorDocumentationReferencesHardenerCommand() {
     #expect(hardenerNameReferencedByDocumentation("```sh\nav harden gh\n```") == "gh")
     #expect(hardenerNameReferencedByDocumentation("Run `sudo av harden aws` after import.") == "aws")
