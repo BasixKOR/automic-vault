@@ -180,6 +180,9 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(build < verify && verify < upload);
     assert!(PUBLISH_SCRIPT.contains("RECOVERED_RELEASE=1"));
     assert!(PUBLISH_SCRIPT.contains("RESUMED_DRAFT=1"));
+    assert!(PUBLISH_SCRIPT.contains("repos/$REPOSITORY/releases?per_page=100"));
+    assert!(PUBLISH_SCRIPT.contains(r#"select(.tag_name == \"$REQUESTED_VERSION\")"#));
+    assert!(PUBLISH_SCRIPT.contains("multiple GitHub releases exist for $REQUESTED_VERSION"));
     assert!(PUBLISH_SCRIPT.contains("Resuming draft release $VERSION."));
     assert!(PUBLISH_SCRIPT.contains(
         "draft release $VERSION does not target a commit on main"

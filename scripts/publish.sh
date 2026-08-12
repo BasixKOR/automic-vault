@@ -468,11 +468,17 @@ resume_published_release() {
   if ! release_info="$(
     gh api \
       -H "X-GitHub-Api-Version: 2026-03-10" \
-      "repos/$REPOSITORY/releases/tags/$REQUESTED_VERSION" \
-      --jq '[.draft, .immutable, .target_commitish, .html_url] | @tsv' \
+      --paginate \
+      "repos/$REPOSITORY/releases?per_page=100" \
+      --jq ".[] | select(.tag_name == \"$REQUESTED_VERSION\") | [.draft, .immutable, .target_commitish, .html_url] | @tsv" \
       2>/dev/null
   )"; then
     return 0
+  fi
+  [[ -n "$release_info" ]] || return 0
+  if [[ "$release_info" == *$'\n'* ]]; then
+    echo "error: multiple GitHub releases exist for $REQUESTED_VERSION" >&2
+    exit 1
   fi
   read -r is_draft is_immutable head release_url <<<"$release_info"
   if [[ "$is_draft" == "true" && "$is_immutable" == "false" ]]; then
