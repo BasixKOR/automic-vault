@@ -739,7 +739,7 @@ resume_published_release
 if [[ "$RECOVERED_RELEASE" -eq 1 ]]; then
   exit 0
 fi
-if ! command -v codex >/dev/null 2>&1; then
+if [[ "$RESUMED_DRAFT" -eq 0 ]] && ! command -v codex >/dev/null 2>&1; then
   echo "error: publish requires codex" >&2
   exit 64
 fi
@@ -759,15 +759,18 @@ prepare_cask_publish
 prepare_website_publish
 git -C "$ROOT" fetch --quiet origin main
 source_head="$(git -C "$ROOT" rev-parse HEAD)"
-if [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
+if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
+  if [[ ! "$DRAFT_HEAD" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "$ROOT" cat-file -e "$DRAFT_HEAD^{commit}" 2>/dev/null ||
+    ! git -C "$ROOT" merge-base --is-ancestor "$DRAFT_HEAD" origin/main; then
+    echo "error: draft release $VERSION does not target a commit on main" >&2
+    exit 1
+  fi
+elif [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
   echo "error: publish requires main to match origin/main" >&2
   exit 64
 fi
 if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
-  if [[ ! "$DRAFT_HEAD" =~ ^[0-9a-f]{40}$ || "$DRAFT_HEAD" != "$source_head" ]]; then
-    echo "error: draft release $VERSION does not target the current main commit" >&2
-    exit 1
-  fi
   head="$DRAFT_HEAD"
   release_url="$DRAFT_URL"
   echo "Resuming draft release $VERSION."
