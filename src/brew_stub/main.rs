@@ -6,9 +6,10 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V17";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V19";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
+const SHELLENV_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const BREW_USER_UID: &str = "/opt/homebrew/var/automic/user-uid";
 const FORBIDDEN_CASK_ARTIFACTS: &str = "app appimage artifact audiounitplugin bashcompletion colorpicker commandwrapper dictionary fishcompletion font generatedscript inputmethod installer internetplugin keyboardlayout manpage mdimporter pkg postflight postflightblock postflightsteps preflight preflightblock preflightsteps prefpane qlplugin screensaver service stageonly suite uninstall uninstallpostflightsteps uninstallpreflightsteps vst3plugin vstplugin zshcompletion";
@@ -69,6 +70,8 @@ where
     F: FnOnce(&AuthorizationRequest) -> Result<(), String>,
 {
     let mut request = authorization_request(&args, cwd)?;
+    let shellenv =
+        command_index(&request.args).is_some_and(|index| request.args[index] == "shellenv");
     let (args, cask) = governed_args(&request.args)?;
     request.args = args;
     if let Some(cask) = &cask {
@@ -81,6 +84,9 @@ where
         .current_dir(cwd)
         .env_clear()
         .envs(stub_env(source_env));
+    if shellenv {
+        command.env("PATH", SHELLENV_PATH);
+    }
     if cask.is_some() {
         command.env("HOMEBREW_NO_AUTO_UPDATE", "1");
     }
@@ -106,10 +112,10 @@ fn drop_to_effective_identity() -> io::Result<()> {
 }
 
 fn governed_args(args: &[String]) -> Result<(Vec<String>, Option<CaskMutation>), String> {
-    let Some(command_index) = args
-        .iter()
-        .position(|arg| arg == "--" || !arg.starts_with('-'))
-    else {
+    if args.iter().any(|arg| arg == "--") {
+        return Err("`--` is unavailable in hardened Homebrew commands".into());
+    }
+    let Some(command_index) = command_index(args) else {
         return Ok((args.to_vec(), None));
     };
     let command = args[command_index].as_str();
@@ -161,6 +167,10 @@ fn governed_args(args: &[String]) -> Result<(Vec<String>, Option<CaskMutation>),
         args.insert(command_index + 1, "--formula".into());
     }
     Ok((args, None))
+}
+
+fn command_index(args: &[String]) -> Option<usize> {
+    args.iter().position(|arg| !arg.starts_with('-'))
 }
 
 fn cask_operands(args: &[String], command_index: usize) -> Result<Vec<String>, String> {
@@ -683,6 +693,25 @@ mod tests {
     }
 
     #[test]
+    fn shellenv_child_path_does_not_look_already_configured() {
+        let command = approved_command(
+            vec!["shellenv".into()],
+            [],
+            Path::new("/tmp"),
+            |_, _| Ok(()),
+            |_| Ok(()),
+        )
+        .unwrap();
+        let path = command
+            .get_envs()
+            .find(|(key, _)| *key == "PATH")
+            .and_then(|(_, value)| value)
+            .unwrap();
+
+        assert_eq!(path, SHELLENV_PATH);
+    }
+
+    #[test]
     fn unsupported_cask_is_rejected_before_authorization() {
         let mut authorized = false;
         let expected = "Hardened Homebrew does not support cask `zed`: its `uninstall` artifact is outside Automic Vault's CLI-only cask support";
@@ -748,8 +777,14 @@ mod tests {
             (vec!["info".into(), "install".into()], None)
         );
         assert_eq!(
-            governed_args(&["--".into(), "install".into()]).unwrap(),
-            (vec!["--".into(), "install".into()], None)
+            governed_args(&[
+                "--".into(),
+                "install".into(),
+                "--cask".into(),
+                "codex".into(),
+            ])
+            .unwrap_err(),
+            "`--` is unavailable in hardened Homebrew commands"
         );
     }
 

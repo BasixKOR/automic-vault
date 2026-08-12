@@ -1,5 +1,4 @@
 import CryptoKit
-import Darwin
 import Foundation
 import Security
 
@@ -778,13 +777,14 @@ public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = 
         }
     }
     guard !loginShellPATHAvailable else { return issues }
-    issues.removeAll { $0.kind == "stub_not_first_on_path" }
-    issues.append(DoctorIssue(
-        hardener: "PATH",
-        kind: "login_shell_path_unavailable",
-        message: "Unable to inspect the login-shell PATH",
-        remediation: "Ensure the configured login shell starts successfully, then refresh Doctor."
-    ))
+    issues.removeAll {
+        [
+            "agent_cli_signature_invalid",
+            "agent_cli_unavailable",
+            "isotope_not_first_on_path",
+            "stub_not_first_on_path",
+        ].contains($0.kind)
+    }
     return issues
 }
 
@@ -1797,40 +1797,29 @@ public func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
 }
 
 public func loadDoctorIssues(avExecutableURL: URL) -> [DoctorIssue] {
-    let shellPATH = loginShellPATH()
-    var environment = ProcessInfo.processInfo.environment
-    if let shellPATH {
-        environment["PATH"] = shellPATH
-    }
     let data = loadJSON(
         avExecutableURL: avExecutableURL,
         arguments: ["doctor", "--json"],
-        acceptedTerminationStatuses: [0, 1],
-        environment: environment
+        acceptedTerminationStatuses: [0, 1]
     )
     return data.flatMap {
-        try? doctorIssues(from: $0, loginShellPATHAvailable: shellPATH != nil)
-    } ?? (shellPATH == nil ? [DoctorIssue(
-        hardener: "PATH",
-        kind: "login_shell_path_unavailable",
-        message: "Unable to inspect the login-shell PATH",
-        remediation: "Ensure the configured login shell starts successfully, then refresh Doctor."
-    )] : [])
+        try? doctorIssues(from: $0, loginShellPATHAvailable: false)
+    } ?? [DoctorIssue(
+        hardener: "Doctor",
+        kind: "doctor_unavailable",
+        message: "Doctor results are unavailable",
+        remediation: "Run `av doctor` in Terminal to inspect the failure."
+    )]
 }
 
 func loadJSON(
     avExecutableURL: URL,
     arguments: [String],
-    acceptedTerminationStatuses: Set<Int32> = [0],
-    environment: [String: String]? = nil
+    acceptedTerminationStatuses: Set<Int32> = [0]
 ) -> Data? {
     let process = Process()
     process.executableURL = avExecutableURL
     process.arguments = arguments
-    if let environment {
-        process.environment = environment
-    }
-
     let output = Pipe()
     process.standardOutput = output
     process.standardError = Pipe()
@@ -1845,46 +1834,6 @@ func loadJSON(
     process.waitUntilExit()
     guard acceptedTerminationStatuses.contains(process.terminationStatus) else { return nil }
     return data
-}
-
-func loginShellPATH() -> String? {
-    guard let record = getpwuid(getuid()),
-          let shellPointer = record.pointee.pw_shell,
-          let shell = String(validatingCString: shellPointer),
-          !shell.isEmpty
-    else { return nil }
-
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: shell)
-    process.arguments = ["-lic", "/usr/bin/printenv PATH"]
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = Pipe()
-    do {
-        try process.run()
-    } catch {
-        return nil
-    }
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else { return nil }
-    return loginShellPATH(from: data)
-}
-
-func loginShellPATH(from data: Data) -> String? {
-    guard let output = String(data: data, encoding: .utf8) else { return nil }
-    var path: Substring?
-    for outputLine in output.split(whereSeparator: \.isNewline) {
-        var line = outputLine
-        while line.hasPrefix("\u{1B}]") {
-            guard let terminator = line.firstIndex(of: "\u{07}") else { return nil }
-            line = line[line.index(after: terminator)...]
-        }
-        if line.hasPrefix("/") {
-            path = line
-        }
-    }
-    return path.map(String.init)
 }
 
 public func defaultAVExecutableURL() -> URL {

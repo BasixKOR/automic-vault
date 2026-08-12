@@ -154,24 +154,26 @@ import Testing
     #expect(Set(issues.map(\.id)).count == 2)
 }
 
-@Test func unavailableLoginShellPATHSuppressesMisleadingPATHIssues() throws {
+@Test func unavailableLoginShellPATHSuppressesAllUnverifiablePATHIssues() throws {
     let data = Data(#"""
-    {"results":[{"name":"aws","commands":["aws"],"issues":[
-      {"kind":"stub_not_first_on_path","command":"aws","message":"shadowed","remediation":"Fix PATH.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":"/opt/homebrew/bin/aws"},
-      {"kind":"hardening_not_applied","command":"aws","message":"not hardened","remediation":"Harden it.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":null}
-    ]}]}
+    {"results":[
+      {"name":"aws","commands":["aws"],"issues":[
+        {"kind":"stub_not_first_on_path","command":"aws","message":"shadowed","remediation":"Fix PATH.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":"/opt/homebrew/bin/aws"},
+        {"kind":"hardening_not_applied","command":"aws","message":"not hardened","remediation":"Harden it.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":null}
+      ]},
+      {"name":"gh","commands":["gh"],"issues":[
+        {"kind":"isotope_not_first_on_path","command":"gh","message":"gh is not available through PATH","remediation":"Fix PATH.","stub_path":"/opt/homebrew/opt/gh-cli/bin/gh","target_path":"/opt/homebrew/opt/gh-cli/bin/gh","resolved_path":null}
+      ]},
+      {"name":"codex","commands":["codex"],"issues":[
+        {"kind":"agent_cli_unavailable","command":"codex","message":"codex is not available through PATH","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":null},
+        {"kind":"agent_cli_signature_invalid","command":"codex","message":"codex has an invalid signature","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":"/usr/bin/codex"}
+      ]}
+    ]}
     """#.utf8)
 
     let issues = try doctorIssues(from: data, loginShellPATHAvailable: false)
 
-    #expect(issues.map(\.kind) == ["hardening_not_applied", "login_shell_path_unavailable"])
-}
-
-@Test func loginShellPATHUsesLastAbsoluteLine() {
-    #expect(loginShellPATH(from: Data("startup noise\n/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\u{07}/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh/usr/bin:/bin\n".utf8)) == nil)
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\n/usr/bin:/bin\n".utf8)) == nil)
+    #expect(issues.map(\.kind) == ["hardening_not_applied"])
 }
 
 @Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {
@@ -182,6 +184,15 @@ import Testing
     ))
 
     #expect(try doctorIssues(from: data).isEmpty)
+}
+
+@Test func doctorLoadFailureIsReportedDirectly() {
+    let issues = loadDoctorIssues(
+        avExecutableURL: URL(fileURLWithPath: "/no/such/automic-vault-av")
+    )
+
+    #expect(issues.map(\.kind) == ["doctor_unavailable"])
+    #expect(issues.first?.message == "Doctor results are unavailable")
 }
 
 @Test func detectorDocumentationReferencesHardenerCommand() {
