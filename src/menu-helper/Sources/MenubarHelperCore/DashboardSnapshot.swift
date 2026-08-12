@@ -777,13 +777,14 @@ public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = 
         }
     }
     guard !loginShellPATHAvailable else { return issues }
-    issues.removeAll { $0.kind == "stub_not_first_on_path" }
-    issues.append(DoctorIssue(
-        hardener: "PATH",
-        kind: "login_shell_path_unavailable",
-        message: "PATH inspection is unavailable in the menu bar app",
-        remediation: "Run `av doctor` from a login shell to inspect PATH."
-    ))
+    issues.removeAll {
+        [
+            "agent_cli_signature_invalid",
+            "agent_cli_unavailable",
+            "isotope_not_first_on_path",
+            "stub_not_first_on_path",
+        ].contains($0.kind)
+    }
     return issues
 }
 
@@ -1803,12 +1804,7 @@ public func loadDoctorIssues(avExecutableURL: URL) -> [DoctorIssue] {
     )
     return data.flatMap {
         try? doctorIssues(from: $0, loginShellPATHAvailable: false)
-    } ?? [DoctorIssue(
-        hardener: "PATH",
-        kind: "login_shell_path_unavailable",
-        message: "PATH inspection is unavailable in the menu bar app",
-        remediation: "Run `av doctor` from a login shell to inspect PATH."
-    )]
+    } ?? []
 }
 
 func loadJSON(
