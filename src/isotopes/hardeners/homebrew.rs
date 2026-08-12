@@ -24,8 +24,8 @@ const BREW_USER_UID_FILE: &str = "var/automic/user-uid";
 const LEGACY_CASK_USER_UID_FILE: &str = "var/automic/cask-user-uid";
 const STUB_MARKER_PREFIX: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V";
 #[cfg(test)]
-const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V17";
-const STUB_VERSION: u32 = 17;
+const STUB_MARKER: &[u8] = b"AUTOMIC_VAULT_BREW_STUB_V18";
+const STUB_VERSION: u32 = 18;
 const ID_RANGE: std::ops::RangeInclusive<u32> = 550..=599;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,11 +48,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     writeln!(stdout, "╭─ harden brew").ok();
     writeln!(stdout, "│").ok();
-    writeln!(
-        stdout,
-        "◆ casks are (mostly) UNSUPPORTED"
-    )
-    .ok();
+    writeln!(stdout, "◆ casks are (mostly) UNSUPPORTED").ok();
     writeln!(
         stdout,
         "│  Casks can modify applications, system libraries, services, and user data."
@@ -63,11 +59,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         "│  Only CLI-only casks that link protected executables into /opt/homebrew/bin are allowed."
     )
     .ok();
-    writeln!(
-        stdout,
-        "◆ `brew services` is UNSUPPORTED"
-    )
-    .ok();
+    writeln!(stdout, "◆ `brew services` is UNSUPPORTED").ok();
     writeln!(stdout, "│").ok();
     writeln!(
         stdout,
@@ -1521,7 +1513,7 @@ mod tests {
         assert!(is_managed_stub_file(&path));
         assert!(!stub_is_current(&path));
 
-        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V18 future").unwrap();
+        fs::write(&path, b"AUTOMIC_VAULT_BREW_STUB_V19 future").unwrap();
         assert!(stub_is_current(&path));
 
         for invalid in [

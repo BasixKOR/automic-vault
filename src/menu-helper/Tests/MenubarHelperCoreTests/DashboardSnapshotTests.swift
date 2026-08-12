@@ -165,13 +165,8 @@ import Testing
     let issues = try doctorIssues(from: data, loginShellPATHAvailable: false)
 
     #expect(issues.map(\.kind) == ["hardening_not_applied", "login_shell_path_unavailable"])
-}
-
-@Test func loginShellPATHUsesLastAbsoluteLine() {
-    #expect(loginShellPATH(from: Data("startup noise\n/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\u{07}/usr/bin:/bin\n".utf8)) == "/usr/bin:/bin")
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh/usr/bin:/bin\n".utf8)) == nil)
-    #expect(loginShellPATH(from: Data("\u{1B}]0;zsh\n/usr/bin:/bin\n".utf8)) == nil)
+    #expect(issues.last?.message == "PATH inspection is unavailable in the menu bar app")
+    #expect(issues.last?.remediation == "Run `av doctor` from a login shell to inspect PATH.")
 }
 
 @Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {
