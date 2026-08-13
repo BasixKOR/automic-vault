@@ -36,6 +36,12 @@ struct BlessedScriptReviewRequest: Sendable {
     let launcher: BlessedScriptLauncher?
 }
 
+enum BlessedScriptReviewOutcome: Sendable {
+    case approved
+    case denied
+    case failed(String)
+}
+
 @MainActor
 final class AutomicVaultMainWindowController: NSHostingController<DashboardRootView> {
     private let model = DashboardModel()
@@ -79,7 +85,7 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
 
     func reviewBlessing(
         _ request: BlessedScriptReviewRequest,
-        completion: @escaping (String?) -> Void
+        completion: @escaping (BlessedScriptReviewOutcome) -> Void
     ) {
         model.reviewBlessing(request, completion: completion)
     }
@@ -148,7 +154,7 @@ final class DashboardModel: ObservableObject {
 
     private var reloadTask: Task<Void, Never>?
     private var detectorFindingsGeneration = 0
-    private var blessingCompletion: ((String?) -> Void)?
+    private var blessingCompletion: ((BlessedScriptReviewOutcome) -> Void)?
 
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
@@ -356,10 +362,10 @@ final class DashboardModel: ObservableObject {
 
     func reviewBlessing(
         _ request: BlessedScriptReviewRequest,
-        completion: @escaping (String?) -> Void
+        completion: @escaping (BlessedScriptReviewOutcome) -> Void
     ) {
         guard pendingBlessing == nil else {
-            completion("another script blessing is already awaiting review")
+            completion(.failed("another script blessing is already awaiting review"))
             return
         }
         pendingBlessing = request
@@ -394,14 +400,14 @@ final class DashboardModel: ObservableObject {
             errorMessage = "Could not bless script: \(status)"
             return
         }
-        finishPendingBlessing(nil)
+        finishPendingBlessing(.approved)
         selectedItemID = script.path
         reload()
     }
 
     func cancelPendingBlessing() {
         guard pendingBlessing != nil else { return }
-        finishPendingBlessing("script blessing was cancelled")
+        finishPendingBlessing(.denied)
     }
 
     func addAppToPendingBlessing() {
@@ -482,12 +488,12 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    private func finishPendingBlessing(_ error: String?) {
+    private func finishPendingBlessing(_ outcome: BlessedScriptReviewOutcome) {
         let completion = blessingCompletion
         blessingCompletion = nil
         pendingBlessing = nil
         pendingBlessingLaunchers = []
-        completion?(error)
+        completion?(outcome)
     }
 
     private func chooseLauncherApp(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {

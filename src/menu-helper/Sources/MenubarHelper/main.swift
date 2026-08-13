@@ -268,18 +268,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return recorded
             } onBlessRequest: { [weak self] request, completion in
                 guard let self else {
-                    completion("Automic Vault is unavailable")
+                    completion(.failed("Automic Vault is unavailable"))
                     return
                 }
                 guard !self.isUpdating else {
-                    completion("Automic Vault is updating")
+                    completion(.failed("Automic Vault is updating"))
                     return
                 }
                 self.showMainWindow(secretGateID: nil)
                 guard let controller = self.mainWindow?.contentViewController
                     as? AutomicVaultMainWindowController
                 else {
-                    completion("Automic Vault could not open the blessing review")
+                    completion(.failed("Automic Vault could not open the blessing review"))
                     return
                 }
                 controller.reviewBlessing(request, completion: completion)
@@ -1485,6 +1485,16 @@ func performInAppSecretMutation(
 
 private let humanApprovalRequiredEvent = "human-approval-required"
 
+private func blessingReply(
+    for outcome: BlessedScriptReviewOutcome
+) -> (ok: Bool, error: String?, humanApprovalDecision: String?) {
+    switch outcome {
+    case .approved: (true, nil, "approved")
+    case .denied: (false, "script blessing denied", "denied")
+    case .failed(let error): (false, error, nil)
+    }
+}
+
 private func approvalEvent(
     for cachedDecision: ApprovalDecision?,
     humanApprovalAvailable: Bool = true
@@ -1781,7 +1791,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
     private let onBlessRequest: @MainActor (
         BlessedScriptReviewRequest,
-        @escaping (String?) -> Void
+        @escaping (BlessedScriptReviewOutcome) -> Void
     ) -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
@@ -1801,8 +1811,8 @@ private final class ApprovalServer: @unchecked Sendable {
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
             BlessedScriptReviewRequest,
-            @escaping (String?) -> Void
-        ) -> Void = { _, completion in completion("script blessing is unavailable") },
+            @escaping (BlessedScriptReviewOutcome) -> Void
+        ) -> Void = { _, completion in completion(.failed("script blessing is unavailable")) },
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -2959,8 +2969,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "user approval is unavailable")
                 return
             }
-            self.onBlessRequest(request) { error in
-                self.reply(peer, to: message, ok: error == nil, error: error)
+            self.sendEvent(humanApprovalRequiredEvent, to: peer)
+            self.onBlessRequest(request) { outcome in
+                let reply = blessingReply(for: outcome)
+                self.reply(
+                    peer,
+                    to: message,
+                    ok: reply.ok,
+                    error: reply.error,
+                    humanApprovalDecision: reply.humanApprovalDecision
+                )
             }
         }
     }
@@ -5668,6 +5686,20 @@ private func runSecretMutationSelfCheck() -> Int32 {
 
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
+    let approvedBlessing = blessingReply(for: .approved)
+    let deniedBlessing = blessingReply(for: .denied)
+    let failedBlessing = blessingReply(for: .failed("failed"))
+    guard approvedBlessing.ok,
+          approvedBlessing.error == nil,
+          approvedBlessing.humanApprovalDecision == "approved",
+          !deniedBlessing.ok,
+          deniedBlessing.error == "script blessing denied",
+          deniedBlessing.humanApprovalDecision == "denied",
+          !failedBlessing.ok,
+          failedBlessing.error == "failed",
+          failedBlessing.humanApprovalDecision == nil
+    else { return 1 }
+
     let cancellation = ApprovalCancellation()
     guard isApprovalCancellationEvent(XPC_ERROR_CONNECTION_INTERRUPTED),
           isApprovalCancellationEvent(XPC_ERROR_CONNECTION_INVALID),

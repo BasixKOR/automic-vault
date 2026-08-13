@@ -196,8 +196,23 @@ fn xpc_request(
         return Err("Automic Vault approval did not reply".into());
     }
 
+    let reply_is_error =
+        unsafe { xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() };
+    if !reply_is_error {
+        let human_approval_decision = unsafe {
+            xpc_dictionary_get_string(reply, b"human_approval_decision\0".as_ptr().cast())
+        };
+        if !human_approval_decision.is_null() {
+            if let Some(decision) = unsafe {
+                human_approval_message(std::ffi::CStr::from_ptr(human_approval_decision).to_bytes())
+            } {
+                eprintln!("automic vault: {decision}");
+            }
+        }
+    }
+
     let result = unsafe {
-        if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
+        if reply_is_error {
             let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
             let error = if error.is_null() {
                 "approval XPC connection failed".into()
@@ -251,6 +266,14 @@ fn xpc_request(
     result
 }
 
+fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
+    match decision {
+        b"approved" => Some("approved"),
+        b"denied" => Some("denied"),
+        _ => None,
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 fn xpc_request(
     _operation: &str,
@@ -259,4 +282,16 @@ fn xpc_request(
     _bool_field: Option<&'static [u8]>,
 ) -> Result<XpcReply, String> {
     Err("the Automic Vault menu bar approval service is only available on macOS".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_only_known_human_approval_decisions() {
+        assert_eq!(human_approval_message(b"approved"), Some("approved"));
+        assert_eq!(human_approval_message(b"denied"), Some("denied"));
+        assert_eq!(human_approval_message(b"unexpected"), None);
+    }
 }
