@@ -21,14 +21,21 @@ public struct ICloudApprovalRootKey: Sendable {
     public init() {}
 
     public func loadOrCreate() throws -> Data {
-        switch load() {
+        switch read() {
         case .success(let key): return key
         case .failure(.unavailable(errSecItemNotFound)):
             let key = try generate()
             let status = add(key)
             if status == errSecSuccess { return key }
-            if status == errSecDuplicateItem, case .success(let winner) = load() { return winner }
+            if status == errSecDuplicateItem, case .success(let winner) = read() { return winner }
             throw ICloudApprovalRootKeyError.unavailable(status)
+        case .failure(let error): throw error
+        }
+    }
+
+    public func load() throws -> Data {
+        switch read() {
+        case .success(let key): key
         case .failure(let error): throw error
         }
     }
@@ -46,13 +53,13 @@ public struct ICloudApprovalRootKey: Sendable {
         } else if status != errSecSuccess {
             throw ICloudApprovalRootKeyError.unavailable(status)
         }
-        guard case .success(let stored) = load(), stored == key else {
+        guard case .success(let stored) = read(), stored == key else {
             throw ICloudApprovalRootKeyError.invalidKey
         }
         return key
     }
 
-    private func load() -> Result<Data, ICloudApprovalRootKeyError> {
+    private func read() -> Result<Data, ICloudApprovalRootKeyError> {
         var query = primaryKey
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne

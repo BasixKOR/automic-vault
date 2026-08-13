@@ -11,8 +11,11 @@ use ring::rand::SystemRandom;
 use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, mpsc};
@@ -24,12 +27,15 @@ const RECENT_REGISTRATION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 #[derive(Clone)]
 struct RelayState {
     rooms: Arc<Mutex<HashMap<String, Room>>>,
+    revoked_rooms: Arc<Mutex<HashSet<String>>>,
+    revocation_path: Arc<PathBuf>,
     apns: Option<ApnsClient>,
 }
 
 struct Room {
     credential: String,
     sender: broadcast::Sender<RoomMessage>,
+    shutdown: broadcast::Sender<()>,
     registrations: HashMap<String, Registration>,
 }
 
@@ -86,8 +92,17 @@ struct ApnsClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = env::var("AV_APPROVAL_RELAY_BIND").unwrap_or_else(|_| "127.0.0.1:8788".into());
+    let revocation_path = env::var_os("AV_APPROVAL_RELAY_REVOCATIONS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/var/lib/av-approval-relay/revoked-rooms"));
+    if let Some(parent) = revocation_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let revoked_rooms = load_revoked_rooms(&revocation_path)?;
     let state = RelayState {
         rooms: Arc::new(Mutex::new(HashMap::new())),
+        revoked_rooms: Arc::new(Mutex::new(revoked_rooms)),
+        revocation_path: Arc::new(revocation_path),
         apns: ApnsClient::from_environment()?,
     };
     let listener = tokio::net::TcpListener::bind(&bind).await?;
@@ -106,6 +121,7 @@ fn router(state: RelayState) -> Router {
         .route("/v1/request/{room}/{peer}", post(publish))
         .route("/v1/register/{room}/{device}", put(register))
         .route("/v1/registrations/{room}", get(registration_status))
+        .route("/v1/room/{room}", axum::routing::delete(revoke_room))
         .layer(DefaultBodyLimit::max(MAX_MESSAGE_BYTES))
         .with_state(state)
 }
@@ -120,13 +136,23 @@ impl RelayState {
         if !valid_identifier(room_id) {
             return Err(StatusCode::BAD_REQUEST);
         }
+        if self
+            .revoked_rooms
+            .lock()
+            .expect("revoked rooms lock poisoned")
+            .contains(room_id)
+        {
+            return Err(StatusCode::GONE);
+        }
         let credential = bearer_credential(headers).ok_or(StatusCode::UNAUTHORIZED)?;
         let mut rooms = self.rooms.lock().expect("rooms lock poisoned");
         let room = rooms.entry(room_id.to_owned()).or_insert_with(|| {
             let (sender, _) = broadcast::channel(1024);
+            let (shutdown, _) = broadcast::channel(1);
             Room {
                 credential: credential.to_owned(),
                 sender,
+                shutdown,
                 registrations: HashMap::new(),
             }
         });
@@ -146,15 +172,22 @@ async fn connect(
     if !valid_peer_id(&peer_id) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let sender = match state.authorize(&room_id, &headers, |room| room.sender.clone()) {
-        Ok(sender) => sender,
+    let channels = match state.authorize(&room_id, &headers, |room| {
+        (room.sender.clone(), room.shutdown.subscribe())
+    }) {
+        Ok(channels) => channels,
         Err(status) => return status.into_response(),
     };
     ws.max_message_size(MAX_MESSAGE_BYTES)
-        .on_upgrade(move |socket| relay_socket(socket, sender, peer_id))
+        .on_upgrade(move |socket| relay_socket(socket, channels.0, channels.1, peer_id))
 }
 
-async fn relay_socket(socket: WebSocket, sender: broadcast::Sender<RoomMessage>, peer_id: String) {
+async fn relay_socket(
+    socket: WebSocket,
+    sender: broadcast::Sender<RoomMessage>,
+    mut shutdown: broadcast::Receiver<()>,
+    peer_id: String,
+) {
     let mut receiver = sender.subscribe();
     let (mut websocket_sender, mut websocket_receiver) = socket.split();
     let (control_sender, mut control_receiver) = mpsc::unbounded_channel();
@@ -199,7 +232,53 @@ async fn relay_socket(socket: WebSocket, sender: broadcast::Sender<RoomMessage>,
             }
         }
     };
-    tokio::select! { _ = incoming => {}, _ = outgoing => {} }
+    tokio::select! { _ = incoming => {}, _ = outgoing => {}, _ = shutdown.recv() => {} }
+}
+
+async fn revoke_room(
+    Path(room_id): Path<String>,
+    State(state): State<RelayState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, StatusCode> {
+    if !valid_identifier(&room_id) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let credential = bearer_credential(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    if state
+        .revoked_rooms
+        .lock()
+        .expect("revoked rooms lock poisoned")
+        .contains(&room_id)
+    {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    let shutdown = {
+        let rooms = state.rooms.lock().expect("rooms lock poisoned");
+        if let Some(room) = rooms.get(&room_id) {
+            if room.credential != credential {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+            Some(room.shutdown.clone())
+        } else {
+            None
+        }
+    };
+    append_revocation(&state.revocation_path, &room_id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state
+        .revoked_rooms
+        .lock()
+        .expect("revoked rooms lock poisoned")
+        .insert(room_id.clone());
+    state
+        .rooms
+        .lock()
+        .expect("rooms lock poisoned")
+        .remove(&room_id);
+    if let Some(shutdown) = shutdown {
+        let _ = shutdown.send(());
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn send(
@@ -275,6 +354,10 @@ async fn register(
     if !valid_device_token(&request.token) || !valid_identifier(&request.proof) {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let apns = state.apns.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    apns.validate(&request.token, request.environment)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
     state.authorize(&room_id, &headers, |room| {
         room.registrations.insert(
             device_id,
@@ -367,6 +450,29 @@ impl ApnsClient {
         }
     }
 
+    async fn validate(&self, token: &str, environment: ApnsEnvironment) -> Result<(), ()> {
+        let host = match environment {
+            ApnsEnvironment::Sandbox => "https://api.sandbox.push.apple.com",
+            ApnsEnvironment::Production => "https://api.push.apple.com",
+        };
+        let response = self
+            .client
+            .post(format!("{host}/3/device/{token}"))
+            .bearer_auth(self.bearer_token().map_err(|_| ())?)
+            .header("apns-topic", self.topic.as_ref())
+            .header("apns-push-type", "background")
+            .header("apns-priority", "5")
+            .json(&json!({ "aps": { "content-available": 1 } }))
+            .send()
+            .await
+            .map_err(|_| ())?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     fn bearer_token(&self) -> Result<String, ()> {
         let mut cached = self.token.lock().map_err(|_| ())?;
         if let Some((created, token)) = cached.as_ref()
@@ -429,6 +535,33 @@ fn unix_milliseconds() -> u64 {
         .as_millis() as u64
 }
 
+fn load_revoked_rooms(path: &PathBuf) -> std::io::Result<HashSet<String>> {
+    let contents = match std::fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashSet::new()),
+        Err(error) => return Err(error),
+    };
+    contents
+        .lines()
+        .map(|line| {
+            if valid_identifier(line) {
+                Ok(line.to_owned())
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid revoked room identifier",
+                ))
+            }
+        })
+        .collect()
+}
+
+fn append_revocation(path: &PathBuf, room_id: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{room_id}")?;
+    file.sync_data()
+}
+
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
@@ -445,5 +578,18 @@ mod tests {
         assert!(!valid_peer_id("two phones"));
         assert!(valid_device_token(&"0a".repeat(32)));
         assert!(!valid_device_token(&"zz".repeat(32)));
+    }
+
+    #[test]
+    fn revoked_rooms_are_strict_and_durable() {
+        let path = std::env::temp_dir().join(format!(
+            "av-approval-relay-revocations-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let room = "r".repeat(43);
+        append_revocation(&path, &room).unwrap();
+        assert_eq!(load_revoked_rooms(&path).unwrap(), HashSet::from([room]));
+        std::fs::remove_file(path).unwrap();
     }
 }

@@ -118,6 +118,13 @@ public actor ApprovalRelayClient {
         return try JSONDecoder().decode(ApprovalRegistrationStatus.self, from: data)
     }
 
+    public func revokeRoom() async throws {
+        var request = authorizedRequest(url: endpoint.appending(path: ["v1", "room", address.room]))
+        request.httpMethod = "DELETE"
+        let (_, response) = try await session.data(for: request)
+        try validate(response, accepted: 204)
+    }
+
     public func openNotification(_ data: Data) throws -> PhoneApprovalTicket {
         let envelope = try JSONDecoder().decode(ApprovalCiphertext.self, from: data)
         return try JSONDecoder().decode(

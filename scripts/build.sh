@@ -97,6 +97,7 @@ MENU_HELPER_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/Automic_Va
 MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
 SIGNED_MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/signed-menu-helper.entitlements.plist"
 PRIVATE_KEYCHAIN_ACCESS_GROUP="ZU76A67LGU.com.automicvault"
+APPROVAL_KEYCHAIN_ACCESS_GROUP="ZU76A67LGU.com.automicvault.approval"
 INSTALLED_APP="/Applications/Automic Vault.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -141,8 +142,8 @@ assert_private_keychain_entitlement() {
     echo "error: menu bar app must not have a wildcard Keychain access group" >&2
     exit 1
   fi
-  if [[ "$groups" != "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\"]" ]]; then
-    echo "error: menu bar app must have exactly $PRIVATE_KEYCHAIN_ACCESS_GROUP; found $groups" >&2
+  if [[ "$groups" != "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\",\"$APPROVAL_KEYCHAIN_ACCESS_GROUP\"]" ]]; then
+    echo "error: menu bar app must have exactly its Secret and Approval Keychain groups; found $groups" >&2
     exit 1
   fi
 }
@@ -252,7 +253,7 @@ if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   security cms -D -i "$MENU_HELPER_PROFILE" |
     plutil -extract Entitlements xml1 -o "$MENU_HELPER_ENTITLEMENTS" -
   plutil -replace keychain-access-groups -json \
-    "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\"]" \
+    "[\"$PRIVATE_KEYCHAIN_ACCESS_GROUP\",\"$APPROVAL_KEYCHAIN_ACCESS_GROUP\"]" \
     "$MENU_HELPER_ENTITLEMENTS"
   app_codesign_args+=(--entitlements "$MENU_HELPER_ENTITLEMENTS")
 fi

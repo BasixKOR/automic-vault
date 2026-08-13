@@ -44,6 +44,17 @@ import Testing
     #expect(crypto.registrationProof(deviceID: "a") != crypto.registrationProof(deviceID: "b"))
 }
 
+@Test func presenceAndSyncRoundTrip() throws {
+    let messages: [ApprovalWireMessage] = [
+        .sync,
+        .presence(try ApprovalMacPresence(macID: "mac", macName: "Studio", sentAtMilliseconds: 42)),
+    ]
+    for message in messages {
+        let data = try JSONEncoder().encode(message)
+        #expect(try JSONDecoder().decode(ApprovalWireMessage.self, from: data) == message)
+    }
+}
+
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
     command: String

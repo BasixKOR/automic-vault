@@ -17,11 +17,11 @@ final class NotificationService: UNNotificationServiceExtension {
         do {
             let data = try JSONSerialization.data(withJSONObject: value)
             let envelope = try JSONDecoder().decode(ApprovalCiphertext.self, from: data)
-            let key = try ICloudApprovalRootKey().loadOrCreate()
+            let key = try ICloudApprovalRootKey().load()
             let plaintext = try ApprovalCrypto(rootKeyData: key).open(envelope, purpose: "notification")
             let ticket = try JSONDecoder().decode(PhoneApprovalTicket.self, from: plaintext)
-            content.title = "Approval from \(ticket.macName)"
-            content.body = "\(ticket.launcher) wants to run \(ticket.tool)."
+            content.title = "Approval waiting"
+            content.body = "Review the full request on your Mac or open Automic Vault."
             content.categoryIdentifier = ticket.requiresFullReview ? "AV_REVIEW" : "AV_ROUTINE"
             contentHandler(content)
             handler = nil

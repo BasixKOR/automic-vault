@@ -68,8 +68,18 @@ final class ApprovalAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
             options: [.foreground, .authenticationRequired]
         )
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: "AV_ROUTINE", actions: [deny, approve], intentIdentifiers: []),
-            UNNotificationCategory(identifier: "AV_REVIEW", actions: [deny, review], intentIdentifiers: []),
+            UNNotificationCategory(
+                identifier: "AV_ROUTINE",
+                actions: [deny, approve],
+                intentIdentifiers: [],
+                hiddenPreviewsBodyPlaceholder: "Approval details hidden"
+            ),
+            UNNotificationCategory(
+                identifier: "AV_REVIEW",
+                actions: [deny, review],
+                intentIdentifiers: [],
+                hiddenPreviewsBodyPlaceholder: "Approval details hidden"
+            ),
         ])
     }
 }
@@ -91,6 +101,7 @@ final class ApprovalModel {
     }
 
     private(set) var pending: [PhoneApprovalRequest] = []
+    private(set) var connectedMacs: [String: String] = [:]
     private(set) var state: ConnectionState = .setup
     var errorMessage: String?
     var biometricProtectionEnabled = UserDefaults.standard.bool(forKey: biometricDefaultsKey) {
@@ -106,6 +117,8 @@ final class ApprovalModel {
     private var deviceToken: Data?
     private var receiveTask: Task<Void, Never>?
     private var started = false
+    private var isConnecting = false
+    private var reconnectDelay: UInt64 = 1
 
     private init() {
         if let existing = UserDefaults.standard.string(forKey: "approvalDeviceID") {
@@ -173,7 +186,13 @@ final class ApprovalModel {
 
     func setBiometricProtection(_ enabled: Bool) async {
         guard enabled != biometricProtectionEnabled else { return }
-        guard await authenticateBiometrically() else { return }
+        let authenticated: Bool
+        if enabled {
+            authenticated = await authenticateBiometrically()
+        } else {
+            authenticated = await authenticateSecuritySettingChange()
+        }
+        guard authenticated else { return }
         biometricProtectionEnabled = enabled
     }
 
@@ -191,10 +210,12 @@ final class ApprovalModel {
     }
 
     private func connect() async {
-        guard receiveTask == nil, let endpoint else {
+        guard !isConnecting, receiveTask == nil, let endpoint else {
             if endpoint == nil { state = .unavailable("The Approval relay URL is invalid.") }
             return
         }
+        isConnecting = true
+        defer { isConnecting = false }
         do {
             state = .connecting
             let key = try ICloudApprovalRootKey().loadOrCreate()
@@ -202,10 +223,14 @@ final class ApprovalModel {
             try await relay.connect(peerID: "phone-\(deviceID)")
             self.relay = relay
             state = .connected
+            try await relay.send(.sync)
+            reconnectDelay = 1
             await registerIfPossible()
             receiveTask = Task { [weak self] in await self?.receive(relay) }
         } catch {
-            state = .unavailable(error.localizedDescription)
+            if let relay { await relay.disconnect() }
+            relay = nil
+            scheduleReconnect("Relay unavailable: \(error.localizedDescription)")
         }
     }
 
@@ -234,10 +259,16 @@ final class ApprovalModel {
                     pending.removeAll { $0.id == response.requestID }
                 case .cancel(let requestID):
                     pending.removeAll { $0.id == requestID }
+                case .presence(let presence):
+                    connectedMacs[presence.macID] = presence.macName
+                case .sync:
+                    break
                 }
             } catch {
-                state = .unavailable("Relay disconnected. Reopen the app to reconnect.")
+                await relay.disconnect()
+                self.relay = nil
                 receiveTask = nil
+                scheduleReconnect("Relay disconnected. Reconnecting automatically…")
                 return
             }
         }
@@ -276,7 +307,7 @@ final class ApprovalModel {
             guard let value = userInfo["av"] else { return nil }
             let data = try JSONSerialization.data(withJSONObject: value)
             let envelope = try JSONDecoder().decode(ApprovalCiphertext.self, from: data)
-            let key = try ICloudApprovalRootKey().loadOrCreate()
+            let key = try ICloudApprovalRootKey().load()
             let plaintext = try ApprovalCrypto(rootKeyData: key).open(envelope, purpose: "notification")
             return try JSONDecoder().decode(PhoneApprovalTicket.self, from: plaintext)
         } catch {
@@ -301,6 +332,28 @@ final class ApprovalModel {
         } catch {
             errorMessage = "Approval was not authenticated."
             return false
+        }
+    }
+
+    private func authenticateSecuritySettingChange() async -> Bool {
+        do {
+            return try await LAContext().evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Turn off biometric protection for future Approvals"
+            )
+        } catch {
+            errorMessage = "The security setting was not changed."
+            return false
+        }
+    }
+
+    private func scheduleReconnect(_ message: String) {
+        state = .unavailable(message)
+        let delay = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 2, 30)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            await self?.connect()
         }
     }
 }

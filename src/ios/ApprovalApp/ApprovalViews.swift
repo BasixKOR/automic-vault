@@ -58,7 +58,10 @@ struct ApprovalRootView: View {
         switch model.state {
         case .setup: "Enable notifications to receive Approval requests."
         case .connecting: "Connecting to your Macs…"
-        case .connected: "Connected. Requests from enrolled Macs will appear here."
+        case .connected where model.connectedMacs.isEmpty:
+            "Connected. Waiting to hear from an enrolled Mac."
+        case .connected:
+            "Connected Macs: \(model.connectedMacs.values.sorted().joined(separator: ", "))."
         case .unavailable(let reason): reason
         }
     }
@@ -111,6 +114,11 @@ struct ApprovalDetailView: View {
                 }
                 LabeledContent("Working Directory", value: request.cwd)
                 LabeledContent("Secrets", value: request.secretNames.joined(separator: ", "))
+                HStack {
+                    Text("Requested").foregroundStyle(.secondary)
+                    Spacer()
+                    Text(Date(timeIntervalSince1970: TimeInterval(request.createdAtMilliseconds) / 1_000), style: .relative)
+                }
 
                 Label(request.reason, systemImage: request.requiresFullReview ? "exclamationmark.shield.fill" : "shield")
                     .foregroundStyle(request.requiresFullReview ? .orange : .primary)

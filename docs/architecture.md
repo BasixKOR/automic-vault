@@ -367,7 +367,9 @@ the Mac wins; stale, modified, replayed, or mismatched responses are rejected.
 
 The relay may observe opaque routing identifiers, ciphertext size, timing,
 delivery status, and APNs device tokens required for delivery. It cannot read or
-forge Authorization Requests or responses. It stores no request history.
+forge Authorization Requests or responses. It stores no request history. It
+durably retains only opaque revoked room identifiers so emergency recovery
+continues to invalidate old keys after a relay restart.
 Pending requests remain authoritative on their Macs and are republished after a
 relay reconnect. A relay restart may delay an Approval and may lose an
 unacknowledged response; either case fails closed.

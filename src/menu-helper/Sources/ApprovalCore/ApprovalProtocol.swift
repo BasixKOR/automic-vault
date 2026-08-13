@@ -276,13 +276,32 @@ public struct PhoneApprovalTicket: Codable, Equatable, Sendable {
     }
 }
 
+public struct ApprovalMacPresence: Codable, Equatable, Sendable {
+    public let macID: String
+    public let macName: String
+    public let sentAtMilliseconds: UInt64
+
+    public init(
+        macID: String,
+        macName: String,
+        sentAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
+    ) throws {
+        guard !macID.isEmpty, !macName.isEmpty else { throw ApprovalProtocolError.invalidRequest }
+        self.macID = macID
+        self.macName = macName
+        self.sentAtMilliseconds = sentAtMilliseconds
+    }
+}
+
 public enum ApprovalWireMessage: Codable, Equatable, Sendable {
     case request(PhoneApprovalRequest)
     case response(PhoneApprovalResponse)
     case cancel(UUID)
+    case sync
+    case presence(ApprovalMacPresence)
 
-    private enum CodingKeys: String, CodingKey { case kind, request, response, requestID }
-    private enum Kind: String, Codable { case request, response, cancel }
+    private enum CodingKeys: String, CodingKey { case kind, request, response, requestID, presence }
+    private enum Kind: String, Codable { case request, response, cancel, sync, presence }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -290,6 +309,8 @@ public enum ApprovalWireMessage: Codable, Equatable, Sendable {
         case .request: self = .request(try values.decode(PhoneApprovalRequest.self, forKey: .request))
         case .response: self = .response(try values.decode(PhoneApprovalResponse.self, forKey: .response))
         case .cancel: self = .cancel(try values.decode(UUID.self, forKey: .requestID))
+        case .sync: self = .sync
+        case .presence: self = .presence(try values.decode(ApprovalMacPresence.self, forKey: .presence))
         }
     }
 
@@ -305,6 +326,11 @@ public enum ApprovalWireMessage: Codable, Equatable, Sendable {
         case .cancel(let requestID):
             try values.encode(Kind.cancel, forKey: .kind)
             try values.encode(requestID, forKey: .requestID)
+        case .sync:
+            try values.encode(Kind.sync, forKey: .kind)
+        case .presence(let presence):
+            try values.encode(Kind.presence, forKey: .kind)
+            try values.encode(presence, forKey: .presence)
         }
     }
 }

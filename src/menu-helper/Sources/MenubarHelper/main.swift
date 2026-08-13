@@ -1,5 +1,6 @@
 import AppKit
 import AppUpdater
+import ApprovalCore
 import CProcessInfo
 import CoreServices
 import CryptoKit
@@ -330,6 +331,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } onLiveSecretUsesChanged: { [weak self] in
                 self?.refreshLiveSecretUses()
             } canRequestHumanApproval: { [weak self] in
+                PhoneApprovalCoordinator.shared.isEnabled
+                    || (self?.isUserSessionActive == true && self?.areScreensAwake == true)
+            } canRequestMacInput: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
             try approval.start()
@@ -2559,6 +2563,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let canRequestHumanApproval: @MainActor () -> Bool
     private let temporaryAccessGrants: TemporaryAccessGrantController
     private let liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>
+    private let canRequestMacInput: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
     private var transientApprovals = TransientApprovalCache()
@@ -2582,7 +2587,8 @@ private final class ApprovalServer: @unchecked Sendable {
         onOpenWindow: @escaping @MainActor () -> Void = {},
         onTemporaryAccessGrantsChanged: @escaping @MainActor () -> Void = {},
         onLiveSecretUsesChanged: @escaping @MainActor () -> Void = {},
-        canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
+        canRequestHumanApproval: @escaping @MainActor () -> Bool = { true },
+        canRequestMacInput: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
@@ -2601,6 +2607,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.onTemporaryAccessGrantsChanged = onTemporaryAccessGrantsChanged
         self.onLiveSecretUsesChanged = onLiveSecretUsesChanged
         self.canRequestHumanApproval = canRequestHumanApproval
+        self.canRequestMacInput = canRequestMacInput
     }
 
     func start() throws {
@@ -2889,7 +2896,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcher: launcher,
                 launcherFallbackPath: ancestorFallbackPath ?? callerPath,
                 automaticApprovalExplanation: nil,
-                allowsPersistentApproval: launcher.map { !$0.isStandalone } ?? false,
                 cancellation: cancellation
             )
             if decision == .canceled {
@@ -2910,30 +2916,12 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "list denied")
                 return
             }
-            if decision == .alwaysApproved, let launcher {
-                let status = allowSecretNameAccess(BlessedScriptLauncher(
-                    bundleIdentifier: launcher.identifier,
-                    requirement: launcher.designatedRequirement
-                ))
-                guard status == errSecSuccess else {
-                    _ = self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Failed",
-                        approvalSource: "Manual",
-                        reason: "Could not save persistent access: \(status)",
-                        launcher: launcher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: "failed to save list access: \(status)")
-                    return
-                }
-            }
             self.discloseSecretNames(
                 request: request,
                 callerPath: callerPath,
                 launcher: launcher,
                 approvalSource: "Manual",
-                reason: decision == .alwaysApproved ? "Always allowed in prompt" : "Allowed once in prompt",
+                reason: "Allowed once in prompt",
                 peer: peer,
                 message: message
             )
@@ -3461,11 +3449,12 @@ private final class ApprovalServer: @unchecked Sendable {
             promptBlessing = nil
         }
         let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
+        let usesIPhoneApproval = phoneApprovalIsEnabled()
         RunLoop.main.perform(inModes: [.modalPanel, .default]) {
             MainActor.assumeIsolated {
                 guard !cancellation.isCanceled,
                       let event = approvalEvent(
-                          for: requiresFreshApproval
+                          for: requiresFreshApproval || usesIPhoneApproval
                               ? nil
                               : self.transientApprovals.decision(for: transientApproval),
                           humanApprovalAvailable: self.canRequestHumanApproval()
@@ -3481,7 +3470,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            let cachedDecision = requiresFreshApproval
+            let cachedDecision = requiresFreshApproval || usesIPhoneApproval
                 ? nil
                 : self.transientApprovals.decision(for: transientApproval)
             if let decision = cachedDecision {
@@ -3566,6 +3555,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     ?? retainedProcessExplanation
                     ?? automaticApprovalExplanation,
                 temporaryGrantCandidate: temporaryGrantCandidate,
+                classification: classification,
                 cancellation: cancellation
             )
             if decision == .canceled {
@@ -3575,7 +3565,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             guard decision != .denied else {
-                if !requiresFreshApproval {
+                if !requiresFreshApproval && !usesIPhoneApproval {
                     self.transientApprovals.remember(.denied, for: transientApproval)
                 }
                 _ = self.onAccessRequest(accessRequestRecord(
@@ -3725,7 +3715,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 {
                     self.registerBlessedExecution(script, pid: pid, identity: identity)
                 }
-                if !requiresFreshApproval {
+                if !requiresFreshApproval && !usesIPhoneApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
                 self.recordLiveSecretUse(
@@ -5135,7 +5125,7 @@ private final class ApprovalServer: @unchecked Sendable {
 
     @MainActor
     private func requestMFACode(serial: String) throws -> String {
-        guard canRequestHumanApproval() else { throw AppError("AWS MFA unavailable while the user session is inactive") }
+        guard canRequestMacInput() else { throw AppError("AWS MFA unavailable while the user session is inactive") }
         let alert = NSAlert()
         alert.messageText = "AWS MFA required"
         alert.informativeText = "Enter the current code for \(serial). Automic Vault does not run mfa_process commands."
@@ -7209,6 +7199,7 @@ private func showApprovalAlert(
     automaticApprovalExplanation: String?,
     temporaryGrantCandidate: TemporaryAccessGrantCandidate? = nil,
     allowsPersistentApproval: Bool = false,
+    classification: SecretGateRequestClassification? = nil,
     cancellation: ApprovalCancellation? = nil
 ) -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
@@ -7248,7 +7239,10 @@ private func showApprovalAlert(
             receivedAt: receivedAt
         )
     )
+    let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
     var decision = ApprovalDecision.canceled
+    var remoteRequestID: UUID?
+    var completedBeforeModal = false
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = makeApprovalPanel()
     panel.contentView = NSHostingView(
@@ -7257,8 +7251,12 @@ private func showApprovalAlert(
             maximumHeight: maximumHeight,
             allowsPersistentApproval: allowsPersistentApproval,
             temporaryGrantCandidate: temporaryGrantCandidate,
+            usesIPhoneApproval: usesIPhoneApproval,
             decide: {
                 decision = $0
+                if usesIPhoneApproval, let remoteRequestID {
+                    PhoneApprovalCoordinator.shared.cancel(remoteRequestID)
+                }
                 #if !DEBUG
                 if decision == .approved || decision == .alwaysApproved {
                     PostHogTelemetry.shared.captureExplicitApproval()
@@ -7276,7 +7274,50 @@ private func showApprovalAlert(
             }
         )
     )
+    if usesIPhoneApproval {
+        do {
+            let phoneRequest = try PhoneApprovalRequest(
+                macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                launcher: content.requesterName,
+                tool: content.credentialConsumer,
+                command: content.command,
+                cwd: content.cwd,
+                secretNames: request.keys.sorted(),
+                reason: automaticApprovalExplanation
+                    ?? request.detail
+                    ?? request.title
+                    ?? "Human Approval is required.",
+                risks: phoneApprovalRisks(
+                    request: request,
+                    classification: classification,
+                    hasSecurityWarning: automaticApprovalExplanation != nil || blessing != nil
+                ),
+                details: content.sections.map { section in
+                    ApprovalDetailSection(
+                        title: section.title,
+                        rows: section.rows.map { .init(label: $0.label, value: $0.value) }
+                    )
+                }
+            )
+            remoteRequestID = phoneRequest.id
+            try PhoneApprovalCoordinator.shared.submit(phoneRequest) { result in
+                decision = switch result {
+                case .approved: .approved
+                case .denied: .denied
+                case .canceled: .canceled
+                }
+                if NSApp.modalWindow === panel {
+                    NSApp.stopModal()
+                } else {
+                    completedBeforeModal = true
+                }
+            }
+        } catch {
+            return .denied
+        }
+    }
     guard cancellation?.observe({ [weak panel] in
+        if let remoteRequestID { PhoneApprovalCoordinator.shared.cancel(remoteRequestID) }
         guard let panel, NSApp.modalWindow === panel else { return }
         NSApp.stopModal()
     }) != false else { return .canceled }
@@ -7286,9 +7327,25 @@ private func showApprovalAlert(
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
     panel.orderFrontRegardless()
-    NSApp.runModal(for: panel)
+    if !completedBeforeModal { NSApp.runModal(for: panel) }
     panel.orderOut(nil)
     return cancellation?.isCanceled == true ? .canceled : decision
+}
+
+private func phoneApprovalRisks(
+    request: ApprovalRequest,
+    classification: SecretGateRequestClassification?,
+    hasSecurityWarning: Bool
+) -> [ApprovalRisk] {
+    if hasSecurityWarning { return [.securityWarning] }
+    switch classification {
+    case .secretDump: return [.secretDisclosure]
+    case .unknown: return [.unknown]
+    case .readOnly, .localWrite, .update, .mutating: return [.routine]
+    case nil where request.op == "list": return [.secretDisclosure]
+    case nil where request.op == "inject": return [.unconstrainedSecretApplication]
+    case nil: return [.securityWarning]
+    }
 }
 
 private func approvalPromptRequester(
@@ -7578,6 +7635,7 @@ private struct ApprovalPromptView: View {
     var maximumHeight: CGFloat? = nil
     var allowsPersistentApproval = false
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
+    var usesIPhoneApproval = false
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
@@ -7678,55 +7736,66 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
-            HStack(spacing: 12) {
-                Button("Deny", role: .cancel) { decide(.denied) }
+            if usesIPhoneApproval {
+                Label("Waiting for iPhone Approval", systemImage: "iphone.and.arrow.forward")
+                    .font(.headline)
+                Button("Cancel Request", role: .cancel) { decide(.canceled) }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-                    .frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
-                Button("Approve Once") { decide(.approved) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.blue)
-                    .frame(maxWidth: .infinity)
-                    .keyboardShortcut(.defaultAction)
-                if allowsPersistentApproval {
-                    Button("Always Allow") { decide(.alwaysApproved) }
+            } else {
+                HStack(spacing: 12) {
+                    Button("Deny", role: .cancel) { decide(.denied) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                        .keyboardShortcut(.cancelAction)
+                    Button("Approve Once") { decide(.approved) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .tint(.blue)
                         .frame(maxWidth: .infinity)
-                }
-            }
-
-            if let candidate = temporaryGrantCandidate {
-                Button { decide(.temporaryWriteAccess) } label: {
-                    HStack {
-                        Image(systemName: "clock.badge.checkmark")
-                        Text("Allow Write Access for 10 Minutes…")
+                        .keyboardShortcut(.defaultAction)
+                    if allowsPersistentApproval {
+                        Button("Always Allow") { decide(.alwaysApproved) }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .tint(.blue)
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityLabel(
-                    "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
-                )
 
-                Text(
-                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+                if let candidate = temporaryGrantCandidate {
+                    Button { decide(.temporaryWriteAccess) } label: {
+                        HStack {
+                            Image(systemName: "clock.badge.checkmark")
+                            Text("Allow Write Access for 10 Minutes…")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityLabel(
+                        "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+                    )
 
+                    Text(
+                        "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                }
             }
 
-            Text(approvalPromptFooter(
-                supportsAutomicAuthorization: content.supportsAutomicAuthorization,
-                allowsPersistentApproval: allowsPersistentApproval
-            ))
+            Text(usesIPhoneApproval
+                ? "This Mac cannot approve while iPhone Approval is enabled."
+                : approvalPromptFooter(
+                    supportsAutomicAuthorization: content.supportsAutomicAuthorization,
+                    allowsPersistentApproval: allowsPersistentApproval
+                ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

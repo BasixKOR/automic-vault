@@ -30,7 +30,8 @@ Automic Vault provides opt-in iPhone Approval per Mac.
 - Requests live until the originating Gate Client cancels. Relay or phone
   unavailability leaves them pending and fails closed.
 - The Mac remains authoritative for pending requests and republishes them after
-  reconnect. The relay does not persist request contents.
+  reconnect. The relay does not persist request contents; it persists only
+  opaque revoked room identifiers required for durable emergency recovery.
 - Encrypted responses bind the complete immutable request. The first valid
   response wins; all later responses are stale.
 - Routine, completely verified requests may be approved from an authenticated

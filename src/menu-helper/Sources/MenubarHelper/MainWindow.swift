@@ -30,6 +30,14 @@ enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
     }
 }
 
+private extension SecretGateProtection {
+    func addsAuthority(over current: Self) -> Bool {
+        SecretGateRequestClassification.allCases.contains {
+            allows($0) && !current.allows($0)
+        }
+    }
+}
+
 struct BlessedScriptReviewRequest: Sendable {
     let path: String
     let declaration: BlessedScriptDeclaration
@@ -260,6 +268,14 @@ final class DashboardModel: ObservableObject {
         case .settings:
             [
                 DashboardItem(
+                    id: "iphone-approval",
+                    title: "iPhone Approval",
+                    subtitle: PhoneApprovalCoordinator.shared.isEnabled
+                        ? "All human Approvals use iPhone"
+                        : "Approve away from agents on this Mac",
+                    detail: "Move every human Approval for this Mac to iPhones on your iCloud Keychain account."
+                ),
+                DashboardItem(
                     id: "automatic-approval-feedback",
                     title: "Automic Authorization",
                     subtitle: "Choose subtle feedback or none",
@@ -432,14 +448,27 @@ final class DashboardModel: ObservableObject {
             capabilities: declaration.manifest.capabilities,
             launchers: pendingBlessingLaunchers
         )
-        let status = saveBlessedScript(script)
-        guard status == errSecSuccess else {
-            errorMessage = "Could not bless script: \(status)"
-            return
+        approveAuthorityChange(
+            "Bless \(URL(fileURLWithPath: script.path).lastPathComponent)",
+            detail: [
+                "Path: \(script.path)",
+                "Checksum: \(script.checksum)",
+                "Target: \(script.target)",
+                "Secret Names: \(script.keys.joined(separator: ", "))",
+                "Access: \(script.capabilities.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.title)" }.joined(separator: ", "))",
+                "Launchers: \(script.launchers.map(\.bundleIdentifier).joined(separator: ", "))",
+            ].joined(separator: "\n")
+        ) { [weak self] in
+            guard let self else { return }
+            let status = saveBlessedScript(script)
+            guard status == errSecSuccess else {
+                self.errorMessage = "Could not bless script: \(status)"
+                return
+            }
+            self.finishPendingBlessing(.approved)
+            self.selectedItemID = script.path
+            self.reload()
         }
-        finishPendingBlessing(.approved)
-        selectedItemID = script.path
-        reload()
     }
 
     func cancelPendingBlessing() {
@@ -477,17 +506,32 @@ final class DashboardModel: ObservableObject {
                 launchers: script.launchers + [launcher],
                 blessedAt: script.blessedAt
             )
-            self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+            self.approveAuthorityChange(
+                "Add \(launcher.bundleIdentifier) to a Blessing",
+                detail: [
+                    "Script: \(script.path)",
+                    "Checksum: \(script.checksum)",
+                    "Secret Names: \(script.keys.joined(separator: ", "))",
+                    "Access: \(script.capabilities.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.title)" }.joined(separator: ", "))",
+                ].joined(separator: "\n")
+            ) {
+                self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+            }
         }
     }
 
     func addSecretNameAccessApp() {
         chooseLauncherApp { [weak self] launcher in
             guard let self, let launcher else { return }
-            self.finishPolicyUpdate(
-                allowSecretNameAccess(launcher),
-                error: "Could not allow \(launcher.bundleIdentifier)"
-            )
+            self.approveAuthorityChange(
+                "Allow \(launcher.bundleIdentifier) to list Secret Names",
+                detail: "The verified Launcher may list every saved Secret Name without future Approval."
+            ) {
+                self.finishPolicyUpdate(
+                    allowSecretNameAccess(launcher),
+                    error: "Could not allow \(launcher.bundleIdentifier)"
+                )
+            }
         }
     }
 
@@ -723,14 +767,19 @@ final class DashboardModel: ObservableObject {
     }
 
     func addDirectAccessLauncher(_ selection: DirectAccessLauncherSelection, to secret: StoredSecret) {
-        finishPolicyUpdate(
-            allowDirectAccess(
-                to: secret.account,
-                for: selection.launcher,
-                runtimeRequirement: selection.runtimeRequirement
-            ),
-            error: "Could not allow \(selection.launcher.bundleIdentifier) to use \(secret.account)"
-        )
+        approveAuthorityChange(
+            "Allow direct access to \(secret.account)",
+            detail: "\(selection.launcher.bundleIdentifier) may use this Secret without future Approval."
+        ) { [weak self] in
+            self?.finishPolicyUpdate(
+                allowDirectAccess(
+                    to: secret.account,
+                    for: selection.launcher,
+                    runtimeRequirement: selection.runtimeRequirement
+                ),
+                error: "Could not allow \(selection.launcher.bundleIdentifier) to use \(secret.account)"
+            )
+        }
     }
 
     func removeDirectAccessLauncher(_ launcher: BlessedScriptLauncher, from secret: StoredSecret) {
@@ -835,37 +884,59 @@ final class DashboardModel: ObservableObject {
                 ))
                 return
             }
-            let status = setSecretGateAppProtection(
-                requirement: signing.requirement,
-                protection: .readOnly,
-                for: gate,
-                runtimeRequirement: runtimeRequirement
-            )
-            if status == errSecSuccess {
-                self.errorMessage = nil
-                self.reload()
-            } else {
-                self.errorMessage = "Could not allow \(signing.identifier): \(status)"
+            self.approveAuthorityChange(
+                "Add \(signing.identifier) to \(gate.id)",
+                detail: "Recognized read-only operations will be automically authorized."
+            ) {
+                let status = setSecretGateAppProtection(
+                    requirement: signing.requirement,
+                    protection: .readOnly,
+                    for: gate,
+                    runtimeRequirement: runtimeRequirement
+                )
+                if status == errSecSuccess {
+                    self.errorMessage = nil
+                    self.reload()
+                } else {
+                    self.errorMessage = "Could not allow \(signing.identifier): \(status)"
+                }
             }
         }
     }
 
     func setDefaultProtection(_ protection: SecretGateProtection, for gate: SecretGate) {
-        finishPolicyUpdate(
-            setSecretGateDefaultProtection(protection, for: gate),
-            error: "Could not update the default protection"
+        let update = { [weak self] in
+            guard let self else { return }
+            self.finishPolicyUpdate(
+                setSecretGateDefaultProtection(protection, for: gate),
+                error: "Could not update the default protection"
+            )
+        }
+        guard protection.addsAuthority(over: gate.defaultProtection) else { update(); return }
+        approveAuthorityChange(
+            "Broaden \(gate.id) default to \(protection.title)",
+            detail: protection.subtitle,
+            perform: update
         )
     }
 
     func setProtection(_ protection: SecretGateProtection, for app: SecretGatePolicy, in gate: SecretGate) {
-        finishPolicyUpdate(
-            setSecretGateAppProtection(
+        let update = { [weak self] in
+            guard let self else { return }
+            self.finishPolicyUpdate(setSecretGateAppProtection(
                 requirement: app.requirement,
                 protection: protection,
                 for: gate,
                 runtimeRequirement: app.runtimeRequirement
             ),
             error: "Could not update \(app.bundleIdentifier)"
+            )
+        }
+        guard protection.addsAuthority(over: app.protection) else { update(); return }
+        approveAuthorityChange(
+            "Broaden \(app.bundleIdentifier) to \(protection.title)",
+            detail: protection.subtitle,
+            perform: update
         )
     }
 
@@ -882,6 +953,16 @@ final class DashboardModel: ObservableObject {
             reload()
         } else {
             errorMessage = "\(error): \(status)"
+        }
+    }
+
+    private func approveAuthorityChange(
+        _ title: String,
+        detail: String,
+        perform: @escaping () -> Void
+    ) {
+        PhoneApprovalCoordinator.shared.approveAuthorityChange(title: title, detail: detail) {
+            if $0 { perform() }
         }
     }
 
@@ -1331,12 +1412,13 @@ func runDashboardSearchSelfCheck() -> Int32 {
     model.searchText = ""
     model.selectSection(.settings)
     guard model.items.map(\.id) == [
+        "iphone-approval",
         "automatic-approval-feedback",
         "detached-process-access",
         "secret-name-access",
         "about",
     ],
-          model.selectedItemID == "automatic-approval-feedback",
+          model.selectedItemID == "iphone-approval",
           guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
           guiPATH(environment: [:]) == "<unset>"
     else { return 1 }
@@ -1679,7 +1761,13 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .settings {
-                if model.selectedItem?.id == "automatic-approval-feedback" {
+                if model.selectedItem?.id == "iphone-approval" {
+                    IPhoneApprovalSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "automatic-approval-feedback" {
                     AutomaticApprovalFeedbackSettingsView()
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
@@ -3182,6 +3270,97 @@ private struct SecretNameAccessSettingsView: View {
     }
 }
 
+private struct IPhoneApprovalSettingsView: View {
+    @AppStorage(phoneApprovalEnabledDefaultsKey) private var enabled = false
+    @State private var status = "Checking for iPhones…"
+    @State private var isWorking = false
+    @State private var showsRecoveryWarning = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("iPhone Approval")
+                    .font(.system(size: 24, weight: .semibold))
+                Text(enabled
+                    ? "Every human Approval for this Mac must come from an eligible iPhone."
+                    : "Keep agents with computer-use access away from their own Approval controls.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Label(enabled ? "Enabled" : "Disabled", systemImage: enabled ? "iphone.and.arrow.forward" : "iphone.slash")
+                .foregroundStyle(enabled ? .green : .secondary)
+            Text(status).font(.caption).foregroundStyle(.secondary)
+
+            InfoBlock(
+                title: "Physical separation",
+                text: "iPhone Mirroring and Show on Mac can expose phone controls to an agent. Disable them, or require Face ID or Touch ID in the iPhone app."
+            )
+
+            if enabled {
+                Button("Disable on iPhone") {
+                    isWorking = true
+                    status = "Waiting for Approval on iPhone…"
+                    PhoneApprovalCoordinator.shared.requestDisable { approved in
+                        isWorking = false
+                        status = approved ? "iPhone Approval disabled." : "Disable was denied or canceled."
+                    }
+                }
+                .disabled(isWorking)
+
+                Button("Recover Without iPhone…", role: .destructive) {
+                    showsRecoveryWarning = true
+                }
+                .disabled(isWorking)
+            } else {
+                Button("Enable iPhone Approval") {
+                    isWorking = true
+                    Task {
+                        do {
+                            try await PhoneApprovalCoordinator.shared.enable()
+                            status = "Enabled. This Mac no longer exposes an allow action."
+                        } catch {
+                            status = error.localizedDescription
+                        }
+                        isWorking = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
+            }
+        }
+        .task { await refreshStatus() }
+        .alert("Invalidate every enrolled device?", isPresented: $showsRecoveryWarning) {
+            Button("Cancel", role: .cancel) {}
+            Button("Recover and Rotate Key", role: .destructive) {
+                isWorking = true
+                Task {
+                    do {
+                        try await PhoneApprovalCoordinator.shared.recoverWithoutIPhone()
+                        status = "Recovered. Every iPhone and Mac must enroll again."
+                    } catch {
+                        status = "Recovery failed: \(error.localizedDescription)"
+                    }
+                    isWorking = false
+                }
+            }
+        } message: {
+            Text("macOS will authenticate you. Recovery disables iPhone Approval, cancels pending requests, rotates the iCloud key, and invalidates every iPhone and other Mac on this account.")
+        }
+    }
+
+    private func refreshStatus() async {
+        do {
+            let registration = try await PhoneApprovalCoordinator.shared.registrationStatus()
+            status = registration.count == 0
+                ? "No iPhone has registered recently. Open the iPhone app and allow notifications."
+                : "\(registration.count) iPhone registration\(registration.count == 1 ? "" : "s") available."
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+}
+
 private struct AutomaticApprovalFeedbackSettingsView: View {
     @AppStorage(automaticApprovalFeedbackDefaultsKey)
     private var feedback = AutomaticApprovalFeedback.notification
@@ -3224,7 +3403,21 @@ private struct DetachedProcessAccessSettingsView: View {
             }
             Toggle(
                 "Keep Launcher Access for Detached Processes",
-                isOn: $keepsLauncherAccess
+                isOn: Binding(
+                    get: { keepsLauncherAccess },
+                    set: { enabled in
+                        guard enabled else {
+                            keepsLauncherAccess = false
+                            return
+                        }
+                        PhoneApprovalCoordinator.shared.approveAuthorityChange(
+                            title: "Keep Launcher Access for Detached Processes",
+                            detail: "A live process may retain Launcher authority after its verified parent chain exits."
+                        ) { approved in
+                            if approved { keepsLauncherAccess = true }
+                        }
+                    }
+                )
             )
             Text("Off by default. When enabled, an exact signed process execution that participates in an automically authorized operation may continue using that Launcher’s current policy at the same Authorization Gate until the process or Automic Vault exits. New processes and other gates are not included.")
                 .font(.caption)

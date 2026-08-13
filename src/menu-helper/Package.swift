@@ -37,6 +37,7 @@ let package = Package(
         .executableTarget(
             name: "MenubarHelper",
             dependencies: [
+                "ApprovalCore",
                 "AppUpdater",
                 "CProcessInfo",
                 "MenubarHelperCore",
