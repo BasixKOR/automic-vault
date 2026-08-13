@@ -86,6 +86,9 @@ The primary adversary is untrusted or compromised code already running with your
 >
 > ## The Threat Model Has Changed
 >
+> <details>
+> <summary>Supply chain attacks target plaintext secrets…</summary>
+>
 > - Supply chain attacks target plaintext secrets and other trivial exfiltration
 >   mechanisms (eg. calling `gh auth token`)
 > - Agents change the game. *No longer are we the only intelligence using our
@@ -113,6 +116,8 @@ The primary adversary is untrusted or compromised code already running with your
 > Automic Vault is the adapter that applies the macOS operating system’s
 > security model to command line tools, while minimizing friction for the
 > developer.
+>
+> </details>
 
 &nbsp;
 
@@ -149,6 +154,8 @@ Hardening varies, but its purpose is:
 
 > † This means you can have different access control for eg. your terminal and
 > your agent.
+
+<img src="./docs/img/authorization-gate-v4.jpg" style="width: 589px; height: auto" />
 
 Hardened tools gain an Authorization Gate in the app. Each gate has a default Access
 Level and optional rules for specific Verified Launchers:
@@ -222,7 +229,7 @@ runtime request.
 
 #### Blessed Scripts
 
-<img src="./docs/blessed-script.png" style="width: 589px; height: auto" />
+<img src="./docs/img/blessed-script.png" style="width: 589px; height: auto" />
 
 In order for a script to have granular execution and access control it must be
 blessed:
