@@ -663,7 +663,7 @@ final class DashboardModel: ObservableObject {
         do {
             try openCLIInstaller()
         } catch {
-            errorMessage = "Could not create install command: \(error.localizedDescription)"
+            errorMessage = "Could not open install command: \(error.localizedDescription)"
         }
     }
 
@@ -935,18 +935,6 @@ private func executable(at candidate: URL, satisfiesDesignatedRequirementOf trus
     return SecStaticCodeCheckValidity(candidateCode, [], requirement) == errSecSuccess
 }
 
-private func installCLICommand(bundleAVPath: String) -> String {
-    """
-    #!/bin/sh
-    trap 'status=$?; set +x; printf '\\''\\nPress Return to close this window.'\\''; read _; exit "$status"' 0
-    set -e
-    set -x
-    bundle_av=\(shellQuoted(bundleAVPath))
-    sudo install "$bundle_av" \(installedAVCLIPath)
-    /usr/bin/open -g -b com.automicvault 'automic-vault://cli-installed' || printf '%s\n' 'Installed av, but could not notify Automic Vault.' >&2
-    """
-}
-
 func isCLIInstallCompletionURL(_ url: URL) -> Bool {
     url.scheme == "automic-vault"
         && url.host == "cli-installed"
@@ -960,34 +948,26 @@ func isCLIInstallCompletionURL(_ url: URL) -> Bool {
 
 @MainActor
 func openCLIInstaller() throws {
-    guard let bundledAVURL else {
-        throw CLIInstallerError.bundledExecutableUnavailable
+    guard let commandURL = Bundle.main.url(forResource: "install-av-cli", withExtension: "command"),
+          FileManager.default.isExecutableFile(atPath: commandURL.path)
+    else {
+        throw CLIInstallerError.bundledCommandUnavailable
     }
-    let commandURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("install-av-cli-\(UUID().uuidString)")
-        .appendingPathExtension("command")
-    try installCLICommand(bundleAVPath: bundledAVURL.path)
-        .write(to: commandURL, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: commandURL.path)
     guard NSWorkspace.shared.open(commandURL) else {
         throw CLIInstallerError.couldNotOpenCommand
     }
 }
 
 private enum CLIInstallerError: LocalizedError {
-    case bundledExecutableUnavailable
+    case bundledCommandUnavailable
     case couldNotOpenCommand
 
     var errorDescription: String? {
         switch self {
-        case .bundledExecutableUnavailable: "Bundled av executable is unavailable."
+        case .bundledCommandUnavailable: "Bundled install command is unavailable."
         case .couldNotOpenCommand: "Could not open the install command."
         }
     }
-}
-
-private func shellQuoted(_ value: String) -> String {
-    "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
 }
 
 @MainActor
@@ -1104,13 +1084,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.count(for: .hardenedTools) == 1,
           model.count(for: .allSecrets) == 1
     else { return 1 }
-    let cliInstallCommand = installCLICommand(bundleAVPath: "/tmp/Automic Vault.app/Contents/MacOS/av")
-    guard shellQuoted("/tmp/Automic Vault's av") == "'/tmp/Automic Vault'\"'\"'s av'",
-          !cliInstallCommand.contains("launchctl"),
-          let installRange = cliInstallCommand.range(of: "sudo install \"$bundle_av\" /usr/local/bin/av"),
-          let notificationRange = cliInstallCommand.range(of: "/usr/bin/open -g -b com.automicvault 'automic-vault://cli-installed'"),
-          installRange.lowerBound < notificationRange.lowerBound,
-          isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed")!),
+    guard isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed")!),
           !isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed/extra")!),
           !isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed?revision=1")!),
           !isCLIInstallCompletionURL(URL(string: "https://cli-installed")!)

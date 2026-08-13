@@ -175,6 +175,7 @@ if [[ "$release_artifact" -eq 1 ]]; then
 fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
+/usr/bin/install -m 0755 "$MENU_HELPER/Resources/install-av-cli.command" "$RESOURCES/install-av-cli.command"
 xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
   --compile "$ICON_BUILD" \
   --platform macosx \
@@ -229,6 +230,7 @@ codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
 assert_no_embedded_entitlements "$MACOS/av"
 assert_no_embedded_entitlements "$MACOS/av-brew-stub"
+"$RESOURCES/install-av-cli.command" --self-check
 app_codesign_args=("${codesign_args[@]}")
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
