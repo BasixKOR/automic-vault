@@ -4,11 +4,12 @@ import PackageDescription
 
 let package = Package(
     name: "AutomicVaultMenubar",
-    platforms: [.macOS("14.0")],
+    platforms: [.macOS("14.0"), .iOS("26.1")],
     products: [
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
         .executable(name: "AutomicVaultLauncher", targets: ["LauncherBundleRunner"]),
         .executable(name: "AutomicVaultVarlockPlugin", targets: ["VarlockPluginHelper"]),
+        .library(name: "ApprovalCore", targets: ["ApprovalCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/mxcl/AppUpdater.git", from: "4.1.0"),
@@ -16,6 +17,7 @@ let package = Package(
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.1"),
     ],
     targets: [
+        .target(name: "ApprovalCore"),
         .target(
             name: "MenubarHelperCore",
             dependencies: [
@@ -44,6 +46,10 @@ let package = Package(
         .testTarget(
             name: "MenubarHelperCoreTests",
             dependencies: ["MenubarHelperCore"]
+        ),
+        .testTarget(
+            name: "ApprovalCoreTests",
+            dependencies: ["ApprovalCore"]
         ),
     ]
 )
