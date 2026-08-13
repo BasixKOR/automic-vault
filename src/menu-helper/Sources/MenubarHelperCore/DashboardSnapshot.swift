@@ -507,13 +507,15 @@ public func launcherRuntimeProtection(
 public func launcherRuntimeProtection(
     signingInformation: [CFString: Any]
 ) -> LauncherRuntimeProtection {
-    let signatureFlags = (signingInformation[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
+    let signatureFlags = (
+        signingInformation[kSecCodeInfoStatus] ?? signingInformation[kSecCodeInfoFlags]
+    ) as? NSNumber
     let entitlements = signingInformation[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
     let enabledEntitlements = Set(entitlements.compactMap { key, value in
         (value as? NSNumber)?.boolValue == true ? key : nil
     })
     return launcherRuntimeProtection(
-        signatureFlags: signatureFlags,
+        signatureFlags: signatureFlags?.uint32Value ?? 0,
         enabledEntitlements: enabledEntitlements
     )
 }

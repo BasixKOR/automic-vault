@@ -47,6 +47,17 @@ import Testing
     ]) == .hardenedWithLibraryValidationDisabled)
 }
 
+@Test func signingInformationPrefersLiveRuntimeStatus() {
+    #expect(launcherRuntimeProtection(signingInformation: [
+        kSecCodeInfoFlags: 0,
+        kSecCodeInfoStatus: SecCodeSignatureFlags.runtime.rawValue,
+    ]) == .hardened)
+    #expect(launcherRuntimeProtection(signingInformation: [
+        kSecCodeInfoFlags: SecCodeSignatureFlags.runtime.rawValue,
+        kSecCodeInfoStatus: 0,
+    ]) == .hardenedRuntimeMissing)
+}
+
 @Test func runtimeRequirementsRejectPostEnrollmentExpansion() {
     #expect(LauncherRuntimeRequirement.hardened.allows(.hardened))
     #expect(!LauncherRuntimeRequirement.hardened.allows(.hardenedWithLibraryValidationDisabled))

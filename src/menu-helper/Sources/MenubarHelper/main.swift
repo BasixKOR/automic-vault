@@ -4665,16 +4665,13 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
     }
     guard SecCodeCheckValidity(code, [], nil) == errSecSuccess else { return nil }
 
-    var staticCode: SecStaticCode?
-    guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess,
-          let staticCode
-    else {
-        return nil
-    }
-
     var info: CFDictionary?
-    let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
-    guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
+    let flags = SecCSFlags(
+        rawValue: kSecCSSigningInformation | kSecCSRequirementInformation | kSecCSDynamicInformation
+    )
+    // The C API accepts live SecCode objects despite importing as SecStaticCode in Swift.
+    let inspectableCode = unsafeBitCast(code, to: SecStaticCode.self)
+    guard SecCodeCopySigningInformation(inspectableCode, flags, &info) == errSecSuccess,
           let dictionary = info as? [CFString: Any],
           let requirementValue = dictionary[kSecCodeInfoDesignatedRequirement]
     else {
