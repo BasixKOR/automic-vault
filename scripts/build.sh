@@ -230,7 +230,7 @@ codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
 assert_no_embedded_entitlements "$MACOS/av"
 assert_no_embedded_entitlements "$MACOS/av-brew-stub"
-"$RESOURCES/install-av-cli.command" --self-check
+"$MACOS/av" __version >/dev/null
 app_codesign_args=("${codesign_args[@]}")
 if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
   cp "$MENU_HELPER_PROFILE" "$CONTENTS/embedded.provisionprofile"
