@@ -76,6 +76,13 @@ Isotope commits:
 
 Secret Gates shadow commands on PATH; they do not mediate `exec`. A process can run the underlying Target directly. Vault-managed credentials should remain unavailable, but any ambient provider can still authorize the direct process. Closing this boundary requires moving the Target behind an access-controlled Launcher or adding execution mediation such as Endpoint Security. Doctor can detect PATH order but cannot prevent an absolute-path call.
 
+The AWS Hardener no longer uses Homebrew's mutable Python distribution as its
+credential-bearing Target. It verifies and extracts AWS's signed, notarized,
+Hardened Runtime release under `/opt/av/aws`; binds helper registration to the
+installed launcher generation; and rejects Homebrew helper use after migration.
+This improves Target integrity but does not change the general PATH-wrapper
+limit above.
+
 ### Generic Write Access
 
 Generic wrappers apply a Secret to the Target process. The Target can load plugins, invoke helpers, or expose its environment. Automic Vault cannot identify every sensitive secret operation for an arbitrary third-party CLI from arguments alone. Write Access therefore trusts the Target's complete runtime, configuration, and child-process behavior for recognized writes. Approval Required or per-command Approval is the defensible setting for an untrusted Launcher.

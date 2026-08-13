@@ -34,7 +34,16 @@ Detectors inspect the developer environment without changing it. A Scan produces
 
 ### Tool Hardening
 
-Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. The Hardener delegates Isotope updates to Homebrew when the Isotope came from the tap. For a direct install, it verifies the release digest and Automic Vault code signature, installs into `/usr/local/bin`, and Doctor directs the user back to the Hardener when the tap publishes a new digest.
+Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. The Hardener delegates Isotope updates to Homebrew when the Isotope came from the tap. For a direct Isotope install, it verifies the release digest and Automic Vault code signature, installs into `/usr/local/bin`, and Doctor directs the user back to the Hardener when the tap publishes a new digest.
+
+A Hardener may instead install an unmodified vendor release when the upstream
+artifact supports the boundary more safely than a package-manager build. That
+path must verify the vendor and platform distribution identities, preserve
+upstream code signatures, extract without executing installer scripts, install
+into a root-owned non-user-writable location, and bind the Gate Client and
+Target to that installed generation. Doctor verifies the resulting identity,
+ownership, permissions, content manifest, and command resolution. See
+[ADR 0012](adr/0012-verified-upstream-tool-releases.md).
 
 ### Secret Custody
 

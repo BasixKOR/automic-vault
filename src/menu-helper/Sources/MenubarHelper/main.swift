@@ -1760,6 +1760,7 @@ private struct BlessedExecutionKey: Hashable {
 }
 
 private struct AWSRegistrationCandidate {
+    let generation: AWSRuntimeGeneration
     let chain: AWSProfileChain
     let args: [String]
     let target: String
@@ -1768,6 +1769,7 @@ private struct AWSRegistrationCandidate {
 }
 
 private struct AWSRegistration {
+    let generation: AWSRuntimeGeneration
     let chain: AWSProfileChain
     let args: [String]
     let target: String
@@ -1780,8 +1782,6 @@ private struct ApprovedPayload {
     let secrets: [String: String]
     let value: String?
 }
-
-private let awsHelperProtocolVersion = 1
 
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
@@ -1939,7 +1939,12 @@ private final class ApprovalServer: @unchecked Sendable {
 
         switch op {
         case .awsHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
-            reply(peer, to: message, ok: true, error: nil, value: String(awsHelperProtocolVersion))
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard let negotiated = negotiatedAWSHelperProtocolVersion(requested: requested) else {
+                reply(peer, to: message, ok: false, error: "AWS helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: String(negotiated))
         case .inject, .keys, .authorize:
             handleInject(
                 message,
@@ -3143,14 +3148,41 @@ private final class ApprovalServer: @unchecked Sendable {
               let config = xpcData(message, key: "aws_config"),
               let configText = String(data: config, encoding: .utf8)
         else { throw AWSCredentialError.invalidConfig("registration is incomplete") }
+        let generation: AWSRuntimeGeneration
+        if let generationPointer = xpc_dictionary_get_string(message, "aws_generation") {
+            guard let parsed = AWSRuntimeGeneration(rawValue: String(cString: generationPointer)) else {
+                throw AWSCredentialError.unsupportedRuntime("unknown AWS launcher generation")
+            }
+            generation = parsed
+        } else {
+            generation = .homebrewV1
+        }
+        let installedStub = try? String(contentsOfFile: "/usr/local/bin/aws", encoding: .utf8)
+        guard installedStub.map({
+            awsGenerationMatchesInstalledStub(generation, target: request.target, stub: $0)
+        }) == true else {
+            throw AWSCredentialError.unsupportedRuntime("installed AWS launcher does not match the requested generation")
+        }
         let chain = try AWSProfileChain.parse(
             configText,
             selectedProfile: String(cString: profilePointer)
         )
-        let firstLine = try String(contentsOfFile: request.target, encoding: .utf8)
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)[0]
-        let interpreter = try awsInterpreter(fromShebang: String(firstLine))
+        let interpreter: String
+        switch generation {
+        case .homebrewV1:
+            let firstLine = try String(contentsOfFile: request.target, encoding: .utf8)
+                .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            interpreter = try awsInterpreter(fromShebang: String(firstLine))
+        case .officialV2:
+            guard let signing = executableSigningInfo(path: request.target),
+                  signing.teamIdentifier == "94KV3E626L",
+                  signing.isDeveloperID,
+                  signing.runtimeProtection.allowsSecretGateAccess
+            else { throw AWSCredentialError.unsupportedRuntime("official AWS CLI identity or Hardened Runtime is invalid") }
+            interpreter = request.target
+        }
         return AWSRegistrationCandidate(
+            generation: generation,
             chain: chain,
             args: request.args,
             target: request.target,
@@ -3176,6 +3208,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
         }
         awsRegistrations[key] = AWSRegistration(
+            generation: awsRegistration.generation,
             chain: awsRegistration.chain,
             args: awsRegistration.args,
             target: awsRegistration.target,
@@ -3189,7 +3222,7 @@ private final class ApprovalServer: @unchecked Sendable {
             : "profile \(awsRegistration.chain.selected.name)"
         let config = """
         [\(section)]
-        credential_process = /usr/local/bin/av aws-credentials
+        credential_process = /usr/local/bin/av aws-credentials\(awsRegistration.generation == .officialV2 ? " official-v2" : "")
         region = \(awsRegistration.chain.region)
 
         """
@@ -3220,9 +3253,16 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "AWS credential helper is not a direct child of a registered AWS process")
             return
         }
+        let requestedGeneration = xpc_dictionary_get_string(message, "aws_generation")
+            .map { String(cString: $0) }
+        guard requestedGeneration == (registration.generation == .officialV2 ? "official-v2" : nil) else {
+            reply(peer, to: message, ok: false, error: "AWS credential helper generation does not match its registered parent")
+            return
+        }
         let parentPath = pathString(parentIdentity)
         guard let arguments = processArguments(parentPID),
               awsRuntimeMatches(
+                  generation: registration.generation,
                   interpreter: registration.interpreter,
                   processPath: parentPath,
                   processArguments: arguments,

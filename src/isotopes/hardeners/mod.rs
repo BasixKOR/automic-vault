@@ -1,4 +1,5 @@
 pub(crate) mod aws_cli;
+pub(crate) mod aws_release;
 pub(crate) mod codex;
 pub(crate) mod env_wrapper;
 pub(crate) mod gh_cli;

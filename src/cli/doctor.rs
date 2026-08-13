@@ -614,12 +614,7 @@ fn stub_issues(hardener: &str, command: &HardenerCommand) -> Vec<DoctorIssue> {
             command: Some(command.name.clone()),
             message,
             remediation: format!(
-                "{}Run `{}` to replace it. Manual repair: {}",
-                if hardener == "aws" && command.hardened {
-                    "If you depend heavily on AWS, consider waiting a few point releases before migrating to the new hardener. "
-                } else {
-                    ""
-                },
+                "Run `{}` to replace it. Manual repair: {}",
                 harden_invocation(hardener),
                 manual_stub_repair(hardener, command, stub)
             ),
@@ -1154,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn outdated_aws_stub_points_to_the_unprivileged_hardener() {
+    fn outdated_aws_stub_requires_immediate_rehardening() {
         let dir = temp_dir("aws-stub-upgrade");
         let stub = executable_file(&dir.join("aws"));
         let target = executable_file(&dir.join("aws-target"));
@@ -1174,11 +1169,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(results[0].issues[0].kind, "stub_upgrade_required");
-        assert!(
-            results[0].issues[0]
-                .remediation
-                .contains("waiting a few point releases before migrating")
-        );
+        assert!(!results[0].issues[0].remediation.contains("waiting"));
         assert!(
             results[0].issues[0]
                 .remediation

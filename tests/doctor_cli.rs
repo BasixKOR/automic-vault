@@ -5,6 +5,7 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LEGACY_AWS_STUB: &str = include_str!("../src/isotopes/hardeners/aws.legacy");
+const HOMEBREW_AWS_STUB: &str = include_str!("../src/isotopes/hardeners/aws.homebrew");
 
 #[test]
 fn av_doctor_omits_unhardened_tools_and_reports_hardened_stubs() {
@@ -128,11 +129,17 @@ fn av_doctor_reports_unsigned_agent_clis() {
 }
 
 #[test]
-fn av_doctor_requires_rehardening_for_the_exact_legacy_aws_launcher() {
+fn av_doctor_requires_rehardening_for_each_exact_legacy_aws_launcher() {
+    for launcher in [LEGACY_AWS_STUB, HOMEBREW_AWS_STUB] {
+        assert_aws_rehardening_required(launcher);
+    }
+}
+
+fn assert_aws_rehardening_required(launcher: &str) {
     let root = temp_dir();
     let stub = root.join("aws");
     fs::create_dir_all(&root).unwrap();
-    fs::write(&stub, LEGACY_AWS_STUB).unwrap();
+    fs::write(&stub, launcher).unwrap();
     fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_av"))
@@ -151,7 +158,7 @@ fn av_doctor_requires_rehardening_for_the_exact_legacy_aws_launcher() {
         .find(|issue| issue["kind"] == "stub_upgrade_required")
         .unwrap();
     let remediation = issue["remediation"].as_str().unwrap();
-    assert!(remediation.contains("waiting a few point releases before migrating"));
+    assert!(!remediation.contains("waiting"));
     assert!(remediation.contains("Run `av harden aws`"));
 
     let _ = fs::remove_dir_all(root);

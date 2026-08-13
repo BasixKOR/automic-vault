@@ -34,6 +34,7 @@ import Testing
     let target = "/opt/homebrew/bin/aws"
     let arguments = ["s3", "ls"]
     #expect(awsRuntimeMatches(
+        generation: .homebrewV1,
         interpreter: interpreter,
         processPath: process,
         processArguments: [process, target] + arguments,
@@ -41,11 +42,53 @@ import Testing
         approvedArguments: arguments
     ))
     #expect(!awsRuntimeMatches(
+        generation: .homebrewV1,
         interpreter: interpreter,
         processPath: process,
         processArguments: [process, target, "iam", "list-users"],
         target: target,
         approvedArguments: arguments
+    ))
+}
+
+@Test func officialRuntimeBindingRequiresTheNativeTargetAndExactArguments() {
+    let target = "/opt/av/aws/current/aws"
+    #expect(awsRuntimeMatches(
+        generation: .officialV2,
+        interpreter: target,
+        processPath: target,
+        processArguments: [target, "s3", "ls"],
+        target: target,
+        approvedArguments: ["s3", "ls"]
+    ))
+    #expect(!awsRuntimeMatches(
+        generation: .officialV2,
+        interpreter: target,
+        processPath: "/opt/homebrew/bin/aws",
+        processArguments: ["/opt/homebrew/bin/aws", "s3", "ls"],
+        target: target,
+        approvedArguments: ["s3", "ls"]
+    ))
+}
+
+@Test func helperNegotiationAndStubGenerationPreserveLegacyButFailClosedAfterUpgrade() {
+    #expect(negotiatedAWSHelperProtocolVersion(requested: 0) == 1)
+    #expect(negotiatedAWSHelperProtocolVersion(requested: 2) == 2)
+    #expect(negotiatedAWSHelperProtocolVersion(requested: 1) == nil)
+    #expect(awsGenerationMatchesInstalledStub(
+        .homebrewV1,
+        target: AWSRuntimeGeneration.homebrewV1.target,
+        stub: AWSRuntimeGeneration.homebrewV1.stub
+    ))
+    #expect(awsGenerationMatchesInstalledStub(
+        .officialV2,
+        target: AWSRuntimeGeneration.officialV2.target,
+        stub: AWSRuntimeGeneration.officialV2.stub
+    ))
+    #expect(!awsGenerationMatchesInstalledStub(
+        .homebrewV1,
+        target: AWSRuntimeGeneration.homebrewV1.target,
+        stub: AWSRuntimeGeneration.officialV2.stub
     ))
 }
 

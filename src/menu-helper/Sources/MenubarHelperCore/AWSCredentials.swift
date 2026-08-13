@@ -130,6 +130,41 @@ public struct AWSSignedRequest: Equatable, Sendable {
     public let body: Data
 }
 
+public enum AWSRuntimeGeneration: String, Equatable, Sendable {
+    case homebrewV1 = "homebrew-v1"
+    case officialV2 = "official-v2"
+
+    public var target: String {
+        switch self {
+        case .homebrewV1: "/opt/homebrew/bin/aws"
+        case .officialV2: "/opt/av/aws/current/aws"
+        }
+    }
+
+    public var stub: String {
+        switch self {
+        case .homebrewV1: "#!/usr/local/bin/av aws\n"
+        case .officialV2: "#!/usr/local/bin/av aws-official\n"
+        }
+    }
+}
+
+public func negotiatedAWSHelperProtocolVersion(requested: UInt64) -> Int? {
+    switch requested {
+    case 0: 1 // v1 clients predate negotiation.
+    case 2: 2
+    default: nil
+    }
+}
+
+public func awsGenerationMatchesInstalledStub(
+    _ generation: AWSRuntimeGeneration,
+    target: String,
+    stub: String
+) -> Bool {
+    target == generation.target && stub == generation.stub
+}
+
 public func awsSTSRequest(
     region: String,
     parameters: [String: String],
@@ -204,12 +239,21 @@ public func parseAWSTSCredentials(_ data: Data) throws -> AWSCredentials {
 }
 
 public func awsRuntimeMatches(
+    generation: AWSRuntimeGeneration,
     interpreter: String,
     processPath: String,
     processArguments: [String],
     target: String,
     approvedArguments: [String]
 ) -> Bool {
+    if target != generation.target { return false }
+    if generation == .officialV2 {
+        let expected = URL(fileURLWithPath: target).resolvingSymlinksInPath().path
+        let live = URL(fileURLWithPath: processPath).resolvingSymlinksInPath().path
+        let argumentsMatch = processArguments == [target] + approvedArguments
+            || processArguments == [processPath] + approvedArguments
+        return expected == live && argumentsMatch
+    }
     let resolved = URL(fileURLWithPath: interpreter).resolvingSymlinksInPath().path
     let executableMatches: Bool
     if resolved == processPath {

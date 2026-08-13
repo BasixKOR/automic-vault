@@ -6,18 +6,20 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
-    HardenerDetection, RequiredExecutable, RequiredIdentity, SecretGateDescriptor, SecretGateRoute,
-    StubRequirements,
+    HardenerDetection, HardenerDiagnostic, RequiredExecutable, RequiredIdentity,
+    SecretGateDescriptor, SecretGateRoute, StubRequirements, aws_release,
 };
 
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
 const AWS_HARDEN_PROFILE: &str = "default";
 const AWS_STUB: &str = include_str!("aws");
+// Exact native-helper launcher used before the official AWS distribution migration.
+const HOMEBREW_AWS_STUB: &str = include_str!("aws.homebrew");
 // Exact previously released launcher: any edit must remain an invalid stub.
 const LEGACY_AWS_STUB: &str = include_str!("aws.legacy");
 const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
-const AWS_TARGET_PATH: &str = "/opt/homebrew/bin/aws";
+const AWS_HOMEBREW_TARGET_PATH: &str = "/opt/homebrew/bin/aws";
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
 const PRIVILEGE_MODE: super::PrivilegeMode = super::PrivilegeMode::Mixed;
@@ -32,9 +34,6 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let is_root = super::effective_uid() == 0;
     if !has_test_stub {
         crate::cli::ensure_aws_helper_ready()?;
-        if !Path::new(AWS_TARGET_PATH).is_file() {
-            return Err(format!("AWS CLI is not installed at {AWS_TARGET_PATH}"));
-        }
     }
     let has_test_keychain = crate::test_keychain_dir().is_some();
     let should_import_credentials = should_import_aws_credentials(is_root, has_test_keychain);
@@ -53,10 +52,28 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     writeln!(stdout, "│").ok();
     writeln!(
         stdout,
-        "◆ This will use Automic Vault for temporary AWS credentials."
+        "◆ This will install AWS's official CLI release and use Automic Vault for temporary AWS credentials."
     )
     .ok();
     writeln!(stdout, "│").ok();
+    if !has_test_stub {
+        writeln!(stdout, "├─ download {url}", url = aws_release::DOWNLOAD_URL).ok();
+        writeln!(
+            stdout,
+            "├─ verify Amazon's Apple-issued installer identity, notarization, timestamp, package identity, signed native payload, Hardened Runtime, and safe extraction limits"
+        )
+        .ok();
+        writeln!(
+            stdout,
+            "├─ extract the payload to /opt/av/aws without running the package installer or its scripts"
+        )
+        .ok();
+        writeln!(
+            stdout,
+            "├─ replace the Homebrew-backed Target because Homebrew's Python runtime is independently mutable and may lag AWS releases"
+        )
+        .ok();
+    }
     if let Some(credentials_path) = &credentials_path {
         if credentials.is_some() {
             writeln!(
@@ -83,7 +100,7 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     writeln!(
         stdout,
-        "├─ run sudo to install the native AWS credential helper"
+        "├─ run sudo to install the verified AWS release and launcher"
     )
     .ok();
     writeln!(stdout, "│").ok();
@@ -92,15 +109,28 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    if let Some(credentials) = credentials {
-        import_aws_credentials(&credentials)?;
+    let download = if has_test_stub {
+        None
+    } else {
+        let temporary = TemporaryDirectory::new("aws-release")?;
+        let package = temporary.path.join("AWSCLIV2.pkg");
+        let digest = aws_release::download(&package)?;
+        Some((temporary, digest))
+    };
+    if let Some(credentials) = &credentials {
+        import_aws_credentials(credentials)?;
+        writeln!(stdout, "├─ imported keys").ok();
+    }
+    install_privileged(
+        download
+            .as_ref()
+            .map(|(directory, digest)| (directory.path.join("AWSCLIV2.pkg"), digest.as_str())),
+    )?;
+    if credentials.is_some() {
         let credentials_path = credentials_path.as_ref().unwrap();
         delete_aws_credentials(credentials_path, AWS_HARDEN_PROFILE)?;
-        writeln!(stdout, "├─ imported keys").ok();
         writeln!(stdout, "├─ deleted plaintext keys").ok();
     }
-
-    install_privileged()?;
     if !is_aws_stub(&aws_stub_path()) {
         return Err(format!(
             "installed AWS launcher at {AWS_STUB_PATH} failed verification"
@@ -111,30 +141,32 @@ pub(crate) fn run_aws(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn install_aws_wrapper() -> Result<(), String> {
-    if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some() {
+pub(crate) fn install_aws_release(sha256: &str, package: &Path) -> Result<(), String> {
+    if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some()
+        || crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_INSTALL_ROOT").is_some()
+    {
         return Err("test path overrides are forbidden during privileged installation".into());
     }
     if actual_uid() != 0 {
-        return Err("AWS launcher installation requires root".into());
+        return Err("official AWS CLI installation requires root".into());
     }
-    if !Path::new(AWS_TARGET_PATH).is_file() {
-        return Err(format!("AWS CLI is not installed at {AWS_TARGET_PATH}"));
-    }
+    aws_release::install_privileged(sha256, package)?;
     install_aws_stub(Path::new(AWS_STUB_PATH))
 }
 
 pub(crate) fn detect() -> HardenerDetection {
     let path = aws_stub_path();
     let state = aws_stub_state(&path);
-    let mut detection = HardenerDetection::command(
-        state == AwsStubState::Current,
-        "aws",
-        Some(path.display().to_string()),
-        AWS_TARGET_PATH.to_string(),
-    );
+    let official = state == AwsStubState::Official;
+    let target = if official {
+        aws_release::target_path().display().to_string()
+    } else {
+        AWS_HOMEBREW_TARGET_PATH.to_string()
+    };
+    let mut detection =
+        HardenerDetection::command(official, "aws", Some(path.display().to_string()), target);
     detection.commands[0].hardened = state != AwsStubState::Unknown;
-    detection.commands[0].stub_valid = state == AwsStubState::Current;
+    detection.commands[0].stub_valid = official;
     if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
         detection.commands[0]
             .required_paths
@@ -148,6 +180,19 @@ pub(crate) fn detect() -> HardenerDetection {
         AWS_ACCESS_KEY_ID.to_string(),
         AWS_SECRET_ACCESS_KEY.to_string(),
     ];
+    if official
+        && crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none()
+        && let Err(error) = aws_release::current_release_valid()
+    {
+        detection.diagnostics.push(HardenerDiagnostic {
+            kind: "aws_official_release_invalid",
+            message: error,
+            remediation:
+                "Run `av harden aws` to download and reinstall a verified official AWS CLI release."
+                    .into(),
+            path: Some(aws_release::target_path().display().to_string()),
+        });
+    }
     detection
 }
 
@@ -187,15 +232,18 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     SecretGateDescriptor {
         id: "aws",
         key_patterns: keys.clone(),
-        routes: vec![SecretGateRoute {
-            operation: "inject",
-            script_path: None,
-            target_path: "/opt/homebrew/bin/aws".to_string(),
-            caller_identifiers: vec!["com.automicvault.av"],
-            key_patterns: keys,
-            replace_existing_env: false,
-            allow_missing_keys: false,
-        }],
+        routes: [aws_release::TARGET_PATH, AWS_HOMEBREW_TARGET_PATH]
+            .into_iter()
+            .map(|target| SecretGateRoute {
+                operation: "inject",
+                script_path: None,
+                target_path: target.to_string(),
+                caller_identifiers: vec!["com.automicvault.av"],
+                key_patterns: keys.clone(),
+                replace_existing_env: false,
+                allow_missing_keys: false,
+            })
+            .collect(),
     }
 }
 
@@ -227,7 +275,7 @@ fn should_import_aws_credentials(is_root: bool, has_test_keychain: bool) -> bool
 }
 
 fn is_aws_stub(path: &Path) -> bool {
-    aws_stub_state(path) == AwsStubState::Current
+    aws_stub_state(path) == AwsStubState::Official
 }
 
 fn actual_uid() -> u32 {
@@ -236,14 +284,16 @@ fn actual_uid() -> u32 {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AwsStubState {
-    Current,
+    Official,
+    HomebrewHelper,
     Legacy,
     Unknown,
 }
 
 fn aws_stub_state(path: &Path) -> AwsStubState {
     match fs::read_to_string(path).as_deref() {
-        Ok(AWS_STUB) => AwsStubState::Current,
+        Ok(AWS_STUB) => AwsStubState::Official,
+        Ok(HOMEBREW_AWS_STUB) => AwsStubState::HomebrewHelper,
         Ok(LEGACY_AWS_STUB) => AwsStubState::Legacy,
         _ => AwsStubState::Unknown,
     }
@@ -288,10 +338,11 @@ fn install_aws_stub(path: &Path) -> Result<(), String> {
     result
 }
 
-fn install_privileged() -> Result<(), String> {
+fn install_privileged(package: Option<(PathBuf, &str)>) -> Result<(), String> {
     if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_some() {
         return install_aws_stub(&aws_stub_path());
     }
+    let (package, digest) = package.ok_or_else(|| "AWS release download is missing".to_string())?;
     super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
     let installed_revision = Command::new(AV_PATH)
         .arg("__version")
@@ -303,13 +354,42 @@ fn install_privileged() -> Result<(), String> {
         return Err("update the av CLI from the Automic Vault app before rehardening AWS".into());
     }
     let status = Command::new(SUDO_PATH)
-        .args([AV_PATH, "__install-aws-wrapper"])
+        .args([AV_PATH, "__install-aws-release", digest])
+        .arg(package)
         .status()
         .map_err(|err| format!("failed to run sudo: {err}"))?;
     if status.success() {
         Ok(())
     } else {
         Err(format!("AWS launcher installation failed: {status}"))
+    }
+}
+
+struct TemporaryDirectory {
+    path: PathBuf,
+}
+
+impl TemporaryDirectory {
+    fn new(label: &str) -> Result<Self, String> {
+        let path = std::env::temp_dir().join(format!(
+            "automic-vault-{label}.{}.{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir(&path)
+            .map_err(|err| format!("failed to create {}: {err}", path.display()))?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .map_err(|err| format!("failed to protect {}: {err}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 
@@ -437,7 +517,7 @@ mod tests {
         install_aws_stub(&path).unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), AWS_STUB);
-        assert_eq!(AWS_STUB, "#!/usr/local/bin/av aws\n");
+        assert_eq!(AWS_STUB, "#!/usr/local/bin/av aws-official\n");
 
         let _ = fs::remove_file(path);
     }
@@ -468,7 +548,11 @@ mod tests {
         let path = temp_path("aws-stub-exact");
         fs::write(&path, AWS_STUB).unwrap();
         assert!(is_aws_stub(&path));
-        assert!(aws_stub_state(&path) == AwsStubState::Current);
+        assert!(aws_stub_state(&path) == AwsStubState::Official);
+
+        fs::write(&path, HOMEBREW_AWS_STUB).unwrap();
+        assert!(aws_stub_state(&path) == AwsStubState::HomebrewHelper);
+        assert!(!is_aws_stub(&path));
 
         fs::write(&path, LEGACY_AWS_STUB).unwrap();
         assert!(aws_stub_state(&path) == AwsStubState::Legacy);
@@ -504,31 +588,33 @@ mod tests {
     }
 
     #[test]
-    fn harden_replaces_the_exact_legacy_stub() {
+    fn harden_replaces_each_exact_legacy_stub() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = temp_path("aws-legacy-upgrade");
         let aws_stub = dir.join("aws");
         let credentials = dir.join("credentials");
         fs::create_dir_all(&dir).unwrap();
-        fs::write(&aws_stub, LEGACY_AWS_STUB).unwrap();
         unsafe {
             std::env::set_var("AUTOMIC_VAULT_TEST_EUID", "501");
             std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &aws_stub);
             std::env::set_var("AWS_SHARED_CREDENTIALS_FILE", &credentials);
         }
 
-        let mut stdout = Vec::new();
-        run_aws(&mut stdout, true).unwrap();
+        for launcher in [LEGACY_AWS_STUB, HOMEBREW_AWS_STUB] {
+            fs::write(&aws_stub, launcher).unwrap();
+            let mut stdout = Vec::new();
+            run_aws(&mut stdout, true).unwrap();
+            assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
+            let stdout = String::from_utf8(stdout).unwrap();
+            assert!(stdout.contains("run sudo to install the verified AWS release and launcher"));
+            assert!(stdout.contains("╰─ hardened aws"));
+        }
 
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
             std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH");
             std::env::remove_var("AWS_SHARED_CREDENTIALS_FILE");
         }
-        assert_eq!(fs::read_to_string(&aws_stub).unwrap(), AWS_STUB);
-        let stdout = String::from_utf8(stdout).unwrap();
-        assert!(stdout.contains("run sudo to install the native AWS credential helper"));
-        assert!(stdout.contains("╰─ hardened aws"));
         let _ = fs::remove_dir_all(dir);
     }
 

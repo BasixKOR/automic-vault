@@ -1,15 +1,24 @@
 ## What It Does
 
 `av harden aws` moves the default AWS access key pair out of
-`~/.aws/credentials` and into the macOS login keychain, then installs
-`/usr/local/bin/aws` as a one-line Automic Vault launcher for the Homebrew AWS
-CLI.
+`~/.aws/credentials` and into the macOS login keychain. It downloads AWS's
+official macOS installer package, verifies it, extracts its payload without
+running the installer or its scripts, and installs it under `/opt/av/aws`.
+`/usr/local/bin/aws` remains a one-line Automic Vault launcher.
 
-The launcher registers the exact AWS arguments, selected profile, process ID,
-process start time, and a snapshot of the AWS config with the menu app before
-replacing itself with `/opt/homebrew/bin/aws`. The AWS CLI receives a minimal
-config containing Automic Vault's `credential_process`; that helper only works
-as an immediate child of the registered, still-running AWS process.
+Automic Vault uses the official release instead of Homebrew's formula because
+AWS signs and notarizes that complete distribution, ships a native universal
+executable with Hardened Runtime, and publishes it directly. Homebrew rebuilds
+AWS CLI around a separately managed Python runtime and can lag the official
+release, adding independently mutable components to the credential-bearing
+Target.
+
+The launcher registers its official-release generation, exact AWS arguments,
+selected profile, process ID, process start time, and a snapshot of the AWS
+config with the menu app before replacing itself with
+`/opt/av/aws/current/aws`. The AWS CLI receives a minimal config containing
+Automic Vault's `credential_process`; that helper only works as an immediate
+child of the registered, still-running AWS process.
 
 The menu app implements STS `GetSessionToken` and `AssumeRole` directly. It
 caches resulting credentials only for the lifetime of that registered AWS
@@ -24,12 +33,30 @@ descriptor. Ambient AWS credentials, credential processes, SSO/login state,
 web identity, container credentials, plugins, aliases, and pager hooks are not
 available inside the credential-bearing process.
 
-The helper verifies all of the following before returning credentials:
+The Hardener verifies all of the following before activation:
+
+- HTTPS-only download from AWS's fixed release URL, with no redirects;
+- Apple trust, AWS's Developer ID Installer team, notarization, and timestamp;
+- the `com.amazon.aws.cli2` package identity and bounded payload size/count;
+- every native payload component's Amazon Developer ID Application signature,
+  secure timestamp, and Hardened Runtime;
+- absence of dangerous runtime exceptions;
+- regular-file/directory-only extraction, single-link files, and safe paths;
+- an atomic, root-owned, non-user-writable, versioned installation plus a
+  complete content manifest.
+
+The helper then verifies all of the following before returning credentials:
 
 - its immediate parent has the registered PID and process start time;
-- the parent executable is the interpreter declared by the approved Homebrew
-  AWS CLI;
+- the parent is the signed native executable from the approved official
+  release;
 - the live parent arguments exactly match the approved snapshot.
+
+Previously hardened Homebrew installations continue to use their interpreter
+binding until re-hardened. The helper negotiates that legacy protocol only when
+the exact legacy launcher is still installed. Once the official launcher
+replaces it, Homebrew generation registration and credential retrieval fail
+closed.
 
 Normal commands receive temporary credentials. AWS does not permit non-MFA
 `GetSessionToken` credentials to call IAM or most STS operations, so a base
@@ -54,23 +81,21 @@ closed with a precise error.
 
 ## Caveats
 
-- This assumes `/opt/homebrew/bin/aws`, `/usr/local/bin/av`, and
-  `/usr/local/bin/aws`.
-- `/usr/local/bin` must precede `/opt/homebrew/bin` in `PATH`; an absolute call
-  to the real AWS CLI bypasses the wrapper but cannot access Vault-managed
-  credentials.
+- This assumes `/opt/av/aws`, `/usr/local/bin/av`, and `/usr/local/bin/aws`.
+- `/usr/local/bin` must precede other AWS installations in `PATH`; an absolute
+  call to another AWS CLI bypasses the wrapper but cannot use Automic Vault's
+  generation-bound credential helper.
 - `av harden aws` verifies the running app and installed CLI, then requests
-  elevation only to atomically replace `/usr/local/bin/aws`.
+  elevation to copy and reverify the package, extract it without scripts,
+  protect and atomically activate the release, and replace `/usr/local/bin/aws`.
 - The AWS process can use any credential it receives for the lifetime and IAM
   scope of that credential. Automic Vault confines issuance to the approved
   invocation; it cannot harden the upstream AWS CLI process itself.
-- End-to-end runtime integrity depends on protecting the Homebrew AWS
-  distribution from the desktop user. `av harden brew` is optional, but without
-  it the interpreter and source checks can be modified by a same-user attacker.
 
 ## Hardener Migration Notes
 
-`av doctor aws` recognizes the exact previously released `aws-vault` launcher
-as needing rehardening. Modified launchers remain invalid rather than being
-treated as an upgrade. `av harden aws` preserves existing Keychain credentials
-and gate policy while replacing that launcher.
+`av doctor aws` recognizes both the exact previously released `aws-vault`
+launcher and the native-helper Homebrew launcher as requiring re-hardening.
+Modified launchers remain invalid rather than being treated as an upgrade.
+`av harden aws` preserves existing Keychain credentials and gate policy,
+supports idempotent re-hardening, and refuses a signed release downgrade.

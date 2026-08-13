@@ -39,7 +39,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 20;
+pub(crate) const INSTALL_REVISION: u32 = 21;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -185,8 +185,12 @@ where
                 }
             }
         }
-        Some("__install-aws-wrapper") if rest.is_empty() => {
-            match hardeners::aws_cli::install_aws_wrapper() {
+        Some("__install-aws-release") if rest.len() == 2 => {
+            let Some(sha256) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid AWS release digest");
+                return 2;
+            };
+            match hardeners::aws_cli::install_aws_release(sha256, &PathBuf::from(&rest[1])) {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av: {err}");
@@ -319,7 +323,11 @@ where
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
         Some("aws") => aws::run(rest, stderr),
-        Some("aws-credentials") if rest.is_empty() => aws::credentials(stdout, stderr),
+        Some("aws-official") => aws::run_official(rest, stderr),
+        Some("aws-credentials") if rest.is_empty() => aws::credentials(None, stdout, stderr),
+        Some("aws-credentials") if rest == [OsString::from("official-v2")] => {
+            aws::credentials(Some("official-v2"), stdout, stderr)
+        }
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

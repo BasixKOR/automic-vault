@@ -6,15 +6,59 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-const REAL_AWS: &str = "/opt/homebrew/bin/aws";
+const HOMEBREW_AWS: &str = "/opt/homebrew/bin/aws";
+const OFFICIAL_AWS: &str = "/opt/av/aws/current/aws";
+const AWS_STUB_PATH: &str = "/usr/local/bin/aws";
+const HOMEBREW_STUB: &str = "#!/usr/local/bin/av aws\n";
+const OFFICIAL_STUB: &str = "#!/usr/local/bin/av aws-official\n";
 const AWS_ACCESS_KEY_ID: &str = "AWS_ACCESS_KEY_ID";
 const AWS_SECRET_ACCESS_KEY: &str = "AWS_SECRET_ACCESS_KEY";
-const AWS_HELPER_PROTOCOL_VERSION: u32 = 1;
+const AWS_HELPER_PROTOCOL_VERSION: u32 = 2;
 
-pub(crate) fn run(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
-    if args.first().is_some_and(is_stub_arg) {
-        args.remove(0);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AwsGeneration {
+    Homebrew,
+    Official,
+}
+
+impl AwsGeneration {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Homebrew => "homebrew-v1",
+            Self::Official => "official-v2",
+        }
     }
+
+    fn stub(self) -> &'static str {
+        match self {
+            Self::Homebrew => HOMEBREW_STUB,
+            Self::Official => OFFICIAL_STUB,
+        }
+    }
+}
+
+pub(crate) fn run(args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
+    run_generation(AwsGeneration::Homebrew, args, stderr)
+}
+
+pub(crate) fn run_official(args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
+    run_generation(AwsGeneration::Official, args, stderr)
+}
+
+fn run_generation(
+    generation: AwsGeneration,
+    mut args: Vec<OsString>,
+    stderr: &mut dyn Write,
+) -> i32 {
+    if !args.first().is_some_and(|arg| is_stub_arg(arg, generation)) {
+        let _ = writeln!(
+            stderr,
+            "aws: refusing {} launcher without its installed generation-bound stub",
+            generation.name()
+        );
+        return 1;
+    }
+    args.remove(0);
     if unsafe { libc::geteuid() } == 0 {
         let _ = writeln!(
             stderr,
@@ -22,7 +66,7 @@ pub(crate) fn run(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
         );
         return 1;
     }
-    match launch(args) {
+    match launch(generation, args) {
         Ok(never) => never,
         Err(error) => {
             let _ = writeln!(stderr, "aws: {error}");
@@ -31,14 +75,24 @@ pub(crate) fn run(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
     }
 }
 
-fn is_stub_arg(arg: &OsString) -> bool {
-    PathBuf::from(arg).is_absolute()
-        && std::fs::read_to_string(arg)
-            .is_ok_and(|contents| contents == "#!/usr/local/bin/av aws\n")
+fn is_stub_arg(arg: &OsString, generation: AwsGeneration) -> bool {
+    let path = PathBuf::from(arg);
+    path == aws_stub_path()
+        && std::fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_file())
+        && std::fs::read_to_string(path).is_ok_and(|contents| contents == generation.stub())
 }
 
-pub(crate) fn credentials(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
-    match xpc_request("aws-credentials", |_| Ok(())) {
+pub(crate) fn credentials(
+    generation: Option<&str>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match xpc_request("aws-credentials", |message| unsafe {
+        if let Some(generation) = generation {
+            xpc_set_string(message, "aws_generation", generation)?;
+        }
+        Ok(())
+    }) {
         Ok(value) => {
             let _ = writeln!(stdout, "{value}");
             0
@@ -51,7 +105,10 @@ pub(crate) fn credentials(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32
 }
 
 pub(crate) fn ensure_helper_ready() -> Result<(), String> {
-    let version = xpc_request("aws-helper-version", |_| Ok(())).map_err(|error| {
+    let version = xpc_request("aws-helper-version", |message| unsafe {
+        xpc_set_u64(message, "requested_version", AWS_HELPER_PROTOCOL_VERSION.into());
+        Ok(())
+    }).map_err(|error| {
         format!(
             "the running Automic Vault app does not support native AWS credentials; update and reopen the app before rehardening AWS ({error})"
         )
@@ -69,7 +126,7 @@ fn validate_helper_version(version: &str) -> Result<(), String> {
     }
 }
 
-fn launch(args: Vec<OsString>) -> Result<i32, String> {
+fn launch(generation: AwsGeneration, args: Vec<OsString>) -> Result<i32, String> {
     let profile = selected_profile(&args)?;
     let config_path = std::env::var_os("AWS_CONFIG_FILE")
         .map(PathBuf::from)
@@ -80,12 +137,14 @@ fn launch(args: Vec<OsString>) -> Result<i32, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(format!("failed to read {}: {error}", config_path.display())),
     };
-    let target = real_aws_path();
+    let target = real_aws_path(generation);
     if !target.is_file() {
-        return Err(format!(
-            "Homebrew AWS CLI is not installed at {}",
-            target.display()
-        ));
+        return Err(format!("AWS CLI is not installed at {}", target.display()));
+    }
+    if generation == AwsGeneration::Official
+        && crate::test_env_var("AUTOMIC_VAULT_TEST_OFFICIAL_AWS_PATH").is_none()
+    {
+        crate::isotopes::hardeners::aws_release::current_release_valid()?;
     }
     let cwd = std::env::current_dir()
         .map_err(|error| format!("failed to read current directory: {error}"))?;
@@ -98,6 +157,7 @@ fn launch(args: Vec<OsString>) -> Result<i32, String> {
         xpc_set_string(message, "cwd", &cwd.to_string_lossy())?;
         xpc_set_string(message, "tool", "aws")?;
         xpc_set_string(message, "aws_profile", &profile)?;
+        xpc_set_string(message, "aws_generation", generation.name())?;
         xpc_set_data(message, "aws_config", &config);
         xpc_set_bool(message, "replace_existing_env", false);
         xpc_set_bool(message, "allow_missing_keys", false);
@@ -181,10 +241,21 @@ fn safe_environment_key(key: &std::ffi::OsStr) -> bool {
         || key == "LANG"
 }
 
-fn real_aws_path() -> PathBuf {
-    crate::test_env_var("AUTOMIC_VAULT_TEST_REAL_AWS_PATH")
+fn real_aws_path(generation: AwsGeneration) -> PathBuf {
+    match generation {
+        AwsGeneration::Homebrew => crate::test_env_var("AUTOMIC_VAULT_TEST_REAL_AWS_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(HOMEBREW_AWS)),
+        AwsGeneration::Official => crate::test_env_var("AUTOMIC_VAULT_TEST_OFFICIAL_AWS_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(OFFICIAL_AWS)),
+    }
+}
+
+fn aws_stub_path() -> PathBuf {
+    crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(REAL_AWS))
+        .unwrap_or_else(|| PathBuf::from(AWS_STUB_PATH))
 }
 
 fn inherited_file(contents: &[u8]) -> Result<File, String> {
@@ -345,6 +416,14 @@ unsafe fn xpc_set_bool(object: XpcObject, key: &str, value: bool) {
 }
 
 #[cfg(target_os = "macos")]
+unsafe fn xpc_set_u64(object: XpcObject, key: &str, value: u64) {
+    unsafe extern "C" {
+        fn xpc_dictionary_set_uint64(object: XpcObject, key: *const i8, value: u64);
+    }
+    unsafe { xpc_dictionary_set_uint64(object, CString::new(key).unwrap().as_ptr(), value) };
+}
+
+#[cfg(target_os = "macos")]
 unsafe fn xpc_set_data(object: XpcObject, key: &str, value: &[u8]) {
     unsafe extern "C" {
         fn xpc_dictionary_set_data(
@@ -410,11 +489,38 @@ mod tests {
 
     #[test]
     fn native_helper_requires_the_supported_server_version() {
-        assert_eq!(validate_helper_version("1"), Ok(()));
+        assert_eq!(validate_helper_version("2"), Ok(()));
         assert_eq!(
-            validate_helper_version("2"),
-            Err("the running Automic Vault app reported unsupported AWS helper version 2".into())
+            validate_helper_version("1"),
+            Err("the running Automic Vault app reported unsupported AWS helper version 1".into())
         );
+    }
+
+    #[test]
+    fn launcher_generation_requires_the_exact_installed_stub() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let path = std::env::temp_dir().join(format!("av-aws-stub-{}", std::process::id()));
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH", &path) };
+        std::fs::write(&path, HOMEBREW_STUB).unwrap();
+        assert!(is_stub_arg(
+            &path.clone().into_os_string(),
+            AwsGeneration::Homebrew
+        ));
+        assert!(!is_stub_arg(
+            &path.clone().into_os_string(),
+            AwsGeneration::Official
+        ));
+        std::fs::write(&path, OFFICIAL_STUB).unwrap();
+        assert!(!is_stub_arg(
+            &path.clone().into_os_string(),
+            AwsGeneration::Homebrew
+        ));
+        assert!(is_stub_arg(
+            &path.clone().into_os_string(),
+            AwsGeneration::Official
+        ));
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH") };
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
