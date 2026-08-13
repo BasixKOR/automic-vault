@@ -146,7 +146,9 @@ final class DashboardModel: ObservableObject {
     @Published var isRenamingSecret = false
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
-    @Published var searchText = ""
+    @Published var searchText = "" {
+        didSet { normalizeSelection() }
+    }
     @Published private(set) var cliInstallState: CLIInstallState?
     @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
@@ -159,6 +161,7 @@ final class DashboardModel: ObservableObject {
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
         self.cliInstallState = cliInstallState
+        normalizeSelection()
     }
 
     var items: [DashboardItem] {
@@ -274,6 +277,7 @@ final class DashboardModel: ObservableObject {
     }
 
     var selectedItem: DashboardItem? {
+        let items = items
         if let selectedItemID, let item = items.first(where: { $0.id == selectedItemID }) {
             return item
         }
@@ -337,6 +341,7 @@ final class DashboardModel: ObservableObject {
     func selectSection(_ section: DashboardSection) {
         selectedSection = section
         selectedItemID = nil
+        normalizeSelection()
     }
 
     func select(_ item: DashboardItem) {
@@ -356,8 +361,7 @@ final class DashboardModel: ObservableObject {
     }
 
     func showSettings() {
-        selectedSection = .settings
-        selectedItemID = nil
+        selectSection(.settings)
     }
 
     func reviewBlessing(
@@ -527,9 +531,7 @@ final class DashboardModel: ObservableObject {
             }
             snapshot = next
             self.cliInstallState = cliInstallState
-            if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
-                selectedItemID = nil
-            }
+            normalizeSelection()
             isReloading = false
         }
     }
@@ -537,9 +539,13 @@ final class DashboardModel: ObservableObject {
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
         detectorFindingsGeneration += 1
         snapshot.detectorFindings = findings
-        if selectedItemID.map({ id in !items.contains { $0.id == id } }) == true {
-            selectedItemID = nil
-        }
+        normalizeSelection()
+    }
+
+    private func normalizeSelection() {
+        let items = items
+        guard selectedItemID.map({ id in items.contains { $0.id == id } }) != true else { return }
+        selectedItemID = items.first?.id
     }
 
     func addSecret(
@@ -1076,13 +1082,16 @@ func runDashboardSearchSelfCheck() -> Int32 {
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.subtitle == "Hardened.",
           model.items.first(where: { $0.id == "gh" })?.subtitle == "Hardener available.",
-          model.items.first(where: { $0.id == "git" })?.subtitle == "Detector only."
+          model.items.first(where: { $0.id == "git" })?.subtitle == "Detector only.",
+          model.selectedItemID == "aws"
     else { return 1 }
+    model.selectedItemID = "git"
     model.searchText = "aws"
     guard model.count(for: .detectors) == 1,
           model.count(for: .doctor) == 1,
           model.count(for: .hardenedTools) == 1,
-          model.count(for: .allSecrets) == 1
+          model.count(for: .allSecrets) == 1,
+          model.selectedItemID == "aws"
     else { return 1 }
     guard isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed")!),
           !isCLIInstallCompletionURL(URL(string: "automic-vault://cli-installed/extra")!),
@@ -1144,6 +1153,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         "secret-name-access",
         "about",
     ],
+          model.selectedItemID == "automatic-approval-feedback",
           guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
           guiPATH(environment: [:]) == "<unset>"
     else { return 1 }
@@ -1390,8 +1400,9 @@ private struct DashboardListView: View {
     @ObservedObject var model: DashboardModel
 
     var body: some View {
+        let items = model.items
         Group {
-            if model.items.isEmpty {
+            if items.isEmpty {
                 if model.isReloading {
                     ProgressView()
                         .controlSize(.large)
@@ -1402,7 +1413,7 @@ private struct DashboardListView: View {
                 }
             } else {
                 List(selection: itemSelection) {
-                    rows(model.items)
+                    rows(items)
                 }
                 .listStyle(.inset)
             }
@@ -1414,7 +1425,7 @@ private struct DashboardListView: View {
 
     private var itemSelection: Binding<String?> {
         Binding {
-            model.selectedItem?.id
+            model.selectedItemID
         } set: { id in
             model.selectedItemID = id
         }
