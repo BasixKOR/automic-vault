@@ -188,11 +188,22 @@ fn verify_and_extract_package(package: &Path, staging: &Path) -> Result<Extracte
         .env("HOME", "/var/empty")
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("LANG", "C")
+        .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
     if isolated {
-        command.uid(u32::MAX - 1).gid(u32::MAX - 1);
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setgroups(0, std::ptr::null()) != 0
+                    || libc::setgid(u32::MAX - 1) != 0
+                    || libc::setuid(u32::MAX - 1) != 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
     let status = command
         .output()
@@ -388,6 +399,9 @@ fn validate_payload_tree(root: &Path) -> Result<(u64, u64), String> {
     if !root_metadata.file_type().is_dir() {
         return Err("AWS package payload is not a directory".into());
     }
+    if root_metadata.permissions().mode() & 0o7000 != 0 {
+        return Err("AWS package payload root has special permission bits".into());
+    }
     let mut entries = 0u64;
     let mut bytes = 0u64;
     walk(root, &mut |path, metadata| {
@@ -407,6 +421,7 @@ fn validate_payload_tree(root: &Path) -> Result<(u64, u64), String> {
         entries = entries.saturating_add(1);
         if metadata.file_type().is_symlink()
             || !(metadata.file_type().is_file() || metadata.file_type().is_dir())
+            || metadata.permissions().mode() & 0o7000 != 0
         {
             return Err(format!(
                 "refusing unsupported AWS payload entry {}",
@@ -553,8 +568,8 @@ fn protect_tree(root: &Path) -> Result<(), String> {
                 std::io::Error::last_os_error()
             ));
         }
-        let mode = metadata.permissions().mode() & 0o7755;
-        fs::set_permissions(path, fs::Permissions::from_mode(mode & !0o022))
+        let mode = metadata.permissions().mode() & 0o755;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
             .map_err(|err| format!("failed to protect {}: {err}", path.display()))
     };
     protect(
@@ -582,6 +597,7 @@ fn validate_protected_entry(path: &Path, metadata: &fs::Metadata) -> Result<(), 
         || metadata.uid() != required_uid
         || metadata.gid() != required_gid
         || metadata.permissions().mode() & 0o022 != 0
+        || metadata.permissions().mode() & 0o7000 != 0
     {
         return Err(format!(
             "official AWS CLI contains an unsafe entry: {}",
@@ -804,6 +820,7 @@ fn command_output(program: &str, args: &[&str], path: Option<&Path>) -> Result<S
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
         .env("LANG", "C")
+        .env("LC_ALL", "C")
         .stdin(Stdio::null());
     if let Some(path) = path {
         command.arg(path);
@@ -874,14 +891,12 @@ mod tests {
         );
         assert!(validate_version("2.36.22").is_ok());
         assert!(validate_version("../../tmp").is_err());
-        assert!(
-            xml_attribute(
-                &format!("{info}<pkg-info version=\"2.0.0\">"),
-                "pkg-info",
-                "version"
-            )
-            .is_err()
-        );
+        assert!(xml_attribute(
+            &format!("{info}<pkg-info version=\"2.0.0\">"),
+            "pkg-info",
+            "version"
+        )
+        .is_err());
     }
 
     #[test]
@@ -891,6 +906,9 @@ mod tests {
         fs::write(directory.join("aws"), "#!/bin/sh\n").unwrap();
         fs::set_permissions(directory.join("aws"), fs::Permissions::from_mode(0o755)).unwrap();
         assert!(validate_payload_tree(&directory).is_ok());
+        fs::set_permissions(directory.join("aws"), fs::Permissions::from_mode(0o4755)).unwrap();
+        assert!(validate_payload_tree(&directory).is_err());
+        fs::set_permissions(directory.join("aws"), fs::Permissions::from_mode(0o755)).unwrap();
         std::os::unix::fs::symlink("aws", directory.join("link")).unwrap();
         assert!(validate_payload_tree(&directory).is_err());
         let _ = fs::remove_dir_all(directory);

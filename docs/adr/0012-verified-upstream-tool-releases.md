@@ -37,11 +37,12 @@ through `O_NOFOLLOW`, rechecks its SHA-256, and verifies all of these claims:
 - dangerous runtime exceptions are absent.
 
 The package is expanded as the unprivileged `nobody` account. Installer scripts
-are never run. The unmodified payload is installed in a version-and-digest-bound
-directory under `/opt/av/aws/versions`, made root-owned and non-user-writable,
-given a complete SHA-256 content manifest, reverified, and activated through an
-atomic `current` symlink. Signed downgrades are rejected. Re-hardening the same
-release is supported.
+are never run. Upstream payload files remain unmodified; AV metadata is added
+alongside them in a version-and-digest-bound directory under
+`/opt/av/aws/versions`. The tree is made root-owned and non-user-writable, given
+a complete SHA-256 content manifest, reverified, and activated through an atomic
+`current` symlink. Signed downgrades are rejected. Re-hardening the same release
+is supported.
 
 The AWS Gate Client protocol has two explicit generations. Protocol v1 accepts
 the exact legacy Homebrew launcher and runtime shape. Protocol v2 accepts only

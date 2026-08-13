@@ -3157,7 +3157,7 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             generation = .homebrewV1
         }
-        let installedStub = try? String(contentsOfFile: "/usr/local/bin/aws", encoding: .utf8)
+        let installedStub = readProtectedAWSStub(path: "/usr/local/bin/aws")
         guard installedStub.map({
             awsGenerationMatchesInstalledStub(generation, target: request.target, stub: $0)
         }) == true else {

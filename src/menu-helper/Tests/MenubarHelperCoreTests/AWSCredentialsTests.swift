@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import MenubarHelperCore
 
@@ -90,6 +91,34 @@ import Testing
         target: AWSRuntimeGeneration.homebrewV1.target,
         stub: AWSRuntimeGeneration.officialV2.stub
     ))
+}
+
+@Test func installedAWSStubReadRequiresExactFileIdentityAndMode() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "av-aws-stub-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stub = directory.appending(path: "aws")
+    try Data(AWSRuntimeGeneration.officialV2.stub.utf8).write(to: stub)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+    #expect(readProtectedAWSStub(
+        path: stub.path,
+        requiredUID: getuid(),
+        requiredGID: getgid()
+    ) == AWSRuntimeGeneration.officialV2.stub)
+    try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: stub.path)
+    #expect(readProtectedAWSStub(
+        path: stub.path,
+        requiredUID: getuid(),
+        requiredGID: getgid()
+    ) == nil)
+    try FileManager.default.removeItem(at: stub)
+    try FileManager.default.createSymbolicLink(at: stub, withDestinationURL: directory)
+    #expect(readProtectedAWSStub(
+        path: stub.path,
+        requiredUID: getuid(),
+        requiredGID: getgid()
+    ) == nil)
 }
 
 @Test func parsesOnlyArgumentFreeAWSInterpreters() throws {

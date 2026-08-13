@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 public enum AWSCredentialError: Error, Equatable, LocalizedError, Sendable {
@@ -163,6 +164,29 @@ public func awsGenerationMatchesInstalledStub(
     stub: String
 ) -> Bool {
     target == generation.target && stub == generation.stub
+}
+
+public func readProtectedAWSStub(
+    path: String,
+    requiredUID: uid_t = 0,
+    requiredGID: gid_t = 0
+) -> String? {
+    let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+    guard descriptor >= 0 else { return nil }
+    defer { close(descriptor) }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0,
+          info.st_mode & S_IFMT == S_IFREG,
+          info.st_uid == requiredUID,
+          info.st_gid == requiredGID,
+          info.st_mode & 0o7777 == 0o755,
+          info.st_size > 0,
+          info.st_size <= 128
+    else { return nil }
+    var bytes = [UInt8](repeating: 0, count: Int(info.st_size) + 1)
+    let count = Darwin.read(descriptor, &bytes, bytes.count)
+    guard count == info.st_size else { return nil }
+    return String(bytes: bytes.prefix(Int(count)), encoding: .utf8)
 }
 
 public func awsSTSRequest(
