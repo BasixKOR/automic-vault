@@ -79,6 +79,18 @@ pub(crate) fn install_privileged(expected_sha256: &str, package: &Path) -> Resul
 
 pub(crate) fn current_release_valid() -> Result<(), String> {
     let root = install_root();
+    let versions = root.join("versions");
+    for directory in [&root, &versions] {
+        validate_protected_entry(
+            directory,
+            &fs::symlink_metadata(directory).map_err(|err| {
+                format!(
+                    "official AWS CLI install directory {} is unavailable: {err}",
+                    directory.display()
+                )
+            })?,
+        )?;
+    }
     let current = root.join("current");
     let link_metadata = fs::symlink_metadata(&current)
         .map_err(|err| format!("official AWS CLI current release is unavailable: {err}"))?;
@@ -97,7 +109,8 @@ pub(crate) fn current_release_valid() -> Result<(), String> {
                 .into(),
         );
     }
-    let target = target_path();
+    let release_root = root.join(expected_link);
+    let target = release_root.join("aws");
     let metadata = fs::symlink_metadata(&target).map_err(|err| {
         format!(
             "official AWS CLI is unavailable at {}: {err}",
@@ -110,8 +123,8 @@ pub(crate) fn current_release_valid() -> Result<(), String> {
             target.display()
         ));
     }
-    validate_protected_tree(&current, false)?;
-    verify_manifest(&current)?;
+    validate_protected_tree(&release_root, true)?;
+    verify_manifest(&release_root)?;
     verify_aws_executable(&target)
 }
 
@@ -960,6 +973,16 @@ mod tests {
             .unwrap()
             .write_all(b"corrupt")
             .unwrap();
+        assert!(current_release_valid().is_err());
+
+        install_privileged(&digest, Path::new(&package)).unwrap();
+        current_release_valid().unwrap();
+        let release_root = fs::canonicalize(target_path())
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        fs::set_permissions(&release_root, fs::Permissions::from_mode(0o777)).unwrap();
         assert!(current_release_valid().is_err());
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_AWS_INSTALL_ROOT") };
