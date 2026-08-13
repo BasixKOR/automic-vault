@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::Finding;
 use crate::path_security::USER_WRITABLE_PATH_REASON;
@@ -159,6 +160,17 @@ pub(crate) struct DetectorMetadata {
     pub(crate) homepage: String,
     pub(crate) docs_url: String,
     pub(crate) documentation: &'static str,
+    pub(crate) watch_scopes: Vec<DetectorWatchScope>,
+}
+
+pub(crate) struct DetectorWatchScope {
+    pub(crate) path: String,
+    pub(crate) recursive: bool,
+}
+
+pub(crate) struct DetectorResult {
+    pub(crate) detectors: Vec<String>,
+    pub(crate) finding: Finding,
 }
 
 struct Detector {
@@ -368,8 +380,36 @@ const DETECTORS: &[Detector] = &[
 ];
 
 pub(crate) fn findings(home: &Path) -> Vec<Finding> {
+    findings_for(home, &[])
+        .expect("the full detector set is always valid")
+        .into_iter()
+        .map(|result| result.finding)
+        .collect()
+}
+
+pub(crate) fn findings_for(
+    home: &Path,
+    detector_names: &[String],
+) -> Result<Vec<DetectorResult>, String> {
+    let selected = detector_names
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    for name in &selected {
+        if !DETECTORS
+            .iter()
+            .any(|detector| detector_name(detector.module) == *name)
+        {
+            return Err(format!("unknown detector: {name}"));
+        }
+    }
+
     let mut findings = Vec::new();
     for detector in DETECTORS {
+        let name = detector_name(detector.module);
+        if !selected.is_empty() && !selected.contains(name.as_str()) {
+            continue;
+        }
         let mut detected = (detector.findings)(home);
         for finding in &mut detected {
             finding.homepage = detector.docs_url;
@@ -378,9 +418,32 @@ pub(crate) fn findings(home: &Path) -> Vec<Finding> {
                 finding.solution = solution;
             }
         }
-        findings.extend(detected);
+        findings.extend(detected.into_iter().map(|finding| DetectorResult {
+            detectors: vec![name.clone()],
+            finding,
+        }));
     }
-    merge_duplicate_shell_path_findings(findings)
+    Ok(merge_duplicate_owned_shell_path_findings(findings))
+}
+
+fn merge_duplicate_owned_shell_path_findings(findings: Vec<DetectorResult>) -> Vec<DetectorResult> {
+    let mut merged: Vec<DetectorResult> = Vec::with_capacity(findings.len());
+    for finding in findings {
+        let existing = shell_path_entry(&finding.finding).and_then(|entry| {
+            merged.iter_mut().find(|candidate| {
+                candidate.finding.source != finding.finding.source
+                    && shell_path_entry(&candidate.finding) == Some(entry)
+            })
+        });
+        match existing {
+            Some(existing) => {
+                merge_shell_path_finding(&mut existing.finding);
+                existing.detectors.extend(finding.detectors);
+            }
+            None => merged.push(finding),
+        }
+    }
+    merged
 }
 
 const SHELL_PATH_FINDING_SOURCES: &[&str] = &["bash", "zsh"];
@@ -391,6 +454,7 @@ const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary 
 /// so an insecure directory is reported once per shell. Collapse those
 /// duplicates into a single finding that names every affected shell instead
 /// of doubling the audit for anyone with both shells configured.
+#[cfg(test)]
 fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
     let mut merged: Vec<Finding> = Vec::with_capacity(findings.len());
     for finding in findings {
@@ -464,7 +528,7 @@ fn first_paragraph(section: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn metadata() -> Vec<DetectorMetadata> {
+pub(crate) fn metadata(home: &Path) -> Vec<DetectorMetadata> {
     DETECTORS
         .iter()
         .map(|detector| {
@@ -474,9 +538,77 @@ pub(crate) fn metadata() -> Vec<DetectorMetadata> {
                 homepage: detector.docs_url.to_string(),
                 docs_url: detector.docs_url.to_string(),
                 name,
+                watch_scopes: sensitive_file_scopes(detector.documentation, home),
             }
         })
         .collect()
+}
+
+fn sensitive_file_scopes(documentation: &str, home: &Path) -> Vec<DetectorWatchScope> {
+    let Some(section) = documentation
+        .split_once("## Sensitive Files")
+        .map(|(_, section)| section)
+        .and_then(|section| section.split("\n## ").next())
+    else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    section
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- `")?.strip_suffix('`'))
+        .filter_map(|path| resolve_sensitive_path(path, home))
+        .filter(|scope| seen.insert((scope.path.clone(), scope.recursive)))
+        .collect()
+}
+
+fn resolve_sensitive_path(pattern: &str, home: &Path) -> Option<DetectorWatchScope> {
+    if pattern.starts_with("./") {
+        return None;
+    }
+    let home = home.to_str()?;
+    let expanded = if let Some(rest) = pattern.strip_prefix("~/") {
+        format!("{home}/{rest}")
+    } else if let Some(expression) = pattern.strip_prefix("${") {
+        let (expression, suffix) = expression.split_once('}')?;
+        let (name, fallback) = expression.split_once(":-")?;
+        let base = std::env::var(name)
+            .ok()
+            .filter(|value| Path::new(value).is_absolute())
+            .unwrap_or_else(|| fallback.replace("$HOME", home));
+        format!("{base}{suffix}")
+    } else if let Some(rest) = pattern.strip_prefix('$') {
+        let name_end = rest.find('/').unwrap_or(rest.len());
+        let (name, suffix) = rest.split_at(name_end);
+        let base = if name == "HOME" {
+            home.to_string()
+        } else {
+            std::env::var(name)
+                .ok()
+                .filter(|value| Path::new(value).is_absolute())?
+        };
+        format!("{base}{suffix}")
+    } else if Path::new(pattern).is_absolute() {
+        pattern.to_string()
+    } else {
+        return None;
+    };
+    if expanded.contains('$') {
+        return None;
+    }
+
+    let wildcard = expanded.find('*');
+    let path = match wildcard {
+        Some(index) if expanded[..index].ends_with('/') => {
+            PathBuf::from(expanded[..index].trim_end_matches('/'))
+        }
+        Some(index) => Path::new(&expanded[..index]).parent()?.to_path_buf(),
+        None => PathBuf::from(expanded),
+    };
+    let path = path.to_str()?.to_string();
+    (Path::new(&path).is_absolute() && path != home).then_some(DetectorWatchScope {
+        path,
+        recursive: wildcard.is_some(),
+    })
 }
 
 fn detector_name(module: &str) -> String {
@@ -501,7 +633,7 @@ mod tests {
 
     #[test]
     fn metadata_names_detectors() {
-        let metadata = metadata();
+        let metadata = metadata(Path::new("/Users/tester"));
         let names = metadata
             .iter()
             .map(|detector| detector.name.clone())
@@ -538,6 +670,38 @@ mod tests {
                 .docs_url,
             format!("{DOCS_BASE}git/credential_fill.md")
         );
+    }
+
+    #[test]
+    fn sensitive_files_resolve_to_narrow_absolute_watch_scopes() {
+        let scopes = sensitive_file_scopes(
+            "## Sensitive Files\n\n- `~/.aws/credentials`\n- `~/.aws/login/cache/*.json`\n- `./project.json`\n- Directories listed in `$PATH`\n",
+            Path::new("/Users/tester"),
+        );
+
+        assert_eq!(scopes.len(), 2);
+        assert_eq!(scopes[0].path, "/Users/tester/.aws/credentials");
+        assert!(!scopes[0].recursive);
+        assert_eq!(scopes[1].path, "/Users/tester/.aws/login/cache");
+        assert!(scopes[1].recursive);
+        assert!(scopes.iter().all(|scope| scope.path != "/Users/tester"));
+    }
+
+    #[test]
+    fn every_file_driven_detector_has_only_narrow_watch_scopes() {
+        let home = Path::new("/Users/tester");
+        let metadata = metadata(home);
+        let unwatched = metadata
+            .iter()
+            .filter(|detector| detector.watch_scopes.is_empty())
+            .map(|detector| detector.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(unwatched, ["gh-cli-keychain-access", "macOS", "sip"]);
+        assert!(metadata.iter().all(|detector| detector.watch_scopes.len() <= 10));
+        assert!(metadata.iter().flat_map(|detector| &detector.watch_scopes).all(
+            |scope| Path::new(&scope.path).is_absolute() && scope.path != home.to_str().unwrap()
+        ));
     }
 
     #[test]

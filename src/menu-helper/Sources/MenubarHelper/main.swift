@@ -80,7 +80,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var approval: ApprovalServer?
     private var scanWorkItem: DispatchWorkItem?
     private var scanBurstStartedAt: TimeInterval?
+    private var pendingFullScan = false
+    private var pendingScanDetectors = Set<String>()
+    private var isScanRunning = false
+    private var latestDetectorFindings: [DetectorFinding] = []
+    private var detectorMetadata: [DetectorMetadata] = []
     private var eventStream: FSEventStreamRef?
+    private var recursiveWatchDetectors: [String: Set<String>] = [:]
+    private var fileWatchSources: [DispatchSourceFileSystemObject] = []
+    private var missingFileWatchDetectors: [String: Set<String>] = [:]
+    private var missingFilePoller: DispatchSourceTimer?
     private var mainWindow: NSWindow?
     private var isUserSessionActive = true
     private var areScreensAwake = true
@@ -283,13 +292,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 controller.reviewBlessing(request, completion: completion)
+            } onOpenWindow: { [weak self] in
+                guard let self else { return }
+                let secretGateID = self.consumePendingSecretGate()
+                _ = self.consumePendingMainWindow()
+                self.showMainWindow(secretGateID: secretGateID)
             } canRequestHumanApproval: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
             try approval.start()
             self.approval = approval
             scheduleScan(after: 0)
-            startHomeWatcher()
+            scanQueue.async { [weak self] in
+                let metadata = loadDetectorMetadata(avExecutableURL: avExecutableURL())
+                Task { @MainActor in
+                    self?.detectorMetadata = metadata
+                    self?.startDetectorWatchers()
+                }
+            }
         } catch {
             NSAlert(error: error).runModal()
             NSApp.terminate(nil)
@@ -309,12 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scanWorkItem?.cancel()
         scanWorkItem = nil
         scanBurstStartedAt = nil
-        if let eventStream {
-            FSEventStreamStop(eventStream)
-            FSEventStreamInvalidate(eventStream)
-            FSEventStreamRelease(eventStream)
-            self.eventStream = nil
-        }
+        stopDetectorWatchers()
         approval?.stop()
         approval = nil
     }
@@ -519,9 +534,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let controller = AutomicVaultMainWindowController { [weak self] in
-            self?.checkForUpdates()
-        }
+        let controller = AutomicVaultMainWindowController(
+            checkForUpdates: { [weak self] in self?.checkForUpdates() },
+            requestScan: { [weak self] in self?.scheduleScan(after: 0) }
+        )
+        controller.updateDetectorFindings(latestDetectorFindings)
         controller.setAvailableUpdateVersion(readyUpdate?.version)
         let defaultWindowSize = NSSize(width: 860, height: 578)
         let window = AutomicVaultWindow(
@@ -564,8 +581,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.showAccessRequest(id: id)
     }
 
-    private func startHomeWatcher() {
-        // ponytail: one home FSEvents stream; add detector path metadata if rescans get noisy.
+    private func startDetectorWatchers() {
+        stopDetectorWatchers()
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        var exact = [String: Set<String>]()
+        var recursive = [String: Set<String>]()
+        for detector in detectorMetadata {
+            for scope in detector.watchScopes {
+                let path = URL(fileURLWithPath: scope.path).standardizedFileURL.path
+                guard path != home else { continue }
+                var isDirectory: ObjCBool = false
+                let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                if scope.recursive || (exists && isDirectory.boolValue) {
+                    if exists {
+                        recursive[path, default: []].insert(detector.name)
+                    } else {
+                        missingFileWatchDetectors[path, default: []].insert(detector.name)
+                    }
+                } else if exists {
+                    exact[path, default: []].insert(detector.name)
+                } else {
+                    missingFileWatchDetectors[path, default: []].insert(detector.name)
+                }
+            }
+        }
+        for finding in latestDetectorFindings {
+            for affected in finding.affected where affected.path.hasPrefix("/") {
+                let path = URL(fileURLWithPath: affected.path).standardizedFileURL.path
+                guard path != home else { continue }
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+                   isDirectory.boolValue {
+                    recursive[path, default: []].formUnion(finding.detectors)
+                } else {
+                    exact[path, default: []].formUnion(finding.detectors)
+                }
+            }
+        }
+
+        for (path, detectors) in exact {
+            let descriptor = open(path, O_EVTONLY)
+            guard descriptor >= 0 else { continue }
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: descriptor,
+                eventMask: [.write, .delete, .rename, .attrib, .extend],
+                queue: .main
+            )
+            source.setEventHandler { [weak self, source] in
+                self?.scheduleScan(detectors: detectors, after: 1)
+                if !source.data.intersection([.delete, .rename]).isEmpty {
+                    self?.startDetectorWatchers()
+                }
+            }
+            source.setCancelHandler { close(descriptor) }
+            source.resume()
+            fileWatchSources.append(source)
+        }
+
+        recursiveWatchDetectors = recursive
+        startRecursiveWatcher(paths: Array(recursive.keys))
+        startMissingFilePoller()
+    }
+
+    private func startRecursiveWatcher(paths: [String]) {
+        guard !paths.isEmpty else { return }
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
@@ -573,17 +652,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             release: nil,
             copyDescription: nil
         )
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
             guard let info else { return }
+            let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+            guard paths.count == count else { return }
             MainActor.assumeIsolated {
-                Unmanaged<AppDelegate>.fromOpaque(info).takeUnretainedValue().scheduleScan(after: 1)
+                Unmanaged<AppDelegate>.fromOpaque(info).takeUnretainedValue()
+                    .handleRecursiveFileEvents(paths)
             }
         }
         guard let stream = FSEventStreamCreate(
             nil,
             callback,
             &context,
-            [FileManager.default.homeDirectoryForCurrentUser.path] as CFArray,
+            paths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             1,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
@@ -596,7 +678,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FSEventStreamStart(stream)
     }
 
-    private func scheduleScan(after delay: TimeInterval) {
+    private func handleRecursiveFileEvents(_ paths: [String]) {
+        var detectors = Set<String>()
+        for changedPath in paths {
+            for (root, names) in recursiveWatchDetectors
+            where changedPath == root || changedPath.hasPrefix(root + "/") {
+                detectors.formUnion(names)
+            }
+        }
+        if !detectors.isEmpty {
+            scheduleScan(detectors: detectors, after: 1)
+        }
+    }
+
+    private func startMissingFilePoller() {
+        guard !missingFileWatchDetectors.isEmpty else { return }
+        let poller = DispatchSource.makeTimerSource(queue: .main)
+        poller.schedule(deadline: .now() + 30, repeating: 30)
+        poller.setEventHandler { [weak self] in
+            guard let self else { return }
+            let created = self.missingFileWatchDetectors.filter {
+                FileManager.default.fileExists(atPath: $0.key)
+            }
+            guard !created.isEmpty else { return }
+            self.scheduleScan(
+                detectors: created.values.reduce(into: Set<String>()) { $0.formUnion($1) },
+                after: 0
+            )
+            self.startDetectorWatchers()
+        }
+        poller.resume()
+        missingFilePoller = poller
+    }
+
+    private func stopDetectorWatchers() {
+        fileWatchSources.forEach { $0.cancel() }
+        fileWatchSources.removeAll()
+        missingFilePoller?.cancel()
+        missingFilePoller = nil
+        missingFileWatchDetectors.removeAll()
+        recursiveWatchDetectors.removeAll()
+        if let eventStream {
+            FSEventStreamStop(eventStream)
+            FSEventStreamInvalidate(eventStream)
+            FSEventStreamRelease(eventStream)
+            self.eventStream = nil
+        }
+    }
+
+    private func scheduleScan(detectors: Set<String>? = nil, after delay: TimeInterval) {
+        if let detectors, !pendingFullScan {
+            pendingScanDetectors.formUnion(scanDetectorGroup(detectors))
+        } else if detectors == nil {
+            pendingFullScan = true
+            pendingScanDetectors.removeAll()
+        }
         let scheduledDelay = boundedScanDelay(
             now: ProcessInfo.processInfo.systemUptime,
             burstStartedAt: &scanBurstStartedAt,
@@ -607,15 +743,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let workItem = DispatchWorkItem { [weak self] in
             self?.scanWorkItem = nil
             self?.scanBurstStartedAt = nil
-            self?.runScan()
+            self?.runPendingScan()
         }
         scanWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + scheduledDelay, execute: workItem)
     }
 
-    private func runScan() {
+    private func runPendingScan() {
+        guard !isScanRunning, pendingFullScan || !pendingScanDetectors.isEmpty else { return }
+        let detectors = pendingFullScan ? nil : pendingScanDetectors
+        pendingFullScan = false
+        pendingScanDetectors.removeAll()
+        isScanRunning = true
         scanQueue.async { [weak self] in
-            let result = scanResult()
+            let result = scanResult(detectors: detectors)
             Task { @MainActor in
                 self?.applyScanResult(result)
             }
@@ -623,37 +764,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyScanResult(_ result: ScanResult) {
+        isScanRunning = false
         switch result {
-        case .clean(_):
-            updateMainWindowFindings([])
+        case .success(let findings, let detectors):
+            if let detectors {
+                latestDetectorFindings.removeAll {
+                    !Set($0.detectors).isDisjoint(with: detectors)
+                }
+                latestDetectorFindings.append(contentsOf: findings)
+            } else {
+                latestDetectorFindings = findings
+            }
+            if !detectorMetadata.isEmpty {
+                startDetectorWatchers()
+            }
+            updateMainWindowFindings(latestDetectorFindings)
+            let count = latestDetectorFindings.count
+            let detectorCount = Set(latestDetectorFindings.flatMap(\.detectors)).count
             #if !DEBUG
-            lastTelemetryFindingCount = nil
-            #endif
-            statusItem.button?.image = brandImage()
-            setScanStatus(
-                "No Vulnerabilities Detected",
-                image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
-            )
-        case .findings(let findings, let detectorCount, let level):
-            updateMainWindowFindings(findings)
-            let count = findings.count
-            #if !DEBUG
-            if lastTelemetryFindingCount != detectorCount {
+            if detectorCount == 0 {
+                lastTelemetryFindingCount = nil
+            } else if lastTelemetryFindingCount != detectorCount {
                 postHogTelemetry.captureDetectorTriggered(count: detectorCount)
                 lastTelemetryFindingCount = detectorCount
             }
             #endif
-            statusItem.button?.image = switch level {
-            case .medium: brandImage()
-            case .high: brandImage(color: .systemRed)
+            if latestDetectorFindings.isEmpty {
+                statusItem.button?.image = brandImage()
+                setScanStatus(
+                    "No Vulnerabilities Detected",
+                    image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
+                )
+            } else {
+                let level = scanAlertLevel(latestDetectorFindings.map(\.severity))
+                statusItem.button?.image = switch level {
+                case .medium: brandImage()
+                case .high: brandImage(color: .systemRed)
+                }
+                setScanStatus(
+                    vulnerabilityStatusTitle(count: count),
+                    image: shieldImage(color: level.color)
+                )
             }
-            setScanStatus(
-                vulnerabilityStatusTitle(count: count),
-                image: shieldImage(color: level.color)
-            )
         case .failed:
             statusItem.button?.image = brandImage(color: .systemRed)
             setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
+        }
+        if scanWorkItem == nil, pendingFullScan || !pendingScanDetectors.isEmpty {
+            runPendingScan()
         }
     }
 
@@ -880,6 +1038,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.representedObject = record.accessRequestID.uuidString
         return item
     }
+}
+
+private func scanDetectorGroup(_ detectors: Set<String>) -> Set<String> {
+    guard !detectors.isDisjoint(with: ["bash", "zsh"]) else { return detectors }
+    return detectors.union(["bash", "zsh"])
 }
 
 extension AppDelegate: NSMenuDelegate {
@@ -1151,8 +1314,7 @@ private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
 }
 
 private enum ScanResult {
-    case clean(Int)
-    case findings([DetectorFinding], Int, ScanAlertLevel)
+    case success([DetectorFinding], Set<String>?)
     case failed
 }
 
@@ -1192,11 +1354,13 @@ private enum ScanAlertLevel {
     }
 }
 
-private func scanResult() -> ScanResult {
+private func scanResult(detectors: Set<String>?) -> ScanResult {
     let executableURL = avExecutableURL()
     let process = Process()
     process.executableURL = executableURL
-    process.arguments = ["scan", "--json"]
+    process.arguments = ["scan", "--json"] + (detectors?.sorted().flatMap {
+        ["--detector", $0]
+    } ?? [])
 
     let output = Pipe()
     process.standardOutput = output
@@ -1211,22 +1375,11 @@ private func scanResult() -> ScanResult {
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0,
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let findingObjects = object["findings"] as? [[String: Any]],
           let findings = try? detectorFindings(from: data)
     else {
         return .failed
     }
-    let detectorCount = Set(findings.map(\.source)).count
-    return findings.isEmpty
-        ? .clean(loadDetectorMetadata(avExecutableURL: executableURL).count)
-        : .findings(findings, detectorCount, scanAlertLevel(findingObjects))
-}
-
-private func scanAlertLevel(_ findings: [[String: Any]]) -> ScanAlertLevel {
-    findings.allSatisfy {
-        matchesMediumSeverity($0["severity"] as? String)
-    } ? .medium : .high
+    return .success(findings, detectors)
 }
 
 private func matchesMediumSeverity(_ severity: String?) -> Bool {
@@ -1234,6 +1387,11 @@ private func matchesMediumSeverity(_ severity: String?) -> Bool {
     case "medium", "mid": true
     default: false
     }
+}
+
+private func scanAlertLevel(_ severities: [String]) -> ScanAlertLevel {
+    severities.allSatisfy(matchesMediumSeverity)
+        ? .medium : .high
 }
 
 private func avExecutableURL() -> URL {
@@ -1793,6 +1951,7 @@ private final class ApprovalServer: @unchecked Sendable {
         BlessedScriptReviewRequest,
         @escaping (BlessedScriptReviewOutcome) -> Void
     ) -> Void
+    private let onOpenWindow: @MainActor () -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
@@ -1813,6 +1972,7 @@ private final class ApprovalServer: @unchecked Sendable {
             BlessedScriptReviewRequest,
             @escaping (BlessedScriptReviewOutcome) -> Void
         ) -> Void = { _, completion in completion(.failed("script blessing is unavailable")) },
+        onOpenWindow: @escaping @MainActor () -> Void = {},
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -1824,6 +1984,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
         self.onBlessRequest = onBlessRequest
+        self.onOpenWindow = onOpenWindow
         self.canRequestHumanApproval = canRequestHumanApproval
     }
 
@@ -1839,7 +2000,8 @@ private final class ApprovalServer: @unchecked Sendable {
 
         let requirement = """
         anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
-        (identifier "com.automicvault.av" or identifier "com.automicvault.av-brew-stub" or \
+        (identifier "com.automicvault" or identifier "com.automicvault.av" or \
+        identifier "com.automicvault.av-brew-stub" or \
         identifier "gh" or identifier "com.github.cli" or identifier "stripe" or \
         identifier "supabase" or identifier "supabase-go" or identifier "com.supabase.cli")
         """
@@ -1938,6 +2100,9 @@ private final class ApprovalServer: @unchecked Sendable {
         )
 
         switch op {
+        case .openWindow where isTrustedMenuHelperCaller(path: callerPath, signing: signing):
+            DispatchQueue.main.async { self.onOpenWindow() }
+            reply(peer, to: message, ok: true, error: nil)
         case .awsHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard let negotiated = negotiatedAWSHelperProtocolVersion(requested: requested) else {
@@ -3603,6 +3768,9 @@ private func retainedProcessApprovalExplanation(
 }
 
 private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
+    if isTrustedMenuHelperCaller(path: path, signing: signing) {
+        return true
+    }
     if isTrustedAvCaller(path: path, signing: signing) {
         return true
     }
@@ -3620,6 +3788,11 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
         && (signing.identifier == "supabase"
             || signing.identifier == "supabase-go"
             || signing.identifier == "com.supabase.cli")
+}
+
+private func isTrustedMenuHelperCaller(path: String, signing: SigningInfo) -> Bool {
+    URL(fileURLWithPath: path).lastPathComponent == "AutomicVaultMenubar"
+        && signing.identifier == "com.automicvault"
 }
 
 private func isTrustedAvCaller(path: String, signing: SigningInfo) -> Bool {
@@ -4260,6 +4433,11 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
     let domain = "gui/\(getuid())"
     let service = "\(domain)/\(approvalLaunchAgentName)"
     if !configurationChanged {
+        if requestExistingInstanceToOpenWindow() {
+            return true
+        }
+        // A pre-open-window release may still be running. Restart it once so
+        // the pending request is consumed by the current release.
         do {
             try runLaunchctl(["kickstart", "-k", service])
             return true
@@ -4278,6 +4456,22 @@ private func handOffToLaunchAgentIfNeeded() throws -> Bool {
     try runLaunchctl(["enable", service])
     try runLaunchctl(["kickstart", "-k", service])
     return true
+}
+
+private func requestExistingInstanceToOpenWindow() -> Bool {
+    let connection = approvalServiceName.withCString {
+        xpc_connection_create_mach_service($0, nil, 0)
+    }
+    xpc_connection_set_event_handler(connection) { _ in }
+    xpc_connection_activate(connection)
+    let message = xpc_dictionary_create_empty()
+    ApprovalServiceOperation.openWindow.rawValue.withCString {
+        xpc_dictionary_set_string(message, "op", $0)
+    }
+    let reply = xpc_connection_send_message_with_reply_sync(connection, message)
+    xpc_connection_cancel(connection)
+    return xpc_get_type(reply) == XPC_TYPE_DICTIONARY
+        && xpc_dictionary_get_bool(reply, "ok")
 }
 
 private func launchAgentConfigurationsMatch(_ lhsData: Data?, _ rhsData: Data) -> Bool {
@@ -5723,6 +5917,13 @@ private func runSecretMutationSelfCheck() -> Int32 {
 
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
+    let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    guard isTrustedMenuHelperCaller(
+        path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
+        signing: helperSigning
+    ), !isTrustedMenuHelperCaller(path: "/tmp/av", signing: helperSigning)
+    else { return 1 }
+
     let approvedBlessing = blessingReply(for: .approved)
     let deniedBlessing = blessingReply(for: .denied)
     let failedBlessing = blessingReply(for: .failed("failed"))
@@ -7377,8 +7578,8 @@ private func runMenuStatusSelfCheck() -> Int32 {
           sensitiveMenuTitle.contains("<redacted>"),
           !automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains(rawCredential),
           automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains("<redacted>"),
-          scanAlertLevel([["severity": "medium"]]) == .medium,
-          scanAlertLevel([["severity": "medium"], ["severity": "high"]]) == .high,
+          scanAlertLevel(["medium"]) == .medium,
+          scanAlertLevel(["medium", "high"]) == .high,
           doctorStatusTitle(count: 0) == nil,
           doctorStatusTitle(count: 1) == "One Doctor Report",
           doctorStatusTitle(count: 2) == "Two Doctor Reports",
@@ -7537,7 +7738,9 @@ private func runScanSchedulingSelfCheck() -> Int32 {
         burstStartedAt: &burstStartedAt,
         debounceDelay: 1,
         maximumDelay: 5
-    ) == 0
+    ) == 0,
+    scanDetectorGroup(["npm"]) == ["npm"],
+    scanDetectorGroup(["bash"]) == ["bash", "zsh"]
     else {
         return 1
     }

@@ -290,14 +290,13 @@ if [[ "$install" -eq 1 ]]; then
   plutil -replace ProgramArguments -json \
     "[\"$INSTALLED_APP/Contents/MacOS/AutomicVaultMenubar\"]" \
     "$INSTALLED_LAUNCH_AGENT"
+  if [[ "$run" -eq 1 ]]; then
+    defaults write com.automicvault pendingMainWindow -bool true
+  fi
   launchctl bootout "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$INSTALLED_LAUNCH_AGENT"
   launchctl enable "gui/$(id -u)/$LAUNCH_AGENT_NAME"
   launchctl kickstart -k "gui/$(id -u)/$LAUNCH_AGENT_NAME"
-  if [[ "$run" -eq 1 ]]; then
-    pkill -x AutomicVaultMenubar || true
-    open -n "$INSTALLED_APP"
-  fi
 fi
 if [[ "$dmg" -eq 1 ]]; then
   echo "$DMG"

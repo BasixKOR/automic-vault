@@ -46,12 +46,20 @@ enum BlessedScriptReviewOutcome: Sendable {
 final class AutomicVaultMainWindowController: NSHostingController<DashboardRootView> {
     private let model = DashboardModel()
 
-    init(checkForUpdates: @escaping () -> Void) {
-        super.init(rootView: DashboardRootView(model: model, checkForUpdates: checkForUpdates))
+    init(checkForUpdates: @escaping () -> Void, requestScan: @escaping () -> Void) {
+        super.init(rootView: DashboardRootView(
+            model: model,
+            checkForUpdates: checkForUpdates,
+            requestScan: requestScan
+        ))
     }
 
     @MainActor @preconcurrency required dynamic init?(coder: NSCoder) {
-        super.init(coder: coder, rootView: DashboardRootView(model: model, checkForUpdates: {}))
+        super.init(coder: coder, rootView: DashboardRootView(
+            model: model,
+            checkForUpdates: {},
+            requestScan: {}
+        ))
     }
 
     override func viewDidAppear() {
@@ -155,7 +163,6 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var pendingBlessingLaunchers: [BlessedScriptLauncher] = []
 
     private var reloadTask: Task<Void, Never>?
-    private var detectorFindingsGeneration = 0
     private var blessingCompletion: ((BlessedScriptReviewOutcome) -> Void)?
 
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
@@ -520,15 +527,12 @@ final class DashboardModel: ObservableObject {
     func reload() {
         reloadTask?.cancel()
         isReloading = true
-        let findingsGeneration = detectorFindingsGeneration
         reloadTask = Task {
             var (next, cliInstallState) = await Task.detached(priority: .background) {
                 (DashboardSnapshot.load(), currentCLIInstallState())
             }.value
             guard !Task.isCancelled else { return }
-            if findingsGeneration != detectorFindingsGeneration {
-                next.detectorFindings = snapshot.detectorFindings
-            }
+            next.detectorFindings = snapshot.detectorFindings
             snapshot = next
             self.cliInstallState = cliInstallState
             normalizeSelection()
@@ -537,7 +541,6 @@ final class DashboardModel: ObservableObject {
     }
 
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
-        detectorFindingsGeneration += 1
         snapshot.detectorFindings = findings
         normalizeSelection()
     }
@@ -978,7 +981,7 @@ private enum CLIInstallerError: LocalizedError {
 
 @MainActor
 func runUpdateToolbarSelfCheck() -> Int32 {
-    let controller = AutomicVaultMainWindowController(checkForUpdates: {})
+    let controller = AutomicVaultMainWindowController(checkForUpdates: {}, requestScan: {})
     controller.setAvailableUpdateVersion("2.8.0")
     return controller.rootView.model.availableUpdateVersion == "2.8.0" ? 0 : 1
 }
@@ -1243,6 +1246,7 @@ struct DashboardItem: Identifiable, Equatable {
 struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
     let checkForUpdates: () -> Void
+    let requestScan: () -> Void
 
     var body: some View {
         NavigationSplitView() {
@@ -1314,6 +1318,7 @@ struct DashboardRootView: View {
                         .help("Allow App to List Secret Names")
                     }
                     Button {
+                        requestScan()
                         model.reload()
                     } label: {
                         Image(systemName: "arrow.clockwise")

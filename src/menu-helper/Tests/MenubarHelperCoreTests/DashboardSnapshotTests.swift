@@ -15,7 +15,7 @@ import Testing
     {"findings":[
       {"source":"git","severity":"high","affected":[]},
       {"source":"git","severity":"high","affected":[]},
-      {"source":"aws","severity":"high","affected":[]}
+      {"source":"aws","severity":"high","affected":[],"detectors":["aws-cli-credentials-file"]}
     ]}
     """.utf8)
 
@@ -29,6 +29,8 @@ import Testing
 
     #expect(snapshot.flaggedDetectorCount == 2)
     #expect(snapshot.detectorDisplayCount == 2)
+    #expect(snapshot.detectorFindings[0].detectors == ["git"])
+    #expect(snapshot.detectorFindings[2].detectors == ["aws-cli-credentials-file"])
 }
 
 @Test func cleanScanDisplaysTotalDetectorCount() {
@@ -49,11 +51,17 @@ import Testing
 
 @Test func detectorMetadataDecodesAllDetectors() throws {
     let data = Data("""
-    {"detectors":[{"name":"git","homepage":"https://git-scm.com/","docs_url":"https://example.test/git","documentation":"# git Detector"}]}
+    {"detectors":[{"name":"git","homepage":"https://git-scm.com/","docs_url":"https://example.test/git","documentation":"# git Detector","watch_scopes":[{"path":"/Users/tester/.gitconfig","recursive":false}]}]}
     """.utf8)
 
     #expect(try detectorMetadata(from: data) == [
-        DetectorMetadata(name: "git", homepage: "https://git-scm.com/", docsURL: "https://example.test/git", documentation: "# git Detector")
+        DetectorMetadata(
+            name: "git",
+            homepage: "https://git-scm.com/",
+            docsURL: "https://example.test/git",
+            documentation: "# git Detector",
+            watchScopes: [DetectorWatchScope(path: "/Users/tester/.gitconfig", recursive: false)]
+        )
     ])
 }
 

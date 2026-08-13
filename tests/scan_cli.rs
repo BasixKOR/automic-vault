@@ -81,6 +81,47 @@ fn av_scan_json_reports_findings() {
     let _ = fs::remove_dir_all(home);
 }
 
+#[test]
+fn av_scan_json_can_run_one_detector() {
+    let home = temp_home("targeted-json");
+    fs::write(
+        home.join(".git-credentials"),
+        "https://user:token@example.com\n",
+    )
+    .unwrap();
+    fs::write(home.join(".npmrc"), "min-release-age=0\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+        .args(["scan", "--json", "--detector", "git-credentials-file"])
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    let stdout = stdout(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.contains(r#""source":"git-credentials-file""#));
+    assert!(stdout.contains(r#""detectors":["git-credentials-file"]"#));
+    assert!(!stdout.contains(r#""source":"npm""#));
+    assert_eq!(stderr(&output), "");
+
+    let _ = fs::remove_dir_all(home);
+}
+
+#[test]
+fn av_scan_json_rejects_an_unknown_detector() {
+    let home = temp_home("unknown-detector");
+    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+        .args(["scan", "--json", "--detector", "not-a-detector"])
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("unknown detector: not-a-detector"));
+
+    let _ = fs::remove_dir_all(home);
+}
+
 fn av_scan(home: &std::path::Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_av"))
         .arg("scan")

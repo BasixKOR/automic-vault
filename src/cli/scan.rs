@@ -32,23 +32,43 @@ pub(crate) fn run<W: Write>(stdout: &mut W, style: Style, show_all: bool) -> i32
     0
 }
 
-pub(crate) fn run_json<W: Write>(stdout: &mut W) -> i32 {
-    let findings = scan_home(home());
+pub(crate) fn run_json<W: Write, E: Write>(
+    stdout: &mut W,
+    stderr: &mut E,
+    detector_names: &[String],
+) -> i32 {
+    let home = home();
+    let findings = match isotopes::findings_for(Path::new(&home), detector_names) {
+        Ok(findings) => findings,
+        Err(error) => {
+            let _ = writeln!(stderr, "av scan: {error}");
+            return 2;
+        }
+    };
     let report = serde_json::json!({
-        "findings": findings.iter().map(json_finding).collect::<Vec<_>>(),
+        "findings": findings.iter().map(|result| {
+            let mut finding = json_finding(&result.finding);
+            finding["detectors"] = serde_json::json!(result.detectors);
+            finding
+        }).collect::<Vec<_>>(),
     });
     let _ = writeln!(stdout, "{report}");
     0
 }
 
 pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
+    let home = home();
     let report = serde_json::json!({
-        "detectors": isotopes::detector_metadata().into_iter().map(|detector| {
+        "detectors": isotopes::detector_metadata(Path::new(&home)).into_iter().map(|detector| {
             serde_json::json!({
                 "name": detector.name,
                 "homepage": detector.homepage,
                 "docs_url": detector.docs_url,
                 "documentation": detector.documentation,
+                "watch_scopes": detector.watch_scopes.into_iter().map(|scope| serde_json::json!({
+                    "path": scope.path,
+                    "recursive": scope.recursive,
+                })).collect::<Vec<_>>(),
             })
         }).collect::<Vec<_>>(),
     });
@@ -523,6 +543,7 @@ mod tests {
         assert!(output.contains(r#""name":"git-credential-oauth""#));
         assert!(output.contains(r#""name":"git-credentials-file""#));
         assert!(output.contains(r##""documentation":"# git-credential-fill Detector"##));
+        assert!(output.contains(r#""watch_scopes":[{"path":"#));
     }
 
     #[test]

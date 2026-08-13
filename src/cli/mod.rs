@@ -118,7 +118,7 @@ where
     match args.collect::<Vec<_>>().as_slice() {
         [] => scan::run(stdout, style, false),
         [arg] if arg == "--show-all" => scan::run(stdout, style, true),
-        [arg] if arg == "--json" => scan::run_json(stdout),
+        [arg] if arg == "--json" => scan::run_json(stdout, stderr, &[]),
         [arg] if arg == "--version" || arg == "-V" => {
             let _ = writeln!(stdout, "scanner {}", env!("CARGO_PKG_VERSION"));
             0
@@ -232,7 +232,13 @@ where
         }
         Some("scan") if rest.is_empty() => scan::run(stdout, style, false),
         Some("scan") if rest == [OsString::from("--show-all")] => scan::run(stdout, style, true),
-        Some("scan") if rest == [OsString::from("--json")] => scan::run_json(stdout),
+        Some("scan") if rest.first() == Some(&OsString::from("--json")) => {
+            let Some(detectors) = parse_scan_json_args(&rest) else {
+                let _ = writeln!(stderr, "{USAGE}");
+                return 2;
+            };
+            scan::run_json(stdout, stderr, &detectors)
+        }
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
         Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
         Some("doctor") => {
@@ -406,6 +412,19 @@ fn parse_harden_args(args: &[OsString]) -> Option<(OsString, bool)> {
         }
     }
     target.map(|target| (target, yes))
+}
+
+fn parse_scan_json_args(args: &[OsString]) -> Option<Vec<String>> {
+    let mut args = args.iter();
+    (args.next()? == "--json").then_some(())?;
+    let mut detectors = Vec::new();
+    while let Some(flag) = args.next() {
+        if flag != "--detector" {
+            return None;
+        }
+        detectors.push(args.next()?.to_str()?.to_string());
+    }
+    Some(detectors)
 }
 
 fn parse_open_args(args: &[OsString]) -> Option<Option<String>> {

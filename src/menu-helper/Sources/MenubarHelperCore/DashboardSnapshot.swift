@@ -64,7 +64,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
     )
 
     public var flaggedDetectorCount: Int {
-        Set(detectorFindings.map(\.source)).count
+        Set(detectorFindings.flatMap(\.detectors)).count
     }
 
     public var detectorDisplayCount: Int {
@@ -87,7 +87,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         let secrets = loadStoredSecrets(directAccessRules: loadDirectAccessRules())
         return DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
-            detectorFindings: scanDetectorFindings(avExecutableURL: avExecutableURL),
+            detectorFindings: [],
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
             secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
@@ -142,16 +142,24 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
     public let homepage: String
     public let docsURL: String
     public let documentation: String
+    public let watchScopes: [DetectorWatchScope]
 
     public var displayName: DetectorDisplayName {
         detectorDisplayName(name)
     }
 
-    public init(name: String, homepage: String, docsURL: String, documentation: String = "") {
+    public init(
+        name: String,
+        homepage: String,
+        docsURL: String,
+        documentation: String = "",
+        watchScopes: [DetectorWatchScope] = []
+    ) {
         self.name = name
         self.homepage = homepage
         self.docsURL = docsURL
         self.documentation = documentation
+        self.watchScopes = watchScopes
     }
 
     public init(from decoder: Decoder) throws {
@@ -160,6 +168,7 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
         self.homepage = try container.decode(String.self, forKey: .homepage)
         self.docsURL = try container.decode(String.self, forKey: .docsURL)
         self.documentation = try container.decodeIfPresent(String.self, forKey: .documentation) ?? ""
+        self.watchScopes = try container.decodeIfPresent([DetectorWatchScope].self, forKey: .watchScopes) ?? []
     }
 
     enum CodingKeys: String, CodingKey {
@@ -167,6 +176,17 @@ public struct DetectorMetadata: Codable, Equatable, Sendable {
         case homepage
         case docsURL = "docs_url"
         case documentation
+        case watchScopes = "watch_scopes"
+    }
+}
+
+public struct DetectorWatchScope: Codable, Equatable, Sendable {
+    public let path: String
+    public let recursive: Bool
+
+    public init(path: String, recursive: Bool) {
+        self.path = path
+        self.recursive = recursive
     }
 }
 
@@ -215,6 +235,19 @@ public struct DetectorFinding: Codable, Equatable, Sendable {
     public let solution: String?
     public let affected: [AffectedFile]
     public let docsURL: String?
+    public let detectors: [String]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decode(String.self, forKey: .source)
+        severity = try container.decode(String.self, forKey: .severity)
+        homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        explanation = try container.decodeIfPresent(String.self, forKey: .explanation)
+        solution = try container.decodeIfPresent(String.self, forKey: .solution)
+        affected = try container.decodeIfPresent([AffectedFile].self, forKey: .affected) ?? []
+        docsURL = try container.decodeIfPresent(String.self, forKey: .docsURL)
+        detectors = try container.decodeIfPresent([String].self, forKey: .detectors) ?? [source]
+    }
 
     enum CodingKeys: String, CodingKey {
         case source
@@ -224,6 +257,7 @@ public struct DetectorFinding: Codable, Equatable, Sendable {
         case solution
         case affected
         case docsURL = "docs_url"
+        case detectors
     }
 }
 
@@ -1781,11 +1815,6 @@ private extension Array where Element == SecretGatePolicy {
                     .localizedStandardCompare([$1.bundleIdentifier, $1.requirement].joined(separator: "\u{1f}")) == .orderedAscending
             }
     }
-}
-
-func scanDetectorFindings(avExecutableURL: URL) -> [DetectorFinding] {
-    loadJSON(avExecutableURL: avExecutableURL, arguments: ["scan", "--json"])
-        .flatMap { try? detectorFindings(from: $0) } ?? []
 }
 
 public func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
