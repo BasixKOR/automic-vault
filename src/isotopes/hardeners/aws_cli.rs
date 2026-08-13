@@ -157,6 +157,7 @@ pub(crate) fn install_aws_release(sha256: &str, package: &Path) -> Result<(), St
 pub(crate) fn detect() -> HardenerDetection {
     let path = aws_stub_path();
     let state = aws_stub_state(&path);
+    let hardened = state != AwsStubState::Unknown;
     let official = state == AwsStubState::Official;
     let target = if official {
         aws_release::target_path().display().to_string()
@@ -164,8 +165,7 @@ pub(crate) fn detect() -> HardenerDetection {
         AWS_HOMEBREW_TARGET_PATH.to_string()
     };
     let mut detection =
-        HardenerDetection::command(official, "aws", Some(path.display().to_string()), target);
-    detection.commands[0].hardened = state != AwsStubState::Unknown;
+        HardenerDetection::command(hardened, "aws", Some(path.display().to_string()), target);
     detection.commands[0].stub_valid = official;
     if crate::test_env_var("AUTOMIC_VAULT_TEST_AWS_STUB_PATH").is_none() {
         detection.commands[0]
@@ -575,7 +575,7 @@ mod tests {
 
         let detection = detect();
 
-        assert!(!detection.hardened);
+        assert!(detection.hardened);
         assert!(detection.commands[0].hardened);
         assert!(!detection.commands[0].stub_valid);
 
