@@ -1,3 +1,5 @@
+#![cfg(target_os = "macos")]
+
 pub mod brew_cask_policy;
 mod cli;
 mod isotopes;
