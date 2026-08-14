@@ -37,16 +37,39 @@ temporary storage, shows the selected payload digest, signing identity, and
 effective entitlements, then installs it under
 `~/Applications/Automic Vault/` and enrolls it after the user confirms. The
 transaction fails closed: failed or abandoned candidates do not become sidebar
-entries or recognized Launchers.
+entries or recognized Launchers. Before enrollment, Automic Vault validates the
+completed bundle strictly, including its nested code and every architecture.
 
-Enrollment binds an Automic-generated marker, a new per-generation Launcher
-Identity, the final bundled payload's SHA-256 digest, and its accepted Launcher
-Runtime Requirement. The selected source path and pre-signing digest are review
-inputs only; they are not enrolled identity or monitored state. Automic Vault
-verifies the live Launcher, bundle seal, payload digest, enrollment, and runtime
-posture on every Authorization Request. Missing or conflicting evidence fails
-closed. An arbitrary ad-hoc-signed app cannot enter this path merely by
-imitating the bundle layout.
+Enrollment binds a reserved Automic-generated identifier and generation, the
+new per-generation Launcher Identity, the Security framework's exact signed
+code identifiers for the completed outer bundle, the final bundled payload's
+SHA-256 digest, its signing type, and its accepted Launcher Runtime Requirement.
+For a multi-architecture bundle, enrollment records the exact code identifier
+for every architecture. The selected source path and pre-signing digest are
+review inputs only; they are not enrolled identity or monitored state.
+
+Enrollment evidence lives in an app-private Data Protection Keychain item,
+separate from Authorization Policy. Only the attended Automic Vault creation
+flow may mutate it; no general CLI or XPC enrollment operation is exposed.
+
+Every Authorization Request from a Launcher Bundle revalidates the live
+Launcher and the static bundle through the Security framework before using
+their signing information. Validation is strict and covers nested code and all
+architectures. Automic Vault then compares the executing architecture's exact
+signed code identifier, the reserved generation and Launcher Identity, a
+safe-snapshot SHA-256 of the final bundled payload, and the live runtime posture
+with enrollment. It does not parse code-signing internals itself.
+
+The launcher must also refuse to start a payload unless the exact payload
+instance it launches matches the generation's signed manifest and enrolled
+digest. Opening, validation, and launch must detect replacement races; a path
+check followed by an unchecked path execution is insufficient.
+
+Anything claiming the reserved Launcher Bundle identifier namespace enters
+this verification path. Missing, corrupt, or conflicting evidence hard-denies
+the request and cannot fall through to Approval or ordinary Developer ID or
+ad-hoc Launcher eligibility. An arbitrary ad-hoc-signed app therefore cannot
+enter this path merely by imitating the bundle layout.
 
 After successful enrollment, the bundle's live launcher process can qualify as
 a Verified Launcher. It uses the existing Authorization Policy model without
@@ -72,6 +95,10 @@ move the old file does not restore its enrollment or authority.
 - Automic Vault must keep Launcher Bundle enrollment evidence separately from
   Authorization Policy and reject generated bundles whose evidence is missing
   or corrupt.
+- The ad-hoc signature supplies a code seal and Hardened Runtime posture, not a
+  durable publisher identity. Re-signing changed code changes its exact signed
+  code identifier and invalidates enrollment. Developer ID-signed generations
+  are pinned the same way.
 - A user-selected Developer ID identity does not identify the CLI publisher and
   never replaces payload pinning.
 - The original unbundled executable remains a different, unverified Launcher
@@ -79,5 +106,8 @@ move the old file does not restore its enrollment or authority.
 - Sealing and Hardened Runtime reduce mutation and injection risk. They do not
   make the payload, its prompts, configuration, plug-ins, extensions, or child
   processes trustworthy.
+- Same-user malware can still delete or damage a Launcher Bundle and cause
+  denial of service. It cannot change the enrolled code while retaining that
+  generation's authority. A bit-for-bit copy remains the same enrolled code.
 - Supporting scripts or multi-file tools requires a separate design for
   interpreter and dependency identity.
