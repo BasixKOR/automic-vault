@@ -6309,7 +6309,52 @@ private func runSecretMutationSelfCheck() -> Int32 {
             return errSecSuccess
         }
     )
-    return unaudited.status == nil && !performedWithoutAudit ? 0 : 1
+    guard unaudited.status == nil, !performedWithoutAudit else { return 1 }
+
+    let dockerRequest = ApprovalRequest(
+        op: "docker-save",
+        keys: ["DOCKER_REGISTRY_CREDENTIAL_TEST"],
+        target: "/Applications/Docker.app/Contents/Resources/bin/docker",
+        args: ["login", "registry.example"],
+        cwd: "",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: "docker",
+        title: nil,
+        detail: nil
+    )
+    var approvedRequest: ApprovalRequest?
+    var performedAfterFailedPreflight = false
+    let changedDocker = performApprovedSecretMutation(
+        .dockerDelete(account: "DOCKER_REGISTRY_CREDENTIAL_TEST", serverURL: "registry.example"),
+        callerPath: "/usr/local/bin/av",
+        pid: 42,
+        signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
+        launcher: nil,
+        launcherFallbackPath: "/Applications/Terminal.app",
+        canRequestHumanApproval: { true },
+        onAccessRequest: { _ in true },
+        decision: {
+            approvedRequest = $0
+            return .approved
+        },
+        perform: { _ in
+            performedAfterFailedPreflight = true
+            return errSecSuccess
+        },
+        preflight: { "Docker Target changed before mutation" },
+        requestOverride: dockerRequest
+    )
+    guard approvedRequest?.target == dockerRequest.target,
+          approvedRequest?.args == dockerRequest.args,
+          changedDocker.status == nil,
+          changedDocker.error == "Docker Target changed before mutation",
+          !performedAfterFailedPreflight
+    else { return 1 }
+    return 0
 }
 
 @MainActor
