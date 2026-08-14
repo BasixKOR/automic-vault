@@ -3,6 +3,18 @@ use std::ffi::{CString, OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+pub(crate) fn current_working_directory_utf8() -> Result<String, String> {
+    let path = std::env::current_dir()
+        .map_err(|error| format!("failed to read current directory: {error}"))?;
+    path_to_utf8(path)
+}
+
+fn path_to_utf8(path: PathBuf) -> Result<String, String> {
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| "working directory is not valid UTF-8".to_string())
+}
+
 /// The wording consumers match on to recognise a user-writable PATH reason.
 /// Producers build reasons with [`user_writable_path_reason`] rather than
 /// composing this by hand.
@@ -71,6 +83,7 @@ pub(crate) fn is_user_writable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::ffi::OsStringExt;
     use std::os::unix::fs::PermissionsExt;
 
     fn temp_dir(label: &str) -> PathBuf {
@@ -134,5 +147,15 @@ mod tests {
         );
         std::fs::set_permissions(&protected, std::fs::Permissions::from_mode(0o755)).unwrap();
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_non_utf8_working_directory_paths() {
+        let path = PathBuf::from(OsString::from_vec(vec![b'/', b't', b'm', b'p', b'/', 0xff]));
+
+        assert_eq!(
+            path_to_utf8(path),
+            Err("working directory is not valid UTF-8".to_string())
+        );
     }
 }

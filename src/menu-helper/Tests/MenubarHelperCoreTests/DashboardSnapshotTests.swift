@@ -4,6 +4,14 @@ import Security
 import Testing
 @testable import MenubarHelperCore
 
+@Test func securityPathsEscapeDisplayControls() {
+    #expect(
+        escapedSecurityPath("/tmp/line\nname\t\\\u{202E}txt")
+            == #"/tmp/line\nname\t\\\u{202E}txt"#
+    )
+    #expect(escapedSecurityPath("/tmp/ordinary path") == "/tmp/ordinary path")
+}
+
 @Test func markdownRenderingDropsInitialHeadingMarker() {
     #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector\n\n## Trigger Conditions") == "\n## Trigger Conditions")
     #expect(markdownDroppingInitialHeadingMarker("# gh-cli Detector") == "")
