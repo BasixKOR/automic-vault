@@ -212,7 +212,6 @@ private let splitDetectorDisplayNames: [String: DetectorDisplayName] = [
     "cariddi-shell-history": DetectorDisplayName(packageName: "cariddi", kind: "shell history"),
     "docker-credential-helpers": DetectorDisplayName(packageName: "docker", kind: "credential helpers"),
     "docker-registry-credentials": DetectorDisplayName(packageName: "docker", kind: "registry credentials"),
-    "docker-root-access": DetectorDisplayName(packageName: "docker", kind: "root access"),
     "gh-cli-hosts-token": DetectorDisplayName(packageName: "gh-cli", kind: "hosts token"),
     "gh-cli-keychain-access": DetectorDisplayName(packageName: "gh-cli", kind: "keychain access"),
     "git-credential-fill": DetectorDisplayName(packageName: "git", kind: "credential fill"),

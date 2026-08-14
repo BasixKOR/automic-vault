@@ -255,7 +255,6 @@ const DETECTORS: &[Detector] = &[
     detector!(dcos_cli),
     detector!(docker::credential_helpers, "docker-credential-helpers"),
     detector!(docker::registry_credentials, "docker-registry-credentials"),
-    detector!(docker::root_access, "docker-root-access"),
     detector!(docker_credential_helper),
     detector!(docker_machine),
     detector!(doctl),
@@ -628,7 +627,7 @@ mod tests {
 
     #[test]
     fn scan_runs_every_registered_isotope() {
-        assert_eq!(DETECTORS.len(), 158);
+        assert_eq!(DETECTORS.len(), 157);
     }
 
     #[test]
@@ -642,7 +641,6 @@ mod tests {
         assert!(!names.contains(&"aws".to_string()));
         assert!(!names.contains(&"aws-cli".to_string()));
         assert!(names.contains(&"aws-cli-credentials-file".to_string()));
-        assert!(names.contains(&"docker-root-access".to_string()));
         assert!(names.contains(&"pnpm-minimum-release-age".to_string()));
         assert!(!names.contains(&"git".to_string()));
         assert!(names.contains(&"git-credential-fill".to_string()));
