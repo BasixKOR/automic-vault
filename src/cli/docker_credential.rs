@@ -48,6 +48,9 @@ fn run_with_io(
     let action = action
         .to_str()
         .ok_or_else(|| "credential-helper action must be valid UTF-8".to_string())?;
+    if matches!(action, "store" | "get" | "erase") {
+        crate::secrets::ensure_docker_helper_ready()?;
+    }
     match action {
         "store" => {
             let credential = parse_credential(&read_limited(input)?)?;

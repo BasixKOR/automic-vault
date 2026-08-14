@@ -104,7 +104,12 @@ pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {
         None,
         None,
         Some((b"requested_version\0", DOCKER_HELPER_PROTOCOL_VERSION)),
-    )?;
+    )
+    .map_err(|error| {
+        format!(
+            "Docker credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
     match reply.value.as_deref() {
         Some("1") => Ok(()),
         Some(version) => Err(format!(
