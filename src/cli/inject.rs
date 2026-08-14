@@ -30,6 +30,7 @@ struct Options {
 
 #[derive(Debug, PartialEq, Eq)]
 struct ApprovalRequest {
+    op: &'static str,
     keys: Vec<String>,
     target: String,
     args: Vec<String>,
@@ -40,6 +41,8 @@ struct ApprovalRequest {
     shebang_script: Option<String>,
     script_data: Option<Vec<u8>>,
     snapshot_incompatible_interpreter: Option<&'static str>,
+    tool: Option<&'static str>,
+    docker_server_url: Option<String>,
 }
 
 unsafe extern "C" {
@@ -314,6 +317,7 @@ fn approval_request(
         .cloned()
         .collect();
     Ok(ApprovalRequest {
+        op: "inject",
         keys: options.keys.clone(),
         target: target.display().to_string(),
         args: options.args.iter().map(os_display).collect(),
@@ -327,7 +331,38 @@ fn approval_request(
         shebang_script: options.shebang_script.as_ref().map(os_display),
         script_data: script_data.map(<[u8]>::to_vec),
         snapshot_incompatible_interpreter,
+        tool: None,
+        docker_server_url: None,
     })
+}
+
+pub(super) fn docker_credential(key: String, server_url: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    let request = ApprovalRequest {
+        op: "docker-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: std::env::current_dir()
+            .map_err(|err| format!("failed to read current directory: {err}"))?
+            .display()
+            .to_string(),
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("docker"),
+        docker_server_url: Some(server_url),
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no Docker credential for {key}"))
 }
 
 struct VerifiedScript {
@@ -591,7 +626,7 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
     }
 
     unsafe {
-        set_string(message, b"op\0", "inject")?;
+        set_string(message, b"op\0", request.op)?;
         set_string(message, b"target\0", &request.target)?;
         set_string(message, b"cwd\0", &request.cwd)?;
         if let Some(script) = &request.shebang_script {
@@ -607,6 +642,12 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
         }
         if let Some(interpreter) = request.snapshot_incompatible_interpreter {
             set_string(message, b"snapshot_incompatible_interpreter\0", interpreter)?;
+        }
+        if let Some(tool) = request.tool {
+            set_string(message, b"tool\0", tool)?;
+        }
+        if let Some(server_url) = &request.docker_server_url {
+            set_string(message, b"docker_server_url\0", server_url)?;
         }
         xpc_dictionary_set_bool(
             message,

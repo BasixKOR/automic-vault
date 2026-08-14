@@ -1,6 +1,7 @@
 pub(crate) mod aws_cli;
 pub(crate) mod aws_release;
 pub(crate) mod codex;
+pub(crate) mod docker;
 pub(crate) mod env_wrapper;
 pub(crate) mod gh_cli;
 pub(crate) mod homebrew;
@@ -234,6 +235,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     let mut metadata = vec![
         gated_hardener!(aws_cli, "aws"),
         ungated_hardener!(codex, "codex"),
+        gated_hardener!(docker, "docker"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
         gated_hardener!(stripe_cli, "stripe"),

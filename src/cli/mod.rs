@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 mod aws;
 mod bless;
+pub(crate) mod docker_credential;
 pub(crate) mod doctor;
 mod inject;
 mod list;
@@ -39,7 +40,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 21;
+pub(crate) const INSTALL_REVISION: u32 = 22;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -198,6 +199,15 @@ where
                 }
             }
         }
+        Some("__install-docker-helper") if rest.is_empty() => {
+            match hardeners::docker::install_privileged() {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
         Some("__install-env-wrapper") if rest.len() >= 2 => {
             let Some(target) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");
@@ -286,6 +296,10 @@ where
                 let result = hardeners::aws_cli::run_aws(stdout, yes);
                 return finish_hardening(result, "aws", stdout, stderr);
             }
+            if target == "docker" {
+                let result = hardeners::docker::run(stdout, yes);
+                return finish_hardening(result, "docker", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -334,6 +348,7 @@ where
         Some("aws-credentials") if rest == [OsString::from("official-v2")] => {
             aws::credentials(Some("official-v2"), stdout, stderr)
         }
+        Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

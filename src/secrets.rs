@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
     value: Option<String>,
@@ -19,6 +20,7 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
         "save",
         Some((b"key\0", account)),
         Some((b"value\0", value)),
+        None,
         None,
     )
     .map(|_| ())
@@ -54,6 +56,7 @@ pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Res
             Some((b"key\0", account)),
             Some((b"value\0", value)),
             None,
+            None,
         )
         .map(|_| ())
     }
@@ -66,6 +69,7 @@ pub(crate) fn bless_script(path: &str, endorse_launcher: bool) -> Result<bool, S
         None,
         // Compatibility wire key. The domain term is Launcher Endorsement.
         endorse_launcher.then_some(&b"endorse_caller\0"[..]),
+        None,
     )
     .map(|reply| reply.value.as_deref() == Some("already blessed"))
 }
@@ -89,7 +93,63 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         .map_err(|err| format!("failed to read current directory: {err}"))?
         .to_string_lossy()
         .into_owned();
-    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None)?.names)
+    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None, None)?.names)
+}
+
+pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "docker-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", DOCKER_HELPER_PROTOCOL_VERSION)),
+    )?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported Docker helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no Docker helper version".into()),
+    }
+}
+
+pub(crate) fn store_docker_credential(account: &str, value: &str) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
+        let path = PathBuf::from(dir).join(account);
+        return std::fs::write(&path, value)
+            .map_err(|err| format!("failed to write {}: {err}", path.display()));
+    }
+    xpc_request(
+        "docker-save",
+        Some((b"key\0", account)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_docker_credential(account: &str, server_url: &str) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(PathBuf::from(dir).join(account)) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(format!("failed to delete test Docker credential: {err}")),
+        };
+    }
+    xpc_request(
+        "docker-delete",
+        Some((b"key\0", account)),
+        Some((b"docker_server_url\0", server_url)),
+        None,
+        None,
+    )
+    .map(|_| ())
 }
 
 #[cfg(target_os = "macos")]
@@ -98,6 +158,7 @@ fn xpc_request(
     field: Option<(&'static [u8], &str)>,
     extra: Option<(&'static [u8], &str)>,
     bool_field: Option<&'static [u8]>,
+    uint_field: Option<(&'static [u8], u64)>,
 ) -> Result<XpcReply, String> {
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int, c_void};
@@ -122,6 +183,7 @@ fn xpc_request(
         ) -> XpcObject;
         fn xpc_dictionary_create_empty() -> XpcObject;
         fn xpc_dictionary_set_bool(xdict: XpcObject, key: *const c_char, value: bool);
+        fn xpc_dictionary_set_uint64(xdict: XpcObject, key: *const c_char, value: u64);
         fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
         fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
         fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
@@ -182,6 +244,9 @@ fn xpc_request(
         }
         if let Some(bool_field) = bool_field {
             xpc_dictionary_set_bool(message, bool_field.as_ptr().cast(), true);
+        }
+        if let Some((uint_field, value)) = uint_field {
+            xpc_dictionary_set_uint64(message, uint_field.as_ptr().cast(), value);
         }
         xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
     }
@@ -280,6 +345,7 @@ fn xpc_request(
     _field: Option<(&'static [u8], &str)>,
     _extra: Option<(&'static [u8], &str)>,
     _bool_field: Option<&'static [u8]>,
+    _uint_field: Option<(&'static [u8], u64)>,
 ) -> Result<XpcReply, String> {
     Err("the Automic Vault menu bar approval service is only available on macOS".to_string())
 }
