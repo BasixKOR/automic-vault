@@ -931,6 +931,34 @@ func protectionPolicyMatrix(
     #expect(records.last?.command == "aws s3 ls 5")
 }
 
+@Test func humanApprovedDirectInjectPersistsForAuthorizationHistory() throws {
+    let defaultsName = "com.automicvault.tests.defaults.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: defaultsName))
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
+    let record = AccessRequestRecord(
+        date: .now,
+        tool: "sh",
+        command: "sh",
+        decision: "Approved",
+        approvalSource: "Human",
+        reason: "Approved in prompt",
+        launcher: "ChatGPT",
+        callerPath: "/usr/local/bin/av",
+        target: "/bin/sh",
+        cwd: "/Users/example/project",
+        keys: ["FOO"],
+        detail: nil
+    )
+
+    #expect(appendAccessRequestRecord(record, defaults: defaults))
+    let restored = try #require(loadAccessRequestRecords(defaults: defaults).first)
+    #expect(restored == record)
+    #expect(restored.approvalSourceLabel == "Human")
+    #expect(restored.keys == ["FOO"])
+    #expect(restored.target == "/bin/sh")
+    #expect(restored.callerPath == "/usr/local/bin/av")
+}
+
 @Test func productionAccessRequestLogIgnoresUserDefaultsTampering() {
     guard dataProtectionKeychainAvailable() else { return }
     let key = "AccessRequestLogTests-\(UUID().uuidString)"

@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
     private lazy var quitSeparator = NSMenuItem.separator()
     private var autoApprovalItems: [NSMenuItem] = []
+    private var autoApprovalHeadingItem: NSMenuItem?
     private var autoApprovalSeparator: NSMenuItem?
     private var autoApprovals: [AutoApprovalRecord] = []
     private let autoApprovalTimeFormatter: DateFormatter = {
@@ -952,11 +953,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func didRecordAccessRequest(_ record: AccessRequestRecord) {
-        if ["Canceled", "Denied"].contains(record.decision), let menuRecord = autoApprovalRecord(record) {
-            recordMenuAccess(menuRecord)
-            if shouldShowAutomaticAccessToast(record) {
-                showAutomaticAccessToast(menuRecord, below: statusItem.button)
-            }
+        if shouldShowAutomaticAccessToast(record) {
+            showAutomaticAccessToast(automaticAccessRecord(record), below: statusItem.button)
         }
         (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
     }
@@ -966,6 +964,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let menu = statusItem.menu else { return }
         for item in autoApprovalItems {
             menu.removeItem(item)
+        }
+        if let heading = autoApprovalHeadingItem {
+            menu.removeItem(heading)
+            autoApprovalHeadingItem = nil
         }
         if let separator = autoApprovalSeparator {
             menu.removeItem(separator)
@@ -990,11 +992,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in autoApprovalItems.reversed() {
             menu.insertItem(item, at: 0)
         }
-        if !autoApprovalItems.isEmpty {
-            let separator = NSMenuItem.separator()
-            menu.insertItem(separator, at: autoApprovalItems.count)
-            autoApprovalSeparator = separator
-        }
+        guard let heading = autoApprovalHistoryHeading(hasRecords: !autoApprovalItems.isEmpty) else { return }
+        menu.insertItem(heading, at: 0)
+        autoApprovalHeadingItem = heading
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: autoApprovalItems.count + 1)
+        autoApprovalSeparator = separator
     }
 
     fileprivate func autoApprovalMenuItem(_ group: AutoApprovalGroup) -> NSMenuItem {
@@ -1066,6 +1069,13 @@ private func updateMenuVisibility(
 private func makeStatusMenuItem(title: String) -> NSMenuItem {
     let item = NSMenuItem.sectionHeader(title: title)
     setStatusMenuItemTitle(title, on: item)
+    return item
+}
+
+private func autoApprovalHistoryHeading(hasRecords: Bool) -> NSMenuItem? {
+    guard hasRecords else { return nil }
+    let item = makeStatusMenuItem(title: "Automic Authorization History")
+    item.isEnabled = false
     return item
 }
 
@@ -1195,9 +1205,11 @@ private func autoApprovalRecord(
 }
 
 private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord? {
-    let wasCanceled = record.decision == "Canceled"
-    let wasDenied = record.decision == "Denied"
-    guard wasCanceled || wasDenied || (record.decision == "Approved" && record.approvalSourceLabel == "Policy") else { return nil }
+    guard record.decision == "Approved", record.approvalSourceLabel == "Policy" else { return nil }
+    return automaticAccessRecord(record)
+}
+
+private func automaticAccessRecord(_ record: AccessRequestRecord) -> AutoApprovalRecord {
     return AutoApprovalRecord(
         accessRequestID: record.id,
         date: record.date,
@@ -1206,8 +1218,8 @@ private func autoApprovalRecord(_ record: AccessRequestRecord) -> AutoApprovalRe
         tool: record.tool,
         displayCommand: record.commandForDisplay,
         keys: record.keys,
-        wasCanceled: wasCanceled,
-        wasDenied: wasDenied
+        wasCanceled: record.decision == "Canceled",
+        wasDenied: record.decision == "Denied"
     )
 }
 
@@ -7548,7 +7560,33 @@ private func runMenuStatusSelfCheck() -> Int32 {
         detail: nil
     )
     guard let restoredApproval = autoApprovalRecord(recordedApproval) else { return 1 }
-    guard shortAppName("com.openai.codex") == "Codex",
+    func retrospectiveRecord(_ decision: String, source: String = "Auto") -> AccessRequestRecord {
+        AccessRequestRecord(
+            date: recordedApproval.date,
+            tool: recordedApproval.tool,
+            command: recordedApproval.command,
+            decision: decision,
+            approvalSource: source,
+            reason: recordedApproval.reason,
+            launcher: recordedApproval.launcher,
+            callerPath: recordedApproval.callerPath,
+            target: recordedApproval.target,
+            cwd: recordedApproval.cwd,
+            keys: recordedApproval.keys,
+            detail: recordedApproval.detail
+        )
+    }
+    let policyDenial = retrospectiveRecord("Denied")
+    guard let historyHeading = autoApprovalHistoryHeading(hasRecords: true) else { return 1 }
+    guard historyHeading.title == "Automic Authorization History",
+          historyHeading.isSectionHeader,
+          !historyHeading.isEnabled,
+          autoApprovalHistoryHeading(hasRecords: false) == nil,
+          autoApprovalRecord(retrospectiveRecord("Approved", source: "Human")) == nil,
+          autoApprovalRecord(policyDenial) == nil,
+          autoApprovalRecord(retrospectiveRecord("Canceled", source: "Manual")) == nil,
+          autoApprovalRecord(retrospectiveRecord("Failed")) == nil,
+          shortAppName("com.openai.codex") == "Codex",
           approvalEvent(for: nil) == humanApprovalRequiredEvent,
           approvalEvent(for: .approved) == nil,
           approvalEvent(for: .denied) == nil,
@@ -7625,73 +7663,12 @@ private func runMenuStatusSelfCheck() -> Int32 {
           restoredApproval.tool == "aws",
           restoredApproval.displayCommand == "aws <arguments hidden>",
           restoredApproval.keys == ["AWS_SECRET_ACCESS_KEY"],
-          let restoredDenial = autoApprovalRecord(AccessRequestRecord(
-              id: recordedApproval.id,
-              date: recordedApproval.date,
-              tool: "gh",
-              command: "gh auth token",
-              decision: "Denied",
-              approvalSource: "Manual",
-              reason: "Denied in prompt",
-              launcher: recordedApproval.launcher,
-              callerPath: recordedApproval.callerPath,
-              target: recordedApproval.target,
-              cwd: recordedApproval.cwd,
-              keys: recordedApproval.keys,
-              detail: recordedApproval.detail
-          )),
-          let restoredCancellation = autoApprovalRecord(AccessRequestRecord(
-              id: recordedApproval.id,
-              date: recordedApproval.date,
-              tool: "gh",
-              command: "gh pr create",
-              decision: "Canceled",
-              approvalSource: "Manual",
-              reason: "Gate client exited",
-              launcher: recordedApproval.launcher,
-              callerPath: recordedApproval.callerPath,
-              target: recordedApproval.target,
-              cwd: recordedApproval.cwd,
-              keys: recordedApproval.keys,
-              detail: recordedApproval.detail
-          )),
-          shouldShowAutomaticAccessToast(AccessRequestRecord(
-              date: recordedApproval.date,
-              tool: "gh",
-              command: "gh auth status",
-              decision: "Denied",
-              approvalSource: "Auto",
-              reason: "Unknown launcher",
-              launcher: "vaulty-sessiond",
-              callerPath: recordedApproval.callerPath,
-              target: recordedApproval.target,
-              cwd: recordedApproval.cwd,
-              keys: recordedApproval.keys,
-              detail: recordedApproval.detail
-          )),
-          !shouldShowAutomaticAccessToast(AccessRequestRecord(
-              date: recordedApproval.date,
-              tool: "gh",
-              command: "gh auth token",
-              decision: "Denied",
-              approvalSource: "Manual",
-              reason: "Denied in prompt",
-              launcher: recordedApproval.launcher,
-              callerPath: recordedApproval.callerPath,
-              target: recordedApproval.target,
-              cwd: recordedApproval.cwd,
-              keys: recordedApproval.keys,
-              detail: recordedApproval.detail
-          )),
-          restoredDenial.wasDenied,
-          restoredCancellation.wasCanceled,
-          autoApprovalTitle(restoredCancellation, formatter: formatter)
-              == "5:15 AM – Codex canceled its request to use gh",
-          automaticAccessDecisionLabel(wasDenied: restoredDenial.wasDenied) == "AUTO REJECTED",
-          automaticAccessDecisionSymbol(wasDenied: restoredDenial.wasDenied) == "xmark.shield.fill",
+          shouldShowAutomaticAccessToast(policyDenial),
+          !shouldShowAutomaticAccessToast(retrospectiveRecord("Denied", source: "Manual")),
+          automaticAccessDecisionLabel(wasDenied: true) == "AUTO REJECTED",
+          automaticAccessDecisionSymbol(wasDenied: true) == "xmark.shield.fill",
           automaticAccessDecisionLabel(wasDenied: restoredApproval.wasDenied) == "AUTO APPROVED",
           automaticAccessDecisionSymbol(wasDenied: restoredApproval.wasDenied) == "checkmark.shield.fill",
-          autoApprovalTitle(restoredDenial, formatter: formatter) == "5:15 AM – Codex was denied use of gh",
           exactAuthorizationCommand(request) == """
           aws \\
             s3 \\
