@@ -220,8 +220,8 @@ Provenance may be observed in memory only to explain an Approval that the settin
 would have avoided; shadow records cannot authorize. Enabling the setting
 extends a verified Launcher's gate-specific attribution through a live signed
 descendant after its original parent chain exits. The UI must explain that this
-widens the lifetime of authority and that a Secure Launcher is safer for a
-recurring mutable or injectable harness.
+widens the lifetime of authority and that a Launcher Bundle can bring a
+recurring mutable or injectable harness up to Verified Launcher requirements.
 
 ## Source of truth
 

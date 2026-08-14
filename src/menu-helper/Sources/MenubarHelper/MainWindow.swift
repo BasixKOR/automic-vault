@@ -10,7 +10,7 @@ let keepLauncherAccessForDetachedProcessesDefaultsKey = "keepLauncherAccessForDe
 private let directAccessDocumentationURL = URL(
     string: "https://github.com/automic-vault/automic-vault/blob/main/docs/direct-secret-access.md#safer-alternatives"
 )!
-private let secureLauncherDocumentationURL = URL(
+private let launcherBundleDocumentationURL = URL(
     string: "https://github.com/automic-vault/automic-vault/blob/main/docs/signed-cli-launchers.md"
 )!
 
@@ -2593,9 +2593,9 @@ private struct DetachedProcessAccessSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             InfoBlock(
                 title: "Security tradeoff",
-                text: "This extends authority after the verified parent chain disappears. Ad-hoc signed tools can still be modified in memory by other same-user processes. A Secure Launcher with Hardened Runtime is safer for a recurring harness."
+                text: "This extends authority after the verified parent chain disappears. Ad-hoc signed launchers can still be modified in memory by other same-user processes. A Launcher Bundle can bring a recurring harness up to Verified Launcher requirements."
             )
-            Link("Learn about Secure Launchers", destination: secureLauncherDocumentationURL)
+            Link("Learn about Launcher Bundles", destination: launcherBundleDocumentationURL)
                 .font(.caption)
         }
     }

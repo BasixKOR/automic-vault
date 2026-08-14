@@ -67,20 +67,20 @@ or allow debugger attachment. A Launcher that disables library validation may
 be eligible, but the UI must warn that third-party libraries and plug-ins can
 run inside its process and inherit its authority.
 
-### Secure Launcher
+### Launcher Bundle
 
-An Automic Vault-generated macOS app that contains one fixed CLI payload and
-allows that otherwise unsigned Tool to qualify as a Verified Launcher. The app
-remains the payload's parent process, seals the payload inside its bundle, uses
-Hardened Runtime, and is explicitly enrolled with the exact bundled payload
-digest. Automic Vault may ad-hoc sign the generated app, or the user may select
-a Developer ID Application identity; either form remains bound to the payload
-digest.
+An Automic Vault-generated macOS app bundle containing one fixed CLI payload
+and a minimal launcher executable. The launcher remains the payload's parent
+process, the bundle seals the payload, and its exact bundled payload digest is
+explicitly enrolled. Automic Vault may ad-hoc sign the bundle, or the user may
+select a Developer ID Application identity; either form uses Hardened Runtime
+and remains bound to the payload digest.
 
-A Secure Launcher is a Launcher, not an Authorization Gate, Blessing, or
-Isotope. Its policy authority comes from the Authorization Gates at which it is
-recognized. The original unbundled Tool has a different identity and receives
-none of the Secure Launcher's authority.
+A Launcher Bundle is an artifact, not an Authorization Gate, Blessing, Isotope,
+or Verified Launcher. When its enrolled identity, integrity, and runtime posture
+are verified, its live launcher process qualifies as a Verified Launcher. The
+original unbundled executable has a different identity and cannot match the
+Launcher Bundle's enrollment or Launcher-specific rules.
 
 ### Launcher Runtime Requirement
 
