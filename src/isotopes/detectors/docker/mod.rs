@@ -230,6 +230,13 @@ mod tests {
                 .iter()
                 .any(|reason| reason.contains("credential helper `desktop`"))
         );
+        assert!(
+            docker_config_hazards(
+                r#"{"credsStore":"av","credHelpers":{"registry.example":"av"}}"#,
+                Path::new("/tmp/config.json"),
+            )
+            .is_empty()
+        );
     }
 
     #[test]

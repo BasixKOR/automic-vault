@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 
@@ -12,7 +10,7 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
     if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
             .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
-        let path = PathBuf::from(dir).join(account);
+        let path = dir.join(account);
         return std::fs::write(&path, value)
             .map_err(|err| format!("failed to write {}: {err}", path.display()));
     }
@@ -30,7 +28,7 @@ pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Res
     if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
             .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
-        let path = PathBuf::from(dir).join(account);
+        let path = dir.join(account);
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -120,7 +118,7 @@ pub(crate) fn store_docker_credential(account: &str, value: &str) -> Result<(), 
     if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
             .map_err(|err| format!("failed to create test keychain dir: {err}"))?;
-        let path = PathBuf::from(dir).join(account);
+        let path = dir.join(account);
         return std::fs::write(&path, value)
             .map_err(|err| format!("failed to write {}: {err}", path.display()));
     }
@@ -136,7 +134,7 @@ pub(crate) fn store_docker_credential(account: &str, value: &str) -> Result<(), 
 
 pub(crate) fn delete_docker_credential(account: &str, server_url: &str) -> Result<(), String> {
     if let Some(dir) = crate::test_keychain_dir() {
-        return match std::fs::remove_file(PathBuf::from(dir).join(account)) {
+        return match std::fs::remove_file(dir.join(account)) {
             Ok(()) => Ok(()),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(err) => Err(format!("failed to delete test Docker credential: {err}")),
