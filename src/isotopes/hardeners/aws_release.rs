@@ -904,12 +904,14 @@ mod tests {
         );
         assert!(validate_version("2.36.22").is_ok());
         assert!(validate_version("../../tmp").is_err());
-        assert!(xml_attribute(
-            &format!("{info}<pkg-info version=\"2.0.0\">"),
-            "pkg-info",
-            "version"
-        )
-        .is_err());
+        assert!(
+            xml_attribute(
+                &format!("{info}<pkg-info version=\"2.0.0\">"),
+                "pkg-info",
+                "version"
+            )
+            .is_err()
+        );
     }
 
     #[test]

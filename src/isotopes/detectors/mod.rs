@@ -698,10 +698,18 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(unwatched, ["gh-cli-keychain-access", "macOS", "sip"]);
-        assert!(metadata.iter().all(|detector| detector.watch_scopes.len() <= 10));
-        assert!(metadata.iter().flat_map(|detector| &detector.watch_scopes).all(
-            |scope| Path::new(&scope.path).is_absolute() && scope.path != home.to_str().unwrap()
-        ));
+        assert!(
+            metadata
+                .iter()
+                .all(|detector| detector.watch_scopes.len() <= 10)
+        );
+        assert!(
+            metadata
+                .iter()
+                .flat_map(|detector| &detector.watch_scopes)
+                .all(|scope| Path::new(&scope.path).is_absolute()
+                    && scope.path != home.to_str().unwrap())
+        );
     }
 
     #[test]
