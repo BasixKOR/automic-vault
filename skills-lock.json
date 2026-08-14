@@ -169,6 +169,12 @@
       "skillPath": "skills/beautiful-cli-design/SKILL.md",
       "computedHash": "89f2679b41f7eebdd56d0a0ae796cffa072f2eb2847ee79d9017699de6417bdf"
     },
+    "domain-modeling": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "computedHash": "683744795bdc9fbfb6c0c2122c4b8119c950e2fe5bcbbf44237dd28aaea34b67"
+    },
     "kpi-dashboard-design": {
       "source": "wshobson/agents",
       "sourceType": "github",
