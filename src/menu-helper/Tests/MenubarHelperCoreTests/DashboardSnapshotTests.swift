@@ -886,6 +886,141 @@ func protectionPolicyMatrix(
     #expect(loadStoredSecrets(service: service).first?.accessibility == .afterFirstUnlock)
 }
 
+@Test func projectValuesGroupUnderOneSecretNameAndSelectNearestAncestor() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.project-values.\(UUID().uuidString)"
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("av-project-values-\(UUID().uuidString)", isDirectory: true)
+    let nested = root.appendingPathComponent("nested/work", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    let rootPath = try canonicalProjectDirectory(root.path)
+    let nestedPath = try canonicalProjectDirectory(nested.deletingLastPathComponent().path)
+    defer {
+        _ = deleteStoredSecret(account: "TOKEN", service: service)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    #expect(saveStoredSecret(account: "TOKEN", value: "global", service: service) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: "TOKEN",
+        value: "root",
+        source: .projectDirectory(rootPath),
+        service: service
+    ) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: "TOKEN",
+        value: "nested",
+        source: .projectDirectory(nestedPath),
+        service: service
+    ) == errSecSuccess)
+
+    let secret = try #require(loadStoredSecrets(service: service).first)
+    #expect(secret.account == "TOKEN")
+    #expect(secret.values.count == 3)
+    let selected = try #require(resolveStoredSecretValues(
+        names: ["TOKEN"], cwd: try canonicalProjectDirectory(nested.path), secrets: [secret]
+    )["TOKEN"])
+    #expect(selected.source == .projectDirectory(nestedPath))
+    #expect(loadStoredSecretValue(selected, service: service) == .success("nested"))
+}
+
+@Test func projectSelectionFallsBackToGlobalPerSecretName() throws {
+    let cwd = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
+    let global = StoredSecretValue(
+        source: .global,
+        keychainAccount: "GLOBAL",
+        accessibility: .whenUnlocked,
+        keychainProperties: []
+    )
+    let selected = try resolveStoredSecretValues(
+        names: ["GLOBAL", "MISSING"],
+        cwd: cwd,
+        secrets: [StoredSecret(account: "GLOBAL", values: [global])]
+    )
+    #expect(selected["GLOBAL"] == global)
+    #expect(selected["MISSING"] == nil)
+}
+
+@Test func projectDirectoryValidationUsesPhysicalCanonicalPathsAndRejectsRoots() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("av-project-path-\(UUID().uuidString)", isDirectory: true)
+    let directory = root.appendingPathComponent("directory", isDirectory: true)
+    let symlink = root.appendingPathComponent("link", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: directory)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let canonical = try canonicalProjectDirectory(symlink.path)
+    let canonicalDirectory = try canonicalProjectDirectory(directory.path)
+    #expect(canonical == canonicalDirectory)
+    #expect(throws: ProjectDirectoryValidationError.self) {
+        try validateCanonicalProjectDirectory(symlink.path)
+    }
+    #expect(throws: ProjectDirectoryValidationError.self) {
+        try validateCanonicalProjectDirectory("/")
+    }
+}
+
+@Test func multiValueAvailabilityAndRenameCompleteAsForwardOperations() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.project-mutation.\(UUID().uuidString)"
+    let directory = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
+    defer {
+        _ = deleteStoredSecret(account: "OLD_TOKEN", service: service)
+        _ = deleteStoredSecret(account: "NEW_TOKEN", service: service)
+    }
+    #expect(saveStoredSecret(account: "OLD_TOKEN", value: "global", service: service) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: "OLD_TOKEN",
+        value: "project",
+        source: .projectDirectory(directory),
+        service: service
+    ) == errSecSuccess)
+
+    #expect(setStoredSecretAccessibility(
+        account: "OLD_TOKEN",
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess)
+    let updated = try #require(loadStoredSecrets(service: service).first)
+    #expect(updated.values.allSatisfy { $0.accessibility == .afterFirstUnlock })
+    #expect(pendingSecretMutationNames() == [])
+
+    #expect(renameStoredSecret(account: "OLD_TOKEN", to: "NEW_TOKEN", service: service) == errSecSuccess)
+    #expect(loadStoredSecrets(service: service).map(\.account) == ["NEW_TOKEN"])
+    #expect(loadStoredSecrets(service: service).first?.values.count == 2)
+    #expect(loadStoredSecret(account: "NEW_TOKEN", service: service) == "global")
+    #expect(loadStoredSecret(
+        account: "NEW_TOKEN",
+        source: .projectDirectory(directory),
+        service: service
+    ) == "project")
+}
+
+@Test func inconsistentMultiValueAvailabilityDeniesSelection() throws {
+    let cwd = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
+    let secret = StoredSecret(
+        account: "TOKEN",
+        values: [
+            StoredSecretValue(
+                source: .global,
+                keychainAccount: "TOKEN",
+                accessibility: .whenUnlocked,
+                keychainProperties: []
+            ),
+            StoredSecretValue(
+                source: .projectDirectory(cwd),
+                keychainAccount: "PROJECT_TOKEN",
+                accessibility: .afterFirstUnlock,
+                keychainProperties: []
+            ),
+        ]
+    )
+    #expect(throws: StoredSecretSelectionError.self) {
+        try resolveStoredSecretValues(names: ["TOKEN"], cwd: cwd, secrets: [secret])
+    }
+}
+
 @Test func backgroundMetadataMigratesWithoutChangingSecretAccessibility() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let policyService = "com.automicvault.tests.policy.\(UUID().uuidString)"

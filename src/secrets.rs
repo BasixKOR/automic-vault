@@ -24,6 +24,44 @@ pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
     .map(|_| ())
 }
 
+pub(crate) fn store_project_secret(
+    account: &str,
+    value: &str,
+    project_directory: &str,
+) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        let path = test_project_secret_path(&dir, project_directory, account);
+        std::fs::create_dir_all(path.parent().unwrap())
+            .map_err(|err| format!("failed to create test project keychain dir: {err}"))?;
+        return std::fs::write(&path, value)
+            .map_err(|err| format!("failed to write {}: {err}", path.display()));
+    }
+    xpc_request_with_project_directory(
+        "save",
+        Some((b"key\0", account)),
+        Some((b"value\0", value)),
+        None,
+        None,
+        Some(project_directory),
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn test_project_secret_path(
+    keychain_directory: &std::path::Path,
+    project_directory: &str,
+    account: &str,
+) -> PathBuf {
+    keychain_directory
+        .join(".project-values")
+        .join(hex(project_directory.as_bytes()))
+        .join(account)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 pub(crate) fn store_secret_if_absent_or_equal(account: &str, value: &str) -> Result<(), String> {
     if let Some(dir) = crate::test_keychain_dir() {
         std::fs::create_dir_all(&dir)
@@ -160,6 +198,18 @@ fn xpc_request(
     bool_field: Option<&'static [u8]>,
     uint_field: Option<(&'static [u8], u64)>,
 ) -> Result<XpcReply, String> {
+    xpc_request_with_project_directory(operation, field, extra, bool_field, uint_field, None)
+}
+
+#[cfg(target_os = "macos")]
+fn xpc_request_with_project_directory(
+    operation: &str,
+    field: Option<(&'static [u8], &str)>,
+    extra: Option<(&'static [u8], &str)>,
+    bool_field: Option<&'static [u8]>,
+    uint_field: Option<(&'static [u8], u64)>,
+    project_directory: Option<&str>,
+) -> Result<XpcReply, String> {
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int, c_void};
 
@@ -247,6 +297,9 @@ fn xpc_request(
         }
         if let Some((uint_field, value)) = uint_field {
             xpc_dictionary_set_uint64(message, uint_field.as_ptr().cast(), value);
+        }
+        if let Some(project_directory) = project_directory {
+            set_string(message, b"project_directory\0", project_directory)?;
         }
         xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
     }

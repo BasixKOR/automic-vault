@@ -750,6 +750,47 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func replaceSecretValue(_ storedValue: StoredSecretValue, in secret: StoredSecret, with value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        let mutation: SecretMutation = switch storedValue.source {
+        case .global:
+            .save(account: secret.account, value: value, accessibility: secret.accessibility)
+        case .projectDirectory(let directory):
+            .saveProject(
+                account: secret.account,
+                value: value,
+                directory: directory,
+                accessibility: secret.accessibility,
+                warning: ""
+            )
+        }
+        let result = performInAppSecretMutation(mutation)
+        guard result.status == errSecSuccess else {
+            errorMessage = result.error ?? "Could not replace \(secret.account): \(result.status ?? errSecInternalError)"
+            return false
+        }
+        errorMessage = nil
+        reload()
+        return true
+    }
+
+    func deleteSecretValue(_ value: StoredSecretValue, from secret: StoredSecret) {
+        let result = performInAppSecretMutation(
+            .deleteValue(account: secret.account, source: value.source)
+        )
+        guard let status = result.status else {
+            errorMessage = result.error
+            return
+        }
+        if status == errSecSuccess || status == errSecItemNotFound {
+            if secret.values.count == 1 { selectedItemID = nil }
+            errorMessage = nil
+            reload()
+        } else {
+            errorMessage = "Could not delete \(secret.account) Value: \(status)"
+        }
+    }
+
     func renameSelectedSecret(to newAccount: String) -> Bool {
         guard selectedSection == .allSecrets, let account = selectedItem?.id else { return false }
         let newAccount = newAccount.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2076,6 +2117,9 @@ private struct StoredSecretDetailView: View {
     @State private var isConfirmingDelete = false
     @State private var isConfirmingDirectAccess = false
     @State private var pendingDirectAccessLauncher: DirectAccessLauncherSelection?
+    @State private var replacingValue: StoredSecretValue?
+    @State private var deletingValue: StoredSecretValue?
+    @State private var pendingAccessibility: StoredSecretAccessibility?
 
     init(model: DashboardModel, secret: StoredSecret) {
         self.model = model
@@ -2094,8 +2138,48 @@ private struct StoredSecretDetailView: View {
                 .foregroundStyle(.secondary)
             InfoBlock(
                 title: "All Secrets",
-                text: "Secret value is hidden.\n\(secret.subtitle)"
+                text: "Secret Values are hidden.\n\(secret.subtitle)"
             )
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Values")
+                    .font(.headline)
+                ForEach(secret.values) { value in
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(value.source == .global ? "Global Value" : value.source.displayName)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .textSelection(.enabled)
+                            if case .projectDirectory(let path) = value.source,
+                               !projectDirectoryExists(path)
+                            {
+                                Text("Directory Missing")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        Spacer()
+                        Button("Replace") { replacingValue = value }
+                            .accessibilityLabel("Replace \(value.source.displayName) for \(secret.account)")
+                        Button(role: .destructive) { deletingValue = value } label: {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete \(value.source.displayName) for \(secret.account)")
+                    }
+                    .padding(10)
+                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                }
+                Text("Create another Project Value with `av save --project-directory=DIR \(secret.account)`." )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Available While Locked", isOn: availabilityBinding)
@@ -2175,6 +2259,37 @@ private struct StoredSecretDetailView: View {
         } message: {
             Text("This secret will be permanently deleted.")
         }
+        .alert("Change availability for all Values?", isPresented: Binding(
+            get: { pendingAccessibility != nil },
+            set: { if !$0 { pendingAccessibility = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { pendingAccessibility = nil }
+            Button("Change") {
+                guard let accessibility = pendingAccessibility else { return }
+                pendingAccessibility = nil
+                if model.setAccessibility(accessibility, for: secret) {
+                    isAvailableWhileLocked = accessibility.isAvailableWhileLocked
+                }
+            }
+        } message: {
+            Text("This Secret has \(secret.values.count) Values. The availability setting applies to every Value.")
+        }
+        .alert("Delete Secret Value?", isPresented: Binding(
+            get: { deletingValue != nil },
+            set: { if !$0 { deletingValue = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { deletingValue = nil }
+            Button("Delete", role: .destructive) {
+                guard let value = deletingValue else { return }
+                deletingValue = nil
+                model.deleteSecretValue(value, from: secret)
+            }
+        } message: {
+            Text(deletingValue.map(deleteValueMessage) ?? "")
+        }
+        .sheet(item: $replacingValue) { value in
+            ReplaceSecretValueView(model: model, secret: secret, storedValue: value)
+        }
         .sheet(isPresented: $isConfirmingDirectAccess, onDismiss: {
             pendingDirectAccessLauncher = nil
         }) {
@@ -2195,15 +2310,83 @@ private struct StoredSecretDetailView: View {
         Binding {
             isAvailableWhileLocked
         } set: { isAvailable in
-            let previous = isAvailableWhileLocked
-            isAvailableWhileLocked = isAvailable
             let accessibility: StoredSecretAccessibility = isAvailable
                 ? .afterFirstUnlock
                 : .whenUnlocked
+            if secret.values.count > 1 {
+                pendingAccessibility = accessibility
+                return
+            }
+            let previous = isAvailableWhileLocked
+            isAvailableWhileLocked = isAvailable
             if !model.setAccessibility(accessibility, for: secret) {
                 isAvailableWhileLocked = previous
             }
         }
+    }
+
+    private func deleteValueMessage(_ value: StoredSecretValue) -> String {
+        guard case .projectDirectory(let path) = value.source else {
+            return secret.values.count == 1
+                ? "This is the last Value. Deleting it also deletes the Secret and revokes its Direct Access Rules."
+                : "Project Values remain, but requests outside their directories will have no Global Value."
+        }
+        let alternatives = secret.values.filter { $0.id != value.id }
+        let pathComponents = URL(fileURLWithPath: path).pathComponents
+        let inherited = alternatives.compactMap { candidate -> (Int, StoredSecretValue)? in
+            guard case .projectDirectory(let candidatePath) = candidate.source else { return nil }
+            let candidateComponents = URL(fileURLWithPath: candidatePath).pathComponents
+            guard candidateComponents.count < pathComponents.count,
+                  pathComponents.starts(with: candidateComponents)
+            else { return nil }
+            return (candidateComponents.count, candidate)
+        }.max { $0.0 < $1.0 }?.1 ?? alternatives.first { $0.source == .global }
+        if let inherited {
+            return "Requests under \(escapedSecurityPath(path)) will fall back to \(escapedSecurityPath(inherited.source.displayName))."
+        }
+        return "Requests under \(escapedSecurityPath(path)) will have no Value for this Secret."
+    }
+}
+
+private func projectDirectoryExists(_ path: String) -> Bool {
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        && isDirectory.boolValue
+}
+
+private struct ReplaceSecretValueView: View {
+    @ObservedObject var model: DashboardModel
+    let secret: StoredSecret
+    let storedValue: StoredSecretValue
+    @State private var value = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Replace Secret Value")
+                .font(.system(size: 18, weight: .semibold))
+            Text(storedValue.source.displayName)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            SecureField("New Value", text: $value)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("New Value for \(secret.account)")
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Replace") {
+                    if model.replaceSecretValue(storedValue, in: secret, with: value) {
+                        dismiss()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(value.isEmpty)
+            }
+        }
+        .padding(22)
+        .frame(width: 420)
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -2682,6 +2865,14 @@ private struct AccessRequestRow: View {
                     AccessMetaLine("Launcher", record.launcher ?? "unknown")
                     AccessMetaLine("Decision source", record.approvalSourceLabel)
                     AccessMetaLine("Secret names", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
+                    if let sources = record.secretValueSources, !sources.isEmpty {
+                        AccessMetaLine(
+                            "Secret values",
+                            sources.sorted { $0.key < $1.key }.map {
+                                "\($0.key): \(escapedSecurityPath($0.value))"
+                            }.joined(separator: "\n")
+                        )
+                    }
                     AccessMetaLine("Gate client", record.callerPath)
                     AccessMetaLine("Target", record.target)
                     AccessMetaLine("Working directory", escapedSecurityPath(record.cwd))

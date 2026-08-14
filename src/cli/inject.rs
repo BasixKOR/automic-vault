@@ -3,7 +3,7 @@ use std::ffi::{CString, OsString};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -464,6 +464,37 @@ fn build_env(
 
 fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
     if let Some(dir) = crate::test_keychain_dir() {
+        let mut current = std::env::current_dir()
+            .map_err(|err| format!("failed to determine working directory: {err}"))?;
+        let device = current
+            .metadata()
+            .map_err(|err| format!("failed to inspect working directory: {err}"))?
+            .dev();
+        loop {
+            let project = current
+                .to_str()
+                .ok_or("working directory must be valid UTF-8")?;
+            let path = crate::secrets::test_project_secret_path(&dir, project, key);
+            match std::fs::read_to_string(&path) {
+                Ok(value) => return Ok(Some(value)),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+            }
+            let Some(parent) = current.parent() else {
+                break;
+            };
+            let parent = parent.to_path_buf();
+            if parent == current
+                || parent
+                    .metadata()
+                    .map_err(|err| format!("failed to inspect working directory parent: {err}"))?
+                    .dev()
+                    != device
+            {
+                break;
+            }
+            current = parent;
+        }
         let path = std::path::PathBuf::from(dir).join(key);
         return match std::fs::read_to_string(&path) {
             Ok(value) => Ok(Some(value)),

@@ -29,7 +29,7 @@ commands:
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
   $ av list                               # list saved secret names
-  $ av save <key>                         # store a secret
+  $ av save [--project-directory=DIR] KEY # store a global or Project Value
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
   $ av unharden brew [-y|--yes]           # temporarily restore Homebrew for cask migration
   $ av open [--secret-gate <id>]          # open the Automic Vault app
