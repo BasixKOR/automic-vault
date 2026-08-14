@@ -12,6 +12,7 @@ const HELPER_PATH: &str = "/usr/local/bin/docker-credential-av";
 const MAX_INPUT_BYTES: u64 = 64 * 1024;
 const MAX_SERVER_URL_BYTES: usize = 2048;
 const SECRET_PREFIX: &str = "DOCKER_REGISTRY_CREDENTIAL_";
+const CREDENTIALS_NOT_FOUND: &str = "credentials not found in native keychain";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DockerCredential {
@@ -25,9 +26,17 @@ pub(crate) fn run(mut args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut 
     match run_with_io(&mut args, &mut stdin, stdout) {
         Ok(()) => 0,
         Err(error) => {
-            let _ = writeln!(stderr, "docker-credential-av: {error}");
+            write_error(&error, stdout, stderr);
             1
         }
+    }
+}
+
+fn write_error(error: &str, stdout: &mut dyn Write, stderr: &mut dyn Write) {
+    if error == CREDENTIALS_NOT_FOUND {
+        let _ = writeln!(stdout, "{error}");
+    } else {
+        let _ = writeln!(stderr, "docker-credential-av: {error}");
     }
 }
 
@@ -61,7 +70,15 @@ fn run_with_io(
         }
         "get" => {
             let server_url = parse_server_url(&read_limited(input)?)?;
-            let stored = inject::docker_credential(secret_name(&server_url), server_url.clone())?;
+            let key = secret_name(&server_url);
+            let stored =
+                inject::docker_credential(key.clone(), server_url.clone()).map_err(|error| {
+                    if error == format!("failed to load secret {key}: -25300") {
+                        CREDENTIALS_NOT_FOUND.into()
+                    } else {
+                        error
+                    }
+                })?;
             let credential = parse_credential(&stored)?;
             if credential.server_url != server_url {
                 return Err(
@@ -252,6 +269,22 @@ mod tests {
         )
         .unwrap();
         assert!(!keychain.join(secret_name("registry.example")).exists());
+        let mut args = vec![helper.clone().into_os_string(), "get".into()];
+        let error = run_with_io(
+            &mut args,
+            &mut "registry.example\n".as_bytes(),
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert_eq!(error, CREDENTIALS_NOT_FOUND);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        write_error(&error, &mut stdout, &mut stderr);
+        assert_eq!(stdout, b"credentials not found in native keychain\n");
+        assert!(stderr.is_empty());
+        stdout.clear();
+        write_error("approval denied", &mut stdout, &mut stderr);
+        assert!(stdout.is_empty());
+        assert_eq!(stderr, b"docker-credential-av: approval denied\n");
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_DOCKER_HELPER_PATH");
             std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
