@@ -45,6 +45,15 @@ Target to that installed generation. Doctor verifies the resulting identity,
 ownership, permissions, content manifest, and command resolution. See
 [ADR 0012](adr/0012-verified-upstream-tool-releases.md).
 
+A Hardener may bind a vendor-managed Target already installed outside Automic
+Vault when protected Secrets are available only through an Automic Vault Gate
+Client. Because that Target may remain user-writable and vendor-updated, its
+path is never treated as integrity evidence. The gate verifies the live
+process's vendor identity, signing identifier, runtime protections, arguments,
+and process execution immediately before every Secret Application. Unknown
+Targets and changed runtime posture fail closed. See
+[ADR 0014](adr/0014-docker-credential-helper.md).
+
 ### Secret Custody
 
 Automic Vault stores named opaque Secrets in the macOS Data Protection Keychain. Each Secret has an availability choice independent of authorization policy.
