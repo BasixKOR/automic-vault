@@ -2311,7 +2311,7 @@ private struct AccessRequestRow: View {
                     AccessMetaLine("Secret names", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
                     AccessMetaLine("Gate client", record.callerPath)
                     AccessMetaLine("Target", record.target)
-                    AccessMetaLine("Working directory", record.cwd)
+                    AccessMetaLine("Working directory", escapedSecurityPath(record.cwd))
                     if let detail = record.detail, !detail.isEmpty {
                         AccessMetaLine("Detail", detail)
                     }

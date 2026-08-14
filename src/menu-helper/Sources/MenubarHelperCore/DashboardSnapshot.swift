@@ -743,6 +743,27 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public func escapedSecurityPath(_ path: String) -> String {
+    var escaped = ""
+    escaped.reserveCapacity(path.utf8.count)
+    for scalar in path.unicodeScalars {
+        switch scalar.value {
+        case 0x5C: escaped += #"\\"#
+        case 0x09: escaped += #"\t"#
+        case 0x0A: escaped += #"\n"#
+        case 0x0D: escaped += #"\r"#
+        default:
+            switch scalar.properties.generalCategory {
+            case .control, .format, .lineSeparator, .paragraphSeparator:
+                escaped += #"\u{"# + String(scalar.value, radix: 16, uppercase: true) + "}"
+            default:
+                escaped.unicodeScalars.append(scalar)
+            }
+        }
+    }
+    return escaped
+}
+
 struct ScanReport: Codable {
     let findings: [DetectorFinding]
 }

@@ -5201,7 +5201,7 @@ private func showApprovalAlert(
         title: request.title,
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
-        cwd: request.cwd,
+        cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
         sections: approvalPromptSections(

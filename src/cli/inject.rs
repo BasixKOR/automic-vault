@@ -317,10 +317,7 @@ fn approval_request(
         keys: options.keys.clone(),
         target: target.display().to_string(),
         args: options.args.iter().map(os_display).collect(),
-        cwd: std::env::current_dir()
-            .map_err(|err| format!("failed to read current directory: {err}"))?
-            .display()
-            .to_string(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
         replace_existing_env: options.replace_existing_env,
         allow_missing_keys: options.allow_missing_keys,
         env_conflicts,
