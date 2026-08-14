@@ -29,7 +29,7 @@ struct RelayState {
     rooms: Arc<Mutex<HashMap<String, Room>>>,
     revoked_rooms: Arc<Mutex<HashSet<String>>>,
     revocation_path: Arc<PathBuf>,
-    apns: Option<ApnsClient>,
+    apns: Option<ApnsClients>,
 }
 
 struct Room {
@@ -89,6 +89,12 @@ struct ApnsClient {
     token: Arc<Mutex<Option<(Instant, String)>>>,
 }
 
+#[derive(Clone)]
+struct ApnsClients {
+    sandbox: ApnsClient,
+    production: ApnsClient,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind = env::var("AV_APPROVAL_RELAY_BIND").unwrap_or_else(|_| "127.0.0.1:8788".into());
@@ -103,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         rooms: Arc::new(Mutex::new(HashMap::new())),
         revoked_rooms: Arc::new(Mutex::new(revoked_rooms)),
         revocation_path: Arc::new(revocation_path),
-        apns: ApnsClient::from_environment()?,
+        apns: ApnsClients::from_environment()?,
     };
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!("Automic Vault Approval relay listening on {bind}");
@@ -391,14 +397,64 @@ async fn registration_status(
     })
 }
 
-impl ApnsClient {
+impl ApnsClients {
     fn from_environment() -> Result<Option<Self>, Box<dyn std::error::Error>> {
-        let Some(path) = env::var_os("AV_APNS_PRIVATE_KEY") else {
-            return Ok(None);
+        let (sandbox_path, production_path) = match (
+            env::var_os("AV_APNS_SANDBOX_PRIVATE_KEY"),
+            env::var_os("AV_APNS_PRODUCTION_PRIVATE_KEY"),
+        ) {
+            (None, None) => return Ok(None),
+            (Some(sandbox), Some(production)) => (sandbox, production),
+            _ => return Err("both APNs private keys are required".into()),
         };
-        let team_id = env::var("AV_APNS_TEAM_ID")?;
-        let key_id = env::var("AV_APNS_KEY_ID")?;
-        let topic = env::var("AV_APNS_TOPIC")?;
+        let team_id: Arc<str> = env::var("AV_APNS_TEAM_ID")?.into();
+        let topic: Arc<str> = env::var("AV_APNS_TOPIC")?.into();
+        Ok(Some(Self {
+            sandbox: ApnsClient::new(
+                sandbox_path.into(),
+                team_id.clone(),
+                env::var("AV_APNS_SANDBOX_KEY_ID")?.into(),
+                topic.clone(),
+            )?,
+            production: ApnsClient::new(
+                production_path.into(),
+                team_id,
+                env::var("AV_APNS_PRODUCTION_KEY_ID")?.into(),
+                topic,
+            )?,
+        }))
+    }
+
+    fn client(&self, environment: ApnsEnvironment) -> &ApnsClient {
+        match environment {
+            ApnsEnvironment::Sandbox => &self.sandbox,
+            ApnsEnvironment::Production => &self.production,
+        }
+    }
+
+    async fn push(
+        &self,
+        token: &str,
+        environment: ApnsEnvironment,
+        notification: Value,
+    ) -> Result<(), ()> {
+        self.client(environment)
+            .push(token, environment, notification)
+            .await
+    }
+
+    async fn validate(&self, token: &str, environment: ApnsEnvironment) -> Result<(), ()> {
+        self.client(environment).validate(token, environment).await
+    }
+}
+
+impl ApnsClient {
+    fn new(
+        path: PathBuf,
+        team_id: Arc<str>,
+        key_id: Arc<str>,
+        topic: Arc<str>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let pem = std::fs::read_to_string(path)?;
         let encoded = pem
             .lines()
@@ -408,14 +464,14 @@ impl ApnsClient {
         let rng = SystemRandom::new();
         let signing_key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &der, &rng)
             .map_err(|_| "invalid APNs private key")?;
-        Ok(Some(Self {
-            team_id: team_id.into(),
-            key_id: key_id.into(),
-            topic: topic.into(),
+        Ok(Self {
+            team_id,
+            key_id,
+            topic,
             signing_key: Arc::new(signing_key),
             client: reqwest::Client::builder().http2_prior_knowledge().build()?,
             token: Arc::new(Mutex::new(None)),
-        }))
+        })
     }
 
     async fn push(
