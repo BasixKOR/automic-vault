@@ -369,7 +369,7 @@ If you edit the script, run `av bless` again to review the changed contents.
 &nbsp;
 
 
-## AWS Without Ambient Credentials
+## AWS & Docker Without Ambient Credentials
 
 ```sh
 $ av harden aws
@@ -398,6 +398,29 @@ original reusable credentials**.
 > we recommend it.
 
 [Read why we think this is the best AWS credential manager in the world.](https://www.automicvault.com/blog/best-aws-credential-manager/)
+
+Docker gets the same ambient-access fix without replacing Docker Desktop's
+vendor-signed, Hardened Runtime CLI:
+
+```sh
+$ av harden docker
+$ docker pull registry.example/acme/image
+# ^^ registry credentials, released only to this verified Docker process
+```
+
+`av harden docker` migrates credentials from Docker's existing helper into
+Secret Custody, installs a root-owned
+`/usr/local/bin/docker-credential-av` only when every containing directory is
+root-owned and protected from group/world writes, and updates Docker's
+`credsStore`. The Secret Gate verifies the live Docker process's signature,
+Hardened Runtime, ancestry, arguments, and requested registry before releasing
+the credential.
+
+> [!IMPORTANT]
+> Docker's credential-helper protocol necessarily returns a usable registry
+> token to the authorized Docker process as plaintext JSON. Automic Vault
+> keeps it in Secret Custody at rest and prevents ambient access; it cannot make
+> a compromised authorized Docker process keep that token confidential.
 
 &nbsp;
 
