@@ -3449,7 +3449,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
 
-        Task { @MainActor in
+        Task {
             do {
                 let credentials = try await self.resolveAWSCredentials(
                     registration,
@@ -3475,7 +3475,6 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
-    @MainActor
     private func resolveAWSCredentials(
         _ registration: AWSRegistration,
         parentPID: pid_t
@@ -3489,6 +3488,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let profiles = registration.chain.profiles
         let base = profiles[0]
         if let serial = base.mfaSerial {
+            let tokenCode = try await requestMFACode(serial: serial)
             credentials = try await requestSTSCredentials(
                 region: registration.chain.region,
                 parameters: [
@@ -3496,7 +3496,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     "Version": "2011-06-15",
                     "DurationSeconds": "3600",
                     "SerialNumber": serial,
-                    "TokenCode": try requestMFACode(serial: serial),
+                    "TokenCode": tokenCode,
                 ],
                 credentials: credentials
             )
@@ -3523,8 +3523,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 "RoleSessionName": "automic-vault-\(parentPID)",
             ]
             if let serial = profile.mfaSerial {
+                let tokenCode = try await requestMFACode(serial: serial)
                 parameters["SerialNumber"] = serial
-                parameters["TokenCode"] = try requestMFACode(serial: serial)
+                parameters["TokenCode"] = tokenCode
             }
             credentials = try await requestSTSCredentials(
                 region: registration.chain.region,
