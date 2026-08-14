@@ -464,36 +464,10 @@ fn build_env(
 
 fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
     if let Some(dir) = crate::test_keychain_dir() {
-        let mut current = std::env::current_dir()
+        let current = std::env::current_dir()
             .map_err(|err| format!("failed to determine working directory: {err}"))?;
-        let device = current
-            .metadata()
-            .map_err(|err| format!("failed to inspect working directory: {err}"))?
-            .dev();
-        loop {
-            let project = current
-                .to_str()
-                .ok_or("working directory must be valid UTF-8")?;
-            let path = crate::secrets::test_project_secret_path(&dir, project, key);
-            match std::fs::read_to_string(&path) {
-                Ok(value) => return Ok(Some(value)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
-            }
-            let Some(parent) = current.parent() else {
-                break;
-            };
-            let parent = parent.to_path_buf();
-            if parent == current
-                || parent
-                    .metadata()
-                    .map_err(|err| format!("failed to inspect working directory parent: {err}"))?
-                    .dev()
-                    != device
-            {
-                break;
-            }
-            current = parent;
+        if let Some(value) = load_test_project_secret(&dir, &current, key)? {
+            return Ok(Some(value));
         }
         let path = std::path::PathBuf::from(dir).join(key);
         return match std::fs::read_to_string(&path) {
@@ -504,6 +478,49 @@ fn load_test_secret_if_present(key: &str) -> Result<Option<String>, String> {
     }
     if let Some(value) = crate::test_env_string(&format!("AUTOMIC_VAULT_TEST_{key}")) {
         return Ok(Some(value));
+    }
+    Ok(None)
+}
+
+fn load_test_project_secret(
+    keychain_directory: &Path,
+    working_directory: &Path,
+    key: &str,
+) -> Result<Option<String>, String> {
+    let mut current = std::fs::canonicalize(working_directory).map_err(|err| {
+        format!(
+            "failed to resolve working directory {}: {err}",
+            working_directory.display()
+        )
+    })?;
+    let device = current
+        .metadata()
+        .map_err(|err| format!("failed to inspect working directory: {err}"))?
+        .dev();
+    loop {
+        let project = current
+            .to_str()
+            .ok_or("working directory must be valid UTF-8")?;
+        let path = crate::secrets::test_project_secret_path(keychain_directory, project, key);
+        match std::fs::read_to_string(&path) {
+            Ok(value) => return Ok(Some(value)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+        }
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        let parent = parent.to_path_buf();
+        if parent == current
+            || parent
+                .metadata()
+                .map_err(|err| format!("failed to inspect working directory parent: {err}"))?
+                .dev()
+                != device
+        {
+            break;
+        }
+        current = parent;
     }
     Ok(None)
 }
@@ -973,6 +990,41 @@ mod tests {
             env.get(std::ffi::OsStr::new("APPROVED_SECRET")),
             Some(&OsString::from("expected"))
         );
+    }
+
+    #[test]
+    fn test_project_secret_lookup_resolves_symlinked_working_directory() {
+        use std::os::unix::fs::symlink;
+
+        let root = PathBuf::from("/tmp").join(format!(
+            "av-project-value-symlink-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let keychain = root.join("keychain");
+        let project = root.join("physical/project");
+        let nested = project.join("nested");
+        let alias = root.join("alias");
+        std::fs::create_dir_all(&nested).unwrap();
+        symlink(&project, &alias).unwrap();
+
+        let project = project.canonicalize().unwrap();
+        let stored = crate::secrets::test_project_secret_path(
+            &keychain,
+            project.to_str().unwrap(),
+            "PROJECT_SECRET",
+        );
+        std::fs::create_dir_all(stored.parent().unwrap()).unwrap();
+        std::fs::write(stored, "expected").unwrap();
+
+        assert_eq!(
+            load_test_project_secret(&keychain, &alias.join("nested"), "PROJECT_SECRET").unwrap(),
+            Some("expected".into())
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
