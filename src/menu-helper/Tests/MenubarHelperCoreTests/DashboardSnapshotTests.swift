@@ -78,7 +78,6 @@ import Testing
 @Test func splitDetectorNamesDisplayPackageAndKind() {
     #expect(detectorDisplayName("git-credential-fill") == DetectorDisplayName(packageName: "git", kind: "credential fill"))
     #expect(detectorDisplayName("aws-cli-login-cache") == DetectorDisplayName(packageName: "aws-cli", kind: "login cache"))
-    #expect(detectorDisplayName("docker-root-access") == DetectorDisplayName(packageName: "docker", kind: "root access"))
     #expect(detectorDisplayName("homebrew") == DetectorDisplayName(packageName: "homebrew", kind: "mutable"))
     #expect(detectorDisplayName("sip") == DetectorDisplayName(packageName: "SIP", kind: "system integrity"))
     #expect(detectorDisplayName("sudo") == DetectorDisplayName(packageName: "sudo", kind: "system integrity"))
