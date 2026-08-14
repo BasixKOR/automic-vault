@@ -2989,6 +2989,7 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
 private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     let panel = NSOpenPanel()
     panel.title = "Allow Launcher"
+    panel.message = "Choose a .app, or press ⇧⌘G to enter the path to a CLI executable."
     panel.prompt = "Choose"
     panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
     panel.allowedContentTypes = launcherPickerAllowedContentTypes
