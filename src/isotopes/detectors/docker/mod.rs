@@ -67,6 +67,9 @@ fn docker_config_hazards(contents: &str, path: &Path) -> Vec<String> {
     }
 
     for helper in string_values_for_key(contents, "credsStore") {
+        if helper == "av" {
+            continue;
+        }
         reasons.push(format!(
             "Docker config uses ambient credential store `{helper}`: {}",
             path.display()
@@ -74,6 +77,9 @@ fn docker_config_hazards(contents: &str, path: &Path) -> Vec<String> {
     }
 
     for helper in credential_helper_values(contents) {
+        if helper == "av" {
+            continue;
+        }
         reasons.push(format!(
             "Docker config uses ambient per-registry credential helper `{helper}`: {}",
             path.display()
@@ -223,6 +229,13 @@ mod tests {
             reasons
                 .iter()
                 .any(|reason| reason.contains("credential helper `desktop`"))
+        );
+        assert!(
+            docker_config_hazards(
+                r#"{"credsStore":"av","credHelpers":{"registry.example":"av"}}"#,
+                Path::new("/tmp/config.json"),
+            )
+            .is_empty()
         );
     }
 

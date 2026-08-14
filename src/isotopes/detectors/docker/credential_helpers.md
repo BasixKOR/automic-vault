@@ -10,11 +10,14 @@
 - `$DOCKER_CONFIG/config.json`
 - `~/.docker/config.json`
 
-## Why This is not Yet Hardened
+## Mitigation
 
-Docker credential helpers are ambient: any process running as the user can ask
-the configured helper for registry credentials. A hardener needs an
-approval-aware helper that preserves Docker's credential-helper protocol and
-registry routing. Rewriting the existing helper configuration is not enough.
+Run:
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+```sh
+av harden docker
+```
+
+This keeps Docker Desktop's vendor-signed CLI, migrates credentials from its
+default helper into Automic Vault, and installs an approval-aware helper.
+Non-Automic per-registry helpers fail closed rather than being partly migrated.

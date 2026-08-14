@@ -9,10 +9,13 @@
 - `$DOCKER_CONFIG/config.json`
 - `~/.docker/config.json`
 
-## Why This is not Yet Hardened
+## Mitigation
 
-Docker credential helpers are a credential-store boundary, not a normal CLI
-secret file. This detector reports Docker config that uses the packaged helpers
-without changing Docker's helper settings.
+Run:
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+```sh
+av harden docker
+```
+
+Automic Vault replaces the ambient default helper with its Secret Gate while
+retaining Docker Desktop's vendor-signed CLI.
