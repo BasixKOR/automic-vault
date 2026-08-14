@@ -141,11 +141,39 @@ Use Launcher, Gate Client, and Target in security-sensitive prose. Avoid the amb
 
 ### Secret
 
-A named, opaque, sensitive value under Automic Vault's control.
+A protected capability identified by one Secret Name. A Secret contains one or
+more opaque, sensitive Values under Automic Vault's control.
 
 ### Secret Name
 
 The identifier used to request a Secret. Use *Secret Name* instead of the overloaded word *key* in product language.
+
+Authorization policy names the Secret, not an individual Value. A rule that
+authorizes a Secret Name therefore covers every current and future Value of that
+Secret Name.
+
+### Secret Value
+
+The opaque bytes selected when a Secret is used. A Secret may have one Global
+Value and any number of Project Values.
+
+### Global Value
+
+The Secret Value used when no Project Value matches the Authorization Request's
+working directory.
+
+### Project Value
+
+A Secret Value associated with one Project Directory. Project Values are
+selection context, not an authorization boundary. The nearest matching Project
+Directory is selected independently for each requested Secret Name.
+
+### Project Directory
+
+An existing directory represented by its canonical absolute path. The path is a
+selector for a Project Value, not an identity or proof of authority. Moving the
+directory does not move the Project Value; recreating a directory at the same
+path makes that Project Value selectable again.
 
 ### Credential
 
@@ -165,7 +193,7 @@ The intentional return of a raw Secret value to the Launcher, standard output, c
 
 ### Secret Availability
 
-The Keychain availability chosen for a Secret:
+The Keychain availability chosen for a Secret and shared by all its Values:
 
 - **When Unlocked:** available while the user's device is unlocked.
 - **Available While Locked:** available after the first unlock following a restart.
@@ -176,7 +204,9 @@ Availability can prevent an authorized operation. It cannot authorize one. Human
 
 ### Authorization Request
 
-The complete, immutable description of one operation. It binds the Launcher, Gate Client, Target, command, arguments, working directory, requested Secret Names, relevant options, and process identity.
+The complete, immutable description of one operation. It binds the Launcher,
+Gate Client, Target, command, arguments, working directory, requested Secret
+Names, selected Secret Value sources, relevant options, and process identity.
 
 ### Authorization Policy
 
@@ -201,7 +231,7 @@ The final allow or deny result and its source. An allowed request is either **au
 
 ### Fail Closed
 
-Uncertainty about policy or operation risk disables automic authorization and requires Approval. Uncertainty about identity, integrity, request completeness, Secret matching, or required Authorization Record persistence denies the request. An error must not fall back to broader access.
+Uncertainty about policy or operation risk disables automic authorization and requires Approval. Uncertainty about identity, integrity, request completeness, Secret matching, selected Secret Value, or required Authorization Record persistence denies the request. An error must not fall back to another Secret Value or broader access.
 
 ## Operation Characteristics
 

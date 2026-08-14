@@ -56,7 +56,10 @@ Targets and changed runtime posture fail closed. See
 
 ### Secret Custody
 
-Automic Vault stores named opaque Secrets in the macOS Data Protection Keychain. Each Secret has an availability choice independent of authorization policy.
+Automic Vault stores named opaque Secrets in the macOS Data Protection
+Keychain. A Secret may contain a Global Value and Project Values. Each Secret
+has one availability choice, shared by all its Values and independent of
+authorization policy.
 
 ### Runtime Authorization
 
@@ -207,6 +210,25 @@ The Homebrew migration intentionally broadens persisted `readOnly` rules to allo
 
 Secret bytes stay in the app's private Keychain access group. Gate policy and Authorization History use separate services. Availability controls whether Keychain may return a Secret while the device is locked. Authorization controls whether the operation may receive it. Both checks must pass.
 
+For each requested Secret Name, the menu bar app selects a Value from the
+Authorization Request's working directory. It examines that physical canonical
+directory and each physical parent on the same filesystem. The nearest Project
+Value wins; otherwise the Global Value is used. If neither exists, the Secret is
+missing. Selection does not inspect `.git`, Git configuration, environment
+variables, or repository metadata, and it does not cross a filesystem boundary.
+
+The app resolves every selected Value before authorization, binds the exact
+sources into the immutable Authorization Request and Authorization Record, and
+loads those exact Keychain items only after authorization succeeds. Failure to
+read a selected Value denies the request; it never falls back to an ancestor or
+Global Value.
+
+A Project Directory path is selection context supplied by the Gate Client, not
+an authority boundary or software identity. Name-based policy, including Direct
+Access Rules and Blessings, applies to all Values of that exact Secret Name. A
+Launcher with authority for a Secret may choose a working directory and thereby
+choose among its Values.
+
 A Gate Client's code signature authenticates the component but grants no
 authority to retrieve an existing Secret. The approval service exposes no
 generic Secret-load operation. Existing Secret bytes may leave custody only as
@@ -216,8 +238,10 @@ storing or migrating Secrets compare and verify values inside the menu bar app
 and return status only.
 
 Direct Access Rules are authorization policy, not Secret Availability. They are
-stored separately from Secret bytes. Renaming or deleting a Secret revokes its
-rules so recreating an old Secret Name cannot silently restore authority.
+stored separately from Secret bytes. Removing one Value does not revoke rules
+while the Secret retains another Value. Renaming a Secret or deleting its last
+Value revokes its rules so recreating an old Secret Name cannot silently restore
+authority.
 
 Human Approval requires an active user session and awake displays. Requests that still need a human decision are denied if the session becomes inactive or the displays sleep. Policy-authorized requests may proceed while locked only when every requested Secret has Available While Locked enabled.
 
