@@ -87,10 +87,7 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         names.sort();
         return Ok(names);
     }
-    let cwd = std::env::current_dir()
-        .map_err(|err| format!("failed to read current directory: {err}"))?
-        .to_string_lossy()
-        .into_owned();
+    let cwd = crate::path_security::current_working_directory_utf8()?;
     Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None, None)?.names)
 }
 

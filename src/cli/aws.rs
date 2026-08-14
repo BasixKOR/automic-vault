@@ -146,15 +146,14 @@ fn launch(generation: AwsGeneration, args: Vec<OsString>) -> Result<i32, String>
     {
         crate::isotopes::hardeners::aws_release::current_release_valid()?;
     }
-    let cwd = std::env::current_dir()
-        .map_err(|error| format!("failed to read current directory: {error}"))?;
+    let cwd = crate::path_security::current_working_directory_utf8()?;
     let words = args
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     let generated_config = xpc_request("inject", |message| unsafe {
         xpc_set_string(message, "target", &target.to_string_lossy())?;
-        xpc_set_string(message, "cwd", &cwd.to_string_lossy())?;
+        xpc_set_string(message, "cwd", &cwd)?;
         xpc_set_string(message, "tool", "aws")?;
         xpc_set_string(message, "aws_profile", &profile)?;
         xpc_set_string(message, "aws_generation", generation.name())?;
