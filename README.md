@@ -240,6 +240,9 @@ and update behavior.
 $ av save TOKEN_NAME
 # Confirmation window appears
 
+$ av save --project-directory=. TOKEN_NAME
+# Store a Project Value for the current physical directory
+
 $ av list
 # Approval window appears unless the calling app is allowed in Settings
 
@@ -255,6 +258,12 @@ Automic Vault differs from conventional secrets managers in two ways:
 `av inject` as the shebang for scripts creates a script that always shows an
 approval window when run. The script receives the secrets if you approve its
 runtime request.
+
+Each Secret Name may have a Global Value and Project Values. For each requested
+name, `av inject` selects the nearest Project Value at or above its working
+directory, then falls back to the Global Value. Project directories select a
+value; they do not grant authority. Existing name-based policy covers every
+Value of that Secret.
 
 > [!TIP]
 > #### Portable Scripts
@@ -360,7 +369,7 @@ its decryption key in Automic Vault instead of leaving `.env.keys` in your
 project:
 
 ```sh
-$ av save DOTENV_PRIVATE_KEY
+$ av save --project-directory=. DOTENV_PRIVATE_KEY
 # Paste DOTENV_PRIVATE_KEY from .env.keys
 ```
 

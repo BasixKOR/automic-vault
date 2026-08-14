@@ -42,6 +42,13 @@ loads those exact Keychain items after authorization succeeds. The working
 directory and Project Directory are displayed as context, never as proof of
 authority.
 
+Availability and rename are Secret-level mutations that update all Values.
+Multi-item rename, availability, and whole-Secret deletion use a persisted
+forward-repair journal. Interrupted operations resume in the forward direction,
+and affected names deny Secret Use until repair completes. Deleting one Value
+retains Direct Access Rules while another Value remains; deleting the last
+Value revokes them.
+
 ## Consequences
 
 - Existing name-based grants intentionally cover later Project Values of the

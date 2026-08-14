@@ -1021,6 +1021,60 @@ func protectionPolicyMatrix(
     }
 }
 
+@Test func deletingOneValueRetainsDirectAccessUntilTheLastValueIsDeleted() throws {
+    guard dataProtectionKeychainAvailable() else { return }
+    let secretService = "com.automicvault.tests.project-delete.\(UUID().uuidString)"
+    let policyService = "com.automicvault.tests.project-delete-policy.\(UUID().uuidString)"
+    let policyAccount = "rules"
+    let directory = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
+    let launcher = BlessedScriptLauncher(bundleIdentifier: "terminal", requirement: "identifier terminal")
+    defer {
+        _ = deleteStoredSecret(account: "TOKEN", service: secretService)
+        _ = deleteStoredSecret(account: policyAccount, service: policyService)
+    }
+    #expect(saveStoredSecret(account: "TOKEN", value: "global", service: secretService) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: "TOKEN",
+        value: "project",
+        source: .projectDirectory(directory),
+        service: secretService
+    ) == errSecSuccess)
+    #expect(allowDirectAccess(
+        to: "TOKEN", for: launcher, service: policyService, account: policyAccount
+    ) == errSecSuccess)
+
+    #expect(deleteStoredSecretValueRevokingDirectAccessIfLast(
+        secretName: "TOKEN",
+        source: .projectDirectory(directory),
+        service: secretService,
+        directAccessService: policyService,
+        directAccessAccount: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).count == 1)
+
+    #expect(deleteStoredSecretValueRevokingDirectAccessIfLast(
+        secretName: "TOKEN",
+        source: .global,
+        service: secretService,
+        directAccessService: policyService,
+        directAccessAccount: policyAccount
+    ) == errSecSuccess)
+    #expect(loadDirectAccessRules(service: policyService, account: policyAccount).isEmpty)
+}
+
+@Test func malformedProjectValueAccountsFailClosed() {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.project-corruption.\(UUID().uuidString)"
+    let account = "AVProjectValueV1:not-valid"
+    defer { _ = deleteStoredSecretValue(secretName: account, source: .global, service: service) }
+    #expect(saveStoredSecret(account: account, value: "secret", service: service) == errSecSuccess)
+    guard case .failure(let status) = loadStoredSecretsResult(service: service) else {
+        Issue.record("malformed encoded account was accepted")
+        return
+    }
+    #expect(status == errSecDecode)
+}
+
 @Test func backgroundMetadataMigratesWithoutChangingSecretAccessibility() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let policyService = "com.automicvault.tests.policy.\(UUID().uuidString)"

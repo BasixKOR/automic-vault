@@ -229,6 +229,13 @@ Access Rules and Blessings, applies to all Values of that exact Secret Name. A
 Launcher with authority for a Secret may choose a working directory and thereby
 choose among its Values.
 
+Availability and renaming apply to every Value of a Secret. Multi-item
+mutations persist a forward-repair journal before changing Value items. The app
+resumes an interrupted operation, and affected Secret Names remain unavailable
+until repair completes. Removing one Value retains name-based policy while
+another Value remains; removing the last Value deletes the Secret and revokes
+its Direct Access Rules.
+
 A Gate Client's code signature authenticates the component but grants no
 authority to retrieve an existing Secret. The approval service exposes no
 generic Secret-load operation. Existing Secret bytes may leave custody only as

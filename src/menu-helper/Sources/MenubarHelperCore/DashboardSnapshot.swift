@@ -14,6 +14,7 @@ public let accessRequestLogDefaultsKey = "AccessRequestLog"
 public let accessRequestLogKeychainService = "com.automicvault.access-log"
 private let secretMutationKeychainService = "com.automicvault.secret-mutations"
 private let secretMutationKeychainAccount = "PendingSecretMutationV1"
+private let secretMutationLock = NSLock()
 private let accessRequestLogLock = NSLock()
 private let canonicalKeychainAccessGroup = "ZU76A67LGU.com.automicvault"
 
@@ -1415,6 +1416,22 @@ public func loadStoredSecrets(
     service: String = automicVaultKeychainService,
     directAccessRules: [DirectAccessRule] = []
 ) -> [StoredSecret] {
+    guard case .success(let secrets) = loadStoredSecretsResult(
+        service: service,
+        directAccessRules: directAccessRules
+    ) else { return [] }
+    return secrets
+}
+
+public enum StoredSecretsLoad {
+    case success([StoredSecret])
+    case failure(OSStatus)
+}
+
+public func loadStoredSecretsResult(
+    service: String = automicVaultKeychainService,
+    directAccessRules: [DirectAccessRule] = []
+) -> StoredSecretsLoad {
     let directAccess = Dictionary(grouping: directAccessRules, by: \.secretName)
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1425,32 +1442,35 @@ public func loadStoredSecrets(
     ]
     addCanonicalAccessGroup(to: &query)
     var result: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return .success([]) }
+    guard status == errSecSuccess,
           let items = result as? [[String: Any]]
-    else {
-        return []
-    }
-    let values = items.compactMap { item -> (String, StoredSecretValue)? in
+    else { return .failure(status == errSecSuccess ? errSecDecode : status) }
+    var values: [(String, StoredSecretValue)] = []
+    for item in items {
         guard let account = item[kSecAttrAccount as String] as? String,
               let parsed = parseStoredSecretAccount(account)
-        else { return nil }
-        return (parsed.secretName, StoredSecretValue(
+        else { return .failure(errSecDecode) }
+        values.append((parsed.secretName, StoredSecretValue(
             source: parsed.source,
             keychainAccount: account,
             accessibility: StoredSecretAccessibility(
                 keychainValue: item[kSecAttrAccessible as String]
             ),
             keychainProperties: keychainProperties(for: item, dataProtection: true)
-        ))
+        )))
     }
-    return Dictionary(grouping: values, by: \.0).map { account, entries in
+    let grouped = Dictionary(grouping: values, by: \.0)
+    let secrets = grouped.compactMap { account, entries -> StoredSecret? in
         let values = entries.map(\.1).sorted { lhs, rhs in
             switch (lhs.source, rhs.source) {
             case (.global, .projectDirectory): true
             case (.projectDirectory, .global): false
             default: lhs.source.displayName.localizedStandardCompare(rhs.source.displayName) == .orderedAscending
-            }
+                }
         }
+        guard Set(values.map(\.source)).count == values.count else { return nil }
         let first = values[0]
         return StoredSecret(
             account: account,
@@ -1465,6 +1485,10 @@ public func loadStoredSecrets(
         )
     }
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
+    guard secrets.count == grouped.count else {
+        return .failure(errSecDecode)
+    }
+    return .success(secrets)
 }
 
 public func storedSecretExists(account: String, service: String = automicVaultKeychainService) -> Bool {
@@ -1579,6 +1603,7 @@ public func resolveStoredSecretValues(
     cwd: String,
     secrets: [StoredSecret]
 ) throws -> [String: StoredSecretValue] {
+    guard !names.isEmpty else { return [:] }
     let rank = Dictionary(
         uniqueKeysWithValues: try physicalDirectoryAncestors(cwd).enumerated().map { ($1, $0) }
     )
@@ -1661,7 +1686,12 @@ public func saveStoredSecretIfAbsentOrEqual(
     value: String,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
-    let existing = loadStoredSecrets(service: service).first { $0.account == account }
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    let existing = secrets.first { $0.account == account }
     guard existing?.hasConsistentAccessibility != false else { return errSecDecode }
     return saveKeychainDataIfAbsentOrEqual(
         Data(value.utf8),
@@ -1676,8 +1706,12 @@ public func setStoredSecretAccessibility(
     accessibility: StoredSecretAccessibility,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
-    guard let secret = loadStoredSecrets(service: service).first(where: { $0.account == account })
-    else { return errSecItemNotFound }
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
     guard secret.values.count > 1 else {
         return setKeychainAccessibility(
             accessibility,
@@ -1692,10 +1726,15 @@ public func setStoredSecretAccessibility(
 }
 
 public func renameStoredSecret(account: String, to newAccount: String, service: String = automicVaultKeychainService) -> OSStatus {
-    let secrets = loadStoredSecrets(service: service)
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
     guard !secrets.contains(where: { $0.account == newAccount }),
           let secret = secrets.first(where: { $0.account == account })
     else { return secrets.contains(where: { $0.account == newAccount }) ? errSecDuplicateItem : errSecItemNotFound }
+    guard secret.hasConsistentAccessibility else { return errSecDecode }
     guard secret.values.count > 1 else {
         return renameStoredSecretValue(
             secret.values[0],
@@ -1709,7 +1748,7 @@ public func renameStoredSecret(account: String, to newAccount: String, service: 
     )
 }
 
-private enum PendingSecretMutation: Codable {
+private enum PendingSecretMutation: Codable, Equatable {
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
     case delete(account: String)
@@ -1723,6 +1762,12 @@ private enum PendingSecretMutation: Codable {
     }
 }
 
+private enum PendingSecretMutationLoad {
+    case none
+    case success(PendingSecretMutation)
+    case failure(OSStatus)
+}
+
 extension StoredSecretAccessibility: Codable {}
 
 // ponytail: one journal serializes rare multi-value mutations; add per-Secret journals only if contention appears.
@@ -1730,11 +1775,14 @@ private func beginPendingSecretMutation(
     _ mutation: PendingSecretMutation,
     service: String
 ) -> OSStatus {
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
     let journalAccount = secretMutationJournalAccount(for: service)
-    guard loadKeychainData(
-        service: secretMutationKeychainService,
-        account: journalAccount
-    ) == nil else { return errSecInteractionNotAllowed }
+    switch loadPendingSecretMutation(service: service) {
+    case .none: break
+    case .success: return errSecInteractionNotAllowed
+    case .failure(let status): return status
+    }
     guard let data = try? JSONEncoder().encode(mutation) else { return errSecParam }
     let status = saveKeychainData(
         data,
@@ -1743,7 +1791,10 @@ private func beginPendingSecretMutation(
         accessibility: .afterFirstUnlock
     )
     guard status == errSecSuccess else { return status }
-    return resumePendingSecretMutation(service: service)
+    guard case .success(let persisted) = loadPendingSecretMutation(service: service),
+          persisted == mutation
+    else { return errSecDecode }
+    return resumePendingSecretMutationUnlocked(service: service)
 }
 
 private func secretMutationJournalAccount(for service: String) -> String {
@@ -1751,38 +1802,59 @@ private func secretMutationJournalAccount(for service: String) -> String {
     return secretMutationKeychainAccount + ":" + Data(service.utf8).base64EncodedString()
 }
 
-private func pendingSecretMutation(service: String) -> PendingSecretMutation? {
-    guard let data = loadKeychainData(
+private func loadPendingSecretMutation(service: String) -> PendingSecretMutationLoad {
+    switch loadKeychainDataResult(
         service: secretMutationKeychainService,
         account: secretMutationJournalAccount(for: service)
-    ) else { return nil }
-    return try? JSONDecoder().decode(PendingSecretMutation.self, from: data)
+    ) {
+    case .notFound:
+        return .none
+    case .failure(let status):
+        return .failure(status)
+    case .success(let data):
+        guard let mutation = try? JSONDecoder().decode(PendingSecretMutation.self, from: data)
+        else { return .failure(errSecDecode) }
+        return .success(mutation)
+    }
 }
 
 public func pendingSecretMutationNames() -> Set<String>? {
-    guard storedSecretExists(
-        account: secretMutationKeychainAccount,
-        service: secretMutationKeychainService
-    ) else { return [] }
-    return pendingSecretMutation(service: automicVaultKeychainService)?.affectedNames
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
+    return switch loadPendingSecretMutation(service: automicVaultKeychainService) {
+    case .none: []
+    case .success(let mutation): mutation.affectedNames
+    case .failure: nil
+    }
 }
 
 @discardableResult
 public func resumePendingSecretMutation(
     service: String = automicVaultKeychainService
 ) -> OSStatus {
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
+    return resumePendingSecretMutationUnlocked(service: service)
+}
+
+private func resumePendingSecretMutationUnlocked(service: String) -> OSStatus {
     let journalAccount = secretMutationJournalAccount(for: service)
-    guard storedSecretExists(
-        account: journalAccount,
-        service: secretMutationKeychainService
-    ) else { return errSecSuccess }
-    guard let mutation = pendingSecretMutation(service: service) else { return errSecDecode }
+    let mutation: PendingSecretMutation
+    switch loadPendingSecretMutation(service: service) {
+    case .none: return errSecSuccess
+    case .success(let loaded): mutation = loaded
+    case .failure(let status): return status
+    }
 
     let status: OSStatus
     switch mutation {
     case .setAccessibility(let account, let accessibility):
-        guard let secret = loadStoredSecrets(service: service).first(where: { $0.account == account })
-        else { return errSecItemNotFound }
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
+        guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
         status = secret.values.reduce(errSecSuccess) { result, value in
             guard result == errSecSuccess, value.accessibility != accessibility else { return result }
             return setKeychainAccessibility(
@@ -1792,7 +1864,11 @@ public func resumePendingSecretMutation(
             )
         }
     case .rename(let account, let newAccount):
-        let secrets = loadStoredSecrets(service: service)
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
         let old = secrets.first { $0.account == account }
         let newSources = Set(
             secrets.first(where: { $0.account == newAccount })?.values.map(\.source) ?? []
@@ -1805,7 +1881,12 @@ public func resumePendingSecretMutation(
             return renameStoredSecretValue(value, to: newAccount, service: service)
         } ?? errSecSuccess
     case .delete(let account):
-        status = loadStoredSecrets(service: service).first(where: { $0.account == account })
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
+        status = secrets.first(where: { $0.account == account })
             .map { deleteStoredSecretValues($0, service: service) } ?? errSecSuccess
     }
     guard status == errSecSuccess else { return status }
@@ -1854,8 +1935,12 @@ public func renameStoredSecretRevokingDirectAccess(
 }
 
 public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
-    guard let secret = loadStoredSecrets(service: service).first(where: { $0.account == account })
-    else { return errSecItemNotFound }
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
     guard secret.values.count > 1 else {
         return deleteStoredSecretValue(
             secretName: account,
@@ -1900,7 +1985,12 @@ public func deleteStoredSecretValueRevokingDirectAccessIfLast(
     directAccessService: String = directAccessKeychainService,
     directAccessAccount: String = directAccessKeychainAccount
 ) -> OSStatus {
-    guard let secret = loadStoredSecrets(service: service).first(where: { $0.account == secretName }),
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == secretName }),
           secret.values.contains(where: { $0.source == source })
     else { return errSecItemNotFound }
     if secret.values.count == 1 {
@@ -2130,12 +2220,15 @@ public func directAccessAllows(
     }
 }
 
-private enum DirectAccessRulesLoad {
+public enum DirectAccessRulesLoad {
     case success([DirectAccessRule])
     case failure(OSStatus)
 }
 
-private func loadDirectAccessRulesResult(service: String, account: String) -> DirectAccessRulesLoad {
+public func loadDirectAccessRulesResult(
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> DirectAccessRulesLoad {
     switch loadKeychainDataResult(service: service, account: account) {
     case .notFound:
         return .success([])

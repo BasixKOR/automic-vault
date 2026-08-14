@@ -340,6 +340,10 @@ final class DashboardModel: ObservableObject {
         return launcherBundles.first
     }
 
+    func storedSecret(named account: String) -> StoredSecret? {
+        snapshot.secrets.first { $0.account == account }
+    }
+
     var selectedAccessRequest: AccessRequestRecord? {
         if let selectedItemID,
            let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
@@ -1722,8 +1726,8 @@ private struct DashboardDetailView: View {
         .ignoresSafeArea(.container, edges: .top)
         .background(.ultraThinMaterial)
         .sheet(isPresented: $model.isRenamingSecret) {
-            if let account = model.selectedItem?.id {
-                RenameSecretView(model: model, account: account)
+            if let secret = model.selectedStoredSecret {
+                RenameSecretView(model: model, account: secret.account, valueCount: secret.values.count)
             }
         }
     }
@@ -2082,12 +2086,29 @@ private struct AddSecretView: View {
                 .textFieldStyle(.roundedBorder)
             SecureField("Value", text: $value)
                 .textFieldStyle(.roundedBorder)
-            Toggle("Available While Locked", isOn: $isAvailableWhileLocked)
-                .toggleStyle(.switch)
-            Text("Allows already-approved apps to use this secret while your Mac is locked, after the first unlock following a restart.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let existing = model.storedSecret(
+                named: account.trimmingCharacters(in: .whitespacesAndNewlines)
+            ), !existing.directAccessLaunchers.isEmpty {
+                InfoBlock(
+                    title: "Direct Access",
+                    text: "Already-authorized Launchers can use this new Value immediately: "
+                        + existing.directAccessLaunchers.map(\.bundleIdentifier).joined(separator: ", ")
+                )
+            }
+            if let existing = model.storedSecret(
+                named: account.trimmingCharacters(in: .whitespacesAndNewlines)
+            ) {
+                Text("Availability remains \(existing.accessibility.isAvailableWhileLocked ? "Available While Locked" : "When Unlocked") for all Values.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Toggle("Available While Locked", isOn: $isAvailableWhileLocked)
+                    .toggleStyle(.switch)
+                Text("Allows already-approved apps to use this Secret while your Mac is locked, after the first unlock following a restart.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -2147,7 +2168,7 @@ private struct StoredSecretDetailView: View {
                 ForEach(secret.values) { value in
                     HStack(alignment: .center, spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(value.source == .global ? "Global Value" : value.source.displayName)
+                            Text(value.source == .global ? "Global Value" : escapedSecurityPath(value.source.displayName))
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                                 .textSelection(.enabled)
                             if case .projectDirectory(let path) = value.source,
@@ -2160,11 +2181,12 @@ private struct StoredSecretDetailView: View {
                         }
                         Spacer()
                         Button("Replace") { replacingValue = value }
-                            .accessibilityLabel("Replace \(value.source.displayName) for \(secret.account)")
+                            .accessibilityLabel("Replace \(escapedSecurityPath(value.source.displayName)) for \(secret.account)")
+                            .disabled(!storedSecretValueDirectoryExists(value))
                         Button(role: .destructive) { deletingValue = value } label: {
                             Image(systemName: "trash")
                         }
-                        .accessibilityLabel("Delete \(value.source.displayName) for \(secret.account)")
+                        .accessibilityLabel("Delete \(escapedSecurityPath(value.source.displayName)) for \(secret.account)")
                     }
                     .padding(10)
                     .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
@@ -2354,6 +2376,11 @@ private func projectDirectoryExists(_ path: String) -> Bool {
         && isDirectory.boolValue
 }
 
+private func storedSecretValueDirectoryExists(_ value: StoredSecretValue) -> Bool {
+    guard case .projectDirectory(let path) = value.source else { return true }
+    return projectDirectoryExists(path)
+}
+
 private struct ReplaceSecretValueView: View {
     @ObservedObject var model: DashboardModel
     let secret: StoredSecret
@@ -2365,13 +2392,20 @@ private struct ReplaceSecretValueView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Replace Secret Value")
                 .font(.system(size: 18, weight: .semibold))
-            Text(storedValue.source.displayName)
+            Text(escapedSecurityPath(storedValue.source.displayName))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             SecureField("New Value", text: $value)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("New Value for \(secret.account)")
+            if !secret.directAccessLaunchers.isEmpty {
+                InfoBlock(
+                    title: "Direct Access",
+                    text: "Already-authorized Launchers can use this replacement immediately: "
+                        + secret.directAccessLaunchers.map(\.bundleIdentifier).joined(separator: ", ")
+                )
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -2430,11 +2464,13 @@ private struct DirectAccessConfirmationView: View {
 private struct RenameSecretView: View {
     @ObservedObject var model: DashboardModel
     @State private var account: String
+    let valueCount: Int
     @Environment(\.dismiss) private var dismiss
 
-    init(model: DashboardModel, account: String) {
+    init(model: DashboardModel, account: String, valueCount: Int) {
         self.model = model
         _account = State(initialValue: account)
+        self.valueCount = valueCount
     }
 
     var body: some View {
@@ -2444,6 +2480,11 @@ private struct RenameSecretView: View {
                 .foregroundStyle(.primary)
             TextField("Name", text: $account)
                 .textFieldStyle(.roundedBorder)
+            if valueCount > 1 {
+                Text("All \(valueCount) Values will be renamed together.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
