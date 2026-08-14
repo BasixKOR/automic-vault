@@ -1430,6 +1430,8 @@ private struct ApprovalRequest {
     let tool: String?
     let title: String?
     let detail: String?
+    let dockerServerURL: String?
+    let dockerParent: DockerCredentialParent?
 
     init(
         op: String,
@@ -1445,7 +1447,9 @@ private struct ApprovalRequest {
         snapshotIncompatibleInterpreter: String? = nil,
         tool: String?,
         title: String?,
-        detail: String?
+        detail: String?,
+        dockerServerURL: String? = nil,
+        dockerParent: DockerCredentialParent? = nil
     ) {
         self.op = op
         self.keys = keys
@@ -1461,6 +1465,8 @@ private struct ApprovalRequest {
         self.tool = tool
         self.title = title
         self.detail = detail
+        self.dockerServerURL = dockerServerURL
+        self.dockerParent = dockerParent
     }
 }
 
@@ -1468,6 +1474,8 @@ enum SecretMutation {
     case save(account: String, value: String, accessibility: StoredSecretAccessibility)
     case saveIfAbsentOrEqual(account: String, value: String)
     case delete(account: String)
+    case dockerSave(account: String, value: String, serverURL: String, username: String)
+    case dockerDelete(account: String, serverURL: String)
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
 
@@ -1489,6 +1497,18 @@ enum SecretMutation {
                 "delete", [account], ["delete", account], "Delete \(account)?",
                 "This will remove the secret from Automic Vault."
             )
+        case .dockerSave(let account, _, let serverURL, let username):
+            properties = (
+                "docker-save", [account], ["credential", "store", serverURL],
+                "Store Docker credential for \(serverURL)?",
+                "Docker will use the \(username) credential for this registry through its Automic Vault Secret Gate."
+            )
+        case .dockerDelete(let account, let serverURL):
+            properties = (
+                "docker-delete", [account], ["credential", "erase", serverURL],
+                "Delete Docker credential for \(serverURL)?",
+                "Docker will no longer be able to authenticate to this registry with the stored credential."
+            )
         case .rename(let account, let newAccount):
             properties = (
                 "rename", [account, newAccount], ["rename", account, newAccount],
@@ -1504,6 +1524,10 @@ enum SecretMutation {
                     : "This will restrict the secret to use while your Mac is unlocked."
             )
         }
+        let tool = switch self {
+        case .dockerSave, .dockerDelete: "docker"
+        default: URL(fileURLWithPath: callerPath).lastPathComponent
+        }
         return ApprovalRequest(
             op: properties.op,
             keys: properties.keys,
@@ -1515,7 +1539,7 @@ enum SecretMutation {
             envConflicts: [],
             shebangScript: nil,
             scriptData: nil,
-            tool: URL(fileURLWithPath: callerPath).lastPathComponent,
+            tool: tool,
             title: properties.title,
             detail: properties.detail
         )
@@ -1528,6 +1552,10 @@ enum SecretMutation {
         case .saveIfAbsentOrEqual(let account, let value):
             saveStoredSecretIfAbsentOrEqual(account: account, value: value)
         case .delete(let account):
+            deleteStoredSecretRevokingDirectAccess(account: account)
+        case .dockerSave(let account, let value, _, _):
+            saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .dockerDelete(let account, _):
             deleteStoredSecretRevokingDirectAccess(account: account)
         case .rename(let account, let newAccount):
             renameStoredSecretRevokingDirectAccess(account: account, to: newAccount)
@@ -1589,9 +1617,11 @@ private func performApprovedSecretMutation(
     onAccessRequest: (AccessRequestRecord) -> Bool,
     cancellation: ApprovalCancellation? = nil,
     decision: ((ApprovalRequest) -> ApprovalDecision)? = nil,
-    perform: ((SecretMutation) -> OSStatus)? = nil
+    perform: ((SecretMutation) -> OSStatus)? = nil,
+    preflight: (() -> String?)? = nil,
+    requestOverride: ApprovalRequest? = nil
 ) -> (status: OSStatus?, error: String?) {
-    let request = mutation.approvalRequest(callerPath: callerPath)
+    let request = requestOverride ?? mutation.approvalRequest(callerPath: callerPath)
     if cancellation?.isCanceled == true {
         _ = onAccessRequest(canceledAccessRequestRecord(
             request: request, callerPath: callerPath, launcher: launcher
@@ -1632,6 +1662,17 @@ private func performApprovedSecretMutation(
             launcher: launcher
         ))
         return (nil, canceled ? "secret mutation canceled" : "secret mutation denied")
+    }
+    if let error = preflight?() {
+        _ = onAccessRequest(accessRequestRecord(
+            request: request,
+            callerPath: callerPath,
+            decision: "Failed",
+            approvalSource: "Manual",
+            reason: error,
+            launcher: launcher
+        ))
+        return (nil, error)
     }
     guard onAccessRequest(accessRequestRecord(
         request: request,
@@ -1948,6 +1989,26 @@ private struct AWSRegistration {
     var credentials: AWSCredentials?
 }
 
+private struct DockerCredentialParent: Sendable {
+    let pid: pid_t
+    let startUsec: UInt64
+    let euid: uid_t
+    let target: String
+    let arguments: [String]
+}
+
+private struct DockerCredentialCandidate: Sendable {
+    let parent: DockerCredentialParent
+    let serverURL: String
+    let secretName: String
+}
+
+private struct StoredDockerCredential {
+    let serverURL: String
+    let username: String
+    let secret: String
+}
+
 private struct ApprovedPayload {
     let secrets: [String: String]
     let value: String?
@@ -2122,7 +2183,14 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: String(negotiated))
-        case .inject, .keys, .authorize:
+        case .dockerHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Docker helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .inject, .keys, .authorize, .dockerGet:
             handleInject(
                 message,
                 on: peer,
@@ -2134,6 +2202,10 @@ private final class ApprovalServer: @unchecked Sendable {
             )
         case .awsCredentials where isTrustedAvCaller(path: callerPath, signing: signing):
             handleAWSCredentials(message, on: peer, pid: pid, identity: identity)
+        case .dockerSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleDockerSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .dockerDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleDockerDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .list where isTrustedAvCaller(path: callerPath, signing: signing):
             handleList(
                 message,
@@ -2346,7 +2418,20 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
-        let request = approvalRequestWithCredentialContext(parsedRequest)
+        let dockerRequest: ApprovalRequest
+        do {
+            dockerRequest = try dockerCredentialRequest(
+                from: message,
+                request: parsedRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+            return
+        }
+        let request = approvalRequestWithCredentialContext(dockerRequest)
         let awsRegistration: AWSRegistrationCandidate?
         do {
             awsRegistration = try awsRegistrationCandidate(from: message, request: request)
@@ -3225,6 +3310,74 @@ private final class ApprovalServer: @unchecked Sendable {
         handleDelete(message, on: peer, cancellation: cancellation, caller: caller)
     }
 
+    private func handleDockerSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              let valuePointer = xpc_dictionary_get_string(message, "value")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Docker credential store request")
+            return
+        }
+        let key = String(cString: keyPointer)
+        let value = String(cString: valuePointer)
+        guard let credential = parseDockerCredential(value),
+              key == dockerCredentialSecretName(credential.serverURL)
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Docker credential")
+            return
+        }
+        do {
+            let parent = try dockerCredentialParent(for: caller.identity)
+            handleMutation(
+                .dockerSave(account: key, value: value, serverURL: credential.serverURL, username: credential.username),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredDockerParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleDockerDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
+              let serverPointer = xpc_dictionary_get_string(message, "docker_server_url")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Docker credential erase request")
+            return
+        }
+        let key = String(cString: keyPointer)
+        let serverURL = String(cString: serverPointer)
+        guard validDockerServerURL(serverURL), key == dockerCredentialSecretName(serverURL) else {
+            reply(peer, to: message, ok: false, error: "invalid Docker credential")
+            return
+        }
+        do {
+            let parent = try dockerCredentialParent(for: caller.identity)
+            handleMutation(
+                .dockerDelete(account: key, serverURL: serverURL),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredDockerParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -3254,10 +3407,34 @@ private final class ApprovalServer: @unchecked Sendable {
         on peer: xpc_connection_t,
         message: xpc_object_t,
         cancellation: ApprovalCancellation,
-        caller: MutationCaller
+        caller: MutationCaller,
+        requiredDockerParent: DockerCredentialParent? = nil
     ) {
-        let launcher = launcherIdentities(for: caller.identity).first
+        let launcher = requiredDockerParent.flatMap { parent in
+            var identity = AVProcessIdentity()
+            guard av_process_identity(parent.pid, &identity) else { return nil }
+            return launcherIdentity(pid: parent.pid, identity: identity)
+        } ?? launcherIdentities(for: caller.identity).first
         let launcherFallbackPath = launcherFallbackPath(for: caller.identity) ?? caller.path
+        let requestOverride = requiredDockerParent.map { parent in
+            let request = mutation.approvalRequest(callerPath: caller.path)
+            return ApprovalRequest(
+                op: request.op,
+                keys: request.keys,
+                target: parent.target,
+                args: Array(parent.arguments.dropFirst()),
+                cwd: request.cwd,
+                replaceExistingEnv: request.replaceExistingEnv,
+                allowMissingKeys: request.allowMissingKeys,
+                envConflicts: request.envConflicts,
+                shebangScript: request.shebangScript,
+                scriptData: request.scriptData,
+                snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter,
+                tool: request.tool,
+                title: request.title,
+                detail: request.detail
+            )
+        }
         DispatchQueue.main.async {
             let result = performApprovedSecretMutation(
                 mutation,
@@ -3268,14 +3445,24 @@ private final class ApprovalServer: @unchecked Sendable {
                 launcherFallbackPath: launcherFallbackPath,
                 canRequestHumanApproval: self.canRequestHumanApproval,
                 onAccessRequest: self.onAccessRequest,
-                cancellation: cancellation
+                cancellation: cancellation,
+                preflight: requiredDockerParent.map { parent in
+                    {
+                        self.dockerCredentialParentValid(parent)
+                            ? nil
+                            : "Docker Target changed before the approved credential mutation"
+                    }
+                },
+                requestOverride: requestOverride
             )
             guard let status = result.status else {
                 self.reply(peer, to: message, ok: false, error: result.error)
                 return
             }
             switch mutation {
-            case .save(let account, _, _), .saveIfAbsentOrEqual(let account, _):
+            case .save(let account, _, _),
+                 .saveIfAbsentOrEqual(let account, _),
+                 .dockerSave(let account, _, _, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {
@@ -3286,7 +3473,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         error: "failed to store secret \(account): \(status)"
                     )
                 }
-            case .delete(let account):
+            case .delete(let account), .dockerDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {
@@ -3370,13 +3557,135 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func dockerCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "docker-get" else {
+            guard request.tool != "docker" else {
+                throw AppError("Docker credentials require the Docker helper protocol")
+            }
+            return request
+        }
+        guard request.tool == "docker",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys.count == 1,
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let serverPointer = xpc_dictionary_get_string(message, "docker_server_url")
+        else { throw AppError("invalid Docker credential request") }
+        let serverURL = String(cString: serverPointer)
+        let secretName = dockerCredentialSecretName(serverURL)
+        guard validDockerServerURL(serverURL), request.keys == [secretName] else {
+            throw AppError("Docker registry Secret Name does not match its address")
+        }
+        let parent = try dockerCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: [secretName],
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "docker",
+            title: "Use Docker credential for \(serverURL)?",
+            detail: "The verified Docker Target will receive the usable registry credential in plaintext, as required by Docker's credential-helper protocol.",
+            dockerServerURL: serverURL,
+            dockerParent: parent
+        )
+    }
+
+    private func dockerCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> DockerCredentialParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("Docker credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard dockerTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("Docker credential helper parent is not an eligible Docker Target")
+        }
+        return DockerCredentialParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
+    private func dockerCredentialParentValid(_ parent: DockerCredentialParent) -> Bool {
+        var identity = AVProcessIdentity()
+        return av_process_identity(parent.pid, &identity)
+            && identity.start_usec == parent.startUsec
+            && identity.euid == parent.euid
+            && pathString(identity) == parent.target
+            && processArguments(parent.pid) == parent.arguments
+            && dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
+    }
+
+    private func dockerTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        let identifiers = [
+            "/Applications/Docker.app/Contents/Resources/bin/docker": "docker",
+            "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose": "docker-compose",
+            "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-buildx": "docker-buildx",
+        ]
+        guard let identifier = identifiers[path],
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == identifier
+            && signing.teamIdentifier == "9BNSXJN65R"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
     private func approvedPayload(
         for request: ApprovalRequest,
         awsRegistration: AWSRegistrationCandidate?,
         pid: pid_t,
         identity: AVProcessIdentity
     ) throws -> ApprovedPayload {
+        let dockerParent: DockerCredentialParent?
+        if request.op == "docker-get" {
+            guard let serverURL = request.dockerServerURL,
+                  request.keys == [dockerCredentialSecretName(serverURL)],
+                  let parent = request.dockerParent,
+                  dockerCredentialParentValid(parent),
+                  parent.target == request.target,
+                  Array(parent.arguments.dropFirst()) == request.args
+            else { throw AppError("invalid Docker credential request") }
+            dockerParent = parent
+        } else {
+            dockerParent = nil
+        }
         let secrets = try approvedSecrets(for: request)
+        if let dockerParent,
+           let serverURL = request.dockerServerURL
+        {
+            guard dockerCredentialParentValid(dockerParent),
+                  let value = secrets[dockerCredentialSecretName(serverURL)],
+                  let credential = parseDockerCredential(value),
+                  credential.serverURL == serverURL
+            else { throw AppError("Docker credential changed before Secret Application") }
+        }
         guard let awsRegistration else { return ApprovedPayload(secrets: secrets, value: nil) }
         let key = BlessedExecutionKey(pid: pid, startUsec: identity.start_usec)
         awsRegistrationsLock.lock()
@@ -3620,7 +3929,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return nil
         }
         let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize" else { return nil }
+        guard op == "inject" || op == "keys" || op == "authorize" || op == "docker-get" else { return nil }
         let scriptData: Data?
         if xpc_dictionary_get_value(message, "script_data") != nil {
             guard let data = xpcData(message, key: "script_data") else { return nil }
@@ -3973,6 +4282,8 @@ private func classifySecretGateRequest(
     switch gateID {
     case "gh":
         return ghRequestClassification(request.args)
+    case "docker":
+        return dockerRequestClassification(request.args)
     case "aws":
         if awsRequestMayUseLongLivedCredentials(request) { return .secretDump }
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
@@ -3984,6 +4295,51 @@ private func classifySecretGateRequest(
             arguments: secretGateCommandWords(request)
         )
     }
+}
+
+private func dockerRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = dockerCommandWords(args).map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    if words.contains("--push") { return .mutating }
+    switch command {
+    case "search": return .readOnly
+    case "manifest" where words.dropFirst().first == "inspect": return .readOnly
+    case "pull", "run", "create", "build": return .localWrite
+    case "image" where words.dropFirst().first == "pull": return .localWrite
+    case "push": return .mutating
+    case "image" where words.dropFirst().first == "push": return .mutating
+    case "buildx":
+        guard words.count >= 2 else { return .unknown }
+        if words[1] == "imagetools", words.dropFirst(2).first == "inspect" { return .readOnly }
+        return words[1] == "build" ? .localWrite : .unknown
+    case "compose":
+        guard words.count >= 2 else { return .unknown }
+        if words[1] == "push" { return .mutating }
+        return ["build", "create", "pull", "run", "up"].contains(words[1]) ? .localWrite : .unknown
+    default: return .unknown
+    }
+}
+
+private func dockerCommandWords(_ args: [String]) -> [String] {
+    let optionsWithValue = Set(["--config", "-c", "--context", "-H", "--host", "-l", "--log-level"])
+    let flags = Set(["--debug", "-D", "--tls", "--tlsverify"])
+    var index = 0
+    while index < args.count {
+        let argument = args[index]
+        if argument == "--" { return [] }
+        if optionsWithValue.contains(argument) {
+            guard index + 1 < args.count else { return [] }
+            index += 2
+            continue
+        }
+        if optionsWithValue.contains(where: { argument.hasPrefix("\($0)=") }) || flags.contains(argument) {
+            index += 1
+            continue
+        }
+        if argument.hasPrefix("-") { return [] }
+        return Array(args[index...])
+    }
+    return []
 }
 
 private func secretGateCommandWords(_ request: ApprovalRequest) -> [String] {
@@ -4394,6 +4750,34 @@ private func validSecretKeyName(_ key: String) -> Bool {
     return key.unicodeScalars.dropFirst().allSatisfy {
         $0 == "_" || $0.isASCIIAlpha || $0.isASCIIDigit
     }
+}
+
+private func validDockerServerURL(_ serverURL: String) -> Bool {
+    !serverURL.isEmpty
+        && serverURL.utf8.count <= 2048
+        && !serverURL.unicodeScalars.contains(where: { $0.value == 0 || $0.value == 10 || $0.value == 13 })
+}
+
+private func dockerCredentialSecretName(_ serverURL: String) -> String {
+    let hash = SHA256.hash(data: Data(serverURL.utf8)).map { String(format: "%02X", $0) }.joined()
+    return "DOCKER_REGISTRY_CREDENTIAL_\(hash)"
+}
+
+private func parseDockerCredential(_ value: String) -> StoredDockerCredential? {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["ServerURL", "Username", "Secret"]),
+          let serverURL = object["ServerURL"] as? String,
+          let username = object["Username"] as? String,
+          let secret = object["Secret"] as? String,
+          validDockerServerURL(serverURL),
+          !username.isEmpty,
+          !secret.isEmpty,
+          !username.unicodeScalars.contains(where: { $0.value == 0 }),
+          !secret.unicodeScalars.contains(where: { $0.value == 0 })
+    else { return nil }
+    return StoredDockerCredential(serverURL: serverURL, username: username, secret: secret)
 }
 
 private func isGhTokenKey(_ key: String) -> Bool {
@@ -7057,6 +7441,27 @@ private func runGhReadOnlySelfCheck() -> Int32 {
     return 0
 }
 
+private func runDockerCredentialSelfCheck() -> Int32 {
+    guard dockerRequestClassification(["search", "alpine"]) == .readOnly,
+          dockerRequestClassification(["pull", "alpine"]) == .localWrite,
+          dockerRequestClassification(["push", "example/image"]) == .mutating,
+          dockerRequestClassification(["future-command"]) == .unknown,
+          dockerRequestClassification(["buildx", "build", "--push", "."]) == .mutating,
+          dockerCredentialSecretName("https://ghcr.io")
+              == "DOCKER_REGISTRY_CREDENTIAL_82445E613488865FCEA004BCAB798DA99E6D3695EEC0072488AFB0A3B0A3D323",
+          let credential = parseDockerCredential(
+              #"{"ServerURL":"https://ghcr.io","Username":"octocat","Secret":"token"}"#
+          ),
+          credential.serverURL == "https://ghcr.io",
+          credential.username == "octocat",
+          credential.secret == "token",
+          parseDockerCredential(
+              #"{"ServerURL":"https://ghcr.io","Username":"octocat","Secret":"token","Extra":true}"#
+          ) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -7823,6 +8228,10 @@ if CommandLine.arguments.contains("--self-check-secret-mutations") {
 
 if CommandLine.arguments.contains("--self-check-gh-read-only") {
     exit(runGhReadOnlySelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-docker-credentials") {
+    exit(runDockerCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {

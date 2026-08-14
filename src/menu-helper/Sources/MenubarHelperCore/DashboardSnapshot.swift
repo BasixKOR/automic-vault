@@ -585,7 +585,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         if keyPatterns.isEmpty {
             return [.noAccess, .readOnly, .fullExceptSecretDumps]
         }
-        if id == "gh" {
+        if id == "gh" || id == "docker" {
             return [
                 .noAccess,
                 .readOnly,
@@ -606,7 +606,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps {
             protection = .fullExceptSecretDumps
         }
-        if id != "gh", protection == .readOnlyAndLocalWrites {
+        if id != "gh" && id != "docker", protection == .readOnlyAndLocalWrites {
             protection = .readOnly
         }
         if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates {
