@@ -34,8 +34,10 @@ Automic Vault flow.
 Creation and enrollment are one attended transaction in the **Launcher
 Bundles** sidebar. Automic Vault builds and verifies a candidate in private
 temporary storage, shows the selected payload digest, signing identity, and
-effective entitlements, then atomically installs and enrolls it after the user
-confirms. Failed or abandoned candidates do not become sidebar entries.
+effective entitlements, then installs it under
+`~/Applications/Automic Vault/` and enrolls it after the user confirms. The
+transaction fails closed: failed or abandoned candidates do not become sidebar
+entries or recognized Launchers.
 
 Enrollment binds an Automic-generated marker, a new per-generation Launcher
 Identity, the final bundled payload's SHA-256 digest, and its accepted Launcher
@@ -57,6 +59,13 @@ requirement. Existing Launcher-specific rules therefore do not carry to the new
 generation. The user must explicitly enroll the replacement, after which gate
 defaults apply until the user grants narrower or broader Launcher-specific
 rules.
+
+Replacement builds and verifies the new generation without disturbing the old
+one. Its enrollment update activates the new generation and revokes the old one
+as one persisted state change. If that update fails, the old generation remains
+enrolled. After it succeeds, Automic Vault removes the old generation's
+Launcher-specific rules and moves its bundle to the user's Trash. A failure to
+move the old file does not restore its enrollment or authority.
 
 ## Consequences
 
