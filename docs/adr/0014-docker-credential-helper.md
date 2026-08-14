@@ -21,8 +21,10 @@ establish Target integrity.
 
 The Docker Hardener installs an exact root-owned
 `/usr/local/bin/docker-credential-av` launcher for the signed Automic Vault
-CLI and changes Docker's default credential store to `av`. It does not replace
-Docker's vendor CLI.
+CLI and changes Docker's default credential store to `av`. Every containing
+directory through the filesystem root must also be a real, root-owned directory
+protected from group/world writes; installation and detection fail closed if
+that invariant is not met. It does not replace Docker's vendor CLI.
 
 Each registry credential is stored as one opaque Secret. Its Secret Name is a
 fixed prefix plus the SHA-256 digest of the exact registry address. The stored

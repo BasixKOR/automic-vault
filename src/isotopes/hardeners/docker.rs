@@ -44,6 +44,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !testing {
         crate::secrets::ensure_docker_helper_ready()?;
         verify_vendor_install()?;
+        validate_helper_install_path(&helper_path())?;
     }
     let path = config_path()?;
     let mut config = read_config(&path)?;
@@ -126,7 +127,9 @@ pub(crate) fn install_privileged() -> Result<(), String> {
     if super::effective_uid() != 0 {
         return Err("Docker helper installation requires root".into());
     }
-    install_stub(&helper_path())
+    let helper = helper_path();
+    validate_helper_install_path(&helper)?;
+    install_stub(&helper)
 }
 
 pub(crate) fn detect() -> HardenerDetection {
@@ -519,12 +522,36 @@ fn helper_path() -> PathBuf {
     crate::cli::docker_credential::helper_path()
 }
 
+fn validate_helper_install_path(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Docker helper has no parent: {}", path.display()))?;
+    for ancestor in parent.ancestors() {
+        let metadata = fs::symlink_metadata(ancestor)
+            .map_err(|error| format!("failed to inspect {}: {error}", ancestor.display()))?;
+        if !secure_install_directory(&metadata, 0) {
+            return Err(format!(
+                "refusing Docker helper path through unsafe directory {}: every containing directory must be root-owned and protected from group/world writes",
+                ancestor.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn secure_install_directory(metadata: &fs::Metadata, owner_uid: u32) -> bool {
+    metadata.file_type().is_dir()
+        && metadata.uid() == owner_uid
+        && metadata.permissions().mode() & 0o022 == 0
+}
+
 fn helper_valid(path: &Path) -> bool {
     let metadata = fs::symlink_metadata(path).ok();
     crate::cli::docker_credential::helper_stub_valid(path)
         && metadata.as_ref().is_some_and(|metadata| {
             metadata.permissions().mode() & 0o777 == 0o755
-                && (test_config_path().is_some() || metadata.uid() == 0)
+                && (test_config_path().is_some()
+                    || (metadata.uid() == 0 && validate_helper_install_path(path).is_ok()))
         })
 }
 
@@ -684,6 +711,29 @@ mod tests {
         );
         assert!(validate_config(&json!({"credHelpers":{"ghcr.io":"desktop"}})).is_err());
         assert!(validate_config(&json!({"auths":{"ghcr.io":{"auth":"plaintext-ish"}}})).is_err());
+    }
+
+    #[test]
+    fn helper_install_directories_reject_writes_and_symlinks() {
+        let root =
+            std::env::temp_dir().join(format!("av-docker-helper-path-{}", std::process::id()));
+        let directory = root.join("bin");
+        let link = root.join("link");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+        let metadata = fs::symlink_metadata(&directory).unwrap();
+        assert!(secure_install_directory(&metadata, metadata.uid()));
+        assert!(!secure_install_directory(&metadata, metadata.uid() + 1));
+
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o775)).unwrap();
+        let metadata = fs::symlink_metadata(&directory).unwrap();
+        assert!(!secure_install_directory(&metadata, metadata.uid()));
+
+        std::os::unix::fs::symlink(&directory, &link).unwrap();
+        let metadata = fs::symlink_metadata(&link).unwrap();
+        assert!(!secure_install_directory(&metadata, metadata.uid()));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
