@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 
