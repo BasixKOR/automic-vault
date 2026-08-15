@@ -3,8 +3,9 @@ use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 #[cfg(target_os = "macos")]
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::isotopes::hardeners::{
     self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, executable,
@@ -14,7 +15,7 @@ use crate::isotopes::hardeners::{
 use super::scan::Style;
 
 pub(crate) struct DoctorResult {
-    name: &'static str,
+    name: String,
     commands: Vec<String>,
     issues: Vec<DoctorIssue>,
 }
@@ -55,6 +56,14 @@ const AGENT_CLIS: [AgentCliDoctor; 2] = [
     },
 ];
 
+const LAUNCHER_BUNDLE_ROOT: &str = "/Applications/Automic Vault";
+const LAUNCHER_BUNDLE_COMMAND_ROOT: &str = "/usr/local/bin";
+
+struct LauncherBundleDoctor {
+    command: String,
+    app: PathBuf,
+}
+
 pub(crate) fn run<W: Write>(
     stdout: &mut W,
     selector: Option<&str>,
@@ -62,12 +71,28 @@ pub(crate) fn run<W: Write>(
     style: Style,
 ) -> Result<i32, String> {
     let path = std::env::var_os("PATH").unwrap_or_default();
-    let mut results = if let Some(agent) = select_agent_cli(selector) {
+    let launcher_bundles = launcher_bundles();
+    let selected_launcher = selector.and_then(|selector| {
+        launcher_bundles
+            .iter()
+            .find(|launcher| launcher.command == selector)
+    });
+    let mut results = if let Some(launcher) = selected_launcher {
+        vec![diagnose_launcher_bundle(
+            launcher,
+            Path::new(LAUNCHER_BUNDLE_COMMAND_ROOT),
+            &path,
+            0,
+        )]
+    } else if let Some(agent) = select_agent_cli(selector) {
         vec![diagnose_agent_cli(agent, &path, vendor_signature_valid)]
     } else {
         diagnose(hardeners::metadata(), selector, &path)?
     };
     if selector.is_none() {
+        results.extend(launcher_bundles.iter().map(|launcher| {
+            diagnose_launcher_bundle(launcher, Path::new(LAUNCHER_BUNDLE_COMMAND_ROOT), &path, 0)
+        }));
         results.extend(
             AGENT_CLIS
                 .iter()
@@ -90,6 +115,110 @@ pub(crate) fn run<W: Write>(
 fn select_agent_cli(selector: Option<&str>) -> Option<&'static AgentCliDoctor> {
     let selector = selector?;
     AGENT_CLIS.iter().find(|agent| agent.command == selector)
+}
+
+fn launcher_bundles() -> Vec<LauncherBundleDoctor> {
+    let Ok(entries) = fs::read_dir(LAUNCHER_BUNDLE_ROOT) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let app = entry.path();
+            let metadata = fs::symlink_metadata(&app).ok()?;
+            if !metadata.is_dir()
+                || metadata.file_type().is_symlink()
+                || app.extension() != Some(OsStr::new("app"))
+                || !plist_value(&app, "CFBundleIdentifier")?
+                    .starts_with("com.automicvault.launcher-bundle.")
+            {
+                return None;
+            }
+            let command = plist_value(&app, "AVLauncherBundleCommandName")?;
+            super::launcher_bundle::valid_command_name(&command)
+                .then_some(LauncherBundleDoctor { command, app })
+        })
+        .collect()
+}
+
+fn plist_value(app: &Path, key: &str) -> Option<String> {
+    let output = Command::new("/usr/bin/plutil")
+        .args(["-extract", key, "raw", "-o", "-"])
+        .arg(app.join("Contents/Info.plist"))
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn diagnose_launcher_bundle(
+    launcher: &LauncherBundleDoctor,
+    command_root: &Path,
+    path: &OsStr,
+    expected_uid: u32,
+) -> DoctorResult {
+    let command_path = command_root.join(&launcher.command);
+    let runner = launcher.app.join("Contents/MacOS/launcher");
+    let healthy_link = fs::symlink_metadata(&command_path).is_ok_and(|metadata| {
+        metadata.file_type().is_symlink()
+            && metadata.uid() == expected_uid
+            && fs::read_link(&command_path).ok().as_deref() == Some(runner.as_path())
+    });
+    let mut issues = Vec::new();
+    if !healthy_link {
+        issues.push(DoctorIssue {
+            kind: "launcher_bundle_command_invalid",
+            command: Some(launcher.command.clone()),
+            message: format!(
+                "{} does not have its root-owned Launcher Bundle command link at {}",
+                launcher.command,
+                command_path.display()
+            ),
+            remediation: format!(
+                "Review anything at {}, then recreate the `{}` Launcher Bundle in Automic Vault.",
+                command_path.display(),
+                launcher.command
+            ),
+            stub_path: Some(command_path.display().to_string()),
+            target_path: Some(runner.display().to_string()),
+            resolved_path: resolve(&launcher.command, path).map(|path| path.display().to_string()),
+        });
+    } else {
+        let resolved = resolve(&launcher.command, path);
+        if resolved.as_deref() != Some(command_path.as_path()) {
+            let resolved_path = resolved.as_ref().map(|path| path.display().to_string());
+            let message = resolved_path.as_ref().map_or_else(
+                || format!("{} is not available through PATH", launcher.command),
+                |resolved| {
+                    format!(
+                        "{} resolves to {resolved} before its Launcher Bundle command {}",
+                        launcher.command,
+                        command_path.display()
+                    )
+                },
+            );
+            issues.push(DoctorIssue {
+                kind: "launcher_bundle_not_first_on_path",
+                command: Some(launcher.command.clone()),
+                message,
+                remediation: format!(
+                    "Put {} before other installations in PATH, then start a new shell and rerun `av doctor {}`.",
+                    command_root.display(),
+                    launcher.command
+                ),
+                stub_path: Some(command_path.display().to_string()),
+                target_path: Some(runner.display().to_string()),
+                resolved_path,
+            });
+        }
+    }
+    DoctorResult {
+        name: format!("{} Launcher Bundle", launcher.command),
+        commands: vec![launcher.command.clone()],
+        issues,
+    }
 }
 
 pub(crate) fn trusted_codex_cli() -> Result<PathBuf, String> {
@@ -122,7 +251,7 @@ fn diagnose_agent_cli(
         None => vec![agent_cli_missing_issue(agent)],
     };
     DoctorResult {
-        name: agent.command,
+        name: agent.command.to_string(),
         commands: vec![agent.command.to_string()],
         issues,
     }
@@ -287,7 +416,7 @@ fn diagnose_one(
     );
 
     DoctorResult {
-        name: hardener.name,
+        name: hardener.name.to_string(),
         commands: commands
             .iter()
             .map(|command| command.name.clone())
@@ -947,6 +1076,51 @@ mod tests {
                 .remediation
                 .contains("Anthropic's native installer or the Homebrew cask")
         );
+    }
+
+    #[test]
+    fn launcher_bundle_doctor_requires_its_command_to_win_path_resolution() {
+        let dir = temp_dir("launcher-bundle-path");
+        let app = dir.join("Herdr.app");
+        fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+        let runner = executable_file(&app.join("Contents/MacOS/launcher"));
+        let commands = dir.join("commands");
+        let competing = dir.join("competing");
+        fs::create_dir(&commands).unwrap();
+        fs::create_dir(&competing).unwrap();
+        executable_file(&competing.join("herdr"));
+        symlink(&runner, commands.join("herdr")).unwrap();
+        let launcher = LauncherBundleDoctor {
+            command: "herdr".into(),
+            app,
+        };
+        let shadowed_path = std::env::join_paths([&competing, &commands]).unwrap();
+
+        let shadowed = diagnose_launcher_bundle(&launcher, &commands, &shadowed_path, unsafe {
+            libc::geteuid()
+        });
+        assert_eq!(shadowed.issues[0].kind, "launcher_bundle_not_first_on_path");
+        assert_eq!(
+            shadowed.issues[0].resolved_path.as_deref(),
+            competing.join("herdr").to_str()
+        );
+
+        let healthy_path = std::env::join_paths([&commands, &competing]).unwrap();
+        assert!(
+            diagnose_launcher_bundle(&launcher, &commands, &healthy_path, unsafe {
+                libc::geteuid()
+            },)
+            .issues
+            .is_empty()
+        );
+
+        fs::remove_file(commands.join("herdr")).unwrap();
+        fs::write(commands.join("herdr"), "unrelated").unwrap();
+        let invalid = diagnose_launcher_bundle(&launcher, &commands, &healthy_path, unsafe {
+            libc::geteuid()
+        });
+        assert_eq!(invalid.issues[0].kind, "launcher_bundle_command_invalid");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

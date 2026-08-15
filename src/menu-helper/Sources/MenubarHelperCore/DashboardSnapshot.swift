@@ -838,6 +838,7 @@ public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = 
             "agent_cli_signature_invalid",
             "agent_cli_unavailable",
             "isotope_not_first_on_path",
+            "launcher_bundle_not_first_on_path",
             "stub_not_first_on_path",
         ].contains($0.kind)
     }

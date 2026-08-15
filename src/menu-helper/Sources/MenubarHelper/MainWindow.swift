@@ -613,25 +613,35 @@ final class DashboardModel: ObservableObject {
     }
 
     func deleteLauncherBundle(_ enrollment: LauncherBundleEnrollment) {
+        guard !isBuildingLauncherBundle else { return }
         let status = removeLauncherBundleEnrollment(generation: enrollment.generation)
         guard status == errSecSuccess else {
             errorMessage = "Could not revoke Launcher Bundle enrollment: \(status)"
             return
         }
-        let cleanup = removeLauncherBundleAuthorization(requirement: enrollment.launcherRequirement)
-        do {
-            try FileManager.default.trashItem(
-                at: URL(fileURLWithPath: enrollment.bundlePath),
-                resultingItemURL: nil
-            )
-            errorMessage = cleanup == errSecSuccess
-                ? nil
-                : "The bundle was revoked, but old authorization rules could not be removed: \(cleanup)"
-        } catch {
-            errorMessage = "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)"
+        isBuildingLauncherBundle = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { () -> OSStatus in
+                    let cleanup = removeLauncherBundleAuthorization(
+                        requirement: enrollment.launcherRequirement
+                    )
+                    try removeInstalledLauncherBundle(enrollment)
+                    return cleanup
+                }
+            }.value
+            isBuildingLauncherBundle = false
+            switch result {
+            case .success(let cleanup):
+                errorMessage = cleanup == errSecSuccess
+                    ? nil
+                    : "The bundle was revoked, but old authorization rules could not be removed: \(cleanup)"
+            case .failure(let error):
+                errorMessage = "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)"
+            }
+            selectedItemID = nil
+            reload()
         }
-        selectedItemID = nil
-        reload()
     }
 
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
@@ -942,7 +952,7 @@ private func detectorSeveritySortPriority(_ severity: String?) -> Int {
 
 let installedAVCLIPath = "/usr/local/bin/av"
 
-enum CLIInstallState: Sendable {
+enum CLIInstallState: Sendable, Equatable {
     case missing
     case current
     case outdated
@@ -1775,6 +1785,7 @@ private struct CreateLauncherBundleView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var sourceURL: URL?
     @State private var displayName = ""
+    @State private var commandName = ""
     @State private var signingKind = LauncherBundleSigningKind.adHoc
     @State private var signingIdentity: String?
     @State private var allowJIT = false
@@ -1812,6 +1823,7 @@ private struct CreateLauncherBundleView: View {
                         model.createLauncherBundle(LauncherBundleOptions(
                             sourceURL: sourceURL,
                             displayName: displayName,
+                            commandName: commandName,
                             signingKind: signingKind,
                             signingIdentity: signingIdentity,
                             allowJIT: allowJIT,
@@ -1850,6 +1862,13 @@ private struct CreateLauncherBundleView: View {
             }
             TextField("Name", text: $displayName)
                 .textFieldStyle(.roundedBorder)
+            TextField("Command", text: $commandName)
+                .textFieldStyle(.roundedBorder)
+            if let command = launcherBundleCommandName(from: commandName) {
+                Text("Runs as \(launcherBundleCommandURL(named: command).path). Installation requests administrator approval.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Picker("Signing", selection: $signingKind) {
                 Text("Automic Vault (Ad Hoc)").tag(LauncherBundleSigningKind.adHoc)
@@ -1889,6 +1908,9 @@ private struct CreateLauncherBundleView: View {
             Text("Review the completed bundle before enrolling it.")
                 .font(.headline)
             LabeledContent("Name", value: enrollment.displayName)
+            if let commandPath = enrollment.commandPath {
+                LabeledContent("Command", value: commandPath)
+            }
             LabeledContent(
                 "Install location",
                 value: NSString(string: enrollment.bundlePath).abbreviatingWithTildeInPath
@@ -1916,6 +1938,7 @@ private struct CreateLauncherBundleView: View {
     private var canCreate: Bool {
         sourceURL != nil
             && launcherBundleDisplayName(from: displayName) != nil
+            && launcherBundleCommandName(from: commandName) != nil
             && (signingKind == .adHoc || signingIdentity != nil)
     }
 
@@ -1934,6 +1957,7 @@ private struct CreateLauncherBundleView: View {
         guard panel.runModal() == .OK, let selected = panel.url else { return }
         sourceURL = selected.resolvingSymlinksInPath().standardizedFileURL
         if displayName.isEmpty { displayName = selected.lastPathComponent }
+        if commandName.isEmpty { commandName = selected.lastPathComponent }
         model.errorMessage = nil
     }
 }
@@ -1959,7 +1983,7 @@ private struct LauncherBundleDetailView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Command").font(.headline)
-                Text(enrollment.bundlePath + "/Contents/MacOS/launcher")
+                Text(enrollment.commandPath ?? enrollment.bundlePath + "/Contents/MacOS/launcher")
                     .font(.system(.body, design: .monospaced))
                     .textSelection(.enabled)
             }

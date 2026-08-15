@@ -10,6 +10,14 @@ import Testing
     #expect(launcherBundleDisplayName(from: "Acme\nCLI") == nil)
 }
 
+@Test func launcherBundleCommandNamesAreSafePathComponents() {
+    #expect(launcherBundleCommandName(from: "  herdr  ") == "herdr")
+    #expect(launcherBundleCommandName(from: "aws-v2") == "aws-v2")
+    #expect(launcherBundleCommandName(from: "../herdr") == nil)
+    #expect(launcherBundleCommandName(from: "-herdr") == nil)
+    #expect(launcherBundleCommandName(from: "herdr cli") == nil)
+}
+
 @Test func launcherBundlePayloadSnapshotAcceptsOneMachOAndResolvesItsSymlink() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

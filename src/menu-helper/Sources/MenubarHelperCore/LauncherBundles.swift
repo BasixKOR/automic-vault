@@ -8,6 +8,7 @@ public let launcherBundlesKeychainAccount = "LauncherBundlesV1"
 public let launcherBundleIdentifierPrefix = "com.automicvault.launcher-bundle."
 public let launcherBundleGenerationInfoKey = "AVLauncherBundleGeneration"
 public let launcherBundlePayloadSHA256InfoKey = "AVLauncherBundlePayloadSHA256"
+public let launcherBundleCommandNameInfoKey = "AVLauncherBundleCommandName"
 public let launcherBundlePayloadName = "payload"
 public let launcherBundleMaximumPayloadBytes: Int64 = 512 * 1024 * 1024
 
@@ -26,6 +27,7 @@ public enum LauncherBundleSigningKind: String, Codable, CaseIterable, Equatable,
 public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendable {
     public let generation: UUID
     public let displayName: String
+    public let commandName: String?
     public let bundleIdentifier: String
     public let bundlePath: String
     public let launcherIdentifier: String
@@ -46,6 +48,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
     public init(
         generation: UUID,
         displayName: String,
+        commandName: String? = nil,
         bundleIdentifier: String,
         bundlePath: String,
         launcherIdentifier: String,
@@ -63,6 +66,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
     ) {
         self.generation = generation
         self.displayName = displayName
+        self.commandName = commandName
         self.bundleIdentifier = bundleIdentifier
         self.bundlePath = bundlePath
         self.launcherIdentifier = launcherIdentifier
@@ -77,6 +81,10 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
         self.signingKind = signingKind
         self.signingIdentity = signingIdentity
         self.createdAt = createdAt
+    }
+
+    public var commandPath: String? {
+        commandName.map { launcherBundleCommandURL(named: $0).path }
     }
 }
 
@@ -334,6 +342,12 @@ private func launcherBundleVerificationEvidence(
     guard let enrollment = records.first(where: {
         $0.generation == info.generation && $0.bundleIdentifier == info.bundleIdentifier
     }) else { throw LauncherBundleVerificationError.notEnrolled }
+    if appURL.deletingLastPathComponent().standardizedFileURL
+        == launcherBundleManagedDirectory().standardizedFileURL {
+        guard launcherBundleTreeIsSystemProtected(at: appURL),
+              launcherBundleTreeIsSystemProtected(at: launcherBundleManagedDirectory())
+        else { throw LauncherBundleVerificationError.identityMismatch }
+    }
 
     let macOSURL = appURL.appendingPathComponent("Contents/MacOS", isDirectory: true)
     let launcherURL = macOSURL.appendingPathComponent(info.executable)
@@ -353,6 +367,7 @@ private func launcherBundleVerificationEvidence(
           payload.identifier == "\(enrollment.bundleIdentifier).payload",
           payload.codeIdentifiers == enrollment.payloadCodeIdentifiers,
           payload.enabledEntitlements == enrollment.payloadEntitlements,
+          info.commandName == enrollment.commandName,
           bundle.isAdHoc == (enrollment.signingKind == .adHoc),
           launcher.isAdHoc == bundle.isAdHoc,
           payload.isAdHoc == bundle.isAdHoc
@@ -568,9 +583,42 @@ public func launcherBundleDisplayName(from value: String) -> String? {
     return name
 }
 
+public func launcherBundleCommandName(from value: String) -> String? {
+    let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty, name.utf8.count <= 80, name != ".", name != "..",
+          name.first != "-",
+          name.unicodeScalars.allSatisfy({ scalar in
+              scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar)
+                  || "._+-".unicodeScalars.contains(scalar))
+          })
+    else { return nil }
+    return name
+}
+
 public func launcherBundleManagedDirectory() -> URL {
-    FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Applications/Automic Vault", isDirectory: true)
+    URL(fileURLWithPath: "/Applications/Automic Vault", isDirectory: true)
+}
+
+public func launcherBundleCommandURL(named commandName: String) -> URL {
+    URL(fileURLWithPath: "/usr/local/bin", isDirectory: true)
+        .appendingPathComponent(commandName)
+}
+
+private func launcherBundleTreeIsSystemProtected(at url: URL) -> Bool {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0,
+          metadata.st_mode & S_IFMT != S_IFLNK,
+          metadata.st_uid == 0,
+          metadata.st_mode & 0o022 == 0
+    else { return false }
+    guard metadata.st_mode & S_IFMT == S_IFDIR else {
+        return metadata.st_mode & S_IFMT == S_IFREG
+    }
+    guard let children = try? FileManager.default.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: nil
+    ) else { return false }
+    return children.allSatisfy(launcherBundleTreeIsSystemProtected)
 }
 
 public func launcherBundleAppURL(
@@ -606,6 +654,7 @@ private struct LauncherBundleInfo {
     let bundleIdentifier: String
     let executable: String
     let payloadSHA256: String
+    let commandName: String?
 }
 
 private func launcherBundleInfo(at appURL: URL) throws -> LauncherBundleInfo {
@@ -625,7 +674,8 @@ private func launcherBundleInfo(at appURL: URL) throws -> LauncherBundleInfo {
         generation: generation,
         bundleIdentifier: bundleIdentifier,
         executable: executable,
-        payloadSHA256: payloadSHA256
+        payloadSHA256: payloadSHA256,
+        commandName: dictionary[launcherBundleCommandNameInfoKey] as? String
     )
 }
 
