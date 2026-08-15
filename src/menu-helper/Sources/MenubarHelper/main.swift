@@ -5627,6 +5627,25 @@ private final class ApprovalPanel: NSPanel {
 }
 
 @MainActor
+private func makeApprovalPanel() -> ApprovalPanel {
+    let panel = ApprovalPanel(
+        contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    panel.backgroundColor = .clear
+    panel.isOpaque = false
+    panel.hasShadow = true
+    panel.isMovableByWindowBackground = false
+    panel.isFloatingPanel = true
+    panel.hidesOnDeactivate = false
+    panel.level = .modalPanel
+    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    return panel
+}
+
+@MainActor
 private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate: Bool) {
     guard let contentView = panel.contentView else { return }
     contentView.layoutSubtreeIfNeeded()
@@ -5683,20 +5702,7 @@ private func showApprovalAlert(
     )
     var decision = ApprovalDecision.canceled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = ApprovalPanel(
-        contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
-        styleMask: [.borderless, .nonactivatingPanel],
-        backing: .buffered,
-        defer: false
-    )
-    panel.backgroundColor = .clear
-    panel.isOpaque = false
-    panel.hasShadow = true
-    panel.isMovableByWindowBackground = true
-    panel.isFloatingPanel = true
-    panel.hidesOnDeactivate = false
-    panel.level = .modalPanel
-    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    let panel = makeApprovalPanel()
     panel.contentView = NSHostingView(
         rootView: ApprovalPromptView(
             content: content,
@@ -6443,6 +6449,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    guard !makeApprovalPanel().isMovableByWindowBackground else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
         signing: helperSigning
