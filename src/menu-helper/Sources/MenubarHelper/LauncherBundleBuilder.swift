@@ -28,6 +28,7 @@ struct LauncherBundleCandidate: Sendable {
 
 enum LauncherBundleCreationError: Error, LocalizedError {
     case runnerUnavailable
+    case iconUnavailable
     case unsafeManagedDirectory
     case destinationOccupied
     case invalidSigningIdentity
@@ -38,6 +39,7 @@ enum LauncherBundleCreationError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .runnerUnavailable: "The bundled Launcher Bundle runner is unavailable"
+        case .iconUnavailable: "The bundled Launcher Bundle icon is unavailable"
         case .unsafeManagedDirectory: "~/Applications/Automic Vault is not a safe managed directory"
         case .destinationOccupied: "A file already occupies the Launcher Bundle destination"
         case .invalidSigningIdentity: "Choose a valid Developer ID Application identity"
@@ -71,6 +73,8 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     else { throw LauncherBundleCreationError.invalidSigningIdentity }
     guard let runnerURL = Bundle.main.url(forResource: "AutomicVaultLauncher", withExtension: nil)
     else { throw LauncherBundleCreationError.runnerUnavailable }
+    guard let iconURL = Bundle.main.url(forResource: "LauncherBundleIcon", withExtension: "icns")
+    else { throw LauncherBundleCreationError.iconUnavailable }
 
     let manager = FileManager.default
     let managed = launcherBundleManagedDirectory()
@@ -104,6 +108,10 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     try manager.createDirectory(at: resources, withIntermediateDirectories: true)
     let launcherURL = macOS.appendingPathComponent("launcher")
     let payloadURL = resources.appendingPathComponent(launcherBundlePayloadName)
+    try manager.copyItem(
+        at: iconURL,
+        to: resources.appendingPathComponent("LauncherBundleIcon.icns")
+    )
     try manager.copyItem(at: runnerURL, to: launcherURL)
     let source = try copyLauncherBundlePayload(from: options.sourceURL, to: payloadURL)
 
@@ -140,6 +148,7 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
         kCFBundleExecutableKey as String: "launcher",
         kCFBundleNameKey as String: displayName,
         "CFBundleDisplayName": displayName,
+        "CFBundleIconFile": "LauncherBundleIcon",
         "CFBundlePackageType": "APPL",
         "CFBundleVersion": "1",
         "CFBundleShortVersionString": "1.0",
