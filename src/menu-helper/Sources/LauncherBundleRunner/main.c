@@ -12,6 +12,7 @@
 extern char **environ;
 
 static volatile sig_atomic_t child_pid = 0;
+static volatile const char sealed_payload_hashes[513] = "AVLB_PAYLOAD_CDHASHES:";
 
 static void forward_signal(int signal_number) {
     pid_t pid = (pid_t)child_pid;
@@ -39,39 +40,7 @@ static CFDictionaryRef copy_signing_information(SecCodeRef code) {
     return status == errSecSuccess ? information : NULL;
 }
 
-static char *copy_self_identifier(void) {
-    SecCodeRef code = NULL;
-    if (SecCodeCopySelf(kSecCSDefaultFlags, &code) != errSecSuccess) return NULL;
-    CFDictionaryRef information = copy_signing_information(code);
-    CFRelease(code);
-    if (information == NULL) return NULL;
-    CFStringRef identifier = CFDictionaryGetValue(information, kSecCodeInfoIdentifier);
-    char *result = NULL;
-    if (identifier != NULL) {
-        CFIndex length = CFStringGetMaximumSizeForEncoding(
-            CFStringGetLength(identifier),
-            kCFStringEncodingUTF8
-        ) + 1;
-        result = malloc((size_t)length);
-        if (result != NULL && !CFStringGetCString(
-            identifier,
-            result,
-            length,
-            kCFStringEncodingUTF8
-        )) {
-            free(result);
-            result = NULL;
-        }
-    }
-    CFRelease(information);
-    return result;
-}
-
-static bool identifier_allows_hash(const char *identifier, CFDataRef hash) {
-    const char *marker = ".runner.";
-    const char *allowed = strstr(identifier, marker);
-    if (allowed == NULL) return false;
-    allowed += strlen(marker);
+static bool sealed_hashes_contains(CFDataRef hash) {
     CFIndex count = CFDataGetLength(hash);
     const UInt8 *bytes = CFDataGetBytePtr(hash);
     char *hex = malloc((size_t)count * 2 + 1);
@@ -79,26 +48,31 @@ static bool identifier_allows_hash(const char *identifier, CFDataRef hash) {
     for (CFIndex index = 0; index < count; index++) {
         snprintf(hex + index * 2, 3, "%02x", bytes[index]);
     }
+    const char *allowed = (const char *)sealed_payload_hashes
+        + strlen("AVLB_PAYLOAD_CDHASHES:");
     bool found = false;
-    const char *candidate = allowed;
     size_t hex_length = strlen(hex);
-    while (*candidate != '\0') {
-        const char *end = strchr(candidate, '.');
-        size_t length = end == NULL ? strlen(candidate) : (size_t)(end - candidate);
-        if (length == hex_length && strncmp(candidate, hex, length) == 0) {
+    while (*allowed != '\0') {
+        const char *end = strchr(allowed, ',');
+        size_t length = end == NULL ? strlen(allowed) : (size_t)(end - allowed);
+        if (length == hex_length && strncmp(allowed, hex, length) == 0) {
             found = true;
             break;
         }
         if (end == NULL) break;
-        candidate = end + 1;
+        allowed = end + 1;
     }
+    if (!found) fprintf(stderr, "Launcher Bundle: child hash %s was not sealed\n", hex);
     free(hex);
     return found;
 }
 
-static bool suspended_child_matches(pid_t pid, const char *identifier) {
+static bool suspended_child_matches(pid_t pid) {
     CFNumberRef process_id = CFNumberCreate(NULL, kCFNumberIntType, &pid);
-    if (process_id == NULL) return false;
+    if (process_id == NULL) {
+        fprintf(stderr, "Launcher Bundle: child process identity is unavailable\n");
+        return false;
+    }
     const void *keys[] = { kSecGuestAttributePid };
     const void *values[] = { process_id };
     CFDictionaryRef attributes = CFDictionaryCreate(
@@ -110,7 +84,10 @@ static bool suspended_child_matches(pid_t pid, const char *identifier) {
         &kCFTypeDictionaryValueCallBacks
     );
     CFRelease(process_id);
-    if (attributes == NULL) return false;
+    if (attributes == NULL) {
+        fprintf(stderr, "Launcher Bundle: child attributes are unavailable\n");
+        return false;
+    }
     SecCodeRef code = NULL;
     OSStatus status = SecCodeCopyGuestWithAttributes(
         NULL,
@@ -119,26 +96,31 @@ static bool suspended_child_matches(pid_t pid, const char *identifier) {
         &code
     );
     CFRelease(attributes);
-    if (status != errSecSuccess) return false;
-    status = SecCodeCheckValidity(code, kSecCSStrictValidate, NULL);
+    if (status != errSecSuccess) {
+        fprintf(stderr, "Launcher Bundle: child lookup failed (%d)\n", (int)status);
+        return false;
+    }
+    status = SecCodeCheckValidity(code, kSecCSDefaultFlags, NULL);
     CFDictionaryRef information = status == errSecSuccess
         ? copy_signing_information(code)
         : NULL;
     CFRelease(code);
-    if (information == NULL) return false;
+    if (information == NULL) {
+        fprintf(stderr, "Launcher Bundle: child signature check failed (%d)\n", (int)status);
+        return false;
+    }
     CFDataRef hash = CFDictionaryGetValue(information, kSecCodeInfoUnique);
-    bool matches = hash != NULL && identifier_allows_hash(identifier, hash);
+    if (hash == NULL) fprintf(stderr, "Launcher Bundle: child code hash is unavailable\n");
+    bool matches = hash != NULL && sealed_hashes_contains(hash);
     CFRelease(information);
     return matches;
 }
 
 int main(int argc, char **argv) {
     char *self_path = copy_self_path();
-    char *identifier = copy_self_identifier();
-    if (self_path == NULL || identifier == NULL) {
+    if (self_path == NULL || sealed_payload_hashes[0] == '\0') {
         fprintf(stderr, "Launcher Bundle: could not verify launcher identity\n");
         free(self_path);
-        free(identifier);
         return 126;
     }
     char *macos = strrchr(self_path, '/');
@@ -154,6 +136,13 @@ int main(int argc, char **argv) {
     child_argv[0] = payload;
     for (int index = 1; index < argc; index++) child_argv[index] = argv[index];
 
+    int forwarded[] = { SIGHUP, SIGINT, SIGQUIT, SIGTERM };
+    struct sigaction action = { .sa_handler = forward_signal };
+    sigemptyset(&action.sa_mask);
+    for (size_t index = 0; index < sizeof(forwarded) / sizeof(forwarded[0]); index++) {
+        sigaction(forwarded[index], &action, NULL);
+    }
+
     posix_spawnattr_t attributes;
     if (posix_spawnattr_init(&attributes) != 0
         || posix_spawnattr_setflags(&attributes, POSIX_SPAWN_START_SUSPENDED) != 0) {
@@ -168,20 +157,15 @@ int main(int argc, char **argv) {
         return 126;
     }
     child_pid = pid;
-    if (!suspended_child_matches(pid, identifier)) {
+    if (!suspended_child_matches(pid)) {
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
         fprintf(stderr, "Launcher Bundle: payload identity changed\n");
         return 126;
     }
 
-    int forwarded[] = { SIGHUP, SIGINT, SIGQUIT, SIGTERM };
-    struct sigaction action = { .sa_handler = forward_signal };
-    sigemptyset(&action.sa_mask);
-    for (size_t index = 0; index < sizeof(forwarded) / sizeof(forwarded[0]); index++) {
-        sigaction(forwarded[index], &action, NULL);
-    }
     if (kill(pid, SIGCONT) != 0) {
+        fprintf(stderr, "Launcher Bundle: could not resume payload: %s\n", strerror(errno));
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
         return 126;
@@ -193,10 +177,10 @@ int main(int argc, char **argv) {
     child_pid = 0;
     free(child_argv);
     free(payload);
-    free(identifier);
     free(self_path);
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) {
+        fprintf(stderr, "Launcher Bundle: payload exited from signal %d\n", WTERMSIG(status));
         signal(WTERMSIG(status), SIG_DFL);
         raise(WTERMSIG(status));
         return 128 + WTERMSIG(status);

@@ -5225,14 +5225,26 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
-    if let appURL = launcherBundleAppURL(containing: path),
-       let liveCodeIdentifier = liveCodeIdentity(pid: pid),
-       let enrollment = try? verifyLauncherBundle(
-           at: appURL,
-           liveLauncherIdentifier: signing.identifier,
-           liveLauncherCodeIdentifier: liveCodeIdentifier,
-           liveRuntimeProtection: signing.runtimeProtection
-       ) {
+    var seen = Set<String>()
+    let appURLs = (
+        appBundleURLs(containing: path)
+        + appBundleURLs(containing: signing.mainExecutable)
+        + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
+    ).filter { seen.insert($0.path).inserted }
+    let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
+        || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+    if claimsLauncherBundleIdentity {
+        guard let appURL = appURLs.first(where: {
+            launcherBundleAppURL(containing: $0.path) == $0
+        }),
+            let liveCodeIdentifier = liveCodeIdentity(pid: pid),
+            let enrollment = try? verifyLauncherBundle(
+                at: appURL,
+                liveLauncherIdentifier: signing.identifier,
+                liveLauncherCodeIdentifier: liveCodeIdentifier,
+                liveRuntimeProtection: signing.runtimeProtection
+            )
+        else { return [] }
         return [LauncherIdentity(
             pid: pid,
             path: path,
@@ -5243,12 +5255,6 @@ private func launcherIdentities(
         )]
     }
     guard !signing.isAdHoc else { return [] }
-    var seen = Set<String>()
-    let appURLs = (
-        appBundleURLs(containing: path)
-        + appBundleURLs(containing: signing.mainExecutable)
-        + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
-    ).filter { seen.insert($0.path).inserted }
     let apps: [LauncherIdentity] = appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
@@ -5286,10 +5292,25 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
             var ancestor = AVProcessIdentity()
             guard av_process_identity(pid, &ancestor) else { break }
             let path = pathString(ancestor)
-            if let appURL = launcherBundleAppURL(containing: path) {
-                guard let signing = liveSigningInfo(pid: pid),
-                      let codeIdentifier = liveCodeIdentity(pid: pid)
-                else { return "Launcher Bundle integrity is unavailable" }
+            guard let signing = liveSigningInfo(pid: pid) else {
+                pid = ancestor.ppid
+                continue
+            }
+            var seenApps = Set<String>()
+            let appURLs = (
+                appBundleURLs(containing: path)
+                + appBundleURLs(containing: signing.mainExecutable)
+                + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
+            ).filter { seenApps.insert($0.path).inserted }
+            let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(
+                launcherBundleIdentifierPrefix
+            ) || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+            if claimsLauncherBundleIdentity {
+                guard let appURL = appURLs.first(where: {
+                    launcherBundleAppURL(containing: $0.path) == $0
+                }),
+                    let codeIdentifier = liveCodeIdentity(pid: pid)
+                else { return "Launcher Bundle is outside its managed location" }
                 do {
                     _ = try verifyLauncherBundle(
                         at: appURL,

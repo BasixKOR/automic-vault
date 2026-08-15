@@ -164,6 +164,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
     @Published private(set) var pendingBlessingLaunchers: [BlessedScriptLauncher] = []
     @Published private(set) var launcherBundles: [LauncherBundleEnrollment] = []
+    @Published private(set) var pendingLauncherBundle: LauncherBundleCandidate?
 
     private var reloadTask: Task<Void, Never>?
     private var blessingCompletion: ((BlessedScriptReviewOutcome) -> Void)?
@@ -567,9 +568,28 @@ final class DashboardModel: ObservableObject {
         isBuildingLauncherBundle = true
         Task {
             let result = await Task.detached(priority: .userInitiated) {
-                Result { try buildLauncherBundle(options) }
+                Result { try prepareLauncherBundleCandidate(options) }
             }.value
             isBuildingLauncherBundle = false
+            switch result {
+            case .success(let candidate):
+                pendingLauncherBundle = candidate
+                errorMessage = nil
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func installPendingLauncherBundle() {
+        guard !isBuildingLauncherBundle, let candidate = pendingLauncherBundle else { return }
+        isBuildingLauncherBundle = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try installLauncherBundleCandidate(candidate) }
+            }.value
+            isBuildingLauncherBundle = false
+            pendingLauncherBundle = nil
             switch result {
             case .success(let creation):
                 isCreatingLauncherBundle = false
@@ -584,6 +604,12 @@ final class DashboardModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func cancelLauncherBundleCreation() {
+        if let pendingLauncherBundle { discardLauncherBundleCandidate(pendingLauncherBundle) }
+        pendingLauncherBundle = nil
+        isCreatingLauncherBundle = false
     }
 
     func deleteLauncherBundle(_ enrollment: LauncherBundleEnrollment) {
@@ -1762,7 +1788,59 @@ private struct CreateLauncherBundleView: View {
                 .font(.system(size: 20, weight: .semibold))
             Text("Bundle one Mach-O command-line tool so it can become a Verified Launcher.")
                 .foregroundStyle(.secondary)
+            if let candidate = model.pendingLauncherBundle {
+                review(candidate.enrollment)
+            } else {
+                configuration
+            }
 
+            if let error = model.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    model.cancelLauncherBundleCreation()
+                    dismiss()
+                }
+                    .disabled(model.isBuildingLauncherBundle)
+                Button(actionTitle) {
+                    if model.pendingLauncherBundle != nil {
+                        model.installPendingLauncherBundle()
+                    } else {
+                        guard let sourceURL else { return }
+                        model.createLauncherBundle(LauncherBundleOptions(
+                            sourceURL: sourceURL,
+                            displayName: displayName,
+                            signingKind: signingKind,
+                            signingIdentity: signingIdentity,
+                            allowJIT: allowJIT,
+                            allowUnsignedExecutableMemory: allowUnsignedExecutableMemory,
+                            disableLibraryValidation: disableLibraryValidation
+                        ))
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(
+                    (model.pendingLauncherBundle == nil && !canCreate)
+                        || model.isBuildingLauncherBundle
+                )
+            }
+        }
+        .padding(22)
+        .frame(width: 500)
+        .onDisappear {
+            if model.pendingLauncherBundle != nil { model.cancelLauncherBundleCreation() }
+        }
+    }
+
+    private var actionTitle: String {
+        if model.isBuildingLauncherBundle { return "Working…" }
+        return model.pendingLauncherBundle == nil ? "Prepare" : "Install & Enroll"
+    }
+
+    private var configuration: some View {
+        Group {
             LabeledContent("CLI executable") {
                 Button(sourceURL?.lastPathComponent ?? "Choose…") { chooseSource() }
             }
@@ -1789,10 +1867,7 @@ private struct CreateLauncherBundleView: View {
             DisclosureGroup("Compatibility exceptions") {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Allow JIT compilation", isOn: $allowJIT)
-                    Toggle(
-                        "Allow unsigned executable memory",
-                        isOn: $allowUnsignedExecutableMemory
-                    )
+                    Toggle("Allow unsigned executable memory", isOn: $allowUnsignedExecutableMemory)
                     Toggle("Disable library validation", isOn: $disableLibraryValidation)
                     if disableLibraryValidation {
                         Text(libraryValidationWarning)
@@ -1802,32 +1877,32 @@ private struct CreateLauncherBundleView: View {
                 }
                 .padding(.top, 8)
             }
-
-            if let error = model.errorMessage {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .disabled(model.isBuildingLauncherBundle)
-                Button(model.isBuildingLauncherBundle ? "Creating…" : "Create") {
-                    guard let sourceURL else { return }
-                    model.createLauncherBundle(LauncherBundleOptions(
-                        sourceURL: sourceURL,
-                        displayName: displayName,
-                        signingKind: signingKind,
-                        signingIdentity: signingIdentity,
-                        allowJIT: allowJIT,
-                        allowUnsignedExecutableMemory: allowUnsignedExecutableMemory,
-                        disableLibraryValidation: disableLibraryValidation
-                    ))
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canCreate || model.isBuildingLauncherBundle)
-            }
         }
-        .padding(22)
-        .frame(width: 500)
+    }
+
+    private func review(_ enrollment: LauncherBundleEnrollment) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Review the completed bundle before enrolling it.")
+                .font(.headline)
+            LabeledContent("Name", value: enrollment.displayName)
+            LabeledContent("Signing", value: enrollment.signingIdentity ?? enrollment.signingKind.title)
+            LabeledContent(
+                "Runtime",
+                value: enrollment.runtimeRequirement == .hardened
+                    ? "Hardened Runtime"
+                    : "Hardened Runtime; library validation disabled"
+            )
+            LabeledContent(
+                "Entitlements",
+                value: enrollment.payloadEntitlements.isEmpty
+                    ? "None"
+                    : enrollment.payloadEntitlements.joined(separator: ", ")
+            )
+            Text("Selected source SHA-256\n\(enrollment.sourceSHA256)")
+            Text("Final signed payload SHA-256\n\(enrollment.payloadSHA256)")
+        }
+        .font(.system(.body, design: .monospaced))
+        .textSelection(.enabled)
     }
 
     private var canCreate: Bool {
@@ -1880,6 +1955,7 @@ private struct LauncherBundleDetailView: View {
                 Text("Pinned hashes").font(.headline)
                 Text("Selected source: \(enrollment.sourceSHA256)")
                 Text("Signed payload: \(enrollment.payloadSHA256)")
+                Text("Entitlements: \(enrollment.payloadEntitlements.isEmpty ? "None" : enrollment.payloadEntitlements.joined(separator: ", "))")
             }
             .font(.system(.caption, design: .monospaced))
             .textSelection(.enabled)
@@ -3279,6 +3355,26 @@ private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
 private func launcherSigning(_ url: URL) -> LauncherSigning? {
     let isApp = url.pathExtension.caseInsensitiveCompare("app") == .orderedSame
     guard isApp || FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+    if isApp,
+       launcherBundleAppURL(containing: url.path) == url.standardizedFileURL,
+       let launcherExecutable = Bundle(url: url)?.executableURL,
+       let launcherEvidence = try? launcherBundleCodeEvidence(at: launcherExecutable),
+       let enrollment = try? verifyLauncherBundle(
+           at: url,
+           liveLauncherIdentifier: launcherEvidence.identifier,
+           liveLauncherCodeIdentifier: launcherEvidence.codeIdentifiers[0],
+           liveRuntimeProtection: .hardened
+       ) {
+        return LauncherSigning(
+            identifier: enrollment.bundleIdentifier,
+            teamIdentifier: launcherEvidence.teamIdentifier ?? "Automic Vault",
+            path: url.path,
+            requirement: enrollment.launcherRequirement,
+            runtimeProtection: enrollment.runtimeRequirement == .hardened
+                ? .hardened
+                : .hardenedWithLibraryValidationDisabled
+        )
+    }
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
           let staticCode,

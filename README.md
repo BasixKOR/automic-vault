@@ -494,30 +494,20 @@ powerful tool to protect your secrets, prevent malware having attack
 opportunities and prevent agents from being too dangerous.
 
 > [!IMPORTANT]
-> Unsigned and ad-hoc signed executables cannot be launcher identities. Ad-hoc
-> signing proves integrity only for that exact build; it provides no vendor or
-> Team identity for Automic Vault to trust.
+> Unsigned and arbitrary ad-hoc signed executables cannot be launcher identities.
+> For one Mach-O CLI, Automic Vault can create an enrolled **Launcher Bundle**
+> whose exact signed generation and payload are revalidated on every request.
 
 ### Pi
 
-Pi’s official macOS v0.83.0 standalone binary is linker/ad-hoc signed, has no
-Team ID, and fails strict signature verification. Automic Vault rejects it as
-a launcher. Re-signing it ad-hoc or merely placing it in an unsigned `.app`
-does not change that.
+Pi’s official macOS v0.83.0 standalone binary is linker/ad-hoc signed and has no
+Team ID, so Automic Vault rejects the original executable as a launcher. Use
+Automic Vault's **Launcher Bundles** sidebar to package a supported single-file
+Mach-O release without requiring a paid Apple developer account.
 
-The easiest current workaround is the independent, unofficial
-[Pi Launcher](https://github.com/kunchenguid/pi-launcher). Its published app is
-Developer ID-signed and notarized, bundles a checksum-pinned official Pi
-binary, and remains Pi’s parent process. Review that project as an additional
-supply-chain dependency before trusting its identity.
-
-To build your own equivalent, use Pi Launcher’s small launcher and bundle
-recipe (`make app`), then sign the nested Pi executable and app from the inside
-out with your own **Developer ID Application** identity. Enroll the resulting
-app in Automic Vault Settings and invoke its launcher executable rather than
-the original `pi` command. Developer ID certificates require a paid Apple
-Developer Program membership, which is why this is not an ideal general
-solution. Ad-hoc signing is deliberately insufficient.
+Review the source and release digest before creating the bundle: packaging
+establishes exact executable identity and integrity, not publisher trust or
+safe behavior.
 
 ### Computer Use & Automic Vault
 

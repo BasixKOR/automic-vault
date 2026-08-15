@@ -18,6 +18,14 @@ struct LauncherBundleCreation: Sendable {
     let cleanupWarning: String?
 }
 
+struct LauncherBundleCandidate: Sendable {
+    let workDirectory: URL
+    let stagedURL: URL
+    let finalURL: URL
+    let enrollment: LauncherBundleEnrollment
+    let replacedEnrollment: LauncherBundleEnrollment?
+}
+
 enum LauncherBundleCreationError: Error, LocalizedError {
     case runnerUnavailable
     case unsafeManagedDirectory
@@ -55,7 +63,7 @@ func developerIDApplicationIdentities() -> [String] {
     }
 }
 
-func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBundleCreation {
+func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> LauncherBundleCandidate {
     guard let displayName = launcherBundleDisplayName(from: options.displayName)
     else { throw LauncherBundlePayloadError.notRegularMachO }
     guard options.signingKind == .adHoc
@@ -70,13 +78,15 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
     let generation = UUID()
     let identifier = launcherBundleIdentifierPrefix + generation.uuidString.lowercased()
     let finalURL = managed.appendingPathComponent("\(displayName).app", isDirectory: true)
-    let oldEnrollment = loadLauncherBundleEnrollments().first {
+    let enrollments = loadLauncherBundleEnrollments()
+    let destinationEnrollment = enrollments.first {
         URL(fileURLWithPath: $0.bundlePath).standardizedFileURL == finalURL.standardizedFileURL
-            || $0.displayName == displayName
     }
-    if manager.fileExists(atPath: finalURL.path), oldEnrollment == nil {
+    if manager.fileExists(atPath: finalURL.path), destinationEnrollment == nil {
         throw LauncherBundleCreationError.destinationOccupied
     }
+    let oldEnrollment = destinationEnrollment
+        ?? enrollments.first { $0.displayName == displayName }
 
     let work = managed.appendingPathComponent(".creating-\(generation.uuidString)", isDirectory: true)
     try manager.createDirectory(
@@ -84,7 +94,8 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
         withIntermediateDirectories: false,
         attributes: [.posixPermissions: 0o700]
     )
-    defer { try? manager.removeItem(at: work) }
+    var keepWork = false
+    defer { if !keepWork { try? manager.removeItem(at: work) } }
     let appURL = work.appendingPathComponent("bundle.app", isDirectory: true)
     let contents = appURL.appendingPathComponent("Contents", isDirectory: true)
     let macOS = contents.appendingPathComponent("MacOS", isDirectory: true)
@@ -121,13 +132,8 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
     guard let runtimeRequirement = payload.runtimeProtection.secretGateAdmissionRequirement
     else { throw LauncherBundleCreationError.invalidGeneratedCode }
     let payloadSHA256 = try sha256OfRegularFile(at: payloadURL)
-    let launcherIdentifier = "\(identifier).runner.\(payload.codeIdentifiers.map(\.hexString).joined(separator: "."))"
-    try signLauncherBundleCode(
-        launcherURL,
-        identity: identity,
-        identifier: launcherIdentifier,
-        entitlements: nil
-    )
+    let launcherIdentifier = identifier
+    try patchLauncherBundleRunner(at: launcherURL, payloadCodeIdentifiers: payload.codeIdentifiers)
 
     let info: [String: Any] = [
         kCFBundleIdentifierKey as String: identifier,
@@ -142,7 +148,12 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         .write(to: contents.appendingPathComponent("Info.plist"), options: .atomic)
-    try signLauncherBundleCode(appURL, identity: identity, identifier: identifier, entitlements: nil)
+    try signLauncherBundleCode(
+        appURL,
+        identity: identity,
+        identifier: identifier,
+        entitlements: nil
+    )
 
     let bundle = try launcherBundleCodeEvidence(at: appURL, bundle: true)
     let launcher = try launcherBundleCodeEvidence(at: launcherURL)
@@ -154,42 +165,66 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
           payload.isAdHoc == bundle.isAdHoc
     else { throw LauncherBundleCreationError.invalidGeneratedCode }
 
-    let backupURL = work.appendingPathComponent("replaced.app", isDirectory: true)
-    if manager.fileExists(atPath: finalURL.path) {
-        try manager.moveItem(at: finalURL, to: backupURL)
+    let enrollment = LauncherBundleEnrollment(
+        generation: generation,
+        displayName: displayName,
+        bundleIdentifier: identifier,
+        bundlePath: finalURL.path,
+        launcherIdentifier: launcherIdentifier,
+        launcherRequirement: bundle.designatedRequirement,
+        bundleCodeIdentifiers: bundle.codeIdentifiers,
+        launcherCodeIdentifiers: launcher.codeIdentifiers,
+        payloadCodeIdentifiers: payload.codeIdentifiers,
+        sourceSHA256: source.sourceSHA256,
+        payloadSHA256: payloadSHA256,
+        payloadEntitlements: entitlements.keys.sorted(),
+        runtimeRequirement: runtimeRequirement,
+        signingKind: options.signingKind,
+        signingIdentity: options.signingIdentity,
+        createdAt: Date()
+    )
+    keepWork = true
+    return LauncherBundleCandidate(
+        workDirectory: work,
+        stagedURL: appURL,
+        finalURL: finalURL,
+        enrollment: enrollment,
+        replacedEnrollment: oldEnrollment
+    )
+}
+
+func installLauncherBundleCandidate(
+    _ candidate: LauncherBundleCandidate
+) throws -> LauncherBundleCreation {
+    let manager = FileManager.default
+    defer { try? manager.removeItem(at: candidate.workDirectory) }
+    let backupURL = candidate.workDirectory.appendingPathComponent(
+        "replaced.app",
+        isDirectory: true
+    )
+    if manager.fileExists(atPath: candidate.finalURL.path) {
+        try manager.moveItem(at: candidate.finalURL, to: backupURL)
     }
     do {
-        try manager.moveItem(at: appURL, to: finalURL)
-        let enrollment = LauncherBundleEnrollment(
-            generation: generation,
-            displayName: displayName,
-            bundleIdentifier: identifier,
-            bundlePath: finalURL.path,
-            launcherIdentifier: launcherIdentifier,
-            launcherRequirement: bundle.designatedRequirement,
-            bundleCodeIdentifiers: bundle.codeIdentifiers,
-            launcherCodeIdentifiers: launcher.codeIdentifiers,
-            payloadCodeIdentifiers: payload.codeIdentifiers,
-            sourceSHA256: source.sourceSHA256,
-            payloadSHA256: payloadSHA256,
-            runtimeRequirement: runtimeRequirement,
-            signingKind: options.signingKind,
-            signingIdentity: options.signingIdentity,
-            createdAt: Date()
+        try manager.moveItem(at: candidate.stagedURL, to: candidate.finalURL)
+        let enrollment = candidate.enrollment
+        let oldEnrollment = candidate.replacedEnrollment
+        let status = saveLauncherBundleEnrollment(
+            enrollment,
+            replacing: oldEnrollment?.generation
         )
-        let status = saveLauncherBundleEnrollment(enrollment, replacing: oldEnrollment?.generation)
         guard status == errSecSuccess else {
             throw LauncherBundleCreationError.enrollmentFailed(status)
         }
         do {
             _ = try verifyLauncherBundle(
-                at: finalURL,
-                liveLauncherIdentifier: launcherIdentifier,
-                liveLauncherCodeIdentifier: launcher.codeIdentifiers[0],
+                at: candidate.finalURL,
+                liveLauncherIdentifier: enrollment.launcherIdentifier,
+                liveLauncherCodeIdentifier: enrollment.launcherCodeIdentifiers[0],
                 liveRuntimeProtection: .hardened
             )
         } catch {
-            _ = removeLauncherBundleEnrollment(generation: generation)
+            _ = removeLauncherBundleEnrollment(generation: enrollment.generation)
             if let oldEnrollment { _ = saveLauncherBundleEnrollment(oldEnrollment) }
             throw error
         }
@@ -202,7 +237,10 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
                 cleanupWarning = "Old authorization rules could not be removed: \(cleanup)"
             }
             do {
-                try manager.trashItem(at: backupURL, resultingItemURL: nil)
+                let oldArtifactURL = manager.fileExists(atPath: backupURL.path)
+                    ? backupURL
+                    : URL(fileURLWithPath: oldEnrollment.bundlePath)
+                try manager.trashItem(at: oldArtifactURL, resultingItemURL: nil)
             } catch {
                 cleanupWarning = [cleanupWarning, "The old bundle could not be moved to Trash."]
                     .compactMap(\.self).joined(separator: " ")
@@ -210,10 +248,18 @@ func buildLauncherBundle(_ options: LauncherBundleOptions) throws -> LauncherBun
         }
         return LauncherBundleCreation(enrollment: enrollment, cleanupWarning: cleanupWarning)
     } catch {
-        if manager.fileExists(atPath: finalURL.path) { try? manager.removeItem(at: finalURL) }
-        if manager.fileExists(atPath: backupURL.path) { try? manager.moveItem(at: backupURL, to: finalURL) }
+        if manager.fileExists(atPath: candidate.finalURL.path) {
+            try? manager.removeItem(at: candidate.finalURL)
+        }
+        if manager.fileExists(atPath: backupURL.path) {
+            try? manager.moveItem(at: backupURL, to: candidate.finalURL)
+        }
         throw error
     }
+}
+
+func discardLauncherBundleCandidate(_ candidate: LauncherBundleCandidate) {
+    try? FileManager.default.removeItem(at: candidate.workDirectory)
 }
 
 private func prepareLauncherBundleManagedDirectory(_ url: URL) throws {
@@ -242,6 +288,30 @@ private func signLauncherBundleCode(
     if let entitlements { arguments += ["--entitlements", entitlements.path] }
     arguments.append(url.path)
     _ = try runLauncherBundleCommand(executable: "/usr/bin/codesign", arguments: arguments)
+}
+
+private func patchLauncherBundleRunner(
+    at url: URL,
+    payloadCodeIdentifiers: [Data]
+) throws {
+    let marker = Data("AVLB_PAYLOAD_CDHASHES:".utf8)
+    let value = Data(payloadCodeIdentifiers.map(\.hexString).joined(separator: ",").utf8)
+    guard value.count < 513 - marker.count,
+          var runner = try? Data(contentsOf: url)
+    else { throw LauncherBundleCreationError.invalidGeneratedCode }
+    var searchStart = runner.startIndex
+    var offsets: [Int] = []
+    while searchStart < runner.endIndex,
+          let range = runner.range(of: marker, in: searchStart..<runner.endIndex) {
+        offsets.append(range.upperBound)
+        searchStart = range.upperBound
+    }
+    guard !offsets.isEmpty else { throw LauncherBundleCreationError.invalidGeneratedCode }
+    for offset in offsets {
+        runner.replaceSubrange(offset..<(offset + value.count), with: value)
+    }
+    try runner.write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
 }
 
 @discardableResult

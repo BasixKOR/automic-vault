@@ -35,6 +35,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
     public let payloadCodeIdentifiers: [Data]
     public let sourceSHA256: String
     public let payloadSHA256: String
+    public let payloadEntitlements: [String]
     public let runtimeRequirement: LauncherRuntimeRequirement
     public let signingKind: LauncherBundleSigningKind
     public let signingIdentity: String?
@@ -54,6 +55,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
         payloadCodeIdentifiers: [Data],
         sourceSHA256: String,
         payloadSHA256: String,
+        payloadEntitlements: [String],
         runtimeRequirement: LauncherRuntimeRequirement,
         signingKind: LauncherBundleSigningKind,
         signingIdentity: String?,
@@ -70,6 +72,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
         self.payloadCodeIdentifiers = normalizedCodeIdentifiers(payloadCodeIdentifiers)
         self.sourceSHA256 = sourceSHA256
         self.payloadSHA256 = payloadSHA256
+        self.payloadEntitlements = payloadEntitlements.sorted()
         self.runtimeRequirement = runtimeRequirement
         self.signingKind = signingKind
         self.signingIdentity = signingIdentity
@@ -179,15 +182,13 @@ public func removeLauncherBundleEnrollment(
 public func removeLauncherBundleAuthorization(
     requirement: String
 ) -> OSStatus {
-    for status in [
-        removeSecretGatePolicies(forLauncherRequirement: requirement),
-        removeSecretNameAccess(forLauncherRequirement: requirement),
-        removeDirectAccess(forLauncherRequirement: requirement),
-        removeLauncherFromBlessedScripts(requirement: requirement),
-    ] where status != errSecSuccess {
-        return status
-    }
-    return errSecSuccess
+    let gateStatus = removeSecretGatePolicies(forLauncherRequirement: requirement)
+    guard gateStatus == errSecSuccess else { return gateStatus }
+    let namesStatus = removeSecretNameAccess(forLauncherRequirement: requirement)
+    guard namesStatus == errSecSuccess else { return namesStatus }
+    let directStatus = removeDirectAccess(forLauncherRequirement: requirement)
+    guard directStatus == errSecSuccess else { return directStatus }
+    return removeLauncherFromBlessedScripts(requirement: requirement)
 }
 
 public struct LauncherBundleCodeEvidence: Equatable, Sendable {
@@ -197,6 +198,7 @@ public struct LauncherBundleCodeEvidence: Equatable, Sendable {
     public let codeIdentifiers: [Data]
     public let isAdHoc: Bool
     public let runtimeProtection: LauncherRuntimeProtection
+    public let enabledEntitlements: [String]
 
     public init(
         identifier: String,
@@ -204,7 +206,8 @@ public struct LauncherBundleCodeEvidence: Equatable, Sendable {
         designatedRequirement: String,
         codeIdentifiers: [Data],
         isAdHoc: Bool,
-        runtimeProtection: LauncherRuntimeProtection
+        runtimeProtection: LauncherRuntimeProtection,
+        enabledEntitlements: [String]
     ) {
         self.identifier = identifier
         self.teamIdentifier = teamIdentifier
@@ -212,6 +215,7 @@ public struct LauncherBundleCodeEvidence: Equatable, Sendable {
         self.codeIdentifiers = normalizedCodeIdentifiers(codeIdentifiers)
         self.isAdHoc = isAdHoc
         self.runtimeProtection = runtimeProtection
+        self.enabledEntitlements = enabledEntitlements.sorted()
     }
 }
 
@@ -273,6 +277,7 @@ public func verifyLauncherBundle(
           launcher.identifier == liveLauncherIdentifier,
           enrollment.launcherCodeIdentifiers.contains(liveLauncherCodeIdentifier),
           payload.codeIdentifiers == enrollment.payloadCodeIdentifiers,
+          payload.enabledEntitlements == enrollment.payloadEntitlements,
           bundle.isAdHoc == (enrollment.signingKind == .adHoc),
           launcher.isAdHoc == bundle.isAdHoc,
           payload.isAdHoc == bundle.isAdHoc
@@ -310,17 +315,41 @@ public func launcherBundleCodeEvidence(
           let requirement = dictionary[kSecCodeInfoDesignatedRequirement] as! SecRequirement?,
           let requirementText = launcherBundleRequirementString(requirement)
     else { throw LauncherBundleVerificationError.invalidBundle }
-    let identifiers = (dictionary[kSecCodeInfoCdHashes] as? [Data])
+    var identifiers = (dictionary[kSecCodeInfoCdHashes] as? [Data])
         ?? [dictionary[kSecCodeInfoUnique] as? Data].compactMap(\.self)
+    for architecture in ["arm64", "arm64e", "x86_64"] {
+        let attributes = [kSecCodeAttributeArchitecture as String: architecture] as CFDictionary
+        var slice: SecStaticCode?
+        guard SecStaticCodeCreateWithPathAndAttributes(
+            url as CFURL,
+            [],
+            attributes,
+            &slice
+        ) == errSecSuccess,
+            let slice,
+            SecStaticCodeCheckValidity(slice, SecCSFlags(rawValue: rawFlags), nil) == errSecSuccess
+        else { continue }
+        var sliceInfo: CFDictionary?
+        guard SecCodeCopySigningInformation(slice, informationFlags, &sliceInfo) == errSecSuccess,
+              let sliceDictionary = sliceInfo as? [CFString: Any]
+        else { continue }
+        identifiers += (sliceDictionary[kSecCodeInfoCdHashes] as? [Data])
+            ?? [sliceDictionary[kSecCodeInfoUnique] as? Data].compactMap(\.self)
+    }
     guard !identifiers.isEmpty else { throw LauncherBundleVerificationError.invalidBundle }
     let signatureFlags = (dictionary[kSecCodeInfoFlags] as? NSNumber)?.uint32Value ?? 0
+    let entitlementDictionary = dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]
+    let enabledEntitlements = entitlementDictionary.compactMap { key, value in
+        (value as? NSNumber)?.boolValue == true ? key : nil
+    }
     return LauncherBundleCodeEvidence(
         identifier: identifier,
         teamIdentifier: dictionary[kSecCodeInfoTeamIdentifier] as? String,
         designatedRequirement: requirementText,
         codeIdentifiers: identifiers,
         isAdHoc: signatureFlags & SecCodeSignatureFlags.adhoc.rawValue != 0,
-        runtimeProtection: launcherRuntimeProtection(signingInformation: dictionary)
+        runtimeProtection: launcherRuntimeProtection(signingInformation: dictionary),
+        enabledEntitlements: enabledEntitlements
     )
 }
 
@@ -482,6 +511,18 @@ public func launcherBundleAppURL(
         candidate.deleteLastPathComponent()
     }
     return nil
+}
+
+public func launcherBundleClaimsReservedIdentity(at appURL: URL) -> Bool {
+    let infoURL = appURL.appendingPathComponent("Contents/Info.plist")
+    guard let data = try? Data(contentsOf: infoURL),
+          let dictionary = try? PropertyListSerialization.propertyList(
+              from: data,
+              format: nil
+          ) as? [String: Any],
+          let identifier = dictionary[kCFBundleIdentifierKey as String] as? String
+    else { return false }
+    return identifier.hasPrefix(launcherBundleIdentifierPrefix)
 }
 
 private struct LauncherBundleInfo {

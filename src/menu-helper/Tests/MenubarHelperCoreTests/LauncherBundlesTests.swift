@@ -47,6 +47,92 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: destination.path))
 }
 
+@Test func reservedLauncherBundleIdentityIsRecognizedFromMinimalMetadata() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("\(UUID().uuidString).app", isDirectory: true)
+    let contents = directory.appendingPathComponent("Contents", isDirectory: true)
+    try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let info = ["CFBundleIdentifier": "\(launcherBundleIdentifierPrefix)test"]
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        .write(to: contents.appendingPathComponent("Info.plist"))
+
+    #expect(launcherBundleClaimsReservedIdentity(at: directory))
+}
+
+@Test func launcherBundleVerificationPinsTheSignedPayload() throws {
+    let generation = UUID()
+    let identifier = launcherBundleIdentifierPrefix + generation.uuidString.lowercased()
+    let app = FileManager.default.temporaryDirectory
+        .appendingPathComponent("\(UUID().uuidString).app", isDirectory: true)
+    let contents = app.appendingPathComponent("Contents", isDirectory: true)
+    let macOS = contents.appendingPathComponent("MacOS", isDirectory: true)
+    let resources = contents.appendingPathComponent("Resources", isDirectory: true)
+    try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: app) }
+    let launcher = macOS.appendingPathComponent("launcher")
+    let payload = resources.appendingPathComponent(launcherBundlePayloadName)
+    try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/echo"), to: launcher)
+    try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/echo"), to: payload)
+    try launcherBundleTestCodesign(payload, identifier: identifier + ".payload")
+    let payloadSHA256 = try sha256OfRegularFile(at: payload)
+    let info: [String: Any] = [
+        "CFBundleIdentifier": identifier,
+        "CFBundleExecutable": "launcher",
+        "CFBundlePackageType": "APPL",
+        launcherBundleGenerationInfoKey: generation.uuidString,
+        launcherBundlePayloadSHA256InfoKey: payloadSHA256,
+    ]
+    try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        .write(to: contents.appendingPathComponent("Info.plist"))
+    try launcherBundleTestCodesign(app, identifier: identifier)
+
+    let bundleEvidence = try launcherBundleCodeEvidence(at: app, bundle: true)
+    let launcherEvidence = try launcherBundleCodeEvidence(at: launcher)
+    let payloadEvidence = try launcherBundleCodeEvidence(at: payload)
+    #expect(payloadEvidence.codeIdentifiers.count >= 2)
+    let enrollment = LauncherBundleEnrollment(
+        generation: generation,
+        displayName: "Echo",
+        bundleIdentifier: identifier,
+        bundlePath: app.path,
+        launcherIdentifier: identifier,
+        launcherRequirement: bundleEvidence.designatedRequirement,
+        bundleCodeIdentifiers: bundleEvidence.codeIdentifiers,
+        launcherCodeIdentifiers: launcherEvidence.codeIdentifiers,
+        payloadCodeIdentifiers: payloadEvidence.codeIdentifiers,
+        sourceSHA256: payloadSHA256,
+        payloadSHA256: payloadSHA256,
+        payloadEntitlements: [],
+        runtimeRequirement: .hardened,
+        signingKind: .adHoc,
+        signingIdentity: nil
+    )
+
+    #expect(try verifyLauncherBundle(
+        at: app,
+        liveLauncherIdentifier: identifier,
+        liveLauncherCodeIdentifier: launcherEvidence.codeIdentifiers[0],
+        liveRuntimeProtection: .hardened,
+        enrollments: .success([enrollment])
+    ) == enrollment)
+
+    let handle = try FileHandle(forWritingTo: payload)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data([0]))
+    try handle.close()
+    #expect(throws: (any Error).self) {
+        try verifyLauncherBundle(
+            at: app,
+            liveLauncherIdentifier: identifier,
+            liveLauncherCodeIdentifier: launcherEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
+}
+
 @Test func launcherBundleEnrollmentReplacementIsOneKeychainRecordChange() throws {
     guard launcherBundleKeychainTestsAvailable() else { return }
     let service = "com.automicvault.tests.launcher-bundles.\(UUID().uuidString)"
@@ -92,6 +178,22 @@ private func launcherBundleKeychainTestsAvailable() -> Bool {
     return status != errSecMissingEntitlement
 }
 
+private func launcherBundleTestCodesign(_ url: URL, identifier: String) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+    process.arguments = [
+        "--force", "--sign", "-", "--options", "runtime",
+        "--identifier", identifier, url.path,
+    ]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.executableRuntimeMismatch)
+    }
+}
+
 private func launcherBundleEnrollment(
     name: String,
     generation: UUID
@@ -109,6 +211,7 @@ private func launcherBundleEnrollment(
         payloadCodeIdentifiers: [Data([3])],
         sourceSHA256: String(repeating: "f", count: 64),
         payloadSHA256: String(repeating: "0", count: 64),
+        payloadEntitlements: [],
         runtimeRequirement: .hardened,
         signingKind: .adHoc,
         signingIdentity: nil,

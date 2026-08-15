@@ -1,6 +1,6 @@
 # ADR 0013: Generate Launcher Bundles for Unsigned CLI Executables
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-14
 
 ## Context
@@ -60,10 +60,11 @@ signed code identifier, the reserved generation and Launcher Identity, a
 safe-snapshot SHA-256 of the final bundled payload, and the live runtime posture
 with enrollment. It does not parse code-signing internals itself.
 
-The launcher must also refuse to start a payload unless the exact payload
-instance it launches matches the generation's signed manifest and enrolled
-digest. Opening, validation, and launch must detect replacement races; a path
-check followed by an unchecked path execution is insufficient.
+The launcher starts the fixed payload suspended, compares the child process's
+live code identifier with the payload identifiers sealed into the launcher's
+own signed code, and resumes it only after a match. This binds validation to the
+process that will execute instead of relying on a path check followed by an
+unchecked path execution.
 
 Anything claiming the reserved Launcher Bundle identifier namespace enters
 this verification path. Missing, corrupt, or conflicting evidence hard-denies
@@ -108,6 +109,7 @@ move the old file does not restore its enrollment or authority.
   processes trustworthy.
 - Same-user malware can still delete or damage a Launcher Bundle and cause
   denial of service. It cannot change the enrolled code while retaining that
-  generation's authority. A bit-for-bit copy remains the same enrolled code.
+  generation's authority. A bit-for-bit restore at the enrolled path remains
+  the same code; copies at other paths are denied.
 - Supporting scripts or multi-file tools requires a separate design for
   interpreter and dependency identity.
