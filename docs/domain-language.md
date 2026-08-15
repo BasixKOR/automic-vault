@@ -80,6 +80,11 @@ live. It is not a separate Launcher Identity, but an exact live enrolled payload
 may represent its Launcher Bundle Identity after its launcher exits, including
 when the payload daemonizes.
 
+Each Launcher Bundle exposes one Command through a root-owned command link. The
+Command is how the user invokes the bundle; it is not Launcher Identity. The
+installed bundle and command link are protected system artifacts, while the
+original executable remains a separate unverified executable.
+
 A Launcher Bundle is an artifact, not an Authorization Gate, Blessing, Isotope,
 or Verified Launcher. When its enrolled identity, integrity, and runtime posture
 are verified, its live launcher process or live enrolled payload representative

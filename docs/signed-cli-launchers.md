@@ -41,8 +41,13 @@ exception only when the CLI requires it.
 Automic Vault snapshots the selected executable, signs the payload and generated
 app with Hardened Runtime, and then shows the source and final signed-payload
 SHA-256 values for review. **Install & Enroll** stores the app under
-`~/Applications/Automic Vault/`. Invoke the command shown in its detail view;
-the original executable remains unverified and is not monitored.
+`/Applications/Automic Vault/` and installs its root-owned command link under
+`/usr/local/bin/`. Invoke that ordinary command name; the original executable
+remains unverified and is not monitored. Installation never overwrites an
+unrelated command at the link path.
+
+Run `av doctor <command>` to verify the command link and confirm that it appears
+before another installation of the command in `PATH`.
 
 The bundle does not make the CLI trustworthy. It gives that exact generated
 artifact a stable, revalidated Launcher Identity. Every authorization verifies

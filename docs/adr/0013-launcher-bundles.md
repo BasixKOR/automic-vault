@@ -36,10 +36,22 @@ Creation and enrollment are one attended transaction in the **Launcher
 Bundles** sidebar. Automic Vault builds and verifies a candidate in private
 temporary storage, shows the selected payload digest, signing identity, and
 effective entitlements, then installs it under
-`~/Applications/Automic Vault/` and enrolls it after the user confirms. The
+`/Applications/Automic Vault/` and enrolls it after the user confirms. The
+attended install uses administrator authorization so the directory, bundle, and
+command link are root-owned and protected from group or world writes. The
 transaction fails closed: failed or abandoned candidates do not become sidebar
-entries or recognized Launchers. Before enrollment, Automic Vault validates the
-completed bundle strictly, including its nested code and every architecture.
+entries or recognized Launchers. Before and after installation, Automic Vault
+validates the completed bundle strictly, including its nested code and every
+architecture.
+
+Each bundle records one Command name, initially the selected executable's
+basename. Installation creates `/usr/local/bin/<command>` as an exact symbolic
+link to the bundle launcher. It refuses to overwrite any unrelated existing
+entry; replacement may retain only the exact link already owned by that bundle
+path. The link is invocation metadata, not Launcher Identity, and changing it
+cannot grant the original executable bundle authority. Doctor verifies the
+link's type, ownership, target, and `PATH` precedence so another installation,
+such as Homebrew, cannot silently remain the command the user invokes.
 
 Enrollment binds a reserved Automic-generated identifier and generation, the
 new per-generation Launcher Identity, the Security framework's exact signed
@@ -121,6 +133,9 @@ move the old file does not restore its enrollment or authority.
   never replaces payload pinning.
 - The original unbundled executable remains a different, unverified Launcher
   and cannot match the Launcher Bundle's enrollment or Launcher-specific rules.
+- The root-owned command link preserves ordinary CLI invocation. The original
+  executable remains available by its absolute path, and a command collision
+  must be resolved explicitly rather than overwritten.
 - A daemonized enrolled payload and its descendants may continue using the
   Launcher Bundle's current gate policies for that exact live execution, just as
   they could if the launcher remained their ancestor. The payload's

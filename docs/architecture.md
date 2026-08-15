@@ -73,8 +73,14 @@ Launcher Bundles let one unsigned Mach-O command-line tool participate as a
 Verified Launcher without treating its original path as identity. The attended
 app flow snapshots the selected file, applies Hardened Runtime, signs the
 payload and generated app inside-out, and displays both the source and final
-signed-payload SHA-256 values before enrollment. The completed app lives under
-`~/Applications/Automic Vault/`.
+signed-payload SHA-256 values before enrollment. An attended privileged
+transaction installs the completed app under `/Applications/Automic Vault/`
+and its root-owned command link under `/usr/local/bin/`.
+
+The command link preserves the CLI's ordinary Command without becoming identity
+evidence. Installation refuses to replace an unrelated entry. Doctor verifies
+the exact link and reports when another installation resolves first through
+`PATH`.
 
 Enrollment in the Data Protection Keychain binds a unique generation, exact
 bundle and payload code identifiers for every supported architecture, final
