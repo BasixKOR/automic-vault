@@ -1841,6 +1841,10 @@ private struct CreateLauncherBundleView: View {
 
     private var configuration: some View {
         Group {
+            LabeledContent(
+                "Installs in",
+                value: NSString(string: launcherBundleManagedDirectory().path).abbreviatingWithTildeInPath + "/"
+            )
             LabeledContent("CLI executable") {
                 Button(sourceURL?.lastPathComponent ?? "Choose…") { chooseSource() }
             }
@@ -1885,6 +1889,10 @@ private struct CreateLauncherBundleView: View {
             Text("Review the completed bundle before enrolling it.")
                 .font(.headline)
             LabeledContent("Name", value: enrollment.displayName)
+            LabeledContent(
+                "Install location",
+                value: NSString(string: enrollment.bundlePath).abbreviatingWithTildeInPath
+            )
             LabeledContent("Signing", value: enrollment.signingIdentity ?? enrollment.signingKind.title)
             LabeledContent(
                 "Runtime",
@@ -1919,6 +1927,10 @@ private struct CreateLauncherBundleView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
+        let homebrewBin = URL(fileURLWithPath: "/opt/homebrew/bin", isDirectory: true)
+        panel.directoryURL = FileManager.default.fileExists(atPath: homebrewBin.path)
+            ? homebrewBin
+            : URL(fileURLWithPath: "/usr/local/bin", isDirectory: true)
         guard panel.runModal() == .OK, let selected = panel.url else { return }
         sourceURL = selected.resolvingSymlinksInPath().standardizedFileURL
         if displayName.isEmpty { displayName = selected.lastPathComponent }
