@@ -381,11 +381,13 @@ fn protect_tree(path: &Path) -> Result<(), String> {
         return Err(format!("refusing special file in {}", path.display()));
     }
     lchown(path, required_uid(), required_gid())?;
-    if metadata.permissions().mode() & 0o022 != 0 {
-        let mode = metadata.permissions().mode() & !0o022;
-        fs::set_permissions(path, fs::Permissions::from_mode(mode))
-            .map_err(|error| format!("failed to protect {}: {error}", path.display()))?;
-    }
+    let mode = if metadata.is_dir() || metadata.permissions().mode() & 0o111 != 0 {
+        0o755
+    } else {
+        0o644
+    };
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        .map_err(|error| format!("failed to protect {}: {error}", path.display()))?;
     Ok(())
 }
 
@@ -585,6 +587,16 @@ mod tests {
             fs::set_permissions(&work, fs::Permissions::from_mode(0o700)).unwrap();
             fs::write(contents.join("MacOS/launcher"), "runner").unwrap();
             fs::write(contents.join("Resources/payload"), generation).unwrap();
+            fs::set_permissions(
+                contents.join("MacOS/launcher"),
+                fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+            fs::set_permissions(
+                contents.join("Resources/payload"),
+                fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
             fs::write(
                 contents.join("Info.plist"),
                 format!(
@@ -624,8 +636,12 @@ mod tests {
         let command = test.commands.join("herdr");
         assert_eq!(fs::read_link(&command).unwrap(), runner_path(&app));
         assert_eq!(
-            fs::symlink_metadata(&app).unwrap().permissions().mode() & 0o022,
-            0
+            fs::symlink_metadata(runner_path(&app))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o755
         );
         finish("Herdr", generation, &test.trash).unwrap();
 
