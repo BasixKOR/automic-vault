@@ -33,6 +33,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
     public let bundleCodeIdentifiers: [Data]
     public let launcherCodeIdentifiers: [Data]
     public let payloadCodeIdentifiers: [Data]
+    public let sourceSHA256: String
     public let payloadSHA256: String
     public let runtimeRequirement: LauncherRuntimeRequirement
     public let signingKind: LauncherBundleSigningKind
@@ -51,6 +52,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
         bundleCodeIdentifiers: [Data],
         launcherCodeIdentifiers: [Data],
         payloadCodeIdentifiers: [Data],
+        sourceSHA256: String,
         payloadSHA256: String,
         runtimeRequirement: LauncherRuntimeRequirement,
         signingKind: LauncherBundleSigningKind,
@@ -66,6 +68,7 @@ public struct LauncherBundleEnrollment: Codable, Equatable, Identifiable, Sendab
         self.bundleCodeIdentifiers = normalizedCodeIdentifiers(bundleCodeIdentifiers)
         self.launcherCodeIdentifiers = normalizedCodeIdentifiers(launcherCodeIdentifiers)
         self.payloadCodeIdentifiers = normalizedCodeIdentifiers(payloadCodeIdentifiers)
+        self.sourceSHA256 = sourceSHA256
         self.payloadSHA256 = payloadSHA256
         self.runtimeRequirement = runtimeRequirement
         self.signingKind = signingKind
@@ -172,6 +175,21 @@ public func removeLauncherBundleEnrollment(
     )
 }
 
+@discardableResult
+public func removeLauncherBundleAuthorization(
+    requirement: String
+) -> OSStatus {
+    for status in [
+        removeSecretGatePolicies(forLauncherRequirement: requirement),
+        removeSecretNameAccess(forLauncherRequirement: requirement),
+        removeDirectAccess(forLauncherRequirement: requirement),
+        removeLauncherFromBlessedScripts(requirement: requirement),
+    ] where status != errSecSuccess {
+        return status
+    }
+    return errSecSuccess
+}
+
 public struct LauncherBundleCodeEvidence: Equatable, Sendable {
     public let identifier: String
     public let teamIdentifier: String?
@@ -247,6 +265,7 @@ public func verifyLauncherBundle(
     let payload = try launcherBundleCodeEvidence(at: payloadURL)
 
     guard bundle.identifier == enrollment.bundleIdentifier,
+          appURL.standardizedFileURL.path == URL(fileURLWithPath: enrollment.bundlePath).standardizedFileURL.path,
           bundle.designatedRequirement == enrollment.launcherRequirement,
           bundle.codeIdentifiers == enrollment.bundleCodeIdentifiers,
           launcher.identifier == enrollment.launcherIdentifier,

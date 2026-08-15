@@ -1031,6 +1031,20 @@ public func removeSecretGateAppPolicy(
     return saveSecretGatePolicyRecords(records, service: service, account: account)
 }
 
+@discardableResult
+public func removeSecretGatePolicies(
+    forLauncherRequirement requirement: String,
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
+    let records: [SecretGatePolicyRecord]
+    switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let loaded): records = loaded.filter { $0.requirement != requirement }
+    case .failure(let status): return status
+    }
+    return saveSecretGatePolicyRecords(records, service: service, account: account)
+}
+
 public func secretGateProtection(
     for requirement: String?,
     in gate: SecretGate
@@ -1189,6 +1203,20 @@ public func removeSecretNameAccess(
         service: service,
         account: account
     )
+}
+
+@discardableResult
+public func removeSecretNameAccess(
+    forLauncherRequirement requirement: String,
+    service: String = secretNameAccessKeychainService,
+    account: String = secretNameAccessKeychainAccount
+) -> OSStatus {
+    let apps: [BlessedScriptLauncher]
+    switch loadSecretNameAccessAppsResult(service: service, account: account) {
+    case .success(let loaded): apps = loaded.filter { $0.requirement != requirement }
+    case .failure(let status): return status
+    }
+    return saveSecretNameAccessApps(apps, service: service, account: account)
 }
 
 private enum SecretNameAccessAppsLoad {
@@ -1621,6 +1649,17 @@ public func revokeDirectAccess(
 ) -> OSStatus {
     mutateDirectAccessRules(service: service, account: account) { rules in
         rules.removeAll { $0.secretName == secretName }
+    }
+}
+
+@discardableResult
+public func removeDirectAccess(
+    forLauncherRequirement requirement: String,
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> OSStatus {
+    mutateDirectAccessRules(service: service, account: account) { rules in
+        rules.removeAll { $0.launcher.requirement == requirement }
     }
 }
 

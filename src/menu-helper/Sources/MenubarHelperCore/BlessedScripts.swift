@@ -393,6 +393,38 @@ public func removeBlessedScript(
     return saveBlessedScripts(scripts, service: service, account: account)
 }
 
+@discardableResult
+public func removeLauncherFromBlessedScripts(
+    requirement: String,
+    service: String = blessedScriptsKeychainService,
+    account: String = blessedScriptsKeychainAccount
+) -> OSStatus {
+    let scripts: [BlessedScript]
+    switch loadKeychainDataResult(service: service, account: account) {
+    case .notFound: return errSecSuccess
+    case .failure(let status): return status
+    case .success(let data):
+        guard let decoded = try? JSONDecoder().decode([BlessedScript].self, from: data)
+        else { return errSecDecode }
+        scripts = decoded
+    }
+    let updated = scripts.map { script in
+        BlessedScript(
+            path: script.path,
+            checksum: script.checksum,
+            keys: script.keys,
+            target: script.target,
+            replaceExistingEnv: script.replaceExistingEnv,
+            allowMissingKeys: script.allowMissingKeys,
+            allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
+            capabilities: script.capabilities,
+            launchers: script.launchers.filter { $0.requirement != requirement },
+            blessedAt: script.blessedAt
+        )
+    }
+    return saveBlessedScripts(updated, service: service, account: account)
+}
+
 private func saveBlessedScripts(_ scripts: [BlessedScript], service: String, account: String) -> OSStatus {
     guard let data = try? JSONEncoder().encode(scripts.sorted {
         $0.path.localizedStandardCompare($1.path) == .orderedAscending

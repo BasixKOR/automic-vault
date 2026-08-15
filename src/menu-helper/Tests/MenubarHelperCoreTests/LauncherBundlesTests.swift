@@ -107,6 +107,7 @@ private func launcherBundleEnrollment(
         bundleCodeIdentifiers: [Data([1])],
         launcherCodeIdentifiers: [Data([2])],
         payloadCodeIdentifiers: [Data([3])],
+        sourceSHA256: String(repeating: "f", count: 64),
         payloadSHA256: String(repeating: "0", count: 64),
         runtimeRequirement: .hardened,
         signingKind: .adHoc,

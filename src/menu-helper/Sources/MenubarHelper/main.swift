@@ -2172,6 +2172,12 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing
         )
 
+        if op.requiresLauncherBundleIntegrity,
+           let error = launcherBundleIntegrityError(for: identity) {
+            reply(peer, to: message, ok: false, error: error)
+            return
+        }
+
         switch op {
         case .openWindow where isTrustedMenuHelperCaller(path: callerPath, signing: signing):
             DispatchQueue.main.async { self.onOpenWindow() }
@@ -5219,6 +5225,23 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
+    if let appURL = launcherBundleAppURL(containing: path),
+       let liveCodeIdentifier = liveCodeIdentity(pid: pid),
+       let enrollment = try? verifyLauncherBundle(
+           at: appURL,
+           liveLauncherIdentifier: signing.identifier,
+           liveLauncherCodeIdentifier: liveCodeIdentifier,
+           liveRuntimeProtection: signing.runtimeProtection
+       ) {
+        return [LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: enrollment.bundleIdentifier,
+            teamIdentifier: signing.teamIdentifier,
+            designatedRequirement: enrollment.launcherRequirement,
+            runtimeProtection: signing.runtimeProtection
+        )]
+    }
     guard !signing.isAdHoc else { return [] }
     var seen = Set<String>()
     let appURLs = (
@@ -5252,6 +5275,45 @@ private func launcherIdentities(
         runtimeProtection: signing.runtimeProtection,
         isStandalone: true
     )]
+}
+
+private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> String? {
+    for startPID in launcherAncestorStartPIDs(identity) {
+        var pid = startPID
+        var seen = Set<pid_t>()
+        for _ in 0..<32 {
+            guard pid > 1, seen.insert(pid).inserted else { break }
+            var ancestor = AVProcessIdentity()
+            guard av_process_identity(pid, &ancestor) else { break }
+            let path = pathString(ancestor)
+            if let appURL = launcherBundleAppURL(containing: path) {
+                guard let signing = liveSigningInfo(pid: pid),
+                      let codeIdentifier = liveCodeIdentity(pid: pid)
+                else { return "Launcher Bundle integrity is unavailable" }
+                do {
+                    _ = try verifyLauncherBundle(
+                        at: appURL,
+                        liveLauncherIdentifier: signing.identifier,
+                        liveLauncherCodeIdentifier: codeIdentifier,
+                        liveRuntimeProtection: signing.runtimeProtection
+                    )
+                } catch {
+                    return "Launcher Bundle denied: \(error.localizedDescription)"
+                }
+            }
+            pid = ancestor.ppid
+        }
+    }
+    return nil
+}
+
+private extension ApprovalServiceOperation {
+    var requiresLauncherBundleIntegrity: Bool {
+        switch self {
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion: false
+        default: true
+        }
+    }
 }
 
 private struct LiveSigningInfo {

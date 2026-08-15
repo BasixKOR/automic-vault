@@ -165,6 +165,7 @@ SWIFT_BIN="$(
 rm -rf "$APP" "$ICON_BUILD"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
 lipo "$SWIFT_BIN/AutomicVaultMenubar" -thin arm64 -output "$MACOS/AutomicVaultMenubar"
+cp "$SWIFT_BIN/AutomicVaultLauncher" "$RESOURCES/AutomicVaultLauncher"
 ditto "$SWIFT_BIN/AppUpdater_AppUpdater.bundle" "$RESOURCES/AppUpdater_AppUpdater.bundle"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"
@@ -222,6 +223,7 @@ fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
+codesign "${codesign_args[@]}" --identifier com.automicvault.launcher-bundle-runner "$RESOURCES/AutomicVaultLauncher"
 assert_no_embedded_entitlements "$ROOT/target/release/av"
 assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 cp "$ROOT/target/release/av" "$MACOS/av"

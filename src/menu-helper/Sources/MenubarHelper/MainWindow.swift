@@ -152,6 +152,8 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var isReloading = false
     @Published var isAddingSecret = false
     @Published var isRenamingSecret = false
+    @Published var isCreatingLauncherBundle = false
+    @Published private(set) var isBuildingLauncherBundle = false
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
     @Published var searchText = "" {
@@ -161,6 +163,7 @@ final class DashboardModel: ObservableObject {
     @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
     @Published private(set) var pendingBlessingLaunchers: [BlessedScriptLauncher] = []
+    @Published private(set) var launcherBundles: [LauncherBundleEnrollment] = []
 
     private var reloadTask: Task<Void, Never>?
     private var blessingCompletion: ((BlessedScriptReviewOutcome) -> Void)?
@@ -230,6 +233,15 @@ final class DashboardModel: ObservableObject {
             }
         case .blessedScripts:
             blessedScriptItems(snapshot.blessedScripts, pending: pendingBlessing)
+        case .launcherBundles:
+            launcherBundles.map {
+                DashboardItem(
+                    id: $0.generation.uuidString,
+                    title: $0.displayName,
+                    subtitle: $0.signingKind.title,
+                    detail: $0.bundlePath
+                )
+            }
         case .allSecrets:
             snapshot.secrets.map {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: $0.subtitle, detail: "Secret value is hidden.\n\($0.subtitle)")
@@ -319,6 +331,14 @@ final class DashboardModel: ObservableObject {
         return snapshot.secrets.first
     }
 
+    var selectedLauncherBundle: LauncherBundleEnrollment? {
+        if let selectedItemID,
+           let enrollment = launcherBundles.first(where: { $0.generation.uuidString == selectedItemID }) {
+            return enrollment
+        }
+        return launcherBundles.first
+    }
+
     var selectedAccessRequest: AccessRequestRecord? {
         if let selectedItemID,
            let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
@@ -339,6 +359,7 @@ final class DashboardModel: ObservableObject {
                 + (pendingBlessing.map { pending in
                     snapshot.blessedScripts.contains { $0.path == pending.path } ? 0 : 1
                 } ?? 0)
+        case .launcherBundles: launcherBundles.count
         case .allSecrets: snapshot.secrets.count
         case .secretUsage: snapshot.accessRequests.count
         case .settings: 0
@@ -528,16 +549,63 @@ final class DashboardModel: ObservableObject {
         reloadTask?.cancel()
         isReloading = true
         reloadTask = Task {
-            var (next, cliInstallState) = await Task.detached(priority: .background) {
-                (DashboardSnapshot.load(), currentCLIInstallState())
+            var (next, cliInstallState, launcherBundles) = await Task.detached(priority: .background) {
+                (DashboardSnapshot.load(), currentCLIInstallState(), loadLauncherBundleEnrollments())
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
             snapshot = next
             self.cliInstallState = cliInstallState
+            self.launcherBundles = launcherBundles
             normalizeSelection()
             isReloading = false
         }
+    }
+
+    func createLauncherBundle(_ options: LauncherBundleOptions) {
+        guard !isBuildingLauncherBundle else { return }
+        isBuildingLauncherBundle = true
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try buildLauncherBundle(options) }
+            }.value
+            isBuildingLauncherBundle = false
+            switch result {
+            case .success(let creation):
+                isCreatingLauncherBundle = false
+                selectedSection = .launcherBundles
+                selectedItemID = creation.enrollment.generation.uuidString
+                errorMessage = creation.cleanupWarning
+                NSWorkspace.shared.activateFileViewerSelecting([
+                    URL(fileURLWithPath: creation.enrollment.bundlePath)
+                ])
+                reload()
+            case .failure(let error):
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func deleteLauncherBundle(_ enrollment: LauncherBundleEnrollment) {
+        let status = removeLauncherBundleEnrollment(generation: enrollment.generation)
+        guard status == errSecSuccess else {
+            errorMessage = "Could not revoke Launcher Bundle enrollment: \(status)"
+            return
+        }
+        let cleanup = removeLauncherBundleAuthorization(requirement: enrollment.launcherRequirement)
+        do {
+            try FileManager.default.trashItem(
+                at: URL(fileURLWithPath: enrollment.bundlePath),
+                resultingItemURL: nil
+            )
+            errorMessage = cleanup == errSecSuccess
+                ? nil
+                : "The bundle was revoked, but old authorization rules could not be removed: \(cleanup)"
+        } catch {
+            errorMessage = "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)"
+        }
+        selectedItemID = nil
+        reload()
     }
 
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
@@ -1179,6 +1247,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     case hardenedTools
     case secretGates
     case blessedScripts
+    case launcherBundles
     case allSecrets
     case secretUsage
     case doctor
@@ -1193,6 +1262,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .hardenedTools: "Hardened Tools"
         case .secretGates: "Authorization Gates"
         case .blessedScripts: "Blessed Scripts"
+        case .launcherBundles: "Launcher Bundles"
         case .allSecrets: "Secrets"
         case .secretUsage: "Authorization History"
         case .settings: "Settings"
@@ -1206,6 +1276,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .hardenedTools: "hammer"
         case .secretGates: "lock.shield"
         case .blessedScripts: "checkmark.seal"
+        case .launcherBundles: "shippingbox"
         case .allSecrets: "key"
         case .secretUsage: "clock.arrow.circlepath"
         case .settings: "gearshape"
@@ -1264,6 +1335,16 @@ struct DashboardRootView: View {
                                 Image(systemName: "plus")
                             }
                             .help("Add Secret")
+                        }
+                    }
+                    if model.selectedSection == .launcherBundles {
+                        ToolbarItem {
+                            Button {
+                                model.isCreatingLauncherBundle = true
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                            .help("Create Launcher Bundle")
                         }
                     }
                 }
@@ -1327,6 +1408,9 @@ struct DashboardRootView: View {
                 }
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
+        .sheet(isPresented: $model.isCreatingLauncherBundle) {
+            CreateLauncherBundleView(model: model)
+        }
     }
 }
 
@@ -1471,6 +1555,13 @@ private struct DashboardDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .secretUsage, let record = model.selectedAccessRequest {
                 AuthorizationHistoryDetailView(record: record)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 32)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .launcherBundles,
+                      let enrollment = model.selectedLauncherBundle {
+                LauncherBundleDetailView(model: model, enrollment: enrollment)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -1645,9 +1736,179 @@ private struct EmptyListView: View {
         case .hardenedTools: "Hardened Tools secure developer tools with granular access to secrets"
         case .secretGates: "Authorization Gates control which operations Verified Launchers may perform through specific Tools"
         case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
+        case .launcherBundles: "Create a Verified Launcher from one unsigned Mach-O command-line tool"
         case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
         case .secretUsage: "Authorization History records requests and their authorization decisions"
         case .settings: "Settings control how Automic Vault behaves"
+        }
+    }
+}
+
+private struct CreateLauncherBundleView: View {
+    @ObservedObject var model: DashboardModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var sourceURL: URL?
+    @State private var displayName = ""
+    @State private var signingKind = LauncherBundleSigningKind.adHoc
+    @State private var signingIdentity: String?
+    @State private var allowJIT = false
+    @State private var allowUnsignedExecutableMemory = false
+    @State private var disableLibraryValidation = false
+    private let developerIDs = developerIDApplicationIdentities()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Create Launcher Bundle")
+                .font(.system(size: 20, weight: .semibold))
+            Text("Bundle one Mach-O command-line tool so it can become a Verified Launcher.")
+                .foregroundStyle(.secondary)
+
+            LabeledContent("CLI executable") {
+                Button(sourceURL?.lastPathComponent ?? "Choose…") { chooseSource() }
+            }
+            TextField("Name", text: $displayName)
+                .textFieldStyle(.roundedBorder)
+
+            Picker("Signing", selection: $signingKind) {
+                Text("Automic Vault (Ad Hoc)").tag(LauncherBundleSigningKind.adHoc)
+                Text("Developer ID").tag(LauncherBundleSigningKind.developerID)
+            }
+            .pickerStyle(.segmented)
+            if signingKind == .developerID {
+                Picker("Identity", selection: $signingIdentity) {
+                    Text("Choose an identity").tag(String?.none)
+                    ForEach(developerIDs, id: \.self) { Text($0).tag(Optional($0)) }
+                }
+                if developerIDs.isEmpty {
+                    Text("No Developer ID Application identities were found.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            DisclosureGroup("Compatibility exceptions") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Allow JIT compilation", isOn: $allowJIT)
+                    Toggle(
+                        "Allow unsigned executable memory",
+                        isOn: $allowUnsignedExecutableMemory
+                    )
+                    Toggle("Disable library validation", isOn: $disableLibraryValidation)
+                    if disableLibraryValidation {
+                        Text(libraryValidationWarning)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.top, 8)
+            }
+
+            if let error = model.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .disabled(model.isBuildingLauncherBundle)
+                Button(model.isBuildingLauncherBundle ? "Creating…" : "Create") {
+                    guard let sourceURL else { return }
+                    model.createLauncherBundle(LauncherBundleOptions(
+                        sourceURL: sourceURL,
+                        displayName: displayName,
+                        signingKind: signingKind,
+                        signingIdentity: signingIdentity,
+                        allowJIT: allowJIT,
+                        allowUnsignedExecutableMemory: allowUnsignedExecutableMemory,
+                        disableLibraryValidation: disableLibraryValidation
+                    ))
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canCreate || model.isBuildingLauncherBundle)
+            }
+        }
+        .padding(22)
+        .frame(width: 500)
+    }
+
+    private var canCreate: Bool {
+        sourceURL != nil
+            && launcherBundleDisplayName(from: displayName) != nil
+            && (signingKind == .adHoc || signingIdentity != nil)
+    }
+
+    private func chooseSource() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a Mach-O CLI Executable"
+        panel.prompt = "Choose"
+        panel.allowedContentTypes = [.data]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        sourceURL = selected.resolvingSymlinksInPath().standardizedFileURL
+        if displayName.isEmpty { displayName = selected.lastPathComponent }
+        model.errorMessage = nil
+    }
+}
+
+private struct LauncherBundleDetailView: View {
+    @ObservedObject var model: DashboardModel
+    let enrollment: LauncherBundleEnrollment
+    @State private var isConfirmingDelete = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(enrollment.displayName)
+                .font(.system(size: 24, weight: .semibold))
+            Label("Enrolled Launcher Bundle", systemImage: "checkmark.seal.fill")
+                .foregroundStyle(.green)
+            Group {
+                LabeledContent("Signing", value: enrollment.signingKind.title)
+                LabeledContent("Location", value: enrollment.bundlePath)
+                LabeledContent("Bundle identifier", value: enrollment.bundleIdentifier)
+                LabeledContent("Created", value: enrollment.createdAt.formatted())
+            }
+            .textSelection(.enabled)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Command").font(.headline)
+                Text(enrollment.bundlePath + "/Contents/MacOS/launcher")
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Pinned hashes").font(.headline)
+                Text("Selected source: \(enrollment.sourceSHA256)")
+                Text("Signed payload: \(enrollment.payloadSHA256)")
+            }
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+
+            if let warning = launcherRuntimeWarning(enrollment.runtimeRequirement) {
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            if let error = model.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([
+                        URL(fileURLWithPath: enrollment.bundlePath)
+                    ])
+                }
+                Button("Delete Launcher Bundle", role: .destructive) {
+                    isConfirmingDelete = true
+                }
+            }
+        }
+        .alert("Delete \(enrollment.displayName)?", isPresented: $isConfirmingDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                model.deleteLauncherBundle(enrollment)
+            }
+        } message: {
+            Text("Its enrollment and Launcher-specific authorization rules will be revoked, then the bundle will be moved to Trash.")
         }
     }
 }
