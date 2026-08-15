@@ -23,6 +23,7 @@ struct LauncherBundleCandidate: Sendable {
     let workDirectory: URL
     let stagedURL: URL
     let finalURL: URL
+    let treeSHA256: String
     let enrollment: LauncherBundleEnrollment
     let replacedEnrollment: LauncherBundleEnrollment?
 }
@@ -215,11 +216,18 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
         signingIdentity: options.signingIdentity,
         createdAt: Date()
     )
+    let treeSHA256 = try launcherBundleTreeSHA256(at: appURL)
+    guard try launcherBundleCodeEvidence(at: appURL, bundle: true) == bundle,
+          try launcherBundleCodeEvidence(at: launcherURL) == launcher,
+          try launcherBundleCodeEvidence(at: payloadURL) == payload,
+          try sha256OfRegularFile(at: payloadURL) == payloadSHA256
+    else { throw LauncherBundleCreationError.invalidGeneratedCode }
     keepWork = true
     return LauncherBundleCandidate(
         workDirectory: work,
         stagedURL: appURL,
         finalURL: finalURL,
+        treeSHA256: treeSHA256,
         enrollment: enrollment,
         replacedEnrollment: oldEnrollment
     )
@@ -235,70 +243,35 @@ func installLauncherBundleCandidate(
         throw LauncherBundleCreationError.invalidCommandName
     }
     let generation = enrollment.generation.uuidString.lowercased()
-    try runPrivilegedLauncherBundleOperation([
-        "__install-launcher-bundle",
-        candidate.stagedURL.path,
-        enrollment.displayName,
-        commandName,
-        generation,
-    ])
+    let status = saveLauncherBundleEnrollment(enrollment)
+    guard status == errSecSuccess else {
+        throw LauncherBundleCreationError.enrollmentFailed(status)
+    }
     do {
-        let oldEnrollment = candidate.replacedEnrollment
-        let status = saveLauncherBundleEnrollment(
-            enrollment,
-            replacing: oldEnrollment?.generation
-        )
-        guard status == errSecSuccess else {
-            throw LauncherBundleCreationError.enrollmentFailed(status)
-        }
-        do {
-            _ = try verifyLauncherBundle(
-                at: candidate.finalURL,
-                liveLauncherIdentifier: enrollment.launcherIdentifier,
-                liveLauncherCodeIdentifier: enrollment.launcherCodeIdentifiers[0],
-                liveRuntimeProtection: .hardened
-            )
-        } catch {
-            _ = removeLauncherBundleEnrollment(generation: enrollment.generation)
-            if let oldEnrollment { _ = saveLauncherBundleEnrollment(oldEnrollment) }
-            throw error
-        }
+        try runPrivilegedLauncherBundleOperation([
+            "__install-launcher-bundle",
+            candidate.stagedURL.path,
+            enrollment.displayName,
+            commandName,
+            generation,
+            candidate.treeSHA256,
+            manager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash").path,
+        ])
     } catch {
         _ = removeLauncherBundleEnrollment(generation: enrollment.generation)
-        if let oldEnrollment = candidate.replacedEnrollment {
-            _ = saveLauncherBundleEnrollment(oldEnrollment)
-        }
-        do {
-            try runPrivilegedLauncherBundleOperation([
-                "__rollback-launcher-bundle",
-                enrollment.displayName,
-                commandName,
-                generation,
-            ])
-        } catch let rollbackError {
-            throw LauncherBundleCreationError.commandFailed(
-                "\(error.localizedDescription). Rollback also failed: \(rollbackError.localizedDescription)"
-            )
-        }
         throw error
     }
 
     var warnings: [String] = []
     if let oldEnrollment = candidate.replacedEnrollment {
+        let removal = removeLauncherBundleEnrollment(generation: oldEnrollment.generation)
+        if removal != errSecSuccess {
+            warnings.append("Old enrollment could not be removed: \(removal)")
+        }
         let cleanup = removeLauncherBundleAuthorization(requirement: oldEnrollment.launcherRequirement)
         if cleanup != errSecSuccess {
             warnings.append("Old authorization rules could not be removed: \(cleanup)")
         }
-    }
-    do {
-        try runPrivilegedLauncherBundleOperation([
-            "__finish-launcher-bundle",
-            enrollment.displayName,
-            generation,
-            manager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash").path,
-        ])
-    } catch {
-        warnings.append("The old bundle could not be moved to Trash: \(error.localizedDescription)")
     }
     if let oldEnrollment = candidate.replacedEnrollment,
        oldEnrollment.bundlePath != enrollment.bundlePath {

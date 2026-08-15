@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -14,9 +14,12 @@ pub(crate) fn install(
     bundle_name: &str,
     command_name: &str,
     generation: &str,
+    expected_tree_sha256: &str,
+    trash: &Path,
 ) -> Result<(), String> {
     require_privileged()?;
     validate_names(bundle_name, command_name, generation)?;
+    validate_sha256(expected_tree_sha256)?;
     validate_source(source, generation)?;
     let root = install_root();
     let commands = command_root();
@@ -57,6 +60,9 @@ pub(crate) fn install(
         })?;
         protect_tree(&final_path)?;
         validate_installed_bundle(&final_path, command_name, generation)?;
+        if tree_sha256(&final_path)? != expected_tree_sha256 {
+            return Err("installed Launcher Bundle does not match the reviewed candidate".into());
+        }
         if fs::symlink_metadata(&command).is_err() {
             symlink(&runner, &command).map_err(|error| {
                 format!(
@@ -78,6 +84,12 @@ pub(crate) fn install(
         let _ = fs::remove_file(&transaction);
         return Err(error);
     }
+    if let Err(error) = finish(bundle_name, generation, trash) {
+        return match rollback(bundle_name, command_name, generation) {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; rollback also failed: {rollback}")),
+        };
+    }
     Ok(())
 }
 
@@ -98,6 +110,7 @@ pub(crate) fn rollback(
         remove_tree(&final_path)?;
     }
     if backup.exists() {
+        protect_tree(&backup)?;
         fs::rename(&backup, &final_path)
             .map_err(|error| format!("failed to restore {}: {error}", final_path.display()))?;
     } else {
@@ -133,10 +146,12 @@ pub(crate) fn finish(bundle_name: &str, generation: &str, trash: &Path) -> Resul
         }
         fs::rename(&backup, &destination)
             .map_err(|error| format!("failed to move the old Launcher Bundle to Trash: {error}"))?;
-        chown_tree(&destination, uid, gid)?;
+        // ponytail: Trash rename is the commit point; keep ownership cleanup best-effort rather
+        // than risk deleting the new bundle after the protected old bundle has already moved.
+        let _ = chown_tree(&destination, uid, gid);
     }
-    fs::remove_file(&transaction)
-        .map_err(|error| format!("failed to finish installation transaction: {error}"))
+    let _ = fs::remove_file(&transaction);
+    Ok(())
 }
 
 pub(crate) fn remove(
@@ -308,6 +323,18 @@ fn validate_generation_text(generation: &str) -> Result<(), String> {
     }
 }
 
+fn validate_sha256(value: &str) -> Result<(), String> {
+    if value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        Ok(())
+    } else {
+        Err("invalid Launcher Bundle digest".into())
+    }
+}
+
 fn validate_installed_bundle(
     app: &Path,
     command_name: &str,
@@ -429,6 +456,69 @@ fn chown_tree(path: &Path, uid: u32, gid: u32) -> Result<(), String> {
         }
     }
     lchown(path, uid, gid)
+}
+
+fn tree_sha256(root: &Path) -> Result<String, String> {
+    let mut context = ring::digest::Context::new(&ring::digest::SHA256);
+    hash_tree_entry(root, root, &mut context)?;
+    Ok(context
+        .finish()
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn hash_tree_entry(
+    root: &Path,
+    path: &Path,
+    context: &mut ring::digest::Context,
+) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("refusing symbolic link in {}", path.display()));
+    }
+    let relative = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(Path::to_str)
+        .ok_or("Launcher Bundle path is not UTF-8")?;
+    let kind = if metadata.is_dir() {
+        b'D'
+    } else if metadata.is_file() {
+        b'F'
+    } else {
+        return Err(format!("refusing special file in {}", path.display()));
+    };
+    context.update(&[kind]);
+    context.update(&(relative.len() as u64).to_be_bytes());
+    context.update(relative.as_bytes());
+    if metadata.is_dir() {
+        let mut children = fs::read_dir(path)
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        children.sort_by_key(fs::DirEntry::file_name);
+        for child in children {
+            hash_tree_entry(root, &child.path(), context)?;
+        }
+    } else {
+        context.update(&metadata.len().to_be_bytes());
+        let mut file = fs::File::open(path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = file
+                .read(&mut buffer)
+                .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+            if count == 0 {
+                break;
+            }
+            context.update(&buffer[..count]);
+        }
+    }
+    Ok(())
 }
 
 fn lchown(path: &Path, uid: u32, gid: u32) -> Result<(), String> {
@@ -625,13 +715,35 @@ mod tests {
     }
 
     #[test]
+    fn tree_digest_matches_the_launcher_bundle_format() {
+        let _guard = super::super::ENV_LOCK.lock().unwrap();
+        let test = TestInstall::new("tree-digest");
+        let root = test.base.join("digest");
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::write(root.join("alpha"), "one").unwrap();
+        fs::write(root.join("nested/z"), "two").unwrap();
+        assert_eq!(
+            tree_sha256(&root).unwrap(),
+            "ebed77e2222c82013c40a9e5ba1fc849625b3d5ad1fea2a95d5bec8a55019040"
+        );
+        fs::set_permissions(root.join("alpha"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            tree_sha256(&root).unwrap(),
+            "ebed77e2222c82013c40a9e5ba1fc849625b3d5ad1fea2a95d5bec8a55019040"
+        );
+        symlink(root.join("alpha"), root.join("link")).unwrap();
+        assert!(tree_sha256(&root).unwrap_err().contains("symbolic link"));
+    }
+
+    #[test]
     fn installs_links_and_removes_a_launcher_bundle() {
         let _guard = super::super::ENV_LOCK.lock().unwrap();
         let test = TestInstall::new("lifecycle");
         let generation = "12345678-1234-1234-1234-123456789abc";
         let source = test.stage(generation, "herdr");
+        let digest = tree_sha256(&source).unwrap();
 
-        install(&source, "Herdr", "herdr", generation).unwrap();
+        install(&source, "Herdr", "herdr", generation, &digest, &test.trash).unwrap();
         let app = test.root.join("Herdr.app");
         let command = test.commands.join("herdr");
         assert_eq!(fs::read_link(&command).unwrap(), runner_path(&app));
@@ -643,34 +755,72 @@ mod tests {
                 & 0o777,
             0o755
         );
-        finish("Herdr", generation, &test.trash).unwrap();
-
         remove("Herdr", "herdr", generation, &test.trash).unwrap();
         assert!(fs::symlink_metadata(command).is_err());
         assert!(test.trash.join(format!("Herdr {generation}.app")).is_dir());
     }
 
     #[test]
-    fn replacement_can_roll_back_and_command_collisions_are_refused() {
+    fn replacement_is_exact_and_command_collisions_are_refused() {
         let _guard = super::super::ENV_LOCK.lock().unwrap();
         let test = TestInstall::new("rollback");
         let first = "12345678-1234-1234-1234-123456789abc";
         let second = "abcdefab-1234-1234-1234-123456789abc";
-        install(&test.stage(first, "herdr"), "Herdr", "herdr", first).unwrap();
-        finish("Herdr", first, &test.trash).unwrap();
+        let first_source = test.stage(first, "herdr");
+        let first_digest = tree_sha256(&first_source).unwrap();
+        install(
+            &first_source,
+            "Herdr",
+            "herdr",
+            first,
+            &first_digest,
+            &test.trash,
+        )
+        .unwrap();
 
-        install(&test.stage(second, "herdr"), "Herdr", "herdr", second).unwrap();
-        rollback("Herdr", "herdr", second).unwrap();
+        let changed_source = test.stage(second, "herdr");
+        let reviewed_digest = tree_sha256(&changed_source).unwrap();
+        fs::write(changed_source.join("Contents/Resources/payload"), "changed").unwrap();
+        assert!(
+            install(
+                &changed_source,
+                "Herdr",
+                "herdr",
+                second,
+                &reviewed_digest,
+                &test.trash,
+            )
+            .unwrap_err()
+            .contains("reviewed candidate")
+        );
         assert_eq!(
             plist_value(&test.root.join("Herdr.app"), "AVLauncherBundleGeneration").unwrap(),
             first
         );
 
+        let second_source = test.stage(second, "herdr");
+        let second_digest = tree_sha256(&second_source).unwrap();
+        install(
+            &second_source,
+            "Herdr",
+            "herdr",
+            second,
+            &second_digest,
+            &test.trash,
+        )
+        .unwrap();
+        assert_eq!(
+            plist_value(&test.root.join("Herdr.app"), "AVLauncherBundleGeneration").unwrap(),
+            second
+        );
+        assert!(test.trash.join(format!("Herdr {second}.app")).is_dir());
+
         let occupied = test.commands.join("other");
         fs::write(&occupied, "unrelated").unwrap();
         let source = test.stage(second, "other");
+        let digest = tree_sha256(&source).unwrap();
         assert!(
-            install(&source, "Other", "other", second)
+            install(&source, "Other", "other", second, &digest, &test.trash,)
                 .unwrap_err()
                 .contains("unrelated command")
         );

@@ -18,6 +18,34 @@ import Testing
     #expect(launcherBundleCommandName(from: "herdr cli") == nil)
 }
 
+@Test func launcherBundleTreeDigestIsDeterministicAndRejectsLinks() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: root.appendingPathComponent("nested", isDirectory: true),
+        withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("one".utf8).write(to: root.appendingPathComponent("alpha"))
+    try Data("two".utf8).write(to: root.appendingPathComponent("nested/z"))
+
+    #expect(try launcherBundleTreeSHA256(at: root)
+        == "ebed77e2222c82013c40a9e5ba1fc849625b3d5ad1fea2a95d5bec8a55019040")
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: root.appendingPathComponent("alpha").path
+    )
+    #expect(try launcherBundleTreeSHA256(at: root)
+        == "ebed77e2222c82013c40a9e5ba1fc849625b3d5ad1fea2a95d5bec8a55019040")
+    try FileManager.default.createSymbolicLink(
+        at: root.appendingPathComponent("link"),
+        withDestinationURL: root.appendingPathComponent("alpha")
+    )
+    #expect(throws: LauncherBundleVerificationError.invalidBundle) {
+        try launcherBundleTreeSHA256(at: root)
+    }
+}
+
 @Test func launcherBundlePayloadSnapshotAcceptsOneMachOAndResolvesItsSymlink() throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -244,6 +272,20 @@ import Testing
         account: account
     ) == errSecSuccess)
     #expect(loadLauncherBundleEnrollments(service: service, account: account) == [replacement])
+}
+
+@Test func launcherBundleEnrollmentCanStageAReplacementAlongsideTheOldGeneration() throws {
+    guard launcherBundleKeychainTestsAvailable() else { return }
+    let service = "com.automicvault.tests.launcher-bundles.\(UUID().uuidString)"
+    let account = "LauncherBundles"
+    defer { _ = deleteStoredSecret(account: account, service: service) }
+    let old = launcherBundleEnrollment(name: "Acme", generation: UUID())
+    let replacement = launcherBundleEnrollment(name: "Acme", generation: UUID())
+    #expect(saveLauncherBundleEnrollment(old, service: service, account: account) == errSecSuccess)
+    #expect(saveLauncherBundleEnrollment(replacement, service: service, account: account) == errSecSuccess)
+    let stored = loadLauncherBundleEnrollments(service: service, account: account)
+    #expect(stored.count == 2)
+    #expect(Set(stored.map(\.generation)) == [old.generation, replacement.generation])
 }
 
 @Test func corruptLauncherBundleEnrollmentFailsClosed() {

@@ -77,6 +77,12 @@ signed-payload SHA-256 values before enrollment. An attended privileged
 transaction installs the completed app under `/Applications/Automic Vault/`
 and its root-owned command link under `/usr/local/bin/`.
 
+The reviewed candidate is bound to that privileged transaction by a
+deterministic SHA-256 over every relative path and file byte in the completed
+bundle. The new enrollment is staged alongside the old enrollment before one
+administrator-authorized install; failure removes only the staged enrollment
+and restores the old system artifact inside the same privileged process.
+
 The command link preserves the CLI's ordinary Command without becoming identity
 evidence. Installation refuses to replace an unrelated entry. Doctor verifies
 the exact link and reports when another installation resolves first through

@@ -574,6 +574,77 @@ public func sha256OfRegularFile(at url: URL) throws -> String {
     }
 }
 
+public func launcherBundleTreeSHA256(at root: URL) throws -> String {
+    var hasher = SHA256()
+    try hashLauncherBundleTreeEntry(root, relativePath: "", hasher: &hasher)
+    return hasher.finalize().hexString
+}
+
+private func hashLauncherBundleTreeEntry(
+    _ url: URL,
+    relativePath: String,
+    hasher: inout SHA256
+) throws {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0,
+          metadata.st_mode & S_IFMT != S_IFLNK
+    else { throw LauncherBundleVerificationError.invalidBundle }
+    let isDirectory = metadata.st_mode & S_IFMT == S_IFDIR
+    guard isDirectory || metadata.st_mode & S_IFMT == S_IFREG else {
+        throw LauncherBundleVerificationError.invalidBundle
+    }
+    let pathData = Data(relativePath.utf8)
+    hasher.update(data: Data([isDirectory ? 0x44 : 0x46]))
+    hasher.update(data: launcherBundleTreeLength(pathData.count))
+    hasher.update(data: pathData)
+    if isDirectory {
+        let children = try FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil
+        ).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for child in children {
+            let childPath = relativePath.isEmpty
+                ? child.lastPathComponent
+                : relativePath + "/" + child.lastPathComponent
+            try hashLauncherBundleTreeEntry(child, relativePath: childPath, hasher: &hasher)
+        }
+        return
+    }
+
+    let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+    guard descriptor >= 0 else { throw LauncherBundleVerificationError.invalidBundle }
+    defer { close(descriptor) }
+    var opened = stat()
+    guard fstat(descriptor, &opened) == 0,
+          opened.st_mode & S_IFMT == S_IFREG,
+          opened.st_dev == metadata.st_dev,
+          opened.st_ino == metadata.st_ino
+    else { throw LauncherBundleVerificationError.invalidBundle }
+    hasher.update(data: launcherBundleTreeLength(Int(opened.st_size)))
+    var remaining = opened.st_size
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while remaining > 0 {
+        let count = buffer.withUnsafeMutableBytes {
+            Darwin.read(descriptor, $0.baseAddress, min($0.count, Int(remaining)))
+        }
+        if count < 0, errno == EINTR { continue }
+        guard count > 0 else { throw LauncherBundleVerificationError.invalidBundle }
+        hasher.update(data: Data(buffer.prefix(count)))
+        remaining -= off_t(count)
+    }
+    var after = stat()
+    guard fstat(descriptor, &after) == 0,
+          after.st_size == opened.st_size,
+          after.st_mtimespec.tv_sec == opened.st_mtimespec.tv_sec,
+          after.st_mtimespec.tv_nsec == opened.st_mtimespec.tv_nsec
+    else { throw LauncherBundleVerificationError.invalidBundle }
+}
+
+private func launcherBundleTreeLength(_ value: Int) -> Data {
+    var encoded = UInt64(value).bigEndian
+    return withUnsafeBytes(of: &encoded) { Data($0) }
+}
+
 public func launcherBundleDisplayName(from value: String) -> String? {
     let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name.utf8.count <= 80,

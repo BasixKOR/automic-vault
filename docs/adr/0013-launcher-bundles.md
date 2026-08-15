@@ -40,9 +40,18 @@ effective entitlements, then installs it under
 attended install uses administrator authorization so the directory, bundle, and
 command link are root-owned and protected from group or world writes. The
 transaction fails closed: failed or abandoned candidates do not become sidebar
-entries or recognized Launchers. Before and after installation, Automic Vault
-validates the completed bundle strictly, including its nested code and every
-architecture.
+entries or recognized Launchers. Automic Vault binds the reviewed candidate to
+the privileged transaction with a deterministic SHA-256 over every relative
+path and file byte, then validates the installed bundle strictly, including its
+nested code and every architecture.
+
+Replacement temporarily records the new enrollment alongside the old one, then
+performs install, exact-candidate verification, command linking, and old-bundle
+trashing in one administrator-authorized process. Failure removes only the new
+enrollment and restores the old protected artifact before that process exits.
+After success, the old enrollment and its Launcher-specific policies are
+removed. This ordering keeps authorization fail-closed without requiring a
+second administrator prompt for the normal path.
 
 Each bundle records one Command name, initially the selected executable's
 basename. Installation creates `/usr/local/bin/<command>` as an exact symbolic
