@@ -42,3 +42,6 @@ jobs:
 
       - name: Run tests
         run: swift test --package-path src/menu-helper --disable-automatic-resolution
+
+      - name: Test Launcher Bundle runner
+        run: scripts/test-launcher-bundle-runner.sh

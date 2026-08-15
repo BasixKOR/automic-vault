@@ -48,19 +48,25 @@ static bool sealed_hashes_contains(CFDataRef hash) {
     for (CFIndex index = 0; index < count; index++) {
         snprintf(hex + index * 2, 3, "%02x", bytes[index]);
     }
-    const char *allowed = (const char *)sealed_payload_hashes
-        + strlen("AVLB_PAYLOAD_CDHASHES:");
+    const volatile char *allowed = sealed_payload_hashes
+        + sizeof("AVLB_PAYLOAD_CDHASHES:") - 1;
     bool found = false;
-    size_t hex_length = strlen(hex);
+    size_t hex_length = (size_t)count * 2;
     while (*allowed != '\0') {
-        const char *end = strchr(allowed, ',');
-        size_t length = end == NULL ? strlen(allowed) : (size_t)(end - allowed);
-        if (length == hex_length && strncmp(allowed, hex, length) == 0) {
+        size_t length = 0;
+        while (allowed[length] != '\0' && allowed[length] != ',') length++;
+        if (length == hex_length) {
             found = true;
-            break;
+            for (size_t index = 0; index < length; index++) {
+                if (allowed[index] != hex[index]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) break;
         }
-        if (end == NULL) break;
-        allowed = end + 1;
+        if (allowed[length] == '\0') break;
+        allowed += length + 1;
     }
     if (!found) fprintf(stderr, "Launcher Bundle: child hash %s was not sealed\n", hex);
     free(hex);
