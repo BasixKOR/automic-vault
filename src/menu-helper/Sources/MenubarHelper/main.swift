@@ -5238,10 +5238,11 @@ private func launcherIdentities(
             launcherBundleAppURL(containing: $0.path) == $0
         }),
             let liveCodeIdentifier = liveCodeIdentity(pid: pid),
-            let enrollment = try? verifyLauncherBundle(
+            let enrollment = try? verifyLauncherBundleProcess(
                 at: appURL,
-                liveLauncherIdentifier: signing.identifier,
-                liveLauncherCodeIdentifier: liveCodeIdentifier,
+                executableURL: URL(fileURLWithPath: path),
+                liveIdentifier: signing.identifier,
+                liveCodeIdentifier: liveCodeIdentifier,
                 liveRuntimeProtection: signing.runtimeProtection
             )
         else { return [] }
@@ -5312,24 +5313,13 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
                     let codeIdentifier = liveCodeIdentity(pid: pid)
                 else { return "Launcher Bundle is outside its managed location" }
                 do {
-                    let payloadURL = appURL.appendingPathComponent(
-                        "Contents/Resources/\(launcherBundlePayloadName)"
-                    ).standardizedFileURL
-                    if URL(fileURLWithPath: path).standardizedFileURL == payloadURL {
-                        _ = try verifyLauncherBundlePayload(
-                            at: appURL,
-                            livePayloadIdentifier: signing.identifier,
-                            livePayloadCodeIdentifier: codeIdentifier,
-                            liveRuntimeProtection: signing.runtimeProtection
-                        )
-                    } else {
-                        _ = try verifyLauncherBundle(
-                            at: appURL,
-                            liveLauncherIdentifier: signing.identifier,
-                            liveLauncherCodeIdentifier: codeIdentifier,
-                            liveRuntimeProtection: signing.runtimeProtection
-                        )
-                    }
+                    _ = try verifyLauncherBundleProcess(
+                        at: appURL,
+                        executableURL: URL(fileURLWithPath: path),
+                        liveIdentifier: signing.identifier,
+                        liveCodeIdentifier: codeIdentifier,
+                        liveRuntimeProtection: signing.runtimeProtection
+                    )
                 } catch {
                     return "Launcher Bundle denied: \(error.localizedDescription)"
                 }
@@ -5590,7 +5580,7 @@ private func appBundleURL(containing path: String) -> URL? {
 }
 
 private func appBundleURLs(containing path: String) -> [URL] {
-    var url = URL(fileURLWithPath: path)
+    var url = URL(fileURLWithPath: path).standardizedFileURL
     var apps: [URL] = []
     while url.path != "/" {
         if url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
@@ -7247,7 +7237,9 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               bundledDeveloperID.mainExecutable,
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
-          ]) == "example → zsh → gh"
+          ]) == "example → zsh → gh",
+          appBundleURL(containing: "/Applications/Example.app/Contents/MacOS/../Resources/payload")?.path
+              == "/Applications/Example.app"
     else { return 1 }
     let unhardenedLauncher = LauncherIdentity(
         pid: launcher.pid,

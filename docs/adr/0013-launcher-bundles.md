@@ -22,9 +22,10 @@ Automic Vault may generate a Launcher Bundle containing one fixed CLI payload.
 The first implementation accepts one regular Mach-O executable. It does not
 accept scripts or directory-shaped tools.
 
-The bundle's launcher executable remains the payload's parent process, forwards
-its arguments and result, and executes only the payload sealed inside its
-bundle, never a command resolved through `PATH`.
+The bundle's launcher executable starts the payload as its parent process,
+forwards its arguments and result, and executes only the payload sealed inside
+its bundle, never a command resolved through `PATH`. It remains the parent for
+ordinary payloads; a payload may deliberately daemonize and outlive it.
 
 Automic Vault signs nested code inside-out and enables Hardened Runtime. It uses
 either an Automic-created ad-hoc signature or a Developer ID Application
@@ -66,10 +67,21 @@ own signed code, and resumes it only after a match. This binds validation to the
 process that will execute instead of relying on a path check followed by an
 unchecked path execution.
 
-The payload carries a reserved child identifier. Later live payload ancestors
-must still match its exact enrolled identity and bundle, but the payload is not
-a Launcher and cannot use Launcher policy without verified current or retained
-Launcher provenance.
+The payload carries a reserved child identifier and is not a separate Launcher
+Identity. When an Authorization Request has an exact live payload ancestor at
+the enrolled bundle path, Automic Vault may represent that process as the same
+Launcher Bundle Identity even after the launcher exits. Before doing so it
+revalidates the strict nested bundle, managed path, enrollment, payload digest,
+live payload identifier and code identifier, and live runtime posture. Missing
+or conflicting evidence hard-denies the request.
+
+This representation does not use Retained Launcher Provenance and is not
+controlled by detached-process access. Invoking the exact enrolled payload
+directly is authority-equivalent to invoking the launcher: the launcher accepts
+same-user invocation without user presence and adds an execution-time payload
+identity check that the authorization service independently repeats. The
+original executable and copied, moved, replaced, re-signed, or unenrolled
+payloads remain ineligible.
 
 Anything claiming the reserved Launcher Bundle identifier namespace enters
 this verification path. Missing, corrupt, or conflicting evidence hard-denies
@@ -109,6 +121,11 @@ move the old file does not restore its enrollment or authority.
   never replaces payload pinning.
 - The original unbundled executable remains a different, unverified Launcher
   and cannot match the Launcher Bundle's enrollment or Launcher-specific rules.
+- A daemonized enrolled payload and its descendants may continue using the
+  Launcher Bundle's current gate policies for that exact live execution, just as
+  they could if the launcher remained their ancestor. The payload's
+  configuration, plug-ins, inputs, and descendants remain within the authority
+  the user delegates by choosing it as a Launcher.
 - Sealing and Hardened Runtime reduce mutation and injection risk. They do not
   make the payload, its prompts, configuration, plug-ins, extensions, or child
   processes trustworthy.

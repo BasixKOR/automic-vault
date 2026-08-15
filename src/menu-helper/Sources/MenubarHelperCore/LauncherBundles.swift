@@ -275,6 +275,43 @@ public func verifyLauncherBundlePayload(
     return enrollment
 }
 
+public func verifyLauncherBundleProcess(
+    at appURL: URL,
+    executableURL: URL,
+    liveIdentifier: String,
+    liveCodeIdentifier: Data,
+    liveRuntimeProtection: LauncherRuntimeProtection,
+    enrollments: LauncherBundleEnrollmentsLoad? = nil
+) throws -> LauncherBundleEnrollment {
+    let info = try launcherBundleInfo(at: appURL)
+    let executable = executableURL.standardizedFileURL
+    let launcher = appURL.appendingPathComponent(
+        "Contents/MacOS/\(info.executable)"
+    ).standardizedFileURL
+    let payload = appURL.appendingPathComponent(
+        "Contents/Resources/\(launcherBundlePayloadName)"
+    ).standardizedFileURL
+    if executable == launcher {
+        return try verifyLauncherBundle(
+            at: appURL,
+            liveLauncherIdentifier: liveIdentifier,
+            liveLauncherCodeIdentifier: liveCodeIdentifier,
+            liveRuntimeProtection: liveRuntimeProtection,
+            enrollments: enrollments
+        )
+    }
+    if executable == payload {
+        return try verifyLauncherBundlePayload(
+            at: appURL,
+            livePayloadIdentifier: liveIdentifier,
+            livePayloadCodeIdentifier: liveCodeIdentifier,
+            liveRuntimeProtection: liveRuntimeProtection,
+            enrollments: enrollments
+        )
+    }
+    throw LauncherBundleVerificationError.identityMismatch
+}
+
 private struct LauncherBundleVerificationEvidence {
     let enrollment: LauncherBundleEnrollment
     let launcher: LauncherBundleCodeEvidence

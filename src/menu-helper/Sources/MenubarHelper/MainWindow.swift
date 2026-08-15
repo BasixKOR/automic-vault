@@ -2942,7 +2942,7 @@ private struct DetachedProcessAccessSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             InfoBlock(
                 title: "Security tradeoff",
-                text: "This extends authority after the verified parent chain disappears. Ad-hoc signed launchers can still be modified in memory by other same-user processes. A Launcher Bundle can bring a recurring harness up to Verified Launcher requirements."
+                text: "This extends authority after the verified parent chain disappears. Intermediary processes that permit same-user code injection can pass that authority to injected code. An enrolled Launcher Bundle payload represents its own bundle without this setting."
             )
             Link("Learn about Launcher Bundles", destination: launcherBundleDocumentationURL)
                 .font(.caption)

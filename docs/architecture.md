@@ -79,14 +79,16 @@ signed-payload SHA-256 values before enrollment. The completed app lives under
 Enrollment in the Data Protection Keychain binds a unique generation, exact
 bundle and payload code identifiers for every supported architecture, final
 payload digest, designated requirement, and accepted runtime posture. On every
-authorization, the service verifies the live runner, strict nested bundle,
-payload digest, and enrollment. The runner starts the fixed payload suspended
-and resumes it only when its live code identifier matches the identifiers
-sealed into the runner's signed code. A live bundled payload is reverified
-against its enrolled child identity without being admitted as a Launcher.
-Reserved Launcher Bundle identities that
-are moved, changed, re-signed, unenrolled, or unverifiable are denied before
-ordinary Launcher admission or Approval. See [ADR 0013](adr/0013-launcher-bundles.md).
+authorization, the service verifies the live runner or enrolled payload
+representative, strict nested bundle, payload digest, and enrollment. The runner
+starts the fixed payload suspended and resumes it only when its live code
+identifier matches the identifiers sealed into the runner's signed code. An
+exact live payload at the enrolled bundle path may represent the same Launcher
+Bundle Identity after the runner exits; it does not create another Launcher
+Identity or depend on Retained Launcher Provenance. Reserved Launcher Bundle
+identities that are moved, changed, re-signed, unenrolled, or unverifiable are
+denied before ordinary Launcher admission or Approval. See
+[ADR 0013](adr/0013-launcher-bundles.md).
 
 ### Reviewed Automation
 
@@ -248,6 +250,8 @@ extends a verified Launcher's gate-specific attribution through a live signed
 descendant after its original parent chain exits. The UI must explain that this
 widens the lifetime of authority and that a Launcher Bundle can bring a
 recurring mutable or injectable harness up to Verified Launcher requirements.
+An enrolled Launcher Bundle payload representing its own bundle is not Retained
+Launcher Provenance and does not require this setting.
 
 ## Source of truth
 

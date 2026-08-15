@@ -46,10 +46,13 @@ the original executable remains unverified and is not monitored.
 
 The bundle does not make the CLI trustworthy. It gives that exact generated
 artifact a stable, revalidated Launcher Identity. Every authorization verifies
-the live runner, nested signatures, payload digest, enrolled generation, and
-runtime posture. The runner also verifies the suspended payload process before
-allowing it to execute. Changing, moving, or re-signing the bundle hard-denies
-its requests instead of falling back to Approval.
+the live runner or enrolled payload representative, nested signatures, payload
+digest, enrolled generation, and runtime posture. The runner also verifies the
+suspended payload process before allowing it to execute. If the payload
+daemonizes, its exact live process may continue representing the same Launcher
+Bundle without enabling detached-process access. Changing, moving, or
+re-signing the bundle hard-denies its requests instead of falling back to
+Approval.
 
 Creating the same name again makes a new generation. The old enrollment and
 Launcher-specific rules are revoked and the old bundle is moved to Trash only

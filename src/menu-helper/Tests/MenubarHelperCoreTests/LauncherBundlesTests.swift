@@ -124,11 +124,72 @@ import Testing
         liveRuntimeProtection: .hardened,
         enrollments: .success([enrollment])
     ) == enrollment)
+    #expect(try verifyLauncherBundleProcess(
+        at: app,
+        executableURL: launcher,
+        liveIdentifier: identifier,
+        liveCodeIdentifier: launcherEvidence.codeIdentifiers[0],
+        liveRuntimeProtection: .hardened,
+        enrollments: .success([enrollment])
+    ) == enrollment)
+    #expect(try verifyLauncherBundleProcess(
+        at: app,
+        executableURL: app.appendingPathComponent("Contents/MacOS/../Resources/payload"),
+        liveIdentifier: payloadEvidence.identifier,
+        liveCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+        liveRuntimeProtection: .hardened,
+        enrollments: .success([enrollment])
+    ) == enrollment)
     #expect(throws: LauncherBundleVerificationError.identityMismatch) {
         try verifyLauncherBundle(
             at: app,
             liveLauncherIdentifier: payloadEvidence.identifier,
             liveLauncherCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
+    #expect(throws: LauncherBundleVerificationError.identityMismatch) {
+        try verifyLauncherBundleProcess(
+            at: app,
+            executableURL: resources.appendingPathComponent("other"),
+            liveIdentifier: payloadEvidence.identifier,
+            liveCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
+    #expect(throws: LauncherBundleVerificationError.identityMismatch) {
+        try verifyLauncherBundleProcess(
+            at: app,
+            executableURL: payload,
+            liveIdentifier: payloadEvidence.identifier,
+            liveCodeIdentifier: Data([0]),
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
+    #expect(throws: LauncherBundleVerificationError.runtimeMismatch) {
+        try verifyLauncherBundleProcess(
+            at: app,
+            executableURL: payload,
+            liveIdentifier: payloadEvidence.identifier,
+            liveCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardenedWithLibraryValidationDisabled,
+            enrollments: .success([enrollment])
+        )
+    }
+
+    let movedApp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("\(UUID().uuidString).app", isDirectory: true)
+    try FileManager.default.copyItem(at: app, to: movedApp)
+    defer { try? FileManager.default.removeItem(at: movedApp) }
+    #expect(throws: LauncherBundleVerificationError.identityMismatch) {
+        try verifyLauncherBundleProcess(
+            at: movedApp,
+            executableURL: movedApp.appendingPathComponent("Contents/Resources/payload"),
+            liveIdentifier: payloadEvidence.identifier,
+            liveCodeIdentifier: payloadEvidence.codeIdentifiers[0],
             liveRuntimeProtection: .hardened,
             enrollments: .success([enrollment])
         )
@@ -143,6 +204,16 @@ import Testing
             at: app,
             liveLauncherIdentifier: identifier,
             liveLauncherCodeIdentifier: launcherEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
+    #expect(throws: (any Error).self) {
+        try verifyLauncherBundleProcess(
+            at: app,
+            executableURL: payload,
+            liveIdentifier: payloadEvidence.identifier,
+            liveCodeIdentifier: payloadEvidence.codeIdentifiers[0],
             liveRuntimeProtection: .hardened,
             enrollments: .success([enrollment])
         )
