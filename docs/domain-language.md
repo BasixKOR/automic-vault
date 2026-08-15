@@ -75,6 +75,8 @@ process, and the bundle seals the payload. Enrollment binds the exact signed
 bundle generation and final bundled payload digest. Automic Vault may ad-hoc
 sign the bundle, or the user may select a Developer ID Application identity;
 either form uses Hardened Runtime and remains bound to that exact generation.
+The bundled payload has its own reserved child identity and is reverified when
+live, but it never qualifies as a Launcher by itself.
 
 A Launcher Bundle is an artifact, not an Authorization Gate, Blessing, Isotope,
 or Verified Launcher. When its enrolled identity, integrity, and runtime posture

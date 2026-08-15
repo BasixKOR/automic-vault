@@ -82,7 +82,9 @@ payload digest, designated requirement, and accepted runtime posture. On every
 authorization, the service verifies the live runner, strict nested bundle,
 payload digest, and enrollment. The runner starts the fixed payload suspended
 and resumes it only when its live code identifier matches the identifiers
-sealed into the runner's signed code. Reserved Launcher Bundle identities that
+sealed into the runner's signed code. A live bundled payload is reverified
+against its enrolled child identity without being admitted as a Launcher.
+Reserved Launcher Bundle identities that
 are moved, changed, re-signed, unenrolled, or unverifiable are denied before
 ordinary Launcher admission or Approval. See [ADR 0013](adr/0013-launcher-bundles.md).
 

@@ -5312,12 +5312,24 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
                     let codeIdentifier = liveCodeIdentity(pid: pid)
                 else { return "Launcher Bundle is outside its managed location" }
                 do {
-                    _ = try verifyLauncherBundle(
-                        at: appURL,
-                        liveLauncherIdentifier: signing.identifier,
-                        liveLauncherCodeIdentifier: codeIdentifier,
-                        liveRuntimeProtection: signing.runtimeProtection
-                    )
+                    let payloadURL = appURL.appendingPathComponent(
+                        "Contents/Resources/\(launcherBundlePayloadName)"
+                    ).standardizedFileURL
+                    if URL(fileURLWithPath: path).standardizedFileURL == payloadURL {
+                        _ = try verifyLauncherBundlePayload(
+                            at: appURL,
+                            livePayloadIdentifier: signing.identifier,
+                            livePayloadCodeIdentifier: codeIdentifier,
+                            liveRuntimeProtection: signing.runtimeProtection
+                        )
+                    } else {
+                        _ = try verifyLauncherBundle(
+                            at: appURL,
+                            liveLauncherIdentifier: signing.identifier,
+                            liveLauncherCodeIdentifier: codeIdentifier,
+                            liveRuntimeProtection: signing.runtimeProtection
+                        )
+                    }
                 } catch {
                     return "Launcher Bundle denied: \(error.localizedDescription)"
                 }

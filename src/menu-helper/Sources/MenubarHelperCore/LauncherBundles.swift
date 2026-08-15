@@ -246,6 +246,45 @@ public func verifyLauncherBundle(
     liveRuntimeProtection: LauncherRuntimeProtection,
     enrollments: LauncherBundleEnrollmentsLoad? = nil
 ) throws -> LauncherBundleEnrollment {
+    let evidence = try launcherBundleVerificationEvidence(at: appURL, enrollments: enrollments)
+    let enrollment = evidence.enrollment
+    guard evidence.launcher.identifier == liveLauncherIdentifier,
+          enrollment.launcherCodeIdentifiers.contains(liveLauncherCodeIdentifier)
+    else { throw LauncherBundleVerificationError.identityMismatch }
+    guard enrollment.runtimeRequirement.allows(liveRuntimeProtection),
+          enrollment.runtimeRequirement.allows(evidence.payload.runtimeProtection)
+    else { throw LauncherBundleVerificationError.runtimeMismatch }
+    return enrollment
+}
+
+public func verifyLauncherBundlePayload(
+    at appURL: URL,
+    livePayloadIdentifier: String,
+    livePayloadCodeIdentifier: Data,
+    liveRuntimeProtection: LauncherRuntimeProtection,
+    enrollments: LauncherBundleEnrollmentsLoad? = nil
+) throws -> LauncherBundleEnrollment {
+    let evidence = try launcherBundleVerificationEvidence(at: appURL, enrollments: enrollments)
+    let enrollment = evidence.enrollment
+    guard evidence.payload.identifier == livePayloadIdentifier,
+          enrollment.payloadCodeIdentifiers.contains(livePayloadCodeIdentifier)
+    else { throw LauncherBundleVerificationError.identityMismatch }
+    guard enrollment.runtimeRequirement.allows(liveRuntimeProtection),
+          enrollment.runtimeRequirement.allows(evidence.payload.runtimeProtection)
+    else { throw LauncherBundleVerificationError.runtimeMismatch }
+    return enrollment
+}
+
+private struct LauncherBundleVerificationEvidence {
+    let enrollment: LauncherBundleEnrollment
+    let launcher: LauncherBundleCodeEvidence
+    let payload: LauncherBundleCodeEvidence
+}
+
+private func launcherBundleVerificationEvidence(
+    at appURL: URL,
+    enrollments: LauncherBundleEnrollmentsLoad?
+) throws -> LauncherBundleVerificationEvidence {
     let info = try launcherBundleInfo(at: appURL)
     guard info.bundleIdentifier.hasPrefix(launcherBundleIdentifierPrefix) else {
         throw LauncherBundleVerificationError.invalidBundle
@@ -274,8 +313,7 @@ public func verifyLauncherBundle(
           bundle.codeIdentifiers == enrollment.bundleCodeIdentifiers,
           launcher.identifier == enrollment.launcherIdentifier,
           launcher.codeIdentifiers == enrollment.launcherCodeIdentifiers,
-          launcher.identifier == liveLauncherIdentifier,
-          enrollment.launcherCodeIdentifiers.contains(liveLauncherCodeIdentifier),
+          payload.identifier == "\(enrollment.bundleIdentifier).payload",
           payload.codeIdentifiers == enrollment.payloadCodeIdentifiers,
           payload.enabledEntitlements == enrollment.payloadEntitlements,
           bundle.isAdHoc == (enrollment.signingKind == .adHoc),
@@ -286,10 +324,11 @@ public func verifyLauncherBundle(
     guard try sha256OfRegularFile(at: payloadURL) == enrollment.payloadSHA256,
           info.payloadSHA256 == enrollment.payloadSHA256
     else { throw LauncherBundleVerificationError.payloadMismatch }
-    guard enrollment.runtimeRequirement.allows(liveRuntimeProtection),
-          enrollment.runtimeRequirement.allows(payload.runtimeProtection)
-    else { throw LauncherBundleVerificationError.runtimeMismatch }
-    return enrollment
+    return LauncherBundleVerificationEvidence(
+        enrollment: enrollment,
+        launcher: launcher,
+        payload: payload
+    )
 }
 
 public func launcherBundleCodeEvidence(

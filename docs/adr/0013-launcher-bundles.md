@@ -66,6 +66,11 @@ own signed code, and resumes it only after a match. This binds validation to the
 process that will execute instead of relying on a path check followed by an
 unchecked path execution.
 
+The payload carries a reserved child identifier. Later live payload ancestors
+must still match its exact enrolled identity and bundle, but the payload is not
+a Launcher and cannot use Launcher policy without verified current or retained
+Launcher provenance.
+
 Anything claiming the reserved Launcher Bundle identifier namespace enters
 this verification path. Missing, corrupt, or conflicting evidence hard-denies
 the request and cannot fall through to Approval or ordinary Developer ID or

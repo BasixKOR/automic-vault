@@ -117,6 +117,22 @@ import Testing
         liveRuntimeProtection: .hardened,
         enrollments: .success([enrollment])
     ) == enrollment)
+    #expect(try verifyLauncherBundlePayload(
+        at: app,
+        livePayloadIdentifier: payloadEvidence.identifier,
+        livePayloadCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+        liveRuntimeProtection: .hardened,
+        enrollments: .success([enrollment])
+    ) == enrollment)
+    #expect(throws: LauncherBundleVerificationError.identityMismatch) {
+        try verifyLauncherBundle(
+            at: app,
+            liveLauncherIdentifier: payloadEvidence.identifier,
+            liveLauncherCodeIdentifier: payloadEvidence.codeIdentifiers[0],
+            liveRuntimeProtection: .hardened,
+            enrollments: .success([enrollment])
+        )
+    }
 
     let handle = try FileHandle(forWritingTo: payload)
     try handle.seekToEnd()
