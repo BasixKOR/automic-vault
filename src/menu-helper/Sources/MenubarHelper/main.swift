@@ -280,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = migrateBackgroundKeychainItems()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
-        startTemporaryAccessGrantPresentation()
+        refreshTemporaryAccessGrants()
         refreshCLIInstallState()
         do {
             let approval = try ApprovalServer(
@@ -1034,18 +1034,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoApprovalSeparator = separator
     }
 
-    private func startTemporaryAccessGrantPresentation() {
-        temporaryAccessGrantTimer?.invalidate()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshTemporaryAccessGrants() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        temporaryAccessGrantTimer = timer
-        refreshTemporaryAccessGrants()
-    }
-
     private func refreshTemporaryAccessGrants() {
         temporaryAccessGrantSnapshots = temporaryAccessGrants.snapshots()
+        if temporaryAccessGrantSnapshots.isEmpty {
+            temporaryAccessGrantTimer?.invalidate()
+            temporaryAccessGrantTimer = nil
+        } else if temporaryAccessGrantTimer == nil {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshTemporaryAccessGrants() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            temporaryAccessGrantTimer = timer
+        }
         refreshTemporaryAccessGrantMenuItems()
         refreshTemporaryAccessGrantPanel()
         statusItem.button?.image = temporaryAccessGrantSnapshots.isEmpty

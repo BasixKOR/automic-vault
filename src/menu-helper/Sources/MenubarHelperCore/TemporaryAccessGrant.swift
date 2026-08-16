@@ -55,14 +55,15 @@ public struct TemporaryAccessGrantScope: Hashable, Sendable {
         authorizationGateID: String,
         launcherDesignatedRequirement: String,
         launcherRuntimeRequirement: LauncherRuntimeRequirement,
-        agentTaskContext: AgentTaskContext,
-        protection: SecretGateProtection = .fullExceptSecretDumps
+        agentTaskContext: AgentTaskContext
     ) {
         self.authorizationGateID = authorizationGateID
         self.launcherDesignatedRequirement = launcherDesignatedRequirement
         self.launcherRuntimeRequirement = launcherRuntimeRequirement
         self.agentTaskContext = agentTaskContext
-        self.protection = protection.normalized(forGateID: authorizationGateID)
+        self.protection = SecretGateProtection.fullExceptSecretDumps.normalized(
+            forGateID: authorizationGateID
+        )
     }
 
     public func matches(

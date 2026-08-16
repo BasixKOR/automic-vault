@@ -137,8 +137,13 @@ bool av_process_environment_value(pid_t pid, const char *key, char *out, size_t 
     while (cursor < end && *cursor == '\0') cursor++;
 
     for (int index = 0; index < argc; index++) {
-        size_t value_len = strnlen(cursor, (size_t)(end - cursor));
-        if (cursor >= end || value_len == 0 || value_len == (size_t)(end - cursor)) {
+        if (cursor >= end) {
+            free(buffer);
+            return false;
+        }
+        size_t remaining = (size_t)(end - cursor);
+        size_t value_len = strnlen(cursor, remaining);
+        if (value_len == 0 || value_len == remaining) {
             free(buffer);
             return false;
         }

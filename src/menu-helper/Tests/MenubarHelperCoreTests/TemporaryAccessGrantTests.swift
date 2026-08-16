@@ -108,6 +108,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
 @Test func exactScopeAndWriteClassificationAreRequired() {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)
+    #expect(scope().protection == .fullExceptSecretDumps)
     controller.start(
         scope: scope(),
         launcherName: "Codex",
@@ -161,7 +162,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     ) { _ in true } == nil)
 }
 
-@Test func cancellationWaitsForAnActiveLeaseAndThenRevokesIt() {
+@Test func cancellationWaitsForAnActiveLeaseAndThenRevokesIt() throws {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)
     let grant = controller.start(
@@ -185,11 +186,12 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
             monotonicNow: 10
         ) { _ in
             entered.signal()
-            release.wait()
+            _ = release.wait(timeout: .now() + 5)
         }
         leaseFinished.signal()
     }
-    entered.wait()
+    defer { release.signal() }
+    try #require(entered.wait(timeout: .now() + 5) == .success)
     let cancelFinished = DispatchSemaphore(value: 0)
     DispatchQueue.global().async {
         _ = controller.cancel(id: grant.id)
@@ -197,12 +199,12 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     }
     #expect(cancelFinished.wait(timeout: .now() + 0.05) == .timedOut)
     release.signal()
-    leaseFinished.wait()
-    cancelFinished.wait()
+    try #require(leaseFinished.wait(timeout: .now() + 5) == .success)
+    try #require(cancelFinished.wait(timeout: .now() + 5) == .success)
     #expect(controller.snapshots(wallNow: start, monotonicNow: 10).isEmpty)
 }
 
-@Test func cancellationWaitsForTheActivationReplyLease() {
+@Test func cancellationWaitsForTheActivationReplyLease() throws {
     let controller = TemporaryAccessGrantController()
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
@@ -214,11 +216,12 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
             authorizationGateName: "AWS"
         ) { _ in
             entered.signal()
-            release.wait()
+            _ = release.wait(timeout: .now() + 5)
         }
         activationFinished.signal()
     }
-    entered.wait()
+    defer { release.signal() }
+    try #require(entered.wait(timeout: .now() + 5) == .success)
     let cancelFinished = DispatchSemaphore(value: 0)
     DispatchQueue.global().async {
         controller.cancelAll()
@@ -226,7 +229,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     }
     #expect(cancelFinished.wait(timeout: .now() + 0.05) == .timedOut)
     release.signal()
-    activationFinished.wait()
-    cancelFinished.wait()
+    try #require(activationFinished.wait(timeout: .now() + 5) == .success)
+    try #require(cancelFinished.wait(timeout: .now() + 5) == .success)
     #expect(controller.snapshots().isEmpty)
 }
