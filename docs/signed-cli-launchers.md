@@ -25,9 +25,43 @@ do not enable Hardened Runtime. Every request rechecks the live posture. A rule
 created for a strictly hardened Launcher does not silently expand if the
 Launcher later disables library validation.
 
-Unsigned and ad-hoc signed executables are rejected. Ad-hoc signing can protect
-one build from modification, but it does not establish a vendor or Team identity.
-Placing such an executable inside an unsigned app does not make it eligible.
+Unsigned and arbitrary ad-hoc signed executables are rejected. Ad-hoc signing
+can protect one build from modification, but it does not establish a vendor or
+Team identity. Placing such an executable inside an unsigned app does not make
+it eligible.
+
+## Create a Launcher Bundle
+
+For one unsigned Mach-O CLI executable, open **Launcher Bundles** in Automic
+Vault and choose **Create Launcher Bundle**. Choose the executable, name the
+bundle, and keep the default Automic Vault ad-hoc signing unless you have a
+Developer ID Application identity you want to use. Enable a compatibility
+exception only when the CLI requires it.
+
+Automic Vault snapshots the selected executable, signs the payload and generated
+app with Hardened Runtime, and then shows the source and final signed-payload
+SHA-256 values for review. **Install & Enroll** stores the app under
+`/Applications/Automic Vault/` and installs its root-owned command link under
+`/usr/local/bin/`. Invoke that ordinary command name; the original executable
+remains unverified and is not monitored. Installation never overwrites an
+unrelated command at the link path.
+
+Run `av doctor <command>` to verify the command link and confirm that it appears
+before another installation of the command in `PATH`.
+
+The bundle does not make the CLI trustworthy. It gives that exact generated
+artifact a stable, revalidated Launcher Identity. Every authorization verifies
+the live runner or enrolled payload representative, nested signatures, payload
+digest, enrolled generation, and runtime posture. The runner also verifies the
+suspended payload process before allowing it to execute. If the payload
+daemonizes, its exact live process may continue representing the same Launcher
+Bundle without enabling detached-process access. Changing, moving, or
+re-signing the bundle hard-denies its requests instead of falling back to
+Approval.
+
+Creating the same name again makes a new generation. The old enrollment and
+Launcher-specific rules are revoked and the old bundle is moved to Trash only
+after the replacement verifies and enrolls successfully.
 
 ## Allow a CLI launcher
 

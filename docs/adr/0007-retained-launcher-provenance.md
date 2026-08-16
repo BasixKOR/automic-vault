@@ -53,7 +53,7 @@ setting would have permitted the current request.
   lifetime of its visible parent chain. A process can intentionally detach and
   retain that attribution until its exact execution exits.
 - Ad-hoc signed processes remain more exposed to same-user code injection than
-  Hardened Runtime launchers. The UI recommends a Secure Launcher for recurring
-  harness use.
+  Hardened Runtime launchers. The UI recommends creating a Launcher Bundle for
+  recurring harness use.
 - If supported macOS APIs cannot establish the exact process execution or live
   code identity, Automic Vault fails closed and does not retain or reuse it.

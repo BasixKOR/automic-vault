@@ -92,6 +92,7 @@ DMG="$SWIFT_TARGET/Automic-Vault-$VERSION.dmg"
 DMG_STAGE="$SWIFT_TARGET/dmg"
 DMG_MOUNT="$SWIFT_TARGET/dmg-mount"
 ICON_BUILD="$SWIFT_TARGET/icon"
+LAUNCHER_ICONSET="$ICON_BUILD/LauncherBundle.iconset"
 MENU_HELPER_PROFILE="$HOME/Library/MobileDevice/Provisioning Profiles/Automic_Vault_Developer_ID.provisionprofile"
 MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/menu-helper.entitlements.plist"
 SIGNED_MENU_HELPER_ENTITLEMENTS="$SWIFT_TARGET/signed-menu-helper.entitlements.plist"
@@ -165,6 +166,7 @@ SWIFT_BIN="$(
 rm -rf "$APP" "$ICON_BUILD"
 mkdir -p "$MACOS" "$RESOURCES" "$LAUNCH_AGENTS" "$ICON_BUILD"
 lipo "$SWIFT_BIN/AutomicVaultMenubar" -thin arm64 -output "$MACOS/AutomicVaultMenubar"
+cp "$SWIFT_BIN/AutomicVaultLauncher" "$RESOURCES/AutomicVaultLauncher"
 ditto "$SWIFT_BIN/AppUpdater_AppUpdater.bundle" "$RESOURCES/AppUpdater_AppUpdater.bundle"
 cp "$MENU_HELPER/Info.plist" "$CONTENTS/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS/Info.plist"
@@ -176,6 +178,15 @@ fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
 /usr/bin/install -m 0755 "$MENU_HELPER/Resources/install-av-cli.command" "$RESOURCES/install-av-cli.command"
+mkdir -p "$LAUNCHER_ICONSET"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$MENU_HELPER/Resources/LauncherBundleIcon.png" \
+    --out "$LAUNCHER_ICONSET/icon_${size}x${size}.png" >/dev/null
+  retina_size=$((size * 2))
+  sips -z "$retina_size" "$retina_size" "$MENU_HELPER/Resources/LauncherBundleIcon.png" \
+    --out "$LAUNCHER_ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$LAUNCHER_ICONSET" -o "$RESOURCES/LauncherBundleIcon.icns"
 xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
   --compile "$ICON_BUILD" \
   --platform macosx \
@@ -222,6 +233,7 @@ fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
+codesign "${codesign_args[@]}" --identifier com.automicvault.launcher-bundle-runner "$RESOURCES/AutomicVaultLauncher"
 assert_no_embedded_entitlements "$ROOT/target/release/av"
 assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 cp "$ROOT/target/release/av" "$MACOS/av"

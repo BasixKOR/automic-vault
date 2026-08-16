@@ -67,6 +67,41 @@ Tool-specific gate. It defaults to Approval Required. A user may add a Direct
 Access Rule for one exact Secret Name and Verified Launcher, knowingly allowing
 that Launcher to select the Target and arguments on future requests.
 
+### Launcher Packaging
+
+Launcher Bundles let one unsigned Mach-O command-line tool participate as a
+Verified Launcher without treating its original path as identity. The attended
+app flow snapshots the selected file, applies Hardened Runtime, signs the
+payload and generated app inside-out, and displays both the source and final
+signed-payload SHA-256 values before enrollment. An attended privileged
+transaction installs the completed app under `/Applications/Automic Vault/`
+and its root-owned command link under `/usr/local/bin/`.
+
+The reviewed candidate is bound to that privileged transaction by a
+deterministic SHA-256 over every relative path and file byte in the completed
+bundle. The new enrollment is staged alongside the old enrollment before one
+administrator-authorized install; failure removes only the staged enrollment
+and restores the old system artifact inside the same privileged process.
+
+The command link preserves the CLI's ordinary Command without becoming identity
+evidence. Installation refuses to replace an unrelated entry. Doctor verifies
+the exact link and reports when another installation resolves first through
+`PATH`.
+
+Enrollment in the Data Protection Keychain binds a unique generation, exact
+bundle and payload code identifiers for every supported architecture, final
+payload digest, designated requirement, and accepted runtime posture. On every
+authorization, the service verifies the live runner or enrolled payload
+representative, strict nested bundle, payload digest, and enrollment. The runner
+starts the fixed payload suspended and resumes it only when its live code
+identifier matches the identifiers sealed into the runner's signed code. An
+exact live payload at the enrolled bundle path may represent the same Launcher
+Bundle Identity after the runner exits; it does not create another Launcher
+Identity or depend on Retained Launcher Provenance. Reserved Launcher Bundle
+identities that are moved, changed, re-signed, unenrolled, or unverifiable are
+denied before ordinary Launcher admission or Approval. See
+[ADR 0013](adr/0013-launcher-bundles.md).
+
 ### Reviewed Automation
 
 Script Blessings bind a canonical path, exact contents, Script Declaration,
@@ -215,13 +250,20 @@ An eligible Launcher that disables library validation remains subject to its
 exact designated requirement and live runtime check, and the UI warns that
 loaded third-party code can inherit its authority.
 
+A failed Launcher Bundle integrity or enrollment check is stricter: it denies
+the request and cannot fall through to Approval or ordinary signed-app
+eligibility. This prevents a changed or copied generated bundle from retaining
+authority by being re-signed.
+
 Detached-process access is off by default. While it is off, Retained Launcher
 Provenance may be observed in memory only to explain an Approval that the setting
 would have avoided; shadow records cannot authorize. Enabling the setting
 extends a verified Launcher's gate-specific attribution through a live signed
 descendant after its original parent chain exits. The UI must explain that this
-widens the lifetime of authority and that a Secure Launcher is safer for a
-recurring mutable or injectable harness.
+widens the lifetime of authority and that a Launcher Bundle can bring a
+recurring mutable or injectable harness up to Verified Launcher requirements.
+An enrolled Launcher Bundle payload representing its own bundle is not Retained
+Launcher Provenance and does not require this setting.
 
 ## Source of truth
 

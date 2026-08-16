@@ -193,6 +193,47 @@ secrets only when your gate policy allows it or you approve.
 > Code signing proves identity and integrity—not good intentions. You still choose
 > which launchers to trust.
 
+### Launcher Bundles
+
+Unsigned and ad-hoc-signed CLIs cannot normally become Verified Launchers.
+They lack a stable publisher identity, and their original paths remain
+user-writable, so ordinary Launcher admission rejects them.
+
+For one regular Mach-O executable, open **Launcher Bundles** in Automic Vault.
+Automic Vault snapshots the selected file, signs the payload and a minimal
+launcher with Hardened Runtime, and enrolls that exact generation. Ad-hoc signing
+is the default, so this does not require a paid Apple developer account.
+
+**Install & Enroll** asks for administrator authorization once. It installs the
+bundle under `/Applications/Automic Vault/` and creates
+`/usr/local/bin/<command>` as a symbolic link to its launcher. You can then use
+the command as before:
+
+```sh
+$ my-command --help
+$ av doctor my-command
+# ^^ verifies the Launcher Bundle link and PATH precedence
+```
+
+Automic Vault makes both the bundle and command link root-owned. An ad-hoc
+signature detects changes but does not prevent them, and macOS does not promise
+App Management protection for locally built app bundles. Without root ownership,
+another process running as you could replace the program behind the command and
+execute code before it makes a Vault request. A root-owned link alone cannot
+protect a user-writable target.
+
+Root ownership protects the installed command from ordinary same-user writes.
+Automic Vault still revalidates the live code identity, nested signatures,
+enrolled generation, payload digest, and runtime posture on every authorization.
+Any change or re-signing hard-denies the request. The original executable
+remains separate and unverified.
+
+Launcher Bundles establish identity and integrity for the exact packaged code.
+They do not establish publisher trust or make the CLI safe. Scripts and
+directory-shaped tools are not supported. See
+[Signed CLI Launchers](docs/signed-cli-launchers.md) for the full requirements
+and update behavior.
+
 ### Using Automic Vault as a General Secrets Manager
 
 ```sh
@@ -494,30 +535,21 @@ powerful tool to protect your secrets, prevent malware having attack
 opportunities and prevent agents from being too dangerous.
 
 > [!IMPORTANT]
-> Unsigned and ad-hoc signed executables cannot be launcher identities. Ad-hoc
-> signing proves integrity only for that exact build; it provides no vendor or
-> Team identity for Automic Vault to trust.
+> Unsigned and arbitrary ad-hoc signed executables cannot be launcher identities.
+> For one Mach-O CLI, Automic Vault can create an enrolled **Launcher Bundle**
+> whose exact signed generation and payload are revalidated on every request.
+> See [Launcher Bundles](#launcher-bundles).
 
 ### Pi
 
-Pi’s official macOS v0.83.0 standalone binary is linker/ad-hoc signed, has no
-Team ID, and fails strict signature verification. Automic Vault rejects it as
-a launcher. Re-signing it ad-hoc or merely placing it in an unsigned `.app`
-does not change that.
+Pi’s official macOS v0.83.0 standalone binary is linker/ad-hoc signed and has no
+Team ID, so Automic Vault rejects the original executable as a launcher. Use
+Automic Vault's **Launcher Bundles** sidebar to package a supported single-file
+Mach-O release without requiring a paid Apple developer account.
 
-The easiest current workaround is the independent, unofficial
-[Pi Launcher](https://github.com/kunchenguid/pi-launcher). Its published app is
-Developer ID-signed and notarized, bundles a checksum-pinned official Pi
-binary, and remains Pi’s parent process. Review that project as an additional
-supply-chain dependency before trusting its identity.
-
-To build your own equivalent, use Pi Launcher’s small launcher and bundle
-recipe (`make app`), then sign the nested Pi executable and app from the inside
-out with your own **Developer ID Application** identity. Enroll the resulting
-app in Automic Vault Settings and invoke its launcher executable rather than
-the original `pi` command. Developer ID certificates require a paid Apple
-Developer Program membership, which is why this is not an ideal general
-solution. Ad-hoc signing is deliberately insufficient.
+Review the source and release digest before creating the bundle: packaging
+establishes exact executable identity and integrity, not publisher trust or
+safe behavior.
 
 ### Computer Use & Automic Vault
 

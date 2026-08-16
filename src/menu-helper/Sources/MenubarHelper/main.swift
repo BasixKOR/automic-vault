@@ -2172,6 +2172,12 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing
         )
 
+        if op.requiresLauncherBundleIntegrity,
+           let error = launcherBundleIntegrityError(for: identity) {
+            reply(peer, to: message, ok: false, error: error)
+            return
+        }
+
         switch op {
         case .openWindow where isTrustedMenuHelperCaller(path: callerPath, signing: signing):
             DispatchQueue.main.async { self.onOpenWindow() }
@@ -5219,13 +5225,37 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
-    guard !signing.isAdHoc else { return [] }
     var seen = Set<String>()
     let appURLs = (
         appBundleURLs(containing: path)
         + appBundleURLs(containing: signing.mainExecutable)
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
     ).filter { seen.insert($0.path).inserted }
+    let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
+        || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+    if claimsLauncherBundleIdentity {
+        guard let appURL = appURLs.first(where: {
+            launcherBundleAppURL(containing: $0.path) == $0
+        }),
+            let liveCodeIdentifier = liveCodeIdentity(pid: pid),
+            let enrollment = try? verifyLauncherBundleProcess(
+                at: appURL,
+                executableURL: URL(fileURLWithPath: path),
+                liveIdentifier: signing.identifier,
+                liveCodeIdentifier: liveCodeIdentifier,
+                liveRuntimeProtection: signing.runtimeProtection
+            )
+        else { return [] }
+        return [LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: enrollment.bundleIdentifier,
+            teamIdentifier: signing.teamIdentifier,
+            designatedRequirement: enrollment.launcherRequirement,
+            runtimeProtection: signing.runtimeProtection
+        )]
+    }
+    guard !signing.isAdHoc else { return [] }
     let apps: [LauncherIdentity] = appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
@@ -5252,6 +5282,61 @@ private func launcherIdentities(
         runtimeProtection: signing.runtimeProtection,
         isStandalone: true
     )]
+}
+
+private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> String? {
+    for startPID in launcherAncestorStartPIDs(identity) {
+        var pid = startPID
+        var seen = Set<pid_t>()
+        for _ in 0..<32 {
+            guard pid > 1, seen.insert(pid).inserted else { break }
+            var ancestor = AVProcessIdentity()
+            guard av_process_identity(pid, &ancestor) else { break }
+            let path = pathString(ancestor)
+            guard let signing = liveSigningInfo(pid: pid) else {
+                pid = ancestor.ppid
+                continue
+            }
+            var seenApps = Set<String>()
+            let appURLs = (
+                appBundleURLs(containing: path)
+                + appBundleURLs(containing: signing.mainExecutable)
+                + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
+            ).filter { seenApps.insert($0.path).inserted }
+            let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(
+                launcherBundleIdentifierPrefix
+            ) || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+            if claimsLauncherBundleIdentity {
+                guard let appURL = appURLs.first(where: {
+                    launcherBundleAppURL(containing: $0.path) == $0
+                }),
+                    let codeIdentifier = liveCodeIdentity(pid: pid)
+                else { return "Launcher Bundle is outside its managed location" }
+                do {
+                    _ = try verifyLauncherBundleProcess(
+                        at: appURL,
+                        executableURL: URL(fileURLWithPath: path),
+                        liveIdentifier: signing.identifier,
+                        liveCodeIdentifier: codeIdentifier,
+                        liveRuntimeProtection: signing.runtimeProtection
+                    )
+                } catch {
+                    return "Launcher Bundle denied: \(error.localizedDescription)"
+                }
+            }
+            pid = ancestor.ppid
+        }
+    }
+    return nil
+}
+
+private extension ApprovalServiceOperation {
+    var requiresLauncherBundleIntegrity: Bool {
+        switch self {
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion: false
+        default: true
+        }
+    }
 }
 
 private struct LiveSigningInfo {
@@ -5495,7 +5580,7 @@ private func appBundleURL(containing path: String) -> URL? {
 }
 
 private func appBundleURLs(containing path: String) -> [URL] {
-    var url = URL(fileURLWithPath: path)
+    var url = URL(fileURLWithPath: path).standardizedFileURL
     var apps: [URL] = []
     while url.path != "/" {
         if url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
@@ -5541,6 +5626,25 @@ private final class ApprovalPanel: NSPanel {
         }
         super.sendEvent(event)
     }
+}
+
+@MainActor
+private func makeApprovalPanel() -> ApprovalPanel {
+    let panel = ApprovalPanel(
+        contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    panel.backgroundColor = .clear
+    panel.isOpaque = false
+    panel.hasShadow = true
+    panel.isMovableByWindowBackground = false
+    panel.isFloatingPanel = true
+    panel.hidesOnDeactivate = false
+    panel.level = .modalPanel
+    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    return panel
 }
 
 @MainActor
@@ -5600,20 +5704,7 @@ private func showApprovalAlert(
     )
     var decision = ApprovalDecision.canceled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = ApprovalPanel(
-        contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
-        styleMask: [.borderless, .nonactivatingPanel],
-        backing: .buffered,
-        defer: false
-    )
-    panel.backgroundColor = .clear
-    panel.isOpaque = false
-    panel.hasShadow = true
-    panel.isMovableByWindowBackground = true
-    panel.isFloatingPanel = true
-    panel.hidesOnDeactivate = false
-    panel.level = .modalPanel
-    panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+    let panel = makeApprovalPanel()
     panel.contentView = NSHostingView(
         rootView: ApprovalPromptView(
             content: content,
@@ -6360,6 +6451,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    guard !makeApprovalPanel().isMovableByWindowBackground else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
         signing: helperSigning
@@ -7145,7 +7237,9 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               bundledDeveloperID.mainExecutable,
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
-          ]) == "example → zsh → gh"
+          ]) == "example → zsh → gh",
+          appBundleURL(containing: "/Applications/Example.app/Contents/MacOS/../Resources/payload")?.path
+              == "/Applications/Example.app"
     else { return 1 }
     let unhardenedLauncher = LauncherIdentity(
         pid: launcher.pid,

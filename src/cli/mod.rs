@@ -7,6 +7,7 @@ mod bless;
 pub(crate) mod docker_credential;
 pub(crate) mod doctor;
 mod inject;
+mod launcher_bundle;
 mod list;
 mod open;
 mod save;
@@ -40,7 +41,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 22;
+pub(crate) const INSTALL_REVISION: u32 = 24;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -177,6 +178,45 @@ where
     };
 
     match command.to_str() {
+        Some("__install-launcher-bundle") if rest.len() == 6 => {
+            let (Some(bundle_name), Some(command_name), Some(generation), Some(tree_sha256)) = (
+                rest[1].to_str(),
+                rest[2].to_str(),
+                rest[3].to_str(),
+                rest[4].to_str(),
+            ) else {
+                let _ = writeln!(stderr, "av: invalid Launcher Bundle arguments");
+                return 2;
+            };
+            privileged_result(
+                launcher_bundle::install(
+                    &PathBuf::from(&rest[0]),
+                    bundle_name,
+                    command_name,
+                    generation,
+                    tree_sha256,
+                    &PathBuf::from(&rest[5]),
+                ),
+                stderr,
+            )
+        }
+        Some("__remove-launcher-bundle") if rest.len() == 4 => {
+            let (Some(bundle_name), Some(command_name), Some(generation)) =
+                (rest[0].to_str(), rest[1].to_str(), rest[2].to_str())
+            else {
+                let _ = writeln!(stderr, "av: invalid Launcher Bundle arguments");
+                return 2;
+            };
+            privileged_result(
+                launcher_bundle::remove(
+                    bundle_name,
+                    command_name,
+                    generation,
+                    &PathBuf::from(&rest[3]),
+                ),
+                stderr,
+            )
+        }
         Some("__harden-brew") if rest.is_empty() => {
             match hardeners::homebrew::harden_privileged(stdout) {
                 Ok(()) => 0,
@@ -362,6 +402,16 @@ where
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2
+        }
+    }
+}
+
+fn privileged_result<E: Write>(result: Result<(), String>, stderr: &mut E) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            let _ = writeln!(stderr, "av: {error}");
+            1
         }
     }
 }

@@ -179,6 +179,9 @@ import Testing
       {"name":"gh","commands":["gh"],"issues":[
         {"kind":"isotope_not_first_on_path","command":"gh","message":"gh is not available through PATH","remediation":"Fix PATH.","stub_path":"/opt/homebrew/opt/gh-cli/bin/gh","target_path":"/opt/homebrew/opt/gh-cli/bin/gh","resolved_path":null}
       ]},
+      {"name":"herdr Launcher Bundle","commands":["herdr"],"issues":[
+        {"kind":"launcher_bundle_not_first_on_path","command":"herdr","message":"herdr is shadowed","remediation":"Fix PATH.","stub_path":"/usr/local/bin/herdr","target_path":"/Applications/Automic Vault/Herdr.app/Contents/MacOS/launcher","resolved_path":"/opt/homebrew/bin/herdr"}
+      ]},
       {"name":"codex","commands":["codex"],"issues":[
         {"kind":"agent_cli_unavailable","command":"codex","message":"codex is not available through PATH","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":null},
         {"kind":"agent_cli_signature_invalid","command":"codex","message":"codex has an invalid signature","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":"/usr/bin/codex"}

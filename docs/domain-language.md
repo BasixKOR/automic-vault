@@ -67,6 +67,35 @@ or allow debugger attachment. A Launcher that disables library validation may
 be eligible, but the UI must warn that third-party libraries and plug-ins can
 run inside its process and inherit its authority.
 
+### Launcher Bundle
+
+An Automic Vault-generated macOS app bundle containing one fixed CLI payload
+and a minimal launcher executable. The launcher starts the payload as its parent
+process, and the bundle seals the payload. Enrollment binds the exact signed
+bundle generation and final bundled payload digest. Automic Vault may ad-hoc
+sign the bundle, or the user may select a Developer ID Application identity;
+either form uses Hardened Runtime and remains bound to that exact generation.
+The bundled payload has its own reserved child identity and is reverified when
+live. It is not a separate Launcher Identity, but an exact live enrolled payload
+may represent its Launcher Bundle Identity after its launcher exits, including
+when the payload daemonizes.
+
+Each Launcher Bundle exposes one Command through a root-owned command link. The
+Command is how the user invokes the bundle; it is not Launcher Identity. The
+installed bundle and command link are protected system artifacts, while the
+original executable remains a separate unverified executable.
+
+A Launcher Bundle is an artifact, not an Authorization Gate, Blessing, Isotope,
+or Verified Launcher. When its enrolled identity, integrity, and runtime posture
+are verified, its live launcher process or live enrolled payload representative
+qualifies as the same Verified Launcher. The original unbundled executable has
+a different identity and cannot match the Launcher Bundle's enrollment or
+Launcher-specific rules.
+
+Changing or re-signing any enrolled generation invalidates it. A bundle that
+claims Automic Vault's Launcher Bundle identity but lacks matching enrollment
+evidence is denied rather than considered as an ordinary Launcher.
+
 ### Launcher Runtime Requirement
 
 The maximum Hardened Runtime exception profile accepted when a durable

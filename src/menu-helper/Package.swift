@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS("14.0")],
     products: [
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
+        .executable(name: "AutomicVaultLauncher", targets: ["LauncherBundleRunner"]),
     ],
     dependencies: [
         .package(url: "https://github.com/mxcl/AppUpdater.git", from: "4.1.0"),
@@ -24,6 +25,10 @@ let package = Package(
             name: "CProcessInfo",
             publicHeadersPath: "include",
             linkerSettings: [.linkedLibrary("bsm")]
+        ),
+        .executableTarget(
+            name: "LauncherBundleRunner",
+            linkerSettings: [.linkedFramework("Security")]
         ),
         .executableTarget(
             name: "MenubarHelper",
