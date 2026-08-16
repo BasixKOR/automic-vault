@@ -1002,4 +1002,16 @@ mod tests {
         assert!(stdout.contains(r#""detectors":["#));
         assert_eq!(stderr, "");
     }
+
+    #[test]
+    fn private_secret_gate_catalog_is_supported() {
+        let (code, stdout, stderr) = run_args(&["av", "__secret-gates-json"]);
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let gates = report["secret_gates"].as_array().unwrap();
+
+        assert_eq!(code, 0);
+        assert!(gates.iter().any(|gate| gate["id"] == "aws"));
+        assert!(gates.iter().any(|gate| gate["id"] == "docker"));
+        assert_eq!(stderr, "");
+    }
 }

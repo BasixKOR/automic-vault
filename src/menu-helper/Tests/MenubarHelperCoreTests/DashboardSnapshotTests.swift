@@ -148,6 +148,22 @@ import Testing
     }
 }
 
+@Test func secretGateCatalogLoadsThroughTheExecutableBoundary() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = directory.appendingPathComponent("av")
+    try #"""
+#!/bin/sh
+printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_CREDENTIAL_*"],"routes":[{"operation":"docker-get","script_path":null,"target_path":"/Applications/Docker.app/Contents/Resources/bin/docker","caller_identifiers":["com.automicvault.av"],"key_patterns":["DOCKER_REGISTRY_CREDENTIAL_*"],"replace_existing_env":false,"allow_missing_keys":false}]}]}'
+"""#.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+
+    let gates = try loadSecretGateDescriptors(avExecutableURL: executable)
+
+    #expect(gates.map(\.id) == ["docker"])
+    #expect(gates.first?.routes.first?.operation == "docker-get")
+}
+
 @Test func doctorJSONFlattensIssuesWithHardenerNames() throws {
     let data = Data(#"""
     {"results":[
@@ -261,6 +277,15 @@ import Testing
     #expect(tools.map(\.documentation) == ["AWS docs", "Sudo docs"])
     #expect(tools.first?.stubPath == "/usr/local/bin/aws")
     #expect(tools.last?.stubPath == nil)
+}
+
+@Test func runtimeGateCatalogDoesNotDependOnHardenerDetection() throws {
+    let metadata = testGateMetadata(hardened: false)
+    let descriptor = try #require(metadata.secretGate)
+    let service = "com.automicvault.tests.\(UUID().uuidString)"
+
+    #expect(loadSecretGates(hardeners: [metadata], service: service).isEmpty)
+    #expect(loadSecretGates(descriptors: [descriptor], service: service).map(\.id) == ["gh"])
 }
 
 

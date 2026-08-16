@@ -7069,7 +7069,7 @@ private func runApprovalSelfCheck() -> Int32 {
               exists: { _ in false }
           ) == "AWS_ACCESS_KEY_ID",
           matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, descriptors: [awsDescriptor]) == nil,
-          matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, descriptors: [awsDescriptor]) == nil,
+          matchingSecretGate(request: awsRequest(shebangScript: "/tmp/script"), signing: avSigning, descriptors: [awsDescriptor]) == nil,
           matchingSecretGate(
               request: readOnlyAws,
               signing: SigningInfo(identifier: "aws", teamIdentifier: "TEAM"),
@@ -7079,13 +7079,13 @@ private func runApprovalSelfCheck() -> Int32 {
           classifySecretGateRequest(gateID: "aws", request: longLivedAws) == .secretDump,
           classifySecretGateRequest(
               gateID: "aws",
-              request: awsRequest(args: ["-f", "/usr/local/bin/aws", "--profile", "dev", "iam", "get-role"])
+              request: awsRequest(args: ["--profile", "dev", "iam", "get-role"])
           ) == .secretDump,
           contextualLongLivedAws.title == "Use long-lived AWS credentials?",
           contextualLongLivedAws.detail?.contains("retain every IAM permission") == true,
           classifySecretGateRequest(
               gateID: "aws",
-              request: awsRequest(args: ["-f", "/usr/local/bin/aws", "s3", "rm", "s3://bucket/key"])
+              request: awsRequest(args: ["s3", "rm", "s3://bucket/key"])
           ) == .mutating,
           (SecretGateRequestClassification.allCases
               .filter { $0 != .unknown }
