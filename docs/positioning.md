@@ -35,10 +35,10 @@ at the Local Execution Boundary.
   elevated credential use.
 - Policy can authorize recognized operations. The user handles requests that
   require Approval.
-- From an eligible agent write Approval, the user can use Touch ID to allow
-  Write Access for that exact Verified Launcher, Tool-specific Authorization
-  Gate, and agent task for ten minutes. A persistent strip shows the grant and
-  offers an immediate End action throughout its lifetime.
+- From an eligible agent write Approval, the user can explicitly allow Write
+  Access for that exact Verified Launcher, Tool-specific Authorization Gate,
+  and agent task for ten minutes. A persistent strip shows the grant and offers
+  an immediate End action throughout its lifetime.
 - Existing developer commands continue to work above the security boundary.
 
 ## Claim boundaries

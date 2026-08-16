@@ -259,15 +259,15 @@ The final allow or deny result and its source. An allowed request is either **au
 
 ### Temporary Access Grant
 
-An in-memory, user-authenticated delegation of Write Access to one exact
+An in-memory, user-confirmed delegation of Write Access to one exact
 Tool-specific Authorization Gate, Verified Launcher, accepted Launcher Runtime
 Requirement, and Agent Task Context for ten minutes. It may automically
 authorize recognized read and write operations at that scope. Elevated Secret
 Application, Secret Disclosure, Unknown operations, the Direct Secret Gate, and
 Secret mutation operations remain outside the grant.
 
-A Temporary Access Grant can begin only from an eligible live write-request
-Approval after successful Touch ID without password fallback. It is not a
+A Temporary Access Grant can begin only when the user selects its explicit
+action in an eligible live write-request Approval. It is not a
 durable Authorization Policy or Blessing. Automic Vault shows every active
 grant continuously, lets the user end each grant immediately, and revokes all
 grants when the user session becomes inactive, displays sleep, an update begins,

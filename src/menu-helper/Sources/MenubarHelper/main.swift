@@ -5,7 +5,6 @@ import CoreServices
 import CryptoKit
 import Darwin
 import Foundation
-import LocalAuthentication
 import MenubarHelperCore
 import Security
 import SwiftUI
@@ -3414,7 +3413,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         callerPath: callerPath,
                         decision: "Failed",
                         approvalSource: "Manual",
-                        reason: "Temporary Access Grant eligibility changed after Touch ID",
+                        reason: "Temporary Access Grant eligibility changed before activation",
                         launcher: temporaryGrantCandidate?.launcher
                     ))
                     self.reply(
@@ -6367,40 +6366,6 @@ private final class ApprovalPanel: NSPanel {
 }
 
 @MainActor
-private final class TemporaryAccessBiometricAttempt {
-    private var context: LAContext?
-
-    func authenticate() async throws {
-        let context = LAContext()
-        context.localizedFallbackTitle = ""
-        context.touchIDAuthenticationAllowableReuseDuration = 0
-        self.context = context
-        defer {
-            if self.context === context {
-                self.context = nil
-                context.invalidate()
-            }
-        }
-
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            throw error ?? AppError("Touch ID is unavailable")
-        }
-        guard try await context.evaluatePolicy(
-            .deviceOwnerAuthenticationWithBiometrics,
-            localizedReason: "Allow agent-scoped Write Access for 10 minutes"
-        ), self.context === context else {
-            throw CancellationError()
-        }
-    }
-
-    func cancel() {
-        context?.invalidate()
-        context = nil
-    }
-}
-
-@MainActor
 private func makeApprovalPanel() -> ApprovalPanel {
     let panel = ApprovalPanel(
         contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
@@ -6478,14 +6443,12 @@ private func showApprovalAlert(
     var decision = ApprovalDecision.canceled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = makeApprovalPanel()
-    let biometricAttempt = TemporaryAccessBiometricAttempt()
     panel.contentView = NSHostingView(
         rootView: ApprovalPromptView(
             content: content,
             maximumHeight: maximumHeight,
             allowsPersistentApproval: allowsPersistentApproval,
             temporaryGrantCandidate: temporaryGrantCandidate,
-            biometricAttempt: biometricAttempt,
             decide: {
                 decision = $0
                 #if !DEBUG
@@ -6506,12 +6469,10 @@ private func showApprovalAlert(
         )
     )
     guard cancellation?.observe({ [weak panel] in
-        biometricAttempt.cancel()
         guard let panel, NSApp.modalWindow === panel else { return }
         NSApp.stopModal()
     }) != false else { return .canceled }
     defer {
-        biometricAttempt.cancel()
         cancellation?.stopObserving()
     }
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
@@ -6686,12 +6647,9 @@ private struct ApprovalPromptView: View {
     var maximumHeight: CGFloat? = nil
     var allowsPersistentApproval = false
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
-    let biometricAttempt: TemporaryAccessBiometricAttempt
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
-    @State private var isAuthenticatingTemporaryGrant = false
-    @State private var temporaryGrantError: String?
 
     var body: some View {
         VStack(spacing: 18) {
@@ -6790,74 +6748,43 @@ private struct ApprovalPromptView: View {
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
-                    .disabled(isAuthenticatingTemporaryGrant)
                 Button("Approve Once") { decide(.approved) }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .tint(.blue)
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isAuthenticatingTemporaryGrant)
                 if allowsPersistentApproval {
                     Button("Always Allow") { decide(.alwaysApproved) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .tint(.blue)
                         .frame(maxWidth: .infinity)
-                        .disabled(isAuthenticatingTemporaryGrant)
                 }
             }
 
             if let candidate = temporaryGrantCandidate {
-                Button {
-                    isAuthenticatingTemporaryGrant = true
-                    temporaryGrantError = nil
-                    Task { @MainActor in
-                        do {
-                            try await biometricAttempt.authenticate()
-                            decide(.temporaryWriteAccess)
-                        } catch {
-                            temporaryGrantError = error is CancellationError
-                                ? "Touch ID was canceled."
-                                : error.localizedDescription
-                            isAuthenticatingTemporaryGrant = false
-                            contentSizeDidChange()
-                        }
-                    }
-                } label: {
+                Button { decide(.temporaryWriteAccess) } label: {
                     HStack {
-                        if isAuthenticatingTemporaryGrant {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "touchid")
-                        }
+                        Image(systemName: "clock.badge.checkmark")
                         Text("Allow Write Access for 10 Minutes…")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .disabled(isAuthenticatingTemporaryGrant)
                 .accessibilityLabel(
                     "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
                 )
 
                 Text(
-                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID). Touch ID required."
+                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
                 )
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-                if let temporaryGrantError {
-                    Label(temporaryGrantError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityElement(children: .combine)
-                }
             }
 
             Text(allowsPersistentApproval
@@ -7609,7 +7536,6 @@ private func runApprovalSelfCheck() -> Int32 {
                 sections: []
             ),
             temporaryGrantCandidate: nil,
-            biometricAttempt: TemporaryAccessBiometricAttempt(),
             decide: { _ in },
             contentSizeDidChange: {}
         )
@@ -7632,7 +7558,6 @@ private func runApprovalSelfCheck() -> Int32 {
             ),
             maximumHeight: 500,
             temporaryGrantCandidate: nil,
-            biometricAttempt: TemporaryAccessBiometricAttempt(),
             decide: { _ in },
             contentSizeDidChange: {}
         )

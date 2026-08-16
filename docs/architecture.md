@@ -94,7 +94,7 @@ Agent Task Context: same-user software can forge it, so the live Verified
 Launcher remains the identity boundary.
 
 An eligible live write-request Approval can create a ten-minute Temporary
-Access Grant after Touch ID without password fallback. The grant is limited to
+Access Grant through an explicit prompt action. The grant is limited to
 Write Access at the exact Tool-specific gate, Launcher designated requirement,
 accepted runtime posture, provider, and task UUID. The Direct Secret Gate,
 Secret mutations, Elevated Secret Application, Secret Disclosure, Unknown
@@ -183,11 +183,10 @@ provenance recording, and the XPC reply, so expiry or cancellation cannot race
 with an in-progress release.
 
 Grants are memory-only and use both wall-clock and monotonic deadlines. An exact
-duplicate scope is replaced by a newly authenticated ten-minute generation.
-The service cancels pending biometric attempts and revokes every grant on user
-session inactivity, display sleep, update installation, service stop, or app
-termination. Individual expiry and explicit End actions require no
-authentication.
+duplicate scope is replaced by a newly confirmed ten-minute generation. The
+service revokes every grant on user session inactivity, display sleep, update
+installation, service stop, or app termination. Individual expiry and explicit
+End actions require no authentication.
 
 After a successful policy decision, Automic Vault may record Retained Launcher
 Provenance for signed intermediary process executions.

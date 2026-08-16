@@ -30,13 +30,12 @@ The service reads the context directly from the live XPC peer using a bounded
 a canonical UUID. No client-controlled field is added to XPC. The context is a
 forgeable narrowing label; the Verified Launcher remains the identity boundary.
 
-A grant can begin only from an eligible live write-request Approval. The user
-selects **Allow Write Access for 10 Minutes…** and completes Touch ID using
-biometrics only, with no password fallback or biometric reuse. The service then
-revalidates the peer, context, Launcher, and runtime posture. It loads the
-current payload and persists the required Authorization Record before starting
-the grant and replying. Failure denies release and creates no grant. The
-decision does not enter the transient Approval cache.
+A grant can begin only from an eligible live write-request Approval when the
+user selects **Allow Write Access for 10 Minutes…**. The service then revalidates
+the peer, context, Launcher, and runtime posture. It loads the current payload
+and persists the required Authorization Record before starting the grant and
+replying. Failure denies release and creates no grant. The decision does not
+enter the transient Approval cache.
 
 Future requests first complete ordinary Gate Client, Target, request, Secret,
 gate, Launcher, and runtime verification. A valid Blessing continues to
@@ -47,16 +46,16 @@ Unknown operations, the Direct Secret Gate, Secret mutation operations, and
 unverifiable Launchers are excluded.
 
 The grant controller uses wall-clock and monotonic deadlines. Duplicate scopes
-refresh to a newly authenticated generation. A generation-bound lease is held
+refresh to a newly confirmed generation. A generation-bound lease is held
 through payload loading, Authorization Record persistence, retained-provenance
 recording, and the XPC reply. Cancellation or expiry therefore cannot race an
 in-progress release.
 
-All grants and pending biometric attempts are revoked on user-session
-inactivity, display sleep, update installation, service stop, or app
-termination. Expiry and explicit End actions revoke individual grants without
-authentication. A persistent aggregate strip below the menu-bar item, mirrored
-menu actions, and an orange shield make active escalation continuously visible.
+All grants are revoked on user-session inactivity, display sleep, update
+installation, service stop, or app termination. Expiry and explicit End actions
+revoke individual grants without authentication. A persistent aggregate strip
+below the menu-bar item, mirrored menu actions, and an orange shield make active
+escalation continuously visible.
 
 Authorization History records future uses as policy-authorized by “Temporary
 Access Grant — Write Access”. Exact task UUIDs remain memory-only and are not
