@@ -35,6 +35,10 @@ at the Local Execution Boundary.
   elevated credential use.
 - Policy can authorize recognized operations. The user handles requests that
   require Approval.
+- From an eligible agent write Approval, the user can explicitly allow Write
+  Access for that exact Verified Launcher, Tool-specific Authorization Gate,
+  and agent task for ten minutes. A persistent strip shows the grant and offers
+  an immediate End action throughout its lifetime.
 - Existing developer commands continue to work above the security boundary.
 
 ## Claim boundaries
@@ -48,6 +52,11 @@ User-facing copy must preserve these limits:
   local destruction, or intercept every process execution.
 - A Project Directory selects a Project Value. It does not establish identity
   or grant authority.
+- A Codex task ID or Claude Code session ID is a forgeable narrowing label, not
+  identity or a security boundary. The Verified Launcher remains the identity
+  boundary for a Temporary Access Grant.
+- Temporary Access Grants do not cover the Direct Secret Gate, Secret mutation,
+  Elevated Secret Application, Secret Disclosure, or Unknown operations.
 - Secret Disclosure remains available as an explicit, more powerful Secret Use.
 - Execution control belongs to the same Developer Authority model even when an
   operation uses no Secret.

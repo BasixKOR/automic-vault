@@ -21,6 +21,7 @@ private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
 private var toastWindows: [NSWindow] = []
+private var temporaryAccessGrantStripFrame: NSRect?
 
 private enum AutomaticApprovalFlashSide {
     case left
@@ -104,6 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preFlashStatusImage: NSImage?
     private var lastAutomaticApprovalFlashSide = AutomaticApprovalFlashSide.right
     private var isStartingUp = false
+    private let temporaryAccessGrants = TemporaryAccessGrantController()
+    private var temporaryAccessGrantSnapshots: [TemporaryAccessGrantSnapshot] = []
+    private var temporaryAccessGrantMenuItems: [NSMenuItem] = []
+    private var temporaryAccessGrantHeadingItem: NSMenuItem?
+    private var temporaryAccessGrantSeparator: NSMenuItem?
+    private var temporaryAccessGrantPanel: TemporaryAccessGrantPanel?
+    private var temporaryAccessGrantTimer: Timer?
+    private var baseStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
     private var lastTelemetryFindingCount: Int?
@@ -157,6 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func userSessionDidResignActive(_ notification: Notification) {
         isUserSessionActive = false
+        temporaryAccessGrants.cancelAll()
+        refreshTemporaryAccessGrants()
         if NSApp.modalWindow is ApprovalPanel {
             NSApp.abortModal()
         }
@@ -169,6 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func screensDidSleep(_ notification: Notification) {
         areScreensAwake = false
+        temporaryAccessGrants.cancelAll()
+        refreshTemporaryAccessGrants()
         if NSApp.modalWindow is ApprovalPanel {
             NSApp.abortModal()
         }
@@ -179,7 +192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installStatusMenu() {
-        statusItem.button?.image = brandImage()
+        baseStatusImage = brandImage()
+        statusItem.button?.image = baseStatusImage
 
         let menu = NSMenu()
         menu.addItem(scanStatusItem)
@@ -266,9 +280,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = migrateBackgroundKeychainItems()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
+        refreshTemporaryAccessGrants()
         refreshCLIInstallState()
         do {
-            let approval = try ApprovalServer(serviceName: approvalServiceName) { [weak self] event in
+            let approval = try ApprovalServer(
+                serviceName: approvalServiceName,
+                temporaryAccessGrants: temporaryAccessGrants
+            ) { [weak self] event in
                 self?.recordAutoApproval(event)
             } onAccessRequest: { [weak self] record in
                 let recorded = appendAccessRequestRecord(record)
@@ -298,6 +316,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let secretGateID = self.consumePendingSecretGate()
                 _ = self.consumePendingMainWindow()
                 self.showMainWindow(secretGateID: secretGateID)
+            } onTemporaryAccessGrantsChanged: { [weak self] in
+                self?.refreshTemporaryAccessGrants()
             } canRequestHumanApproval: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
@@ -324,6 +344,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopServices() {
+        temporaryAccessGrants.cancelAll()
+        refreshTemporaryAccessGrants()
+        temporaryAccessGrantTimer?.invalidate()
+        temporaryAccessGrantTimer = nil
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
         automaticApprovalFlashWorkItem?.cancel()
         automaticApprovalFlashWorkItem = nil
         preFlashStatusImage = nil
@@ -436,6 +463,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func beginUpdating(with alert: NSAlert) -> Bool {
+        temporaryAccessGrants.cancelAll()
+        refreshTemporaryAccessGrants()
+        if NSApp.modalWindow is ApprovalPanel {
+            NSApp.abortModal()
+        }
         let mainWindowWasVisible = mainWindow?.isVisible == true
         mainWindow?.orderOut(nil)
         isUpdating = true
@@ -791,24 +823,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             #endif
             if latestDetectorFindings.isEmpty {
-                statusItem.button?.image = brandImage()
+                setBaseStatusImage(brandImage())
                 setScanStatus(
                     "No Vulnerabilities Detected",
                     image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
                 )
             } else {
                 let level = scanAlertLevel(latestDetectorFindings.map(\.severity))
-                statusItem.button?.image = switch level {
+                let image = switch level {
                 case .medium: brandImage()
                 case .high: brandImage(color: .systemRed)
                 }
+                setBaseStatusImage(image)
                 setScanStatus(
                     vulnerabilityStatusTitle(count: count),
                     image: shieldImage(color: level.color)
                 )
             }
         case .failed:
-            statusItem.button?.image = brandImage(color: .systemRed)
+            setBaseStatusImage(brandImage(color: .systemRed))
             setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
         }
         if scanWorkItem == nil, pendingFullScan || !pendingScanDetectors.isEmpty {
@@ -950,6 +983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }.max() ?? Self.visibleAutoApprovalCount
         autoApprovals = Array(autoApprovals.prefix(capacity))
         refreshAutoApprovalMenuItems()
+        refreshTemporaryAccessGrantMenuItems()
     }
 
     private func didRecordAccessRequest(_ record: AccessRequestRecord) {
@@ -998,6 +1032,123 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let separator = NSMenuItem.separator()
         menu.insertItem(separator, at: autoApprovalItems.count + 1)
         autoApprovalSeparator = separator
+    }
+
+    private func refreshTemporaryAccessGrants() {
+        temporaryAccessGrantSnapshots = temporaryAccessGrants.snapshots()
+        if temporaryAccessGrantSnapshots.isEmpty {
+            temporaryAccessGrantTimer?.invalidate()
+            temporaryAccessGrantTimer = nil
+        } else if temporaryAccessGrantTimer == nil {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshTemporaryAccessGrants() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            temporaryAccessGrantTimer = timer
+        }
+        refreshTemporaryAccessGrantMenuItems()
+        refreshTemporaryAccessGrantPanel()
+        statusItem.button?.image = temporaryAccessGrantSnapshots.isEmpty
+            ? (baseStatusImage ?? brandImage())
+            : brandImage(color: .systemOrange)
+    }
+
+    private func refreshTemporaryAccessGrantMenuItems() {
+        guard !isUpdating, let menu = statusItem.menu else { return }
+        temporaryAccessGrantMenuItems.forEach(menu.removeItem)
+        temporaryAccessGrantMenuItems.removeAll()
+        if let temporaryAccessGrantHeadingItem {
+            menu.removeItem(temporaryAccessGrantHeadingItem)
+            self.temporaryAccessGrantHeadingItem = nil
+        }
+        if let temporaryAccessGrantSeparator {
+            menu.removeItem(temporaryAccessGrantSeparator)
+            self.temporaryAccessGrantSeparator = nil
+        }
+        guard !temporaryAccessGrantSnapshots.isEmpty else { return }
+
+        let wallNow = Date()
+        let monotonicNow = ProcessInfo.processInfo.systemUptime
+        temporaryAccessGrantMenuItems = temporaryAccessGrantSnapshots.map { grant in
+            let item = NSMenuItem(
+                title: temporaryAccessGrantMenuTitle(
+                    grant,
+                    wallNow: wallNow,
+                    monotonicNow: monotonicNow
+                ),
+                action: #selector(endTemporaryAccessGrant(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = grant.id.uuidString
+            item.image = shieldImage(
+                symbolName: "exclamationmark.shield.fill",
+                color: .systemOrange,
+                accessibilityDescription: "Temporary access warning"
+            )
+            return item
+        }
+        for item in temporaryAccessGrantMenuItems.reversed() {
+            menu.insertItem(item, at: 0)
+        }
+        let heading = makeStatusMenuItem(title: "Temporary Access Grants")
+        menu.insertItem(heading, at: 0)
+        temporaryAccessGrantHeadingItem = heading
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: temporaryAccessGrantMenuItems.count + 1)
+        temporaryAccessGrantSeparator = separator
+    }
+
+    @objc private func endTemporaryAccessGrant(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID)
+        else { return }
+        _ = temporaryAccessGrants.cancel(id: id)
+        refreshTemporaryAccessGrants()
+    }
+
+    private func refreshTemporaryAccessGrantPanel() {
+        guard !temporaryAccessGrantSnapshots.isEmpty,
+              let button = statusItem.button,
+              let statusWindow = button.window
+        else {
+            temporaryAccessGrantPanel?.orderOut(nil)
+            temporaryAccessGrantPanel = nil
+            temporaryAccessGrantStripFrame = nil
+            return
+        }
+        let panel = temporaryAccessGrantPanel ?? makeTemporaryAccessGrantPanel()
+        temporaryAccessGrantPanel = panel
+        let wallNow = Date()
+        let monotonicNow = ProcessInfo.processInfo.systemUptime
+        let hostingView = NSHostingView(rootView: TemporaryAccessGrantStripView(
+            grants: temporaryAccessGrantSnapshots,
+            wallNow: wallNow,
+            monotonicNow: monotonicNow,
+            end: { [weak self] id in
+                guard let self else { return }
+                _ = self.temporaryAccessGrants.cancel(id: id)
+                self.refreshTemporaryAccessGrants()
+            }
+        ))
+        let size = hostingView.fittingSize
+        hostingView.frame.size = size
+        panel.contentView = hostingView
+        let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
+        panel.setFrame(frame, display: true)
+        temporaryAccessGrantStripFrame = frame
+        panel.orderFrontRegardless()
+        reanchorToastWindows(below: frame, visibleFrame: visibleFrame)
+    }
+
+    private func setBaseStatusImage(_ image: NSImage?) {
+        baseStatusImage = image
+        if temporaryAccessGrantSnapshots.isEmpty {
+            statusItem.button?.image = image
+        }
     }
 
     fileprivate func autoApprovalMenuItem(_ group: AutoApprovalGroup) -> NSMenuItem {
@@ -1052,6 +1203,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         guard !isStartingUp, !isUpdating else { return }
         refreshAutoApprovalMenuItems()
+        refreshTemporaryAccessGrantMenuItems()
         refreshDoctorStatus()
     }
 }
@@ -1695,6 +1847,7 @@ private enum ApprovalDecision: Equatable {
     case denied
     case approved
     case alwaysApproved
+    case temporaryWriteAccess
 }
 
 private func canceledAccessRequestRecord(
@@ -1893,7 +2046,7 @@ private struct TransientApprovalCache {
         prune(now: now)
         let cacheKey: Key
         switch decision {
-        case .canceled: return
+        case .canceled, .temporaryWriteAccess: return
         case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
         case .approved, .alwaysApproved: cacheKey = .approval(key)
         }
@@ -2016,6 +2169,115 @@ private struct LauncherIdentity {
     }
 }
 
+private struct TemporaryAccessGrantCandidate {
+    let scope: TemporaryAccessGrantScope
+    let launcher: LauncherIdentity
+    let launcherName: String
+    let authorizationGateName: String
+}
+
+private func agentTaskContext(pid: pid_t) -> AgentTaskContext? {
+    var environment: [String: String] = [:]
+    for provider in AgentProvider.allCases {
+        var value = [CChar](repeating: 0, count: 64)
+        guard av_process_environment_value(
+            pid,
+            provider.environmentVariable,
+            &value,
+            value.count
+        ) else { continue }
+        environment[provider.environmentVariable] = String(
+            decoding: value.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+            as: UTF8.self
+        )
+    }
+    return AgentTaskContext(environment: environment)
+}
+
+private func processEnvironmentValueSelfCheck() -> Bool {
+    let expected = "11111111-2222-3333-4444-555555555555"
+    let process = Process()
+    guard let executableURL = Bundle.main.executableURL else { return false }
+    process.executableURL = executableURL
+    process.arguments = ["--self-check-sleep"]
+    process.environment = ["CODEX_THREAD_ID": expected]
+    do {
+        try process.run()
+    } catch {
+        return false
+    }
+    defer {
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+    }
+    var value = [CChar](repeating: 0, count: 64)
+    var absent = [CChar](repeating: 0, count: 64)
+    var tooSmall = [CChar](repeating: 0, count: 4)
+    let found = av_process_environment_value(
+        process.processIdentifier,
+        "CODEX_THREAD_ID",
+        &value,
+        value.count
+    )
+    let foundAbsent = av_process_environment_value(
+        process.processIdentifier,
+        "CLAUDE_CODE_SESSION_ID",
+        &absent,
+        absent.count
+    )
+    let foundInSmallBuffer = av_process_environment_value(
+        process.processIdentifier,
+        "CODEX_THREAD_ID",
+        &tooSmall,
+        tooSmall.count
+    )
+    let decoded = String(
+        decoding: value.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+        as: UTF8.self
+    )
+    if !found || foundAbsent || foundInSmallBuffer || decoded != expected {
+        print(
+            "peer env values:",
+            found,
+            foundAbsent,
+            foundInSmallBuffer,
+            decoded
+        )
+        return false
+    }
+    return true
+}
+
+private func temporaryAccessGrantCandidate(
+    gate: SecretGate?,
+    classification: SecretGateRequestClassification?,
+    launcher: LauncherIdentity?,
+    agentTaskContext: AgentTaskContext?
+) -> TemporaryAccessGrantCandidate? {
+    guard let gate, let classification, let launcher, let agentTaskContext else { return nil }
+    switch classification {
+    case .localWrite, .update, .mutating:
+        break
+    case .readOnly, .secretDump, .unknown:
+        return nil
+    }
+    guard let runtimeRequirement = launcher.runtimeProtection.secretGateAdmissionRequirement else {
+        return nil
+    }
+    let launcherName = approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
+    return TemporaryAccessGrantCandidate(
+        scope: TemporaryAccessGrantScope(
+            authorizationGateID: gate.id,
+            launcherDesignatedRequirement: launcher.designatedRequirement,
+            launcherRuntimeRequirement: runtimeRequirement,
+            agentTaskContext: agentTaskContext
+        ),
+        launcher: launcher,
+        launcherName: launcherName,
+        authorizationGateName: "\(gate.id.uppercased()) Authorization Gate"
+    )
+}
+
 private struct ScriptApproval {
     let path: String
     let checksum: String
@@ -2134,7 +2396,9 @@ private final class ApprovalServer: @unchecked Sendable {
         @escaping (BlessedScriptReviewOutcome) -> Void
     ) -> Void
     private let onOpenWindow: @MainActor () -> Void
+    private let onTemporaryAccessGrantsChanged: @MainActor () -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
+    private let temporaryAccessGrants: TemporaryAccessGrantController
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
     private var transientApprovals = TransientApprovalCache()
@@ -2147,6 +2411,7 @@ private final class ApprovalServer: @unchecked Sendable {
 
     init(
         serviceName: String,
+        temporaryAccessGrants: TemporaryAccessGrantController,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
@@ -2154,12 +2419,14 @@ private final class ApprovalServer: @unchecked Sendable {
             @escaping (BlessedScriptReviewOutcome) -> Void
         ) -> Void = { _, completion in completion(.failed("script blessing is unavailable")) },
         onOpenWindow: @escaping @MainActor () -> Void = {},
+        onTemporaryAccessGrantsChanged: @escaping @MainActor () -> Void = {},
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
             throw AppError("missing menu bar signing team identifier")
         }
         self.serviceName = serviceName
+        self.temporaryAccessGrants = temporaryAccessGrants
         self.teamIdentifier = teamIdentifier
         self.secretGateDescriptors = try loadSecretGateDescriptors(
             avExecutableURL: avExecutableURL()
@@ -2168,6 +2435,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.onAccessRequest = onAccessRequest
         self.onBlessRequest = onBlessRequest
         self.onOpenWindow = onOpenWindow
+        self.onTemporaryAccessGrantsChanged = onTemporaryAccessGrantsChanged
         self.canRequestHumanApproval = canRequestHumanApproval
     }
 
@@ -2753,6 +3021,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let classification = configuredGate.map {
             classifySecretGateRequest(gateID: $0.id, request: request)
         }
+        let currentAgentTaskContext = agentTaskContext(pid: pid)
         let retainedProcessExplanation: String?
         if !keepsDetachedProcessAccess,
            retainedBlessingMatch != nil,
@@ -2807,6 +3076,28 @@ private final class ApprovalServer: @unchecked Sendable {
             automaticApprovalExplanation = failure.explanation
         } else {
             automaticApprovalExplanation = nil
+        }
+        if let configuredGate,
+           let classification,
+           let currentAgentTaskContext,
+           handleTemporaryAccessGrant(
+               request: request,
+               gate: configuredGate,
+               classification: classification,
+               agentTaskContext: currentAgentTaskContext,
+               launchers: launchers,
+               callerPath: callerPath,
+               awsRegistration: awsRegistration,
+               scriptApproval: scriptApproval,
+               authorizationGate: authorizationGate,
+               processChains: processChains,
+               pid: pid,
+               identity: identity,
+               peer: peer,
+               message: message
+           )
+        {
+            return
         }
         if activeBlessing == nil, let directAccessLauncher {
             do {
@@ -2926,6 +3217,12 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let promptLauncher = policyLauncher
+        let temporaryGrantCandidate = temporaryAccessGrantCandidate(
+            gate: configuredGate,
+            classification: classification,
+            launcher: launcher,
+            agentTaskContext: currentAgentTaskContext
+        )
         let transientApproval = TransientApprovalKey(
             pid: pid,
             startUsec: identity.start_usec,
@@ -3065,6 +3362,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
                     ?? retainedProcessExplanation
                     ?? automaticApprovalExplanation,
+                temporaryGrantCandidate: temporaryGrantCandidate,
                 cancellation: cancellation
             )
             if decision == .canceled {
@@ -3092,6 +3390,98 @@ private final class ApprovalServer: @unchecked Sendable {
                     error: "\(request.op) denied",
                     humanApprovalDecision: "denied"
                 )
+                return
+            }
+            if decision == .temporaryWriteAccess {
+                guard !cancellation.isCanceled,
+                      self.canRequestHumanApproval(),
+                      let originalCandidate = temporaryGrantCandidate,
+                      let liveLauncher = launcherIdentities(for: identity).first(where: {
+                          $0.designatedRequirement
+                              == originalCandidate.scope.launcherDesignatedRequirement
+                      }),
+                      let refreshedCandidate = temporaryAccessGrantCandidate(
+                          gate: configuredGate,
+                          classification: classification,
+                          launcher: liveLauncher,
+                          agentTaskContext: agentTaskContext(pid: pid)
+                      ),
+                      refreshedCandidate.scope == originalCandidate.scope
+                else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        approvalSource: "Manual",
+                        reason: "Temporary Access Grant eligibility changed before activation",
+                        launcher: temporaryGrantCandidate?.launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "temporary access grant eligibility changed",
+                        humanApprovalDecision: "approved"
+                    )
+                    return
+                }
+                do {
+                    let payload = try self.approvedPayload(
+                        for: request,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity
+                    )
+                    guard self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Manual",
+                        reason: "Temporary Access Grant — Write Access",
+                        launcher: refreshedCandidate.launcher
+                    )) else {
+                        self.reply(
+                            peer,
+                            to: message,
+                            ok: false,
+                            error: "approval audit log is unavailable",
+                            humanApprovalDecision: "approved"
+                        )
+                        return
+                    }
+                    self.temporaryAccessGrants.startWithLease(
+                        scope: refreshedCandidate.scope,
+                        launcherName: refreshedCandidate.launcherName,
+                        authorizationGateName: refreshedCandidate.authorizationGateName
+                    ) { _ in
+                        self.reply(
+                            peer,
+                            to: message,
+                            ok: true,
+                            error: nil,
+                            secrets: payload.secrets,
+                            value: payload.value,
+                            humanApprovalDecision: "approved"
+                        )
+                    }
+                    self.onTemporaryAccessGrantsChanged()
+                } catch {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        approvalSource: "Manual",
+                        reason: error.localizedDescription,
+                        launcher: refreshedCandidate.launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: error.localizedDescription,
+                        humanApprovalDecision: "approved"
+                    )
+                }
                 return
             }
             do {
@@ -3155,6 +3545,91 @@ private final class ApprovalServer: @unchecked Sendable {
                 )
             }
         }
+    }
+
+    private func handleTemporaryAccessGrant(
+        request: ApprovalRequest,
+        gate: SecretGate,
+        classification: SecretGateRequestClassification,
+        agentTaskContext: AgentTaskContext,
+        launchers: [LauncherIdentity],
+        callerPath: String,
+        awsRegistration: AWSRegistrationCandidate?,
+        scriptApproval: ScriptApproval?,
+        authorizationGate: RetainedAuthorizationGate,
+        processChains: [[RetainedProcessChainNode]],
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        peer: xpc_connection_t,
+        message: xpc_object_t
+    ) -> Bool {
+        for launcher in launchers {
+            do {
+                let handled = try temporaryAccessGrants.withActiveLease(
+                    authorizationGateID: gate.id,
+                    launcherDesignatedRequirement: launcher.designatedRequirement,
+                    launcherRuntimeProtection: launcher.runtimeProtection,
+                    agentTaskContext: agentTaskContext,
+                    classification: classification
+                ) { _ in
+                    let payload = try approvedPayload(
+                        for: request,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity
+                    )
+                    let accessRequestID = UUID()
+                    guard onAccessRequest(accessRequestRecord(
+                        id: accessRequestID,
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Auto",
+                        reason: "Temporary Access Grant — Write Access",
+                        launcher: launcher
+                    )) else {
+                        reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                        return true
+                    }
+                    rememberRetainedProvenance(
+                        at: authorizationGate,
+                        launcher: launcher,
+                        chains: processChains,
+                        retainedMatch: nil
+                    )
+                    Task { @MainActor in
+                        self.onAutoApproval(autoApprovalRecord(
+                            accessRequestID: accessRequestID,
+                            request: request,
+                            script: scriptApproval,
+                            launcher: launcher
+                        ))
+                    }
+                    reply(
+                        peer,
+                        to: message,
+                        ok: true,
+                        error: nil,
+                        secrets: payload.secrets,
+                        value: payload.value
+                    )
+                    return true
+                }
+                if handled == true { return true }
+            } catch {
+                _ = onAccessRequest(accessRequestRecord(
+                    request: request,
+                    callerPath: callerPath,
+                    decision: "Failed",
+                    approvalSource: "Auto",
+                    reason: error.localizedDescription,
+                    launcher: launcher
+                ))
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+                return true
+            }
+        }
+        return false
     }
 
     private func matchingBlessedScript(
@@ -5936,6 +6411,7 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?,
+    temporaryGrantCandidate: TemporaryAccessGrantCandidate? = nil,
     allowsPersistentApproval: Bool = false,
     cancellation: ApprovalCancellation? = nil
 ) -> ApprovalDecision {
@@ -5972,6 +6448,7 @@ private func showApprovalAlert(
             content: content,
             maximumHeight: maximumHeight,
             allowsPersistentApproval: allowsPersistentApproval,
+            temporaryGrantCandidate: temporaryGrantCandidate,
             decide: {
                 decision = $0
                 #if !DEBUG
@@ -5995,7 +6472,9 @@ private func showApprovalAlert(
         guard let panel, NSApp.modalWindow === panel else { return }
         NSApp.stopModal()
     }) != false else { return .canceled }
-    defer { cancellation?.stopObserving() }
+    defer {
+        cancellation?.stopObserving()
+    }
     fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
     panel.center()
     panel.orderFrontRegardless()
@@ -6167,6 +6646,7 @@ private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     var maximumHeight: CGFloat? = nil
     var allowsPersistentApproval = false
+    let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
@@ -6281,6 +6761,30 @@ private struct ApprovalPromptView: View {
                         .tint(.blue)
                         .frame(maxWidth: .infinity)
                 }
+            }
+
+            if let candidate = temporaryGrantCandidate {
+                Button { decide(.temporaryWriteAccess) } label: {
+                    HStack {
+                        Image(systemName: "clock.badge.checkmark")
+                        Text("Allow Write Access for 10 Minutes…")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .accessibilityLabel(
+                    "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+                )
+
+                Text(
+                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
             }
 
             Text(allowsPersistentApproval
@@ -6530,11 +7034,158 @@ private struct AutomaticAccessToastView: View {
     }
 }
 
+private func temporaryAccessGrantRemainingText(_ remaining: TimeInterval) -> String {
+    let seconds = max(0, Int(ceil(remaining)))
+    return String(format: "%d:%02d", seconds / 60, seconds % 60)
+}
+
+private func temporaryAccessGrantMenuTitle(
+    _ grant: TemporaryAccessGrantSnapshot,
+    wallNow: Date,
+    monotonicNow: TimeInterval
+) -> String {
+    let remaining = temporaryAccessGrantRemainingText(
+        grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow)
+    )
+    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) — End"
+}
+
+private final class TemporaryAccessGrantPanel: NSPanel {
+    private var allowsKey = false
+
+    override var canBecomeKey: Bool { allowsKey }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow {
+            allowsKey = true
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+
+    override func close() {}
+    override func performClose(_ sender: Any?) {}
+}
+
+@MainActor
+private func makeTemporaryAccessGrantPanel() -> TemporaryAccessGrantPanel {
+    let panel = TemporaryAccessGrantPanel(
+        contentRect: .zero,
+        styleMask: [.borderless, .nonactivatingPanel],
+        backing: .buffered,
+        defer: false
+    )
+    panel.isFloatingPanel = true
+    panel.level = .statusBar
+    panel.hidesOnDeactivate = false
+    panel.canHide = false
+    panel.worksWhenModal = true
+    panel.isOpaque = false
+    panel.backgroundColor = .clear
+    panel.hasShadow = true
+    panel.animationBehavior = .none
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    return panel
+}
+
+private struct TemporaryAccessGrantStripView: View {
+    let grants: [TemporaryAccessGrantSnapshot]
+    let wallNow: Date
+    let monotonicNow: TimeInterval
+    let end: (UUID) -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Label("TEMPORARY WRITE ACCESS", systemImage: "exclamationmark.shield.fill")
+                .font(.caption.weight(.semibold))
+                .tracking(1.1)
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .accessibilityLabel("Warning: Temporary Write Access is active")
+
+            Divider()
+
+            ForEach(Array(grants.enumerated()), id: \.element.id) { index, grant in
+                TemporaryAccessGrantRow(
+                    grant: grant,
+                    remaining: grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow),
+                    end: { end(grant.id) }
+                )
+                if index != grants.indices.last {
+                    Divider().padding(.leading, 42)
+                }
+            }
+        }
+        .frame(width: 430)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(reduceTransparency
+                    ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
+                    : AnyShapeStyle(.regularMaterial))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.separator.opacity(0.8), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct TemporaryAccessGrantRow: View {
+    let grant: TemporaryAccessGrantSnapshot
+    let remaining: TimeInterval
+    let end: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(grant.launcherName) → \(grant.authorizationGateName)")
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(temporaryAccessGrantRemainingText(remaining)) remaining")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining"
+            )
+
+            Button("End", action: end)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel(
+                    "End temporary Write Access for \(grant.launcherName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID)"
+                )
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+}
+
 private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: NSSize) -> NSRect {
     let margin: CGFloat = 8
     let x = min(max(anchor.midX - size.width / 2, visibleFrame.minX + margin), visibleFrame.maxX - size.width - margin)
     let y = max(visibleFrame.minY + margin, min(anchor.minY - 4, visibleFrame.maxY) - size.height)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
+}
+
+@MainActor
+private func reanchorToastWindows(below frame: NSRect, visibleFrame: NSRect) {
+    for window in toastWindows where window.isVisible {
+        window.setFrame(
+            autoApprovalToastFrame(anchor: frame, visibleFrame: visibleFrame, size: window.frame.size),
+            display: true
+        )
+    }
 }
 
 @MainActor
@@ -6560,7 +7211,11 @@ private func showAutomaticAccessToast(
     hostingView.frame.size = size
     let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-    let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
+    let frame = autoApprovalToastFrame(
+        anchor: temporaryAccessGrantStripFrame ?? anchor,
+        visibleFrame: visibleFrame,
+        size: size
+    )
     window.setFrame(frame, display: false)
     window.level = .statusBar
     window.isOpaque = false
@@ -6729,6 +7384,10 @@ private func runSecretMutationSelfCheck() -> Int32 {
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    guard processEnvironmentValueSelfCheck() else {
+        print("bounded peer environment self-check failed")
+        return 2
+    }
     guard !makeApprovalPanel().isMovableByWindowBackground else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
@@ -6786,6 +7445,63 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         fallback: "/opt/homebrew/bin/gh"
     )
+    let candidateGate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: [],
+        defaultProtection: .noAccess,
+        appPolicies: []
+    )
+    let candidateLauncher = LauncherIdentity(
+        pid: 41,
+        path: "/Applications/Codex.app/Contents/MacOS/Codex",
+        identifier: "com.openai.codex",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.openai.codex" and anchor apple generic"#,
+        runtimeProtection: .hardened
+    )
+    let candidateAgent = AgentTaskContext(
+        provider: .codex,
+        id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    )
+    guard temporaryAccessGrantCandidate(
+        gate: candidateGate,
+        classification: .mutating,
+        launcher: candidateLauncher,
+        agentTaskContext: candidateAgent
+    )?.scope.agentTaskContext == candidateAgent,
+    temporaryAccessGrantCandidate(
+        gate: candidateGate,
+        classification: .readOnly,
+        launcher: candidateLauncher,
+        agentTaskContext: candidateAgent
+    ) == nil,
+    temporaryAccessGrantCandidate(
+        gate: candidateGate,
+        classification: .secretDump,
+        launcher: candidateLauncher,
+        agentTaskContext: candidateAgent
+    ) == nil,
+    temporaryAccessGrantCandidate(
+        gate: nil,
+        classification: .mutating,
+        launcher: candidateLauncher,
+        agentTaskContext: candidateAgent
+    ) == nil,
+    temporaryAccessGrantCandidate(
+        gate: candidateGate,
+        classification: .mutating,
+        launcher: LauncherIdentity(
+            pid: 41,
+            path: candidateLauncher.path,
+            identifier: candidateLauncher.identifier,
+            teamIdentifier: candidateLauncher.teamIdentifier,
+            designatedRequirement: candidateLauncher.designatedRequirement,
+            runtimeProtection: .hardenedRuntimeMissing
+        ),
+        agentTaskContext: candidateAgent
+    ) == nil
+    else { return 1 }
     let automaticApprovalExplanation = LauncherAppVerificationFailure(
         appName: "ChatGPT",
         resourcesUnreadable: true
@@ -6819,6 +7535,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 blessing: promptBlessing,
                 sections: []
             ),
+            temporaryGrantCandidate: nil,
             decide: { _ in },
             contentSizeDidChange: {}
         )
@@ -6840,6 +7557,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 sections: []
             ),
             maximumHeight: 500,
+            temporaryGrantCandidate: nil,
             decide: { _ in },
             contentSizeDidChange: {}
         )
@@ -8037,6 +8755,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         args: ["auth", "token"],
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
+    let temporaryGrant = key(startUsec: 987, args: ["repo", "create"])
     let fallbackAfterDenial = key(args: ["auth", "token"])
     var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
@@ -8047,8 +8766,14 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         return 1
     }
     cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 200))
+    cache.remember(
+        .temporaryWriteAccess,
+        for: temporaryGrant,
+        now: Date(timeIntervalSince1970: 200)
+    )
     guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
+          cache.decision(for: temporaryGrant, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 501)) == nil
     else {
@@ -8400,6 +9125,90 @@ private func runMenuStatusSelfCheck() -> Int32 {
         )
     }
     let policyDenial = retrospectiveRecord("Denied")
+    let grantController = TemporaryAccessGrantController()
+    let grantWallNow = Date(timeIntervalSince1970: 20_000)
+    let grantMonotonicNow: TimeInterval = 100
+    let grantAgent = AgentTaskContext(
+        provider: .codex,
+        id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+    )
+    let grant = grantController.start(
+        scope: TemporaryAccessGrantScope(
+            authorizationGateID: "aws",
+            launcherDesignatedRequirement: #"identifier "com.openai.codex" and anchor apple generic"#,
+            launcherRuntimeRequirement: .hardened,
+            agentTaskContext: grantAgent
+        ),
+        launcherName: "Codex",
+        authorizationGateName: "AWS Authorization Gate",
+        wallNow: grantWallNow,
+        monotonicNow: grantMonotonicNow
+    )
+    _ = grantController.start(
+        scope: TemporaryAccessGrantScope(
+            authorizationGateID: "gh",
+            launcherDesignatedRequirement: #"identifier "com.anthropic.claude-code" and anchor apple generic"#,
+            launcherRuntimeRequirement: .hardened,
+            agentTaskContext: AgentTaskContext(provider: .claudeCode, id: UUID())
+        ),
+        launcherName: "Claude Code",
+        authorizationGateName: "GH Authorization Gate",
+        wallNow: grantWallNow,
+        monotonicNow: grantMonotonicNow
+    )
+    let grantSnapshots = grantController.snapshots(
+        wallNow: grantWallNow,
+        monotonicNow: grantMonotonicNow
+    )
+    let stripView = NSHostingView(rootView: TemporaryAccessGrantStripView(
+        grants: grantSnapshots,
+        wallNow: grantWallNow,
+        monotonicNow: grantMonotonicNow,
+        end: { _ in }
+    ))
+    let grantPanel = makeTemporaryAccessGrantPanel()
+    let sampleStripFrame = NSRect(x: 200, y: 400, width: 430, height: 120)
+    let stackedToastFrame = autoApprovalToastFrame(
+        anchor: sampleStripFrame,
+        visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+        size: NSSize(width: 360, height: 120)
+    )
+    guard grantSnapshots.count == 2,
+          temporaryAccessGrantMenuTitle(
+              grant,
+              wallNow: grantWallNow,
+              monotonicNow: grantMonotonicNow
+          ) == "Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 — End",
+          stripView.fittingSize.width == 430,
+          stackedToastFrame.maxY == sampleStripFrame.minY - 4,
+          grantPanel.styleMask.contains(.borderless),
+          grantPanel.styleMask.contains(.nonactivatingPanel),
+          grantPanel.level == .statusBar,
+          grantPanel.collectionBehavior.contains(.canJoinAllSpaces),
+          grantPanel.collectionBehavior.contains(.fullScreenAuxiliary),
+          !grantPanel.hidesOnDeactivate,
+          !grantPanel.canHide,
+          grantPanel.animationBehavior == .none
+    else {
+        print(
+            "temporary grant UI self-check failed:",
+            grantSnapshots.count,
+            temporaryAccessGrantMenuTitle(
+                grant,
+                wallNow: grantWallNow,
+                monotonicNow: grantMonotonicNow
+            ),
+            stripView.fittingSize,
+            stackedToastFrame,
+            grantPanel.styleMask.rawValue,
+            grantPanel.level.rawValue,
+            grantPanel.collectionBehavior.rawValue,
+            grantPanel.hidesOnDeactivate,
+            grantPanel.canHide,
+            grantPanel.animationBehavior.rawValue
+        )
+        return 2
+    }
     guard let historyHeading = autoApprovalHistoryHeading(hasRecords: true) else { return 1 }
     guard historyHeading.title == "Automic Authorization History",
           historyHeading.isSectionHeader,
@@ -8630,6 +9439,11 @@ private func runUpdatePreflight() async -> Int32 {
         fputs("update preflight failed: \(error.localizedDescription)\n", stderr)
         return 1
     }
+}
+
+if CommandLine.arguments.contains("--self-check-sleep") {
+    sleep(5)
+    exit(0)
 }
 
 if CommandLine.arguments.contains("--self-check-approvals") {

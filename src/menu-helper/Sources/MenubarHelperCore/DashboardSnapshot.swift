@@ -374,7 +374,7 @@ public struct SecretGateRoute: Codable, Equatable, Sendable {
     }
 }
 
-public enum SecretGateProtection: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum SecretGateProtection: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
     case noAccess
     case readOnly
     case readOnlyAndLocalWrites
@@ -496,7 +496,7 @@ public enum LauncherRuntimeProtection: Equatable, Sendable {
     public var allowsSecretGateAccess: Bool { secretGateAdmissionRequirement != nil }
 }
 
-public enum LauncherRuntimeRequirement: String, Codable, Equatable, Sendable {
+public enum LauncherRuntimeRequirement: String, Codable, Hashable, Sendable {
     case legacyUnchecked
     case hardened
     case hardenedAllowingLibraryValidationDisabled
