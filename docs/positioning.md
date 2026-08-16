@@ -7,8 +7,8 @@ and [Architecture](architecture.md).
 
 ## Product promise
 
-Automic Vault gives verified software bounded authority to apply developer
-credentials to specific operations.
+Automic Vault applies a developer credential after policy or the user allows the
+complete operation requested by verified software.
 
 A retrieval-based secrets manager decides whether an identity may receive a
 stored secret. Automic Vault authorizes the complete operation at the point
@@ -18,27 +18,27 @@ Names, and policy. Automic Vault asks the user when policy requires Approval.
 
 ## Short copy
 
-**Headline:** Control how developer credentials are used.
+**Headline:** Tools get credentials only for operations you allow.
 
-**One sentence:** Automic Vault gives verified software bounded authority to
-apply developer credentials to specific operations.
+**One sentence:** Automic Vault checks the Tool, Verified Launcher, Target,
+command, arguments, working directory, and Secret Names before applying a
+developer credential.
 
-**Contrast:** Retrieval grants possession. Automic Vault authorizes Secret Use
-at the Local Execution Boundary.
+**Contrast:** Retrieval-based managers decide who can receive a named secret.
+Automic Vault decides whether a complete operation may use it.
 
 ## Supporting claims
 
 - Automic Vault protects credentials in custody and controls their application.
-- Authorization binds the complete operation, not only an identity or Secret
-  Name.
+- Authorization covers the software identity, Secret Names, Tool, Target,
+  command, arguments, and working directory.
 - Tool-specific Authorization Gates distinguish read, write, disclosure, and
   elevated credential use.
 - Policy can authorize recognized operations. The user handles requests that
   require Approval.
-- From an eligible agent write Approval, the user can explicitly allow Write
-  Access for that exact Verified Launcher, Tool-specific Authorization Gate,
-  and agent task for ten minutes. A persistent strip shows the grant and offers
-  an immediate End action throughout its lifetime.
+- An eligible agent write Approval can grant ten minutes of Write Access to one
+  Verified Launcher, Tool-specific Authorization Gate, and agent task. A
+  persistent strip shows the grant and provides an End action.
 - Existing developer commands continue to work above the security boundary.
 
 ## Claim boundaries
@@ -67,7 +67,7 @@ sandboxes the whole system, or makes verified software trustworthy.
 ## Architectural proof
 
 - [ADR 0010](adr/0010-no-ungated-secret-retrieval.md) prohibits Gate Clients
-  from retrieving a Secret merely by naming it.
+  from retrieving a Secret by Secret Name alone.
 - [Authorization Gates and Policies](adr/0002-authorization-gates-and-policies.md)
   bind policy to recognized operations and their characteristics.
 - [Local Execution Boundary](adr/0001-local-execution-boundary.md) keeps
