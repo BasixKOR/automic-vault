@@ -1,5 +1,5 @@
 #include <Security/Security.h>
-#include <mach-o/dyld.h>
+#include <libproc.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdbool.h>
@@ -20,10 +20,9 @@ static void forward_signal(int signal_number) {
 }
 
 static char *copy_self_path(void) {
-    uint32_t capacity = 0;
-    _NSGetExecutablePath(NULL, &capacity);
-    char *path = malloc(capacity);
-    if (path == NULL || _NSGetExecutablePath(path, &capacity) != 0) {
+    char *path = malloc(PROC_PIDPATHINFO_MAXSIZE);
+    if (path == NULL
+        || proc_pidpath(getpid(), path, PROC_PIDPATHINFO_MAXSIZE) <= 0) {
         free(path);
         return NULL;
     }

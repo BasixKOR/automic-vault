@@ -40,3 +40,6 @@ codesign --force --sign - --options runtime \
     --identifier com.automicvault.launcher-bundle.test "$launcher"
 
 "$launcher"
+mkdir "$work/bin"
+ln -s "$launcher" "$work/bin/test"
+"$work/bin/test"
