@@ -8830,6 +8830,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         args: ["auth", "token"],
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
+    let temporaryGrant = key(startUsec: 987, args: ["repo", "create"])
     let fallbackAfterDenial = key(args: ["auth", "token"])
     var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
@@ -8840,8 +8841,14 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         return 1
     }
     cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 200))
+    cache.remember(
+        .temporaryWriteAccess,
+        for: temporaryGrant,
+        now: Date(timeIntervalSince1970: 200)
+    )
     guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
+          cache.decision(for: temporaryGrant, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 501)) == nil
     else {
