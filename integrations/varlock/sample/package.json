@@ -1,0 +1,13 @@
+{
+  "name": "automic-vault-varlock-sample",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node app.mjs",
+    "test": "AUTOMIC_VAULT_VARLOCK_HELPER=/usr/bin/printf node app.mjs"
+  },
+  "dependencies": {
+    "@automicvault/varlock-plugin": "file:..",
+    "varlock": "^1.16.1"
+  }
+}

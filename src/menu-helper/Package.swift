@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .executable(name: "AutomicVaultMenubar", targets: ["MenubarHelper"]),
         .executable(name: "AutomicVaultLauncher", targets: ["LauncherBundleRunner"]),
+        .executable(name: "AutomicVaultVarlockPlugin", targets: ["VarlockPluginHelper"]),
     ],
     dependencies: [
         .package(url: "https://github.com/mxcl/AppUpdater.git", from: "4.1.0"),
@@ -30,6 +31,7 @@ let package = Package(
             name: "LauncherBundleRunner",
             linkerSettings: [.linkedFramework("Security")]
         ),
+        .executableTarget(name: "VarlockPluginHelper"),
         .executableTarget(
             name: "MenubarHelper",
             dependencies: [
