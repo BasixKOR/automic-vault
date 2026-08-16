@@ -7,6 +7,20 @@ Automic Vault protects developer credentials at two boundaries: where they are s
 
 This document defines the language used across the Automic Vault ecosystem. Product copy should favor the user-facing terms. Architecture and implementation may use the precise terms where the distinction affects security.
 
+## Product thesis
+
+Automic Vault grants bounded Developer Authority over a complete operation. A
+Launcher does not gain authority to retrieve a Secret merely by presenting an
+identity or Secret Name. Each Authorization Decision covers one complete,
+immutable Authorization Request, including the Verified Launcher, Gate Client,
+Target, command, arguments, working directory, requested Secret Names, and
+selected Secret Value sources.
+
+Secret Application is the normal use of a Secret. Secret Disclosure is a
+separate operation whose Authorization Request and Authorization Decision must
+identify it explicitly. Execution Gates apply the same authority model to
+controlled operations that use no Secret.
+
 ## Security model
 
 The primary adversary is untrusted or compromised code running with the user's normal privileges: an agent, dependency, plugin, script, or supply-chain payload. Automic Vault builds on macOS code signing, Keychain, TCC, Hardened Runtime, and process identity, with the user as the final authority.

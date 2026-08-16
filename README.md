@@ -1,6 +1,6 @@
 # Automic Vault [![Knock Knock](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
 
-> A new kind of secrets manager for a new era of development.
+> Control how developer credentials are used.
 
 ## Quickstart
 
@@ -25,7 +25,7 @@
 
 ## What is Automic Vault?
 
-Automic Vault protects developer credentials at two boundaries: where they are stored and where they are used. It finds credentials that any process running as you can trivially retrieve from plaintext files, environment variables, permissive Keychain items, or credential-helper commands, then moves supported tools toward protected storage. It also controls the application of those credentials, authorizing each operation according to the verified Launcher, Target, command, and policy, or asking you when policy cannot decide.
+Automic Vault gives verified software bounded authority to apply developer credentials to specific operations. It protects developer credentials at two boundaries: where they are stored and where they are used. It finds credentials that any process running as you can retrieve from plaintext files, environment variables, permissive Keychain items, or credential-helper commands, then moves supported tools toward protected storage. It authorizes each credential operation according to the Verified Launcher, Target, command, and policy, or asks you when policy cannot decide.
 
 The primary adversary is untrusted or compromised code already running with your normal user privileges: an agent, dependency, plugin, script, or supply-chain payload. Automic Vault builds on macOS code signing, Keychain, TCC, Hardened Runtime, and process identity, with you as the final authority. It does not claim to contain a root or kernel compromise, prevent arbitrary local destruction, or make a Target trustworthy after it receives a secret.
 

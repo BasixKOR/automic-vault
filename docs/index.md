@@ -2,6 +2,7 @@
 
 ## Security model
 
+- [Product Positioning](positioning.md) — canonical product promise, supporting claims, and messaging limits
 - [Domain Language](domain-language.md) — canonical product and security terms
 - [Architecture](architecture.md) — contexts, invariants, and authorization flow
 - [Architecture Decisions](adr/) — accepted security and design decisions
