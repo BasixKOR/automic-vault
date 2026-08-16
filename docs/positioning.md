@@ -18,7 +18,7 @@ Names, and policy. Automic Vault asks the user when policy requires Approval.
 
 ## Short copy
 
-**Headline:** Tools get credentials only for operations you allow.
+**Headline:** Credentials go only to operations you allow.
 
 **One sentence:** Automic Vault checks the Tool, Verified Launcher, Target,
 command, arguments, working directory, and Secret Names before applying a
