@@ -29,6 +29,25 @@ Automic Vault gives verified software bounded authority to apply developer crede
 
 The primary adversary is untrusted or compromised code already running with your normal user privileges: an agent, dependency, plugin, script, or supply-chain payload. Automic Vault builds on macOS code signing, Keychain, TCC, Hardened Runtime, and process identity, with you as the final authority. It does not claim to contain a root or kernel compromise, prevent arbitrary local destruction, or make a Target trustworthy after it receives a secret.
 
+### How Automic Vault Differs
+
+A retrieval-based secrets manager decides whether an identity may receive a
+stored secret. Automic Vault decides whether a Verified Launcher may apply the
+requested Secrets to a complete operation.
+
+The Authorization Request binds the Gate Client, Target, command, arguments,
+working directory, and selected Secret Value sources. Policy evaluates that
+request on the Mac where it runs. Recognized operations can run automically;
+other requests require Approval or fail closed.
+
+With Read Only access, one GitHub token produces different decisions. Policy
+allows `gh issue list`, requires Approval for `gh issue create`, and treats
+`gh auth token` as Secret Disclosure. All three use the same credential; the
+requested operation determines the authority required.
+
+Automic Vault controls the handoff. After Secret Application, the Target
+controls the Secret in its memory, helpers, child processes, and output.
+
 ### Automic Vault Is
 
 - A secrets manager with granular access controls designed for developers that
