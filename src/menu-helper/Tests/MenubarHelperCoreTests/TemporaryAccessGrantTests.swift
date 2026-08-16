@@ -175,7 +175,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let leaseFinished = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
+    Thread.detachNewThread {
         controller.withActiveLease(
             authorizationGateID: "aws",
             launcherDesignatedRequirement: "identifier com.example.launcher",
@@ -193,7 +193,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     defer { release.signal() }
     try #require(entered.wait(timeout: .now() + 5) == .success)
     let cancelFinished = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
+    Thread.detachNewThread {
         _ = controller.cancel(id: grant.id)
         cancelFinished.signal()
     }
@@ -209,7 +209,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let activationFinished = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
+    Thread.detachNewThread {
         _ = controller.startWithLease(
             scope: scope(),
             launcherName: "Codex",
@@ -223,7 +223,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     defer { release.signal() }
     try #require(entered.wait(timeout: .now() + 5) == .success)
     let cancelFinished = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
+    Thread.detachNewThread {
         controller.cancelAll()
         cancelFinished.signal()
     }
