@@ -177,6 +177,16 @@ import Testing
     #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
 }
 
+@Test func removingLauncherPreservesLegacyCanonicalPathExecutionValue() throws {
+    let data = Data(#"[{"path":"/tmp/script","checksum":"checksum","keys":["Z","A"],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"capabilities":{},"launchers":[{"bundleIdentifier":"com.example.launcher","requirement":"identifier \"com.example.launcher\""}],"blessedAt":0}]"#.utf8)
+    let script = try #require(JSONDecoder().decode([BlessedScript].self, from: data).first)
+    let updated = script.removingLauncher(requirement: #"identifier "com.example.launcher""#)
+
+    #expect(updated.allowsCanonicalPathExecution == nil)
+    #expect(updated.keys == script.keys)
+    #expect(updated.launchers.isEmpty)
+}
+
 @Test func reblessingPreservesLauncherEndorsementsAndAddsTheRequestedLauncher() {
     let terminal = BlessedScriptLauncher(
         bundleIdentifier: "com.apple.Terminal",

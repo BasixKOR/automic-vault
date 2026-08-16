@@ -403,8 +403,7 @@ public func launcherBundleCodeEvidence(
     guard SecCodeCopySigningInformation(code, informationFlags, &rawInfo) == errSecSuccess,
           let dictionary = rawInfo as? [CFString: Any],
           let identifier = dictionary[kSecCodeInfoIdentifier] as? String,
-          let requirement = dictionary[kSecCodeInfoDesignatedRequirement] as! SecRequirement?,
-          let requirementText = launcherBundleRequirementString(requirement)
+          let requirementText = launcherBundleDesignatedRequirement(from: dictionary)
     else { throw LauncherBundleVerificationError.invalidBundle }
     var identifiers = (dictionary[kSecCodeInfoCdHashes] as? [Data])
         ?? [dictionary[kSecCodeInfoUnique] as? Data].compactMap(\.self)
@@ -756,6 +755,14 @@ private func launcherBundleRequirementString(_ requirement: SecRequirement) -> S
           let text
     else { return nil }
     return text as String
+}
+
+func launcherBundleDesignatedRequirement(from dictionary: [CFString: Any]) -> String? {
+    guard let value = dictionary[kSecCodeInfoDesignatedRequirement] as CFTypeRef?,
+          CFGetTypeID(value) == SecRequirementGetTypeID()
+    else { return nil }
+    let requirement = unsafeDowncast(value, to: SecRequirement.self)
+    return launcherBundleRequirementString(requirement)
 }
 
 private func launcherBundleEnrollmentPrecedes(

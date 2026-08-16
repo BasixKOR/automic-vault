@@ -33,6 +33,7 @@ enum LauncherBundleCreationError: Error, LocalizedError {
     case iconUnavailable
     case unsafeManagedDirectory
     case cliUnavailable
+    case invalidDisplayName
     case invalidCommandName
     case commandOccupied
     case destinationOccupied
@@ -47,6 +48,7 @@ enum LauncherBundleCreationError: Error, LocalizedError {
         case .iconUnavailable: "The bundled Launcher Bundle icon is unavailable"
         case .unsafeManagedDirectory: "The Launcher Bundle staging directory is unsafe"
         case .cliUnavailable: "Install or update the av CLI before installing a Launcher Bundle"
+        case .invalidDisplayName: "Choose a name without path separators or control characters"
         case .invalidCommandName: "Choose a command name without spaces or path separators"
         case .destinationOccupied: "A file already occupies the Launcher Bundle destination"
         case .commandOccupied: "A different file already occupies the Launcher Bundle command path"
@@ -75,7 +77,7 @@ func developerIDApplicationIdentities() -> [String] {
 
 func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> LauncherBundleCandidate {
     guard let displayName = launcherBundleDisplayName(from: options.displayName)
-    else { throw LauncherBundlePayloadError.notRegularMachO }
+    else { throw LauncherBundleCreationError.invalidDisplayName }
     guard let commandName = launcherBundleCommandName(from: options.commandName)
     else { throw LauncherBundleCreationError.invalidCommandName }
     guard options.signingKind == .adHoc

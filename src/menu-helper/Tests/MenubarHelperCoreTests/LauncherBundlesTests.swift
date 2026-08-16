@@ -96,6 +96,13 @@ import Testing
     #expect(launcherBundleClaimsReservedIdentity(at: directory))
 }
 
+@Test func invalidLauncherBundleRequirementEvidenceFailsClosed() {
+    #expect(launcherBundleDesignatedRequirement(from: [:]) == nil)
+    #expect(launcherBundleDesignatedRequirement(from: [
+        kSecCodeInfoDesignatedRequirement: "not a requirement",
+    ]) == nil)
+}
+
 @Test func launcherBundleVerificationPinsTheSignedPayload() throws {
     let generation = UUID()
     let identifier = launcherBundleIdentifierPrefix + generation.uuidString.lowercased()

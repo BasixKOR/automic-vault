@@ -185,6 +185,23 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         self.launchers = launchers
         self.blessedAt = blessedAt
     }
+
+    func removingLauncher(requirement: String) -> BlessedScript {
+        BlessedScript(copying: self, launchers: launchers.filter { $0.requirement != requirement })
+    }
+
+    private init(copying script: BlessedScript, launchers: [BlessedScriptLauncher]) {
+        path = script.path
+        checksum = script.checksum
+        keys = script.keys
+        target = script.target
+        replaceExistingEnv = script.replaceExistingEnv
+        allowMissingKeys = script.allowMissingKeys
+        allowsCanonicalPathExecution = script.allowsCanonicalPathExecution
+        capabilities = script.capabilities
+        self.launchers = launchers
+        blessedAt = script.blessedAt
+    }
 }
 
 public enum BlessedScriptManifestError: Error, Equatable, LocalizedError {
@@ -408,20 +425,7 @@ public func removeLauncherFromBlessedScripts(
         else { return errSecDecode }
         scripts = decoded
     }
-    let updated = scripts.map { script in
-        BlessedScript(
-            path: script.path,
-            checksum: script.checksum,
-            keys: script.keys,
-            target: script.target,
-            replaceExistingEnv: script.replaceExistingEnv,
-            allowMissingKeys: script.allowMissingKeys,
-            allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
-            capabilities: script.capabilities,
-            launchers: script.launchers.filter { $0.requirement != requirement },
-            blessedAt: script.blessedAt
-        )
-    }
+    let updated = scripts.map { $0.removingLauncher(requirement: requirement) }
     return saveBlessedScripts(updated, service: service, account: account)
 }
 
