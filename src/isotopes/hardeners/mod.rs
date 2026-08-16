@@ -246,6 +246,19 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     metadata
 }
 
+pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
+    let mut gates = vec![
+        aws_cli::secret_gate(),
+        docker::secret_gate(),
+        homebrew::secret_gate(),
+        gh_cli::secret_gate(),
+        stripe_cli::secret_gate(),
+        supabase::secret_gate(),
+    ];
+    gates.extend(env_wrapper::secret_gates());
+    gates
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

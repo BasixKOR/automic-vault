@@ -79,19 +79,7 @@ pub(crate) fn run_detectors_json<W: Write>(stdout: &mut W) -> i32 {
 pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
     let report = serde_json::json!({
         "hardeners": isotopes::hardener_metadata().into_iter().map(|hardener| {
-            let secret_gate = hardener.secret_gate.map(|gate| serde_json::json!({
-                "id": gate.id,
-                "key_patterns": gate.key_patterns,
-                "routes": gate.routes.into_iter().map(|route| serde_json::json!({
-                    "operation": route.operation,
-                    "script_path": route.script_path,
-                    "target_path": route.target_path,
-                    "caller_identifiers": route.caller_identifiers,
-                    "key_patterns": route.key_patterns,
-                    "replace_existing_env": route.replace_existing_env,
-                    "allow_missing_keys": route.allow_missing_keys,
-                })).collect::<Vec<_>>(),
-            }));
+            let secret_gate = hardener.secret_gate.map(json_secret_gate);
             serde_json::json!({
                 "name": hardener.name,
                 "documentation": hardener.documentation,
@@ -112,6 +100,33 @@ pub(crate) fn run_hardeners_json<W: Write>(stdout: &mut W) -> i32 {
     });
     let _ = writeln!(stdout, "{report}");
     0
+}
+
+pub(crate) fn run_secret_gates_json<W: Write>(stdout: &mut W) -> i32 {
+    let report = serde_json::json!({
+        "secret_gates": isotopes::secret_gate_metadata()
+            .into_iter()
+            .map(json_secret_gate)
+            .collect::<Vec<_>>(),
+    });
+    let _ = writeln!(stdout, "{report}");
+    0
+}
+
+fn json_secret_gate(gate: crate::isotopes::hardeners::SecretGateDescriptor) -> serde_json::Value {
+    serde_json::json!({
+        "id": gate.id,
+        "key_patterns": gate.key_patterns,
+        "routes": gate.routes.into_iter().map(|route| serde_json::json!({
+            "operation": route.operation,
+            "script_path": route.script_path,
+            "target_path": route.target_path,
+            "caller_identifiers": route.caller_identifiers,
+            "key_patterns": route.key_patterns,
+            "replace_existing_env": route.replace_existing_env,
+            "allow_missing_keys": route.allow_missing_keys,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn home() -> OsString {
@@ -564,6 +579,20 @@ mod tests {
 
         let report: serde_json::Value = serde_json::from_str(&output).unwrap();
         let hardeners = report["hardeners"].as_array().unwrap();
+        let hardener_gate_ids = hardeners
+            .iter()
+            .filter_map(|hardener| hardener["secret_gate"]["id"].as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut catalog_stdout = Vec::new();
+        assert_eq!(run_secret_gates_json(&mut catalog_stdout), 0);
+        let catalog: serde_json::Value = serde_json::from_slice(&catalog_stdout).unwrap();
+        let catalog_gate_ids = catalog["secret_gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|gate| gate["id"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(catalog_gate_ids, hardener_gate_ids);
         let gate = |name: &str| {
             &hardeners
                 .iter()
@@ -579,6 +608,31 @@ mod tests {
         assert!(gate("sudo").is_null());
         assert!(gate("codex").is_null());
         assert_eq!(gate("jfrog-cli")["routes"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn secret_gates_json_reports_static_catalog() {
+        let mut stdout = Vec::new();
+
+        assert_eq!(run_secret_gates_json(&mut stdout), 0);
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let gates = report["secret_gates"].as_array().unwrap();
+        let ids = gates
+            .iter()
+            .map(|gate| gate["id"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(ids.len(), gates.len());
+        assert!(ids.contains("aws"));
+        assert!(ids.contains("docker"));
+        assert!(ids.contains("jfrog-cli"));
+        assert_eq!(
+            gates.iter().find(|gate| gate["id"] == "docker").unwrap()["routes"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]

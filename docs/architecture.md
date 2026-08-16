@@ -36,6 +36,11 @@ Detectors inspect the developer environment without changing it. A Scan produces
 
 Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. The Hardener delegates Isotope updates to Homebrew when the Isotope came from the tap. For a direct Isotope install, it verifies the release digest and Automic Vault code signature, installs into `/usr/local/bin`, and Doctor directs the user back to the Hardener when the tap publishes a new digest.
 
+Hardener detection is point-in-time diagnostic state, not runtime authorization
+evidence. Runtime Authorization consumes static Gate definitions and performs
+the required live identity, integrity, request, policy, and recording checks at
+the Local Execution Boundary.
+
 A Hardener may instead install an unmodified vendor release when the upstream
 artifact supports the boundary more safely than a package-manager build. That
 path must verify the vendor and platform distribution identities, preserve
@@ -66,6 +71,12 @@ The Direct Secret Gate handles direct `av inject` requests that do not match a
 Tool-specific gate. It defaults to Approval Required. A user may add a Direct
 Access Rule for one exact Secret Name and Verified Launcher, knowingly allowing
 that Launcher to select the Target and arguments on future requests.
+
+The approval service loads the signed app bundle's static Gate catalog when it
+starts. Missing, malformed, empty, or duplicate definitions fail startup. An
+exact request for a known Tool-specific Gate remains attached to that Gate
+regardless of point-in-time Hardener detection and cannot fall through to the
+broader Direct Secret Gate because a diagnostic check is unavailable.
 
 ### Launcher Packaging
 

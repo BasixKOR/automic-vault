@@ -291,6 +291,7 @@ where
         }
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
         Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
+        Some("__secret-gates-json") if rest.is_empty() => scan::run_secret_gates_json(stdout),
         Some("doctor") => {
             let Some((selector, json)) = parse_doctor_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");

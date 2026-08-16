@@ -776,6 +776,14 @@ struct HardenerReport: Codable {
     let hardeners: [HardenerMetadata]
 }
 
+private struct SecretGateReport: Codable {
+    let secretGates: [SecretGateDescriptor]
+
+    enum CodingKeys: String, CodingKey {
+        case secretGates = "secret_gates"
+    }
+}
+
 private struct DoctorReport: Codable {
     let results: [DoctorResult]
 }
@@ -815,6 +823,26 @@ public func detectorMetadata(from detectorsJSON: Data) throws -> [DetectorMetada
 
 public func hardenerMetadata(from hardenersJSON: Data) throws -> [HardenerMetadata] {
     try JSONDecoder().decode(HardenerReport.self, from: hardenersJSON).hardeners
+}
+
+public func secretGateDescriptors(from secretGatesJSON: Data) throws -> [SecretGateDescriptor] {
+    let gates = try JSONDecoder().decode(SecretGateReport.self, from: secretGatesJSON).secretGates
+    guard !gates.isEmpty,
+          Set(gates.map(\.id)).count == gates.count,
+          gates.allSatisfy({ gate in
+              !gate.id.isEmpty && !gate.routes.isEmpty && gate.routes.allSatisfy {
+                  !$0.operation.isEmpty
+                      && $0.targetPath.hasPrefix("/")
+                      && !$0.callerIdentifiers.isEmpty
+              }
+          })
+    else {
+        throw DecodingError.dataCorrupted(.init(
+            codingPath: [],
+            debugDescription: "Secret Gate catalog is empty, duplicated, or invalid"
+        ))
+    }
+    return gates
 }
 
 public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = true) throws -> [DoctorIssue] {
@@ -879,18 +907,29 @@ public func loadSecretGates(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
+    let descriptors = hardeners.compactMap { hardener -> SecretGateDescriptor? in
+        guard let descriptor = hardener.secretGate,
+              hardener.hardened || descriptor.routes
+                .compactMap(\.scriptPath)
+                .contains(where: FileManager.default.fileExists(atPath:))
+        else { return nil }
+        return descriptor
+    }
+    return loadSecretGates(descriptors: descriptors, service: service, account: account)
+}
+
+public func loadSecretGates(
+    descriptors: [SecretGateDescriptor],
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> [SecretGate] {
     let loadedRecords = loadSecretGatePolicyRecords(service: service, account: account)
     let records: [SecretGatePolicyRecord] = switch loadedRecords {
     case .success(let records): records
     case .failure: []
     }
     let policiesAreReadable = if case .success = loadedRecords { true } else { false }
-    return hardeners.compactMap { hardener -> SecretGate? in
-        guard let descriptor = hardener.secretGate,
-              hardener.hardened || descriptor.routes
-                .compactMap(\.scriptPath)
-                .contains(where: FileManager.default.fileExists(atPath:))
-        else { return nil }
+    return descriptors.map { descriptor in
         let gateRecords = records.filter { $0.gateID == descriptor.id }
         let prototype = SecretGate(
             id: descriptor.id,
@@ -1885,6 +1924,16 @@ public func loadDetectorMetadata(avExecutableURL: URL) -> [DetectorMetadata] {
 public func loadHardenerMetadata(avExecutableURL: URL) -> [HardenerMetadata] {
     loadJSON(avExecutableURL: avExecutableURL, arguments: ["hardeners", "--json"])
         .flatMap { try? hardenerMetadata(from: $0) } ?? []
+}
+
+public func loadSecretGateDescriptors(avExecutableURL: URL) throws -> [SecretGateDescriptor] {
+    guard let data = loadJSON(avExecutableURL: avExecutableURL, arguments: ["__secret-gates-json"]) else {
+        throw DecodingError.dataCorrupted(.init(
+            codingPath: [],
+            debugDescription: "Secret Gate catalog is unavailable"
+        ))
+    }
+    return try secretGateDescriptors(from: data)
 }
 
 public func loadDoctorIssues(avExecutableURL: URL) -> [DoctorIssue] {

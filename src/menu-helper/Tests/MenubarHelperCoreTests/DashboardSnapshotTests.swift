@@ -133,6 +133,21 @@ import Testing
     #expect(hardener.secretGate?.routes.first?.callerIdentifiers == ["gh", "com.github.cli"])
 }
 
+@Test func secretGateCatalogRequiresUniqueDefinitions() throws {
+    let data = Data(#"{"secret_gates":[{"id":"aws","key_patterns":["AWS_ACCESS_KEY_ID"],"routes":[{"operation":"inject","script_path":null,"target_path":"/usr/local/libexec/av/aws","caller_identifiers":["com.automicvault.av"],"key_patterns":["AWS_ACCESS_KEY_ID"],"replace_existing_env":false,"allow_missing_keys":false}]}]}"#.utf8)
+
+    #expect(try secretGateDescriptors(from: data).map(\.id) == ["aws"])
+    let duplicate = Data(#"{"secret_gates":[{"id":"aws","key_patterns":[],"routes":[]},{"id":"aws","key_patterns":[],"routes":[]}]}"#.utf8)
+    #expect(throws: DecodingError.self) {
+        try secretGateDescriptors(from: duplicate)
+    }
+    #expect(throws: DecodingError.self) {
+        try loadSecretGateDescriptors(
+            avExecutableURL: URL(fileURLWithPath: "/tmp/nonexistent-av-\(UUID().uuidString)")
+        )
+    }
+}
+
 @Test func doctorJSONFlattensIssuesWithHardenerNames() throws {
     let data = Data(#"""
     {"results":[

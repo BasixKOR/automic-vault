@@ -56,6 +56,10 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         .collect()
 }
 
+pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
+    WRAPPERS.iter().map(secret_gate).collect()
+}
+
 fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
     let routes = stubs(wrapper)
         .map(|stub| SecretGateRoute {

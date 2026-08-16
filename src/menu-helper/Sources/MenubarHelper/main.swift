@@ -1950,12 +1950,12 @@ private func blessedScriptCanAutoApprove(
     _ script: BlessedScript,
     request: ApprovalRequest,
     signing: SigningInfo,
-    metadata: [HardenerMetadata]
+    descriptors: [SecretGateDescriptor]
 ) -> Bool {
     guard let gate = matchingSecretGateDefinition(
         request: request,
         signing: signing,
-        hardeners: metadata
+        descriptors: descriptors
     ),
     let protection = script.capabilities[gate.id]?.normalized(forGateID: gate.id)
     else { return false }
@@ -2017,7 +2017,7 @@ private struct ApprovedPayload {
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
-    private let hardeners: [HardenerMetadata]?
+    private let secretGateDescriptors: [SecretGateDescriptor]
     private let onAutoApproval: @MainActor (AutoApprovalRecord) -> Void
     private let onAccessRequest: @Sendable (AccessRequestRecord) -> Bool
     private let onBlessRequest: @MainActor (
@@ -2038,7 +2038,6 @@ private final class ApprovalServer: @unchecked Sendable {
 
     init(
         serviceName: String,
-        hardeners: [HardenerMetadata]? = nil,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
@@ -2053,7 +2052,9 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         self.serviceName = serviceName
         self.teamIdentifier = teamIdentifier
-        self.hardeners = hardeners
+        self.secretGateDescriptors = try loadSecretGateDescriptors(
+            avExecutableURL: avExecutableURL()
+        )
         self.onAutoApproval = onAutoApproval
         self.onAccessRequest = onAccessRequest
         self.onBlessRequest = onBlessRequest
@@ -2461,14 +2462,13 @@ private final class ApprovalServer: @unchecked Sendable {
             callerPID: pid,
             ancestorFallbackPath: ancestorFallbackPath
         )
-        let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
         let activeBlessing = activeBlessedScript(pid: pid, identity: identity)
         if let script = activeBlessing {
             if handleBlessedCapability(
                 script,
                 request: request,
                 signing: signing,
-                metadata: metadata,
+                descriptors: secretGateDescriptors,
                 launcher: launcher,
                 callerPath: callerPath,
                 awsRegistration: awsRegistration,
@@ -2558,7 +2558,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let configuredGate = matchingSecretGate(
             request: request,
             signing: signing,
-            hardeners: metadata
+            descriptors: secretGateDescriptors
         )
         let authorizationGate = configuredGate.map {
             RetainedAuthorizationGate.secretGate($0.id)
@@ -3084,7 +3084,7 @@ private final class ApprovalServer: @unchecked Sendable {
         _ script: BlessedScript,
         request: ApprovalRequest,
         signing: SigningInfo,
-        metadata: [HardenerMetadata],
+        descriptors: [SecretGateDescriptor],
         launcher: LauncherIdentity?,
         callerPath: String,
         awsRegistration: AWSRegistrationCandidate?,
@@ -3097,7 +3097,7 @@ private final class ApprovalServer: @unchecked Sendable {
             script,
             request: request,
             signing: signing,
-            metadata: metadata
+            descriptors: descriptors
         ) else { return false }
 
         do {
@@ -3197,9 +3197,8 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "script cannot be blessed: \(error.localizedDescription)")
             return
         }
-        let metadata = hardeners ?? loadHardenerMetadata(avExecutableURL: avExecutableURL())
         for (id, protection) in declaration.manifest.capabilities {
-            guard let descriptor = metadata.lazy.compactMap(\.secretGate).first(where: { $0.id == id }) else {
+            guard let descriptor = secretGateDescriptors.first(where: { $0.id == id }) else {
                 reply(peer, to: message, ok: false, error: "unknown script capability: \(id)")
                 return
             }
@@ -4155,10 +4154,10 @@ private struct ResolvedSecretGatePolicy {
 private func matchingSecretGate(
     request: ApprovalRequest,
     signing: SigningInfo,
-    hardeners: [HardenerMetadata],
+    descriptors: [SecretGateDescriptor],
     service: String = secretGatePoliciesKeychainService
 ) -> SecretGate? {
-    loadSecretGates(hardeners: hardeners, service: service).first {
+    loadSecretGates(descriptors: descriptors, service: service).first {
         secretGateMatches($0, request: request, signing: signing)
     }
 }
@@ -4166,9 +4165,9 @@ private func matchingSecretGate(
 private func matchingSecretGateDefinition(
     request: ApprovalRequest,
     signing: SigningInfo,
-    hardeners: [HardenerMetadata]
+    descriptors: [SecretGateDescriptor]
 ) -> SecretGate? {
-    hardeners.lazy.compactMap(\.secretGate).map {
+    descriptors.lazy.map {
         SecretGate(
             id: $0.id,
             keyPatterns: $0.keyPatterns,
@@ -6783,6 +6782,7 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    let ghDescriptor = ghMetadata.secretGate!
     let stripeSigning = SigningInfo(identifier: "stripe", teamIdentifier: "TEAM")
     let stripeRequest = ApprovalRequest(
         op: "keys",
@@ -6816,6 +6816,7 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    let stripeDescriptor = stripeMetadata.secretGate!
     func flyRequest(_ arguments: [String]) -> ApprovalRequest {
         ApprovalRequest(
             op: "inject",
@@ -6860,14 +6861,14 @@ private func runApprovalSelfCheck() -> Int32 {
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [unhardenedLauncher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: grandfatheredGate, launchers: [unhardenedLauncher])?.protection == .readOnly,
-          matchingSecretGate(request: readOnlyGh, signing: ghSigning, hardeners: [ghMetadata])?.id == "gh",
-          matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, hardeners: [ghMetadata]) == nil,
-          matchingSecretGate(request: ghRequest(keys: []), signing: ghSigning, hardeners: [ghMetadata]) == nil,
-          matchingSecretGate(request: ghRequest(op: "inject"), signing: ghSigning, hardeners: [ghMetadata]) == nil,
+          matchingSecretGate(request: readOnlyGh, signing: ghSigning, descriptors: [ghDescriptor])?.id == "gh",
+          matchingSecretGate(request: ghRequest(keys: ["OTHER_TOKEN"]), signing: ghSigning, descriptors: [ghDescriptor]) == nil,
+          matchingSecretGate(request: ghRequest(keys: []), signing: ghSigning, descriptors: [ghDescriptor]) == nil,
+          matchingSecretGate(request: ghRequest(op: "inject"), signing: ghSigning, descriptors: [ghDescriptor]) == nil,
           matchingSecretGate(
               request: readOnlyGh,
               signing: SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM"),
-              hardeners: [ghMetadata]
+              descriptors: [ghDescriptor]
           ) == nil,
           classifySecretGateRequest(gateID: "gh", request: readOnlyGh) == .readOnly,
           classifySecretGateRequest(gateID: "gh", request: ghRequest(args: ["repo", "delete", "owner/name"])) == .mutating,
@@ -6876,11 +6877,11 @@ private func runApprovalSelfCheck() -> Int32 {
           isGhTokenKey("GH_TOKEN_GITHUB_COM_MXCL"),
           !isGhTokenKey("GITHUB_TOKEN"),
           !isGhTokenKey("GH_TOKEN_bad-key"),
-          matchingSecretGate(request: stripeRequest, signing: stripeSigning, hardeners: [stripeMetadata])?.id == "stripe",
+          matchingSecretGate(request: stripeRequest, signing: stripeSigning, descriptors: [stripeDescriptor])?.id == "stripe",
           matchingSecretGate(
               request: stripeRequest,
               signing: SigningInfo(identifier: "gh", teamIdentifier: "TEAM"),
-              hardeners: [stripeMetadata]
+              descriptors: [stripeDescriptor]
           ) == nil,
           classifySecretGateRequest(gateID: "stripe", request: stripeRequest) == .readOnly,
           classifySecretGateRequest(gateID: "flyctl", request: flyRequest(["apps", "list"])) == .readOnly,
@@ -6974,6 +6975,7 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
+    let awsDescriptor = awsMetadata.secretGate!
     let blessedRequest = awsRequest(shebangScript: "/tmp/script", scriptData: Data("script".utf8))
     let blessedScript = BlessedScript(
         path: "/tmp/script",
@@ -7002,28 +7004,24 @@ private func runApprovalSelfCheck() -> Int32 {
         blessedScript,
         request: readOnlyAws,
         signing: avSigning,
-        metadata: [awsMetadata]
+        descriptors: [awsDescriptor]
     ),
         !blessedScriptCanAutoApprove(
             blessedScript,
             request: awsRequest(args: ["s3", "rm", "s3://bucket/key"]),
             signing: avSigning,
-            metadata: [awsMetadata]
+            descriptors: [awsDescriptor]
         ),
         !blessedScriptCanAutoApprove(
             blessedScript,
             request: readOnlyGh,
             signing: ghSigning,
-            metadata: [ghMetadata]
+            descriptors: [ghDescriptor]
         ),
         matchingSecretGateDefinition(
             request: readOnlyAws,
             signing: avSigning,
-            hardeners: [HardenerMetadata(
-                name: awsMetadata.name,
-                hardened: false,
-                secretGate: awsMetadata.secretGate
-            )]
+            descriptors: [awsDescriptor]
         )?.id == "aws",
         blessedScriptMatches(
             blessedScript,
@@ -7053,8 +7051,8 @@ private func runApprovalSelfCheck() -> Int32 {
         ) == nil
     else { return 1 }
 
-    guard matchingSecretGate(request: readOnlyAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
-          matchingSecretGate(request: longLivedAws, signing: avSigning, hardeners: [awsMetadata])?.id == "aws",
+    guard matchingSecretGate(request: readOnlyAws, signing: avSigning, descriptors: [awsDescriptor])?.id == "aws",
+          matchingSecretGate(request: longLivedAws, signing: avSigning, descriptors: [awsDescriptor])?.id == "aws",
           missingRequiredSecret(for: readOnlyAws, exists: { $0 == "AWS_SECRET_ACCESS_KEY" }) == "AWS_ACCESS_KEY_ID",
           missingRequiredSecret(for: readOnlyAws, exists: { _ in true }) == nil,
           missingRequiredSecret(for: awsRequest(allowMissingKeys: true), exists: { _ in false }) == nil,
@@ -7070,12 +7068,12 @@ private func runApprovalSelfCheck() -> Int32 {
               ),
               exists: { _ in false }
           ) == "AWS_ACCESS_KEY_ID",
-          matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, hardeners: [awsMetadata]) == nil,
-          matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, hardeners: [awsMetadata]) == nil,
+          matchingSecretGate(request: awsRequest(keys: ["AWS_ACCESS_KEY_ID"]), signing: avSigning, descriptors: [awsDescriptor]) == nil,
+          matchingSecretGate(request: awsRequest(shebangScript: nil), signing: avSigning, descriptors: [awsDescriptor]) == nil,
           matchingSecretGate(
               request: readOnlyAws,
               signing: SigningInfo(identifier: "aws", teamIdentifier: "TEAM"),
-              hardeners: [awsMetadata]
+              descriptors: [awsDescriptor]
           ) == nil,
           classifySecretGateRequest(gateID: "aws", request: readOnlyAws) == .readOnly,
           classifySecretGateRequest(gateID: "aws", request: longLivedAws) == .secretDump,
@@ -7139,8 +7137,9 @@ private func runApprovalSelfCheck() -> Int32 {
             )]
         )
     )
-    guard matchingSecretGate(request: brewRequest, signing: brewSigning, hardeners: [brewMetadata])?.id == "brew",
-          matchingSecretGate(request: brewRequest, signing: avSigning, hardeners: [brewMetadata]) == nil,
+    let brewDescriptor = brewMetadata.secretGate!
+    guard matchingSecretGate(request: brewRequest, signing: brewSigning, descriptors: [brewDescriptor])?.id == "brew",
+          matchingSecretGate(request: brewRequest, signing: avSigning, descriptors: [brewDescriptor]) == nil,
           classifySecretGateRequest(gateID: "brew", request: brewRequest) == .readOnly,
           brewRequestClassification(["update"]) == .update,
           brewRequestClassification(["up"]) == .update,

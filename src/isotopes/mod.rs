@@ -23,3 +23,7 @@ pub(crate) fn detector_metadata(home: &Path) -> Vec<detectors::DetectorMetadata>
 pub(crate) fn hardener_metadata() -> Vec<hardeners::HardenerMetadata> {
     hardeners::metadata()
 }
+
+pub(crate) fn secret_gate_metadata() -> Vec<hardeners::SecretGateDescriptor> {
+    hardeners::secret_gates()
+}
