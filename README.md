@@ -193,6 +193,47 @@ secrets only when your gate policy allows it or you approve.
 > Code signing proves identity and integrity—not good intentions. You still choose
 > which launchers to trust.
 
+### Launcher Bundles
+
+Unsigned and ad-hoc-signed CLIs cannot normally become Verified Launchers.
+They lack a stable publisher identity, and their original paths remain
+user-writable, so ordinary Launcher admission rejects them.
+
+For one regular Mach-O executable, open **Launcher Bundles** in Automic Vault.
+Automic Vault snapshots the selected file, signs the payload and a minimal
+launcher with Hardened Runtime, and enrolls that exact generation. Ad-hoc signing
+is the default, so this does not require a paid Apple developer account.
+
+**Install & Enroll** asks for administrator authorization once. It installs the
+bundle under `/Applications/Automic Vault/` and creates
+`/usr/local/bin/<command>` as a symbolic link to its launcher. You can then use
+the command as before:
+
+```sh
+$ my-command --help
+$ av doctor my-command
+# ^^ verifies the Launcher Bundle link and PATH precedence
+```
+
+Automic Vault makes both the bundle and command link root-owned. An ad-hoc
+signature detects changes but does not prevent them, and macOS does not promise
+App Management protection for locally built app bundles. Without root ownership,
+another process running as you could replace the program behind the command and
+execute code before it makes a Vault request. A root-owned link alone cannot
+protect a user-writable target.
+
+Root ownership protects the installed command from ordinary same-user writes.
+Automic Vault still revalidates the live code identity, nested signatures,
+enrolled generation, payload digest, and runtime posture on every authorization.
+Any change or re-signing hard-denies the request. The original executable
+remains separate and unverified.
+
+Launcher Bundles establish identity and integrity for the exact packaged code.
+They do not establish publisher trust or make the CLI safe. Scripts and
+directory-shaped tools are not supported. See
+[Signed CLI Launchers](docs/signed-cli-launchers.md) for the full requirements
+and update behavior.
+
 ### Using Automic Vault as a General Secrets Manager
 
 ```sh
@@ -497,6 +538,7 @@ opportunities and prevent agents from being too dangerous.
 > Unsigned and arbitrary ad-hoc signed executables cannot be launcher identities.
 > For one Mach-O CLI, Automic Vault can create an enrolled **Launcher Bundle**
 > whose exact signed generation and payload are revalidated on every request.
+> See [Launcher Bundles](#launcher-bundles).
 
 ### Pi
 
