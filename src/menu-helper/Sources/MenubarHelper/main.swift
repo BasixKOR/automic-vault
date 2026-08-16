@@ -1256,7 +1256,8 @@ private func accessRequestRecord(
         target: request.target,
         cwd: request.cwd,
         keys: request.keys.sorted(),
-        detail: request.detail
+        detail: request.detail,
+        secretValueSources: request.selectedValues.mapValues { $0.source.displayName }
     )
 }
 
@@ -1432,6 +1433,7 @@ private struct ApprovalRequest {
     let detail: String?
     let dockerServerURL: String?
     let dockerParent: DockerCredentialParent?
+    let selectedValues: [String: StoredSecretValue]
 
     init(
         op: String,
@@ -1449,7 +1451,8 @@ private struct ApprovalRequest {
         title: String?,
         detail: String?,
         dockerServerURL: String? = nil,
-        dockerParent: DockerCredentialParent? = nil
+        dockerParent: DockerCredentialParent? = nil,
+        selectedValues: [String: StoredSecretValue] = [:]
     ) {
         self.op = op
         self.keys = keys
@@ -1467,30 +1470,73 @@ private struct ApprovalRequest {
         self.detail = detail
         self.dockerServerURL = dockerServerURL
         self.dockerParent = dockerParent
+        self.selectedValues = selectedValues
+    }
+
+    func selecting(_ values: [String: StoredSecretValue]) -> ApprovalRequest {
+        ApprovalRequest(
+            op: op,
+            keys: keys,
+            target: target,
+            args: args,
+            cwd: cwd,
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            envConflicts: envConflicts,
+            shebangScript: shebangScript,
+            scriptData: scriptData,
+            snapshotIncompatibleInterpreter: snapshotIncompatibleInterpreter,
+            tool: tool,
+            title: title,
+            detail: detail,
+            dockerServerURL: dockerServerURL,
+            dockerParent: dockerParent,
+            selectedValues: values
+        )
     }
 }
 
 enum SecretMutation {
-    case save(account: String, value: String, accessibility: StoredSecretAccessibility)
-    case saveIfAbsentOrEqual(account: String, value: String)
+    case save(
+        account: String,
+        value: String,
+        accessibility: StoredSecretAccessibility,
+        warning: String = ""
+    )
+    case saveProject(
+        account: String,
+        value: String,
+        directory: String,
+        accessibility: StoredSecretAccessibility,
+        warning: String
+    )
+    case saveIfAbsentOrEqual(account: String, value: String, warning: String = "")
     case delete(account: String)
     case dockerSave(account: String, value: String, serverURL: String, username: String)
     case dockerDelete(account: String, serverURL: String)
+    case deleteValue(account: String, source: StoredSecretValueSource)
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
 
     fileprivate func approvalRequest(callerPath: String) -> ApprovalRequest {
         let properties: (op: String, keys: [String], args: [String], title: String, detail: String)
         switch self {
-        case .save(let account, _, _):
+        case .save(let account, _, _, let warning):
             properties = (
                 "save", [account], ["save", account], "Store \(account)?",
-                "This will create or replace a secret in Automic Vault."
+                "This will create or replace a Global Value in Automic Vault."
+                    + (warning.isEmpty ? "" : " \(warning)")
             )
-        case .saveIfAbsentOrEqual(let account, _):
+        case .saveProject(let account, _, let directory, _, let warning):
+            properties = (
+                "save", [account], ["save", "--project-directory=\(escapedSecurityPath(directory))", account],
+                "Store \(account) Project Value?", warning
+            )
+        case .saveIfAbsentOrEqual(let account, _, let warning):
             properties = (
                 "save-if-absent", [account], ["save-if-absent", account], "Store \(account)?",
-                "This will create the secret only if no differing value already exists."
+                "This will create the Global Value only if no differing value already exists."
+                    + (warning.isEmpty ? "" : " \(warning)")
             )
         case .delete(let account):
             properties = (
@@ -1508,6 +1554,11 @@ enum SecretMutation {
                 "docker-delete", [account], ["credential", "erase", serverURL],
                 "Delete Docker credential for \(serverURL)?",
                 "Docker will no longer be able to authenticate to this registry with the stored credential."
+            )
+        case .deleteValue(let account, let source):
+            properties = (
+                "delete", [account], ["delete", account, escapedSecurityPath(source.displayName)],
+                "Delete \(account) Value?", "This will remove the selected Secret Value."
             )
         case .rename(let account, let newAccount):
             properties = (
@@ -1528,12 +1579,30 @@ enum SecretMutation {
         case .dockerSave, .dockerDelete: "docker"
         default: URL(fileURLWithPath: callerPath).lastPathComponent
         }
+        let cwd: String
+        let selectedValues: [String: StoredSecretValue]
+        switch self {
+        case .saveProject(let account, _, let directory, let accessibility, _):
+            cwd = directory
+            selectedValues = [account: StoredSecretValue(
+                source: .projectDirectory(directory),
+                keychainAccount: storedSecretKeychainAccount(
+                    secretName: account,
+                    source: .projectDirectory(directory)
+                ),
+                accessibility: accessibility,
+                keychainProperties: []
+            )]
+        default:
+            cwd = ""
+            selectedValues = [:]
+        }
         return ApprovalRequest(
             op: properties.op,
             keys: properties.keys,
             target: callerPath,
             args: properties.args,
-            cwd: "",
+            cwd: cwd,
             replaceExistingEnv: false,
             allowMissingKeys: false,
             envConflicts: [],
@@ -1541,26 +1610,63 @@ enum SecretMutation {
             scriptData: nil,
             tool: tool,
             title: properties.title,
-            detail: properties.detail
+            detail: properties.detail,
+            selectedValues: selectedValues
         )
     }
 
     fileprivate func perform() -> OSStatus {
+        guard let pendingNames = pendingSecretMutationNames() else { return errSecDecode }
+        if !pendingNames.isEmpty {
+            let repairStatus = resumePendingSecretMutation()
+            return repairStatus == errSecSuccess ? errSecNotAvailable : repairStatus
+        }
         switch self {
-        case .save(let account, let value, let accessibility):
-            saveStoredSecret(account: account, value: value, accessibility: accessibility)
-        case .saveIfAbsentOrEqual(let account, let value):
-            saveStoredSecretIfAbsentOrEqual(account: account, value: value)
+        case .save(let account, let value, let accessibility, _):
+            let secrets: [StoredSecret]
+            switch loadStoredSecretsResult() {
+            case .success(let loaded): secrets = loaded
+            case .failure(let status): return status
+            }
+            let existing = secrets.first { $0.account == account }
+            guard existing?.hasConsistentAccessibility != false else { return errSecDecode }
+            return saveStoredSecret(
+                account: account,
+                value: value,
+                accessibility: existing?.accessibility ?? accessibility
+            )
+        case .saveProject(let account, let value, let directory, let accessibility, _):
+            guard (try? validateCanonicalProjectDirectory(directory)) != nil else { return errSecParam }
+            let secrets: [StoredSecret]
+            switch loadStoredSecretsResult() {
+            case .success(let loaded): secrets = loaded
+            case .failure(let status): return status
+            }
+            let existing = secrets.first { $0.account == account }
+            guard existing?.hasConsistentAccessibility != false else { return errSecDecode }
+            return saveStoredSecret(
+                account: account,
+                value: value,
+                accessibility: existing?.accessibility ?? accessibility,
+                source: .projectDirectory(directory)
+            )
+        case .saveIfAbsentOrEqual(let account, let value, _):
+            return saveStoredSecretIfAbsentOrEqual(account: account, value: value)
         case .delete(let account):
-            deleteStoredSecretRevokingDirectAccess(account: account)
+            return deleteStoredSecretRevokingDirectAccess(account: account)
         case .dockerSave(let account, let value, _, _):
-            saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .dockerDelete(let account, _):
-            deleteStoredSecretRevokingDirectAccess(account: account)
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .deleteValue(let account, let source):
+            return deleteStoredSecretValueRevokingDirectAccessIfLast(
+                secretName: account,
+                source: source
+            )
         case .rename(let account, let newAccount):
-            renameStoredSecretRevokingDirectAccess(account: account, to: newAccount)
+            return renameStoredSecretRevokingDirectAccess(account: account, to: newAccount)
         case .setAccessibility(let account, let accessibility):
-            setStoredSecretAccessibility(account: account, accessibility: accessibility)
+            return setStoredSecretAccessibility(account: account, accessibility: accessibility)
         }
     }
 }
@@ -1581,6 +1687,7 @@ private struct TransientApprovalKey: Hashable {
     let envConflicts: [String]
     let shebangScript: String?
     let tool: String?
+    let selectedValueSources: [String]
 }
 
 private enum ApprovalDecision: Equatable {
@@ -1756,12 +1863,13 @@ private func isApprovalCancellationEvent(_ event: xpc_object_t) -> Bool {
 
 private func missingRequiredSecret(
     for request: ApprovalRequest,
-    exists: (String) -> Bool = { storedSecretExists(account: $0) }
+    exists: ((String) -> Bool)? = nil
 ) -> String? {
     guard !request.allowMissingKeys else { return nil }
     let conflicts = Set(request.envConflicts)
     return request.keys.first {
-        (request.replaceExistingEnv || !conflicts.contains($0)) && !exists($0)
+        (request.replaceExistingEnv || !conflicts.contains($0))
+            && !(exists?($0) ?? (request.selectedValues[$0] != nil))
     }
 }
 
@@ -1986,6 +2094,7 @@ private struct AWSRegistration {
     let target: String
     let interpreter: String
     let useLongLivedCredentials: Bool
+    let secretValues: [String: StoredSecretValue]
     var credentials: AWSCredentials?
 }
 
@@ -2397,7 +2506,21 @@ private final class ApprovalServer: @unchecked Sendable {
         peer: xpc_connection_t,
         message: xpc_object_t
     ) {
-        let names = loadStoredSecrets().map(\.account)
+        let names: [String]
+        switch loadStoredSecretsResult() {
+        case .success(let secrets): names = secrets.map(\.account)
+        case .failure(let status):
+            _ = onAccessRequest(accessRequestRecord(
+                request: request,
+                callerPath: callerPath,
+                decision: "Failed",
+                approvalSource: approvalSource,
+                reason: "Stored Secret names are unavailable: \(status)",
+                launcher: launcher
+            ))
+            reply(peer, to: message, ok: false, error: "stored Secret names are unavailable: \(status)")
+            return
+        }
         guard onAccessRequest(accessRequestRecord(
             request: request,
             callerPath: callerPath,
@@ -2425,20 +2548,55 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
-        let dockerRequest: ApprovalRequest
+        let request: ApprovalRequest
         do {
-            dockerRequest = try dockerCredentialRequest(
+            let dockerRequest = try dockerCredentialRequest(
                 from: message,
                 request: parsedRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
             )
+            let conflicts = Set(dockerRequest.envConflicts)
+            let selectionNames = dockerRequest.keys.filter {
+                dockerRequest.replaceExistingEnv || !conflicts.contains($0)
+            }
+            if !selectionNames.isEmpty {
+                let repairStatus = resumePendingSecretMutation()
+                if repairStatus != errSecSuccess {
+                    let names = pendingSecretMutationNames()
+                    if names.map({ !Set(selectionNames).isDisjoint(with: $0) }) ?? true {
+                        reply(
+                            peer,
+                            to: message,
+                            ok: false,
+                            error: "secret repair must complete before this request: \(repairStatus)"
+                        )
+                        return
+                    }
+                }
+            }
+            let selected: [String: StoredSecretValue]
+            if selectionNames.isEmpty {
+                selected = [:]
+            } else {
+                let storedSecrets: [StoredSecret]
+                switch loadStoredSecretsResult() {
+                case .success(let loaded): storedSecrets = loaded
+                case .failure(let status):
+                    throw AppError("failed to inspect stored Secrets: \(status)")
+                }
+                selected = try resolveStoredSecretValues(
+                    names: selectionNames,
+                    cwd: dockerRequest.cwd,
+                    secrets: storedSecrets
+                )
+            }
+            request = approvalRequestWithCredentialContext(dockerRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
         }
-        let request = approvalRequestWithCredentialContext(dockerRequest)
         let awsRegistration: AWSRegistrationCandidate?
         do {
             awsRegistration = try awsRegistrationCandidate(from: message, request: request)
@@ -2783,7 +2941,10 @@ private final class ApprovalServer: @unchecked Sendable {
             allowMissingKeys: request.allowMissingKeys,
             envConflicts: request.envConflicts.sorted(),
             shebangScript: request.shebangScript,
-            tool: request.tool
+            tool: request.tool,
+            selectedValueSources: request.selectedValues
+                .map { "\($0.key)=\($0.value.source.displayName)" }
+                .sorted()
         )
         let promptBlessing: BlessedScriptPromptContext?
         if let activeBlessing {
@@ -3149,6 +3310,22 @@ private final class ApprovalServer: @unchecked Sendable {
         caller: MutationCaller,
         ifAbsentOrEqual: Bool = false
     ) {
+        guard let pendingNames = pendingSecretMutationNames() else {
+            reply(peer, to: message, ok: false, error: "pending Secret mutation state is unavailable")
+            return
+        }
+        if !pendingNames.isEmpty {
+            let status = resumePendingSecretMutation()
+            reply(
+                peer,
+                to: message,
+                ok: false,
+                error: status == errSecSuccess
+                    ? "a previous Secret mutation was repaired; retry this save"
+                    : "a previous Secret mutation still requires repair: \(status)"
+            )
+            return
+        }
         guard let keyPointer = xpc_dictionary_get_string(message, "key"),
               let valuePointer = xpc_dictionary_get_string(message, "value")
         else {
@@ -3161,9 +3338,78 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let value = String(cString: valuePointer)
-        let mutation: SecretMutation = ifAbsentOrEqual
-            ? .saveIfAbsentOrEqual(account: key, value: value)
-            : .save(account: key, value: value, accessibility: .whenUnlocked)
+        let projectDirectory = xpc_dictionary_get_string(message, "project_directory")
+            .map(String.init(cString:))
+        if ifAbsentOrEqual, projectDirectory != nil {
+            reply(peer, to: message, ok: false, error: "conditional save does not support Project Values")
+            return
+        }
+        let directAccessRules: [DirectAccessRule]
+        switch loadDirectAccessRulesResult() {
+        case .success(let loaded): directAccessRules = loaded
+        case .failure(let status):
+            reply(peer, to: message, ok: false, error: "Direct Access policy is unavailable: \(status)")
+            return
+        }
+        let storedSecrets: [StoredSecret]
+        switch loadStoredSecretsResult(directAccessRules: directAccessRules) {
+        case .success(let loaded): storedSecrets = loaded
+        case .failure(let status):
+            reply(peer, to: message, ok: false, error: "stored Secrets are unavailable: \(status)")
+            return
+        }
+        let storedSecret = storedSecrets.first { $0.account == key }
+        if let storedSecret, !storedSecret.hasConsistentAccessibility {
+            reply(peer, to: message, ok: false, error: "secret \(key) must be repaired before it can be changed")
+            return
+        }
+        let accessibility = storedSecret?.accessibility ?? .whenUnlocked
+        let directAccessWarning: String
+        if let launchers = storedSecret?.directAccessLaunchers, !launchers.isEmpty {
+            directAccessWarning = "Direct Access Launchers already authorized for \(key) can use this value immediately: "
+                + launchers.map(\.bundleIdentifier).joined(separator: ", ") + "."
+        } else {
+            directAccessWarning = ""
+        }
+        let mutation: SecretMutation
+        if ifAbsentOrEqual {
+            mutation = .saveIfAbsentOrEqual(
+                account: key,
+                value: value,
+                warning: directAccessWarning
+            )
+        } else if let projectDirectory {
+            do {
+                _ = try validateCanonicalProjectDirectory(projectDirectory)
+            } catch {
+                reply(peer, to: message, ok: false, error: error.localizedDescription)
+                return
+            }
+            var warning = "This will create or replace a Project Value for \(escapedSecurityPath(projectDirectory))."
+            if !directAccessWarning.isEmpty { warning += " \(directAccessWarning)" }
+            let source: StoredSecretValueSource = .projectDirectory(projectDirectory)
+            if storedSecret?.values.contains(where: { $0.source == source }) != true,
+               let inherited = try? resolveStoredSecretValues(
+                   names: [key], cwd: projectDirectory, secrets: storedSecret.map { [$0] } ?? []
+               )[key]
+            {
+                warning += " It will mask the inherited \(escapedSecurityPath(inherited.source.displayName))."
+            }
+            mutation = .saveProject(
+                account: key,
+                value: value,
+                directory: projectDirectory,
+                accessibility: accessibility,
+                warning: warning
+            )
+        } else {
+            mutation = .save(
+                account: key,
+                value: value,
+                accessibility: accessibility,
+                warning: directAccessWarning
+            )
+        }
         handleMutation(
             mutation,
             on: peer,
@@ -3437,7 +3683,10 @@ private final class ApprovalServer: @unchecked Sendable {
                 snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter,
                 tool: request.tool,
                 title: request.title,
-                detail: request.detail
+                detail: request.detail,
+                dockerServerURL: request.dockerServerURL,
+                dockerParent: request.dockerParent,
+                selectedValues: request.selectedValues
             )
         }
         DispatchQueue.main.async {
@@ -3465,8 +3714,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             switch mutation {
-            case .save(let account, _, _),
-                 .saveIfAbsentOrEqual(let account, _),
+            case .save(let account, _, _, _),
+                 .saveProject(let account, _, _, _, _),
+                 .saveIfAbsentOrEqual(let account, _, _),
                  .dockerSave(let account, _, _, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
@@ -3489,7 +3739,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         error: "failed to delete secret \(account): \(status)"
                     )
                 }
-            case .rename, .setAccessibility:
+            case .deleteValue, .rename, .setAccessibility:
                 self.reply(peer, to: message, ok: false, error: "invalid XPC mutation")
             }
         }
@@ -3499,11 +3749,20 @@ private final class ApprovalServer: @unchecked Sendable {
         let conflicts = Set(request.envConflicts)
         var secrets: [String: String] = [:]
         for key in request.keys where request.replaceExistingEnv || !conflicts.contains(key) {
-            guard let value = loadStoredSecret(account: key) else {
+            guard let selected = request.selectedValues[key] else {
                 if request.allowMissingKeys { continue }
                 throw AppError("failed to load secret \(key): \(errSecItemNotFound)")
             }
-            secrets[key] = value
+            switch loadStoredSecretValue(selected) {
+            case .success(let value):
+                secrets[key] = value
+            case .notFound:
+                throw AppError("selected value for \(key) no longer exists")
+            case .failure(let status):
+                throw AppError("failed to load selected value for \(key): \(status)")
+            case .invalidUTF8:
+                throw AppError("selected value for \(key) is not valid UTF-8")
+            }
         }
         return secrets
     }
@@ -3705,6 +3964,7 @@ private final class ApprovalServer: @unchecked Sendable {
             target: awsRegistration.target,
             interpreter: awsRegistration.interpreter,
             useLongLivedCredentials: awsRegistration.useLongLivedCredentials,
+            secretValues: request.selectedValues,
             credentials: nil
         )
         awsRegistrationsLock.unlock()
@@ -3805,9 +4065,11 @@ private final class ApprovalServer: @unchecked Sendable {
         _ registration: AWSRegistration,
         parentPID: pid_t
     ) async throws -> AWSCredentials {
-        guard let accessKey = loadStoredSecret(account: "AWS_ACCESS_KEY_ID"),
-              let secretKey = loadStoredSecret(account: "AWS_SECRET_ACCESS_KEY")
-        else { throw AppError("AWS access keys are missing from Automic Vault") }
+        guard let accessKeyValue = registration.secretValues["AWS_ACCESS_KEY_ID"],
+              let secretKeyValue = registration.secretValues["AWS_SECRET_ACCESS_KEY"],
+              case .success(let accessKey) = loadStoredSecretValue(accessKeyValue),
+              case .success(let secretKey) = loadStoredSecretValue(secretKeyValue)
+        else { throw AppError("selected AWS access keys are unavailable") }
         var credentials = AWSCredentials(accessKeyID: accessKey, secretAccessKey: secretKey)
         if registration.useLongLivedCredentials { return credentials }
 
@@ -4380,7 +4642,8 @@ private func approvalRequestWithCredentialContext(_ request: ApprovalRequest) ->
         snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter,
         tool: request.tool,
         title: "Use long-lived AWS credentials?",
-        detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will provide your original AWS access keys directly to AWS CLI; they retain every IAM permission assigned to those keys."
+        detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will provide your original AWS access keys directly to AWS CLI; they retain every IAM permission assigned to those keys.",
+        selectedValues: request.selectedValues
     )
 }
 
@@ -5803,6 +6066,22 @@ private func approvalPromptSections(
             ApprovalPromptRow("Signed", "\(signing.identifier) / \(signing.teamIdentifier)"),
         ]),
     ]
+
+    if !request.keys.isEmpty {
+        sections.insert(ApprovalPromptSection(
+            "Secret Values",
+            "key.horizontal",
+            request.keys.sorted().map { key in
+                let source = request.selectedValues[key]?.source
+                let display = switch source {
+                case .global: "Global Value"
+                case .projectDirectory(let path): escapedSecurityPath(path)
+                case nil: "(missing)"
+                }
+                return ApprovalPromptRow(key, display)
+            }
+        ), at: 1)
+    }
 
     let chain = approvalProcessChain(pid: pid)
     let chainRows = chain.map { [ApprovalPromptRow("Process chain", $0)] } ?? []
@@ -7749,7 +8028,8 @@ private func runTransientApprovalSelfCheck() -> Int32 {
             allowMissingKeys: false,
             envConflicts: [],
             shebangScript: nil,
-            tool: "gh"
+            tool: "gh",
+            selectedValueSources: []
         )
     }
     let approval = key()

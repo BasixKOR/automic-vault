@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 
@@ -11,6 +12,9 @@ public let directAccessKeychainService = "com.automicvault.direct-secret-access"
 public let directAccessKeychainAccount = "DirectAccessRulesV1"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 public let accessRequestLogKeychainService = "com.automicvault.access-log"
+private let secretMutationKeychainService = "com.automicvault.secret-mutations"
+private let secretMutationKeychainAccount = "PendingSecretMutationV1"
+private let secretMutationLock = NSLock()
 private let accessRequestLogLock = NSLock()
 private let canonicalKeychainAccessGroup = "ZU76A67LGU.com.automicvault"
 
@@ -77,6 +81,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
         ghCLIURL: URL? = URL(fileURLWithPath: "/opt/homebrew/opt/gh-cli/bin/gh"),
         policyService: String = secretGatePoliciesKeychainService
     ) -> DashboardSnapshot {
+        _ = resumePendingSecretMutation()
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
         _ = initializeSecretGatePolicies(hardeners: hardenerMetadata, service: policyService)
         let hardenedTools = loadHardenedTools(
@@ -650,26 +655,66 @@ public enum StoredSecretAccessibility: Equatable, Sendable {
     }
 }
 
+public enum StoredSecretValueSource: Codable, Equatable, Hashable, Sendable {
+    case global
+    case projectDirectory(String)
+
+    public var displayName: String {
+        switch self {
+        case .global: "Global Value"
+        case .projectDirectory(let path): path
+        }
+    }
+}
+
+public struct StoredSecretValue: Equatable, Identifiable, Sendable {
+    public let source: StoredSecretValueSource
+    public let keychainAccount: String
+    public let accessibility: StoredSecretAccessibility
+    public let keychainProperties: [String]
+    public var id: String { keychainAccount }
+
+    public init(
+        source: StoredSecretValueSource,
+        keychainAccount: String,
+        accessibility: StoredSecretAccessibility,
+        keychainProperties: [String]
+    ) {
+        self.source = source
+        self.keychainAccount = keychainAccount
+        self.accessibility = accessibility
+        self.keychainProperties = keychainProperties
+    }
+}
+
 public struct StoredSecret: Equatable, Sendable {
     public let account: String
     public let accessibility: StoredSecretAccessibility
     public let keychainProperties: [String]
     public let directAccessLaunchers: [BlessedScriptLauncher]
+    public let values: [StoredSecretValue]
 
     public init(
         account: String,
         accessibility: StoredSecretAccessibility = .whenUnlocked,
         keychainProperties: [String] = [],
-        directAccessLaunchers: [BlessedScriptLauncher] = []
+        directAccessLaunchers: [BlessedScriptLauncher] = [],
+        values: [StoredSecretValue] = []
     ) {
         self.account = account
         self.accessibility = accessibility
         self.keychainProperties = keychainProperties
         self.directAccessLaunchers = directAccessLaunchers
+        self.values = values
+    }
+
+    public var hasConsistentAccessibility: Bool {
+        values.allSatisfy { $0.accessibility == accessibility }
     }
 
     public var subtitle: String {
-        keychainProperties.isEmpty ? "Keychain secret" : keychainProperties.joined(separator: " • ")
+        let storage = keychainProperties.isEmpty ? "Keychain secret" : keychainProperties.joined(separator: " • ")
+        return values.count > 1 ? "\(values.count) values • \(storage)" : storage
     }
 }
 
@@ -688,6 +733,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     public let cwd: String
     public let keys: [String]
     public let detail: String?
+    public let secretValueSources: [String: String]?
 
     public init(
         id: UUID = UUID(),
@@ -703,7 +749,8 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         target: String,
         cwd: String,
         keys: [String],
-        detail: String?
+        detail: String?,
+        secretValueSources: [String: String]? = nil
     ) {
         self.id = id
         self.date = date
@@ -719,6 +766,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.cwd = cwd
         self.keys = keys
         self.detail = detail
+        self.secretValueSources = secretValueSources
     }
 
     public var commandForDisplay: String {
@@ -1368,10 +1416,61 @@ public func appendAccessRequestRecord(
     return loadAccessRequestRecords(defaults: defaults, key: key, service: service).first?.id == record.id
 }
 
+private let projectValueAccountPrefix = "AVProjectValueV1:"
+
+private struct StoredSecretAccount {
+    let secretName: String
+    let source: StoredSecretValueSource
+}
+
+public func storedSecretKeychainAccount(
+    secretName: String,
+    source: StoredSecretValueSource
+) -> String {
+    guard case .projectDirectory(let path) = source else { return secretName }
+    return projectValueAccountPrefix
+        + Data(secretName.utf8).base64EncodedString()
+        + ":"
+        + Data(path.utf8).base64EncodedString()
+}
+
+private func parseStoredSecretAccount(_ account: String) -> StoredSecretAccount? {
+    guard account.hasPrefix(projectValueAccountPrefix) else {
+        return StoredSecretAccount(secretName: account, source: .global)
+    }
+    let encoded = account.dropFirst(projectValueAccountPrefix.count)
+    let parts = encoded.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+    guard parts.count == 2,
+          let nameData = Data(base64Encoded: String(parts[0])),
+          let pathData = Data(base64Encoded: String(parts[1])),
+          let name = String(data: nameData, encoding: .utf8),
+          let path = String(data: pathData, encoding: .utf8),
+          !name.isEmpty,
+          path.hasPrefix("/")
+    else { return nil }
+    return StoredSecretAccount(secretName: name, source: .projectDirectory(path))
+}
+
 public func loadStoredSecrets(
     service: String = automicVaultKeychainService,
     directAccessRules: [DirectAccessRule] = []
 ) -> [StoredSecret] {
+    guard case .success(let secrets) = loadStoredSecretsResult(
+        service: service,
+        directAccessRules: directAccessRules
+    ) else { return [] }
+    return secrets
+}
+
+public enum StoredSecretsLoad {
+    case success([StoredSecret])
+    case failure(OSStatus)
+}
+
+public func loadStoredSecretsResult(
+    service: String = automicVaultKeychainService,
+    directAccessRules: [DirectAccessRule] = []
+) -> StoredSecretsLoad {
     let directAccess = Dictionary(grouping: directAccessRules, by: \.secretName)
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1382,27 +1481,53 @@ public func loadStoredSecrets(
     ]
     addCanonicalAccessGroup(to: &query)
     var result: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return .success([]) }
+    guard status == errSecSuccess,
           let items = result as? [[String: Any]]
-    else {
-        return []
-    }
-    return items.compactMap { item in
-        guard let account = item[kSecAttrAccount as String] as? String else { return nil }
-        return StoredSecret(
-            account: account,
+    else { return .failure(status == errSecSuccess ? errSecDecode : status) }
+    var values: [(String, StoredSecretValue)] = []
+    for item in items {
+        guard let account = item[kSecAttrAccount as String] as? String,
+              let parsed = parseStoredSecretAccount(account)
+        else { return .failure(errSecDecode) }
+        values.append((parsed.secretName, StoredSecretValue(
+            source: parsed.source,
+            keychainAccount: account,
             accessibility: StoredSecretAccessibility(
                 keychainValue: item[kSecAttrAccessible as String]
             ),
-            keychainProperties: keychainProperties(for: item, dataProtection: true),
+            keychainProperties: keychainProperties(for: item, dataProtection: true)
+        )))
+    }
+    let grouped = Dictionary(grouping: values, by: \.0)
+    let secrets = grouped.compactMap { account, entries -> StoredSecret? in
+        let values = entries.map(\.1).sorted { lhs, rhs in
+            switch (lhs.source, rhs.source) {
+            case (.global, .projectDirectory): true
+            case (.projectDirectory, .global): false
+            default: lhs.source.displayName.localizedStandardCompare(rhs.source.displayName) == .orderedAscending
+                }
+        }
+        guard Set(values.map(\.source)).count == values.count else { return nil }
+        let first = values[0]
+        return StoredSecret(
+            account: account,
+            accessibility: first.accessibility,
+            keychainProperties: first.keychainProperties,
             directAccessLaunchers: (directAccess[account] ?? [])
                 .map(\.launcher)
                 .sorted {
                     $0.bundleIdentifier.localizedStandardCompare($1.bundleIdentifier) == .orderedAscending
-                }
+                },
+            values: values
         )
     }
     .sorted { $0.account.localizedStandardCompare($1.account) == .orderedAscending }
+    guard secrets.count == grouped.count else {
+        return .failure(errSecDecode)
+    }
+    return .success(secrets)
 }
 
 public func storedSecretExists(account: String, service: String = automicVaultKeychainService) -> Bool {
@@ -1415,6 +1540,128 @@ public func storedSecretExists(account: String, service: String = automicVaultKe
     ]
     addCanonicalAccessGroup(to: &query)
     return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+}
+
+public enum ProjectDirectoryValidationError: Error, LocalizedError, Equatable {
+    case notAbsolute
+    case unavailable
+    case notDirectory
+    case notCanonical(String)
+    case filesystemIdentityUnavailable
+    case filesystemRoot
+
+    public var errorDescription: String? {
+        switch self {
+        case .notAbsolute: "project directory must be absolute"
+        case .unavailable: "project directory does not exist"
+        case .notDirectory: "project directory must be a directory"
+        case .notCanonical(let path): "project directory must be canonical: \(path)"
+        case .filesystemIdentityUnavailable: "project directory filesystem is unavailable"
+        case .filesystemRoot: "project directory cannot be a filesystem root"
+        }
+    }
+}
+
+private func canonicalDirectory(_ path: String) throws -> (path: String, device: UInt64) {
+    guard path.hasPrefix("/") else { throw ProjectDirectoryValidationError.notAbsolute }
+    var resolved = [CChar](repeating: 0, count: Int(PATH_MAX))
+    guard realpath(path, &resolved) != nil else { throw ProjectDirectoryValidationError.unavailable }
+    let end = resolved.firstIndex(of: 0) ?? resolved.endIndex
+    guard let canonical = String(
+        data: Data(resolved[..<end].map { UInt8(bitPattern: $0) }),
+        encoding: .utf8
+    ) else { throw ProjectDirectoryValidationError.unavailable }
+    let attributes: [FileAttributeKey: Any]
+    do {
+        attributes = try FileManager.default.attributesOfItem(atPath: canonical)
+    } catch {
+        throw ProjectDirectoryValidationError.unavailable
+    }
+    guard attributes[.type] as? FileAttributeType == .typeDirectory else {
+        throw ProjectDirectoryValidationError.notDirectory
+    }
+    guard let device = attributes[.systemNumber] as? NSNumber else {
+        throw ProjectDirectoryValidationError.filesystemIdentityUnavailable
+    }
+    return (canonical, device.uint64Value)
+}
+
+public func validateCanonicalProjectDirectory(_ path: String) throws -> String {
+    let directory = try canonicalDirectory(path)
+    guard directory.path == path else {
+        throw ProjectDirectoryValidationError.notCanonical(directory.path)
+    }
+    let parent = URL(fileURLWithPath: path, isDirectory: true)
+        .deletingLastPathComponent().path
+    guard parent != path else { throw ProjectDirectoryValidationError.filesystemRoot }
+    let parentDirectory = try canonicalDirectory(parent)
+    guard parentDirectory.device == directory.device else {
+        throw ProjectDirectoryValidationError.filesystemRoot
+    }
+    return path
+}
+
+public func canonicalProjectDirectory(_ path: String) throws -> String {
+    let directory = try canonicalDirectory(path)
+    _ = try validateCanonicalProjectDirectory(directory.path)
+    return directory.path
+}
+
+public func physicalDirectoryAncestors(_ path: String) throws -> [String] {
+    let start = try canonicalDirectory(path)
+    guard start.path == path else {
+        throw ProjectDirectoryValidationError.notCanonical(start.path)
+    }
+    var result = [start.path]
+    var current = start.path
+    while true {
+        let parent = URL(fileURLWithPath: current, isDirectory: true)
+            .deletingLastPathComponent().path
+        guard parent != current else { break }
+        let parentDirectory = try canonicalDirectory(parent)
+        guard parentDirectory.device == start.device else { break }
+        result.append(parentDirectory.path)
+        current = parentDirectory.path
+    }
+    return result
+}
+
+public enum StoredSecretSelectionError: Error, LocalizedError, Equatable {
+    case inconsistentAvailability(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .inconsistentAvailability(let name):
+            "secret \(name) has inconsistent availability and must be repaired"
+        }
+    }
+}
+
+public func resolveStoredSecretValues(
+    names: [String],
+    cwd: String,
+    secrets: [StoredSecret]
+) throws -> [String: StoredSecretValue] {
+    guard !names.isEmpty else { return [:] }
+    let rank = Dictionary(
+        uniqueKeysWithValues: try physicalDirectoryAncestors(cwd).enumerated().map { ($1, $0) }
+    )
+    let byName = Dictionary(uniqueKeysWithValues: secrets.map { ($0.account, $0) })
+    var selected: [String: StoredSecretValue] = [:]
+    for name in names {
+        guard let secret = byName[name] else { continue }
+        guard secret.hasConsistentAccessibility else {
+            throw StoredSecretSelectionError.inconsistentAvailability(name)
+        }
+        let project = secret.values.compactMap { value -> (Int, StoredSecretValue)? in
+            guard case .projectDirectory(let path) = value.source,
+                  let rank = rank[path]
+            else { return nil }
+            return (rank, value)
+        }.min { $0.0 < $1.0 }?.1
+        selected[name] = project ?? secret.values.first { $0.source == .global }
+    }
+    return selected
 }
 
 private func keychainProperties(for item: [String: Any], dataProtection: Bool) -> [String] {
@@ -1462,12 +1709,13 @@ public func saveStoredSecret(
     account: String,
     value: String,
     accessibility: StoredSecretAccessibility = .whenUnlocked,
+    source: StoredSecretValueSource = .global,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
     saveKeychainData(
         Data(value.utf8),
         service: service,
-        account: account,
+        account: storedSecretKeychainAccount(secretName: account, source: source),
         accessibility: accessibility
     )
 }
@@ -1477,10 +1725,18 @@ public func saveStoredSecretIfAbsentOrEqual(
     value: String,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
-    saveKeychainDataIfAbsentOrEqual(
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    let existing = secrets.first { $0.account == account }
+    guard existing?.hasConsistentAccessibility != false else { return errSecDecode }
+    return saveKeychainDataIfAbsentOrEqual(
         Data(value.utf8),
         service: service,
-        account: account
+        account: account,
+        accessibility: existing?.accessibility ?? .whenUnlocked
     )
 }
 
@@ -1489,18 +1745,216 @@ public func setStoredSecretAccessibility(
     accessibility: StoredSecretAccessibility,
     service: String = automicVaultKeychainService
 ) -> OSStatus {
-    setKeychainAccessibility(accessibility, service: service, account: account)
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
+    guard secret.values.count > 1 else {
+        return setKeychainAccessibility(
+            accessibility,
+            service: service,
+            account: secret.values[0].keychainAccount
+        )
+    }
+    return beginPendingSecretMutation(
+        .setAccessibility(account: account, accessibility: accessibility),
+        service: service
+    )
 }
 
 public func renameStoredSecret(account: String, to newAccount: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard !secrets.contains(where: { $0.account == newAccount }),
+          let secret = secrets.first(where: { $0.account == account })
+    else { return secrets.contains(where: { $0.account == newAccount }) ? errSecDuplicateItem : errSecItemNotFound }
+    guard secret.hasConsistentAccessibility else { return errSecDecode }
+    guard secret.values.count > 1 else {
+        return renameStoredSecretValue(
+            secret.values[0],
+            to: newAccount,
+            service: service
+        )
+    }
+    return beginPendingSecretMutation(
+        .rename(account: account, newAccount: newAccount),
+        service: service
+    )
+}
+
+private enum PendingSecretMutation: Codable, Equatable {
+    case rename(account: String, newAccount: String)
+    case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
+    case delete(account: String)
+
+    var affectedNames: Set<String> {
+        switch self {
+        case .rename(let account, let newAccount): [account, newAccount]
+        case .setAccessibility(let account, _): [account]
+        case .delete(let account): [account]
+        }
+    }
+}
+
+private enum PendingSecretMutationLoad {
+    case none
+    case success(PendingSecretMutation)
+    case failure(OSStatus)
+}
+
+extension StoredSecretAccessibility: Codable {}
+
+// ponytail: one journal serializes rare multi-value mutations; add per-Secret journals only if contention appears.
+private func beginPendingSecretMutation(
+    _ mutation: PendingSecretMutation,
+    service: String
+) -> OSStatus {
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
+    let journalAccount = secretMutationJournalAccount(for: service)
+    switch loadPendingSecretMutation(service: service) {
+    case .none: break
+    case .success: return errSecInteractionNotAllowed
+    case .failure(let status): return status
+    }
+    guard let data = try? JSONEncoder().encode(mutation) else { return errSecParam }
+    let status = saveKeychainData(
+        data,
+        service: secretMutationKeychainService,
+        account: journalAccount,
+        accessibility: .afterFirstUnlock
+    )
+    guard status == errSecSuccess else { return status }
+    guard case .success(let persisted) = loadPendingSecretMutation(service: service),
+          persisted == mutation
+    else { return errSecDecode }
+    return resumePendingSecretMutationUnlocked(service: service)
+}
+
+private func secretMutationJournalAccount(for service: String) -> String {
+    guard service != automicVaultKeychainService else { return secretMutationKeychainAccount }
+    return secretMutationKeychainAccount + ":" + Data(service.utf8).base64EncodedString()
+}
+
+private func loadPendingSecretMutation(service: String) -> PendingSecretMutationLoad {
+    switch loadKeychainDataResult(
+        service: secretMutationKeychainService,
+        account: secretMutationJournalAccount(for: service)
+    ) {
+    case .notFound:
+        return .none
+    case .failure(let status):
+        return .failure(status)
+    case .success(let data):
+        guard let mutation = try? JSONDecoder().decode(PendingSecretMutation.self, from: data)
+        else { return .failure(errSecDecode) }
+        return .success(mutation)
+    }
+}
+
+public func pendingSecretMutationNames() -> Set<String>? {
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
+    return switch loadPendingSecretMutation(service: automicVaultKeychainService) {
+    case .none: []
+    case .success(let mutation): mutation.affectedNames
+    case .failure: nil
+    }
+}
+
+@discardableResult
+public func resumePendingSecretMutation(
+    service: String = automicVaultKeychainService
+) -> OSStatus {
+    secretMutationLock.lock()
+    defer { secretMutationLock.unlock() }
+    return resumePendingSecretMutationUnlocked(service: service)
+}
+
+private func resumePendingSecretMutationUnlocked(service: String) -> OSStatus {
+    let journalAccount = secretMutationJournalAccount(for: service)
+    let mutation: PendingSecretMutation
+    switch loadPendingSecretMutation(service: service) {
+    case .none: return errSecSuccess
+    case .success(let loaded): mutation = loaded
+    case .failure(let status): return status
+    }
+
+    let status: OSStatus
+    switch mutation {
+    case .setAccessibility(let account, let accessibility):
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
+        guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
+        status = secret.values.reduce(errSecSuccess) { result, value in
+            guard result == errSecSuccess, value.accessibility != accessibility else { return result }
+            return setKeychainAccessibility(
+                accessibility,
+                service: service,
+                account: value.keychainAccount
+            )
+        }
+    case .rename(let account, let newAccount):
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
+        let old = secrets.first { $0.account == account }
+        let newSources = Set(
+            secrets.first(where: { $0.account == newAccount })?.values.map(\.source) ?? []
+        )
+        guard old?.values.contains(where: { newSources.contains($0.source) }) != true else {
+            return errSecDuplicateItem
+        }
+        status = old?.values.reduce(errSecSuccess) { result, value in
+            guard result == errSecSuccess else { return result }
+            return renameStoredSecretValue(value, to: newAccount, service: service)
+        } ?? errSecSuccess
+    case .delete(let account):
+        let secrets: [StoredSecret]
+        switch loadStoredSecretsResult(service: service) {
+        case .success(let loaded): secrets = loaded
+        case .failure(let status): return status
+        }
+        status = secrets.first(where: { $0.account == account })
+            .map { deleteStoredSecretValues($0, service: service) } ?? errSecSuccess
+    }
+    guard status == errSecSuccess else { return status }
+    return deleteStoredSecretValue(
+        secretName: journalAccount,
+        source: .global,
+        service: secretMutationKeychainService
+    )
+}
+
+private func renameStoredSecretValue(
+    _ value: StoredSecretValue,
+    to newAccount: String,
+    service: String
+) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
-        kSecAttrAccount as String: account,
+        kSecAttrAccount as String: value.keychainAccount,
         kSecUseDataProtectionKeychain as String: true,
     ]
     addCanonicalAccessGroup(to: &query)
-    return SecItemUpdate(query as CFDictionary, [kSecAttrAccount as String: newAccount] as CFDictionary)
+    return SecItemUpdate(
+        query as CFDictionary,
+        [kSecAttrAccount as String: storedSecretKeychainAccount(
+            secretName: newAccount,
+            source: value.source
+        )] as CFDictionary
+    )
 }
 
 public func renameStoredSecretRevokingDirectAccess(
@@ -1520,14 +1974,73 @@ public func renameStoredSecretRevokingDirectAccess(
 }
 
 public func deleteStoredSecret(account: String, service: String = automicVaultKeychainService) -> OSStatus {
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == account }) else { return errSecItemNotFound }
+    guard secret.values.count > 1 else {
+        return deleteStoredSecretValue(
+            secretName: account,
+            source: secret.values[0].source,
+            service: service
+        )
+    }
+    return beginPendingSecretMutation(.delete(account: account), service: service)
+}
+
+private func deleteStoredSecretValues(_ secret: StoredSecret, service: String) -> OSStatus {
+    for value in secret.values {
+        let status = deleteStoredSecretValue(
+            secretName: secret.account,
+            source: value.source,
+            service: service
+        )
+        guard status == errSecSuccess else { return status }
+    }
+    return errSecSuccess
+}
+
+public func deleteStoredSecretValue(
+    secretName: String,
+    source: StoredSecretValueSource,
+    service: String = automicVaultKeychainService
+) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,
-        kSecAttrAccount as String: account,
+        kSecAttrAccount as String: storedSecretKeychainAccount(secretName: secretName, source: source),
         kSecUseDataProtectionKeychain as String: true,
     ]
     addCanonicalAccessGroup(to: &query)
     return SecItemDelete(query as CFDictionary)
+}
+
+public func deleteStoredSecretValueRevokingDirectAccessIfLast(
+    secretName: String,
+    source: StoredSecretValueSource,
+    service: String = automicVaultKeychainService,
+    directAccessService: String = directAccessKeychainService,
+    directAccessAccount: String = directAccessKeychainAccount
+) -> OSStatus {
+    let secrets: [StoredSecret]
+    switch loadStoredSecretsResult(service: service) {
+    case .success(let loaded): secrets = loaded
+    case .failure(let status): return status
+    }
+    guard let secret = secrets.first(where: { $0.account == secretName }),
+          secret.values.contains(where: { $0.source == source })
+    else { return errSecItemNotFound }
+    if secret.values.count == 1 {
+        let status = revokeDirectAccess(
+            to: secretName,
+            service: directAccessService,
+            account: directAccessAccount
+        )
+        guard status == errSecSuccess else { return status }
+    }
+    return deleteStoredSecretValue(secretName: secretName, source: source, service: service)
 }
 
 public func deleteStoredSecretRevokingDirectAccess(
@@ -1545,9 +2058,36 @@ public func deleteStoredSecretRevokingDirectAccess(
     return deleteStoredSecret(account: account, service: service)
 }
 
-public func loadStoredSecret(account: String, service: String = automicVaultKeychainService) -> String? {
-    guard let data = loadKeychainData(service: service, account: account) else { return nil }
+public func loadStoredSecret(
+    account: String,
+    source: StoredSecretValueSource = .global,
+    service: String = automicVaultKeychainService
+) -> String? {
+    let keychainAccount = storedSecretKeychainAccount(secretName: account, source: source)
+    guard let data = loadKeychainData(service: service, account: keychainAccount) else { return nil }
     return String(data: data, encoding: .utf8)
+}
+
+public enum StoredSecretValueLoad: Equatable {
+    case success(String)
+    case notFound
+    case failure(OSStatus)
+    case invalidUTF8
+}
+
+public func loadStoredSecretValue(
+    _ value: StoredSecretValue,
+    service: String = automicVaultKeychainService
+) -> StoredSecretValueLoad {
+    switch loadKeychainDataResult(service: service, account: value.keychainAccount) {
+    case .success(let data):
+        guard let text = String(data: data, encoding: .utf8) else { return .invalidUTF8 }
+        return .success(text)
+    case .notFound:
+        return .notFound
+    case .failure(let status):
+        return .failure(status)
+    }
 }
 
 private func loadKeychainData(service: String, account: String) -> Data? {
@@ -1719,12 +2259,15 @@ public func directAccessAllows(
     }
 }
 
-private enum DirectAccessRulesLoad {
+public enum DirectAccessRulesLoad {
     case success([DirectAccessRule])
     case failure(OSStatus)
 }
 
-private func loadDirectAccessRulesResult(service: String, account: String) -> DirectAccessRulesLoad {
+public func loadDirectAccessRulesResult(
+    service: String = directAccessKeychainService,
+    account: String = directAccessKeychainAccount
+) -> DirectAccessRulesLoad {
     switch loadKeychainDataResult(service: service, account: account) {
     case .notFound:
         return .success([])
@@ -1831,7 +2374,8 @@ func saveKeychainData(
 func saveKeychainDataIfAbsentOrEqual(
     _ data: Data,
     service: String,
-    account: String
+    account: String,
+    accessibility: StoredSecretAccessibility = .whenUnlocked
 ) -> OSStatus {
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1839,7 +2383,7 @@ func saveKeychainDataIfAbsentOrEqual(
         kSecAttrAccount as String: account,
         kSecUseDataProtectionKeychain as String: true,
         kSecValueData as String: data,
-        kSecAttrAccessible as String: StoredSecretAccessibility.whenUnlocked.keychainValue,
+        kSecAttrAccessible as String: accessibility.keychainValue,
     ]
     addCanonicalAccessGroup(to: &query)
     return verifyKeychainDataAfterConditionalAdd(
