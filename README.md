@@ -541,6 +541,27 @@ live executable rather than trusting how it was installed.
 See [Signed CLI Launchers](docs/signed-cli-launchers.md) for requirements,
 setup, and failure behavior.
 
+### Temporary Write Access for Agent Tasks
+
+<img src="./docs/img/temporary-write-access.png" style="width: 589px; height: auto" />
+
+When a recognized Codex task or Claude Code session makes an eligible write
+request, the Approval window can offer **Allow Write Access for 10 Minutes…**.
+This creates an in-memory Temporary Access Grant for that exact Verified
+Launcher, Tool-specific Authorization Gate, runtime posture, and agent task.
+Recognized read and write operations at that scope can proceed without another
+Approval until the grant expires or you click **End**.
+
+The persistent strip keeps every active grant visible. Grants also end when the
+user session becomes inactive, the displays sleep, an update begins, or Automic
+Vault stops.
+
+> [!IMPORTANT]
+> The agent task identifier narrows a grant but is not identity or a security
+> boundary; the Verified Launcher remains the identity boundary. Temporary
+> Access Grants never cover the Direct Secret Gate, Secret mutations, Elevated
+> Secret Application, Secret Disclosure, or Unknown operations.
+
 It is then vital to ensure the harness for the agents has minimal TCC
 permissions. If you are using them via CLI that will often be your Terminal
 
