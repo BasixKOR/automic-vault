@@ -4354,7 +4354,7 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .denied: ProxyDestinationDecision.deny
+                            case .canceled, .denied, .temporaryWriteAccess: ProxyDestinationDecision.deny
                             }
                         }
                     )
