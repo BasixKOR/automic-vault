@@ -462,9 +462,9 @@ original reusable credentials**.
 > [!IMPORTANT]
 > AWS hardening supports a narrow profile model on purpose: the imported
 > `default` keys, regions, MFA, and roles rooted at `default`. Other credential
-> providers fail closed. End-to-end integrity also depends on protecting the
-> Homebrew AWS CLI and its interpreter. `av harden brew` remains optional, but
-> we recommend it.
+> providers fail closed. `av harden aws` installs and verifies AWS's signed,
+> notarized, Hardened Runtime CLI under `/opt/av/aws`; it does not depend on
+> Homebrew.
 
 [Read why we think this is the best AWS credential manager in the world.](https://www.automicvault.com/blog/best-aws-credential-manager/)
 
