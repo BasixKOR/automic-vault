@@ -119,6 +119,20 @@ adding an exception beyond the stored requirement disables automic
 authorization. Legacy rules that predate runtime requirements retain their
 existing compatibility behavior.
 
+### Agent Task Context
+
+An ephemeral narrowing label for one recognized agent invocation. The initial
+providers are a Codex task identified by a canonical UUID in
+`CODEX_THREAD_ID` and a Claude Code session identified by a canonical UUID in
+`CLAUDE_CODE_SESSION_ID`. Automic Vault accepts a context only when exactly one
+recognized provider variable is present in the live process environment.
+
+An Agent Task Context is forgeable by software running as the user. It is not
+identity, authentication, or a security boundary and grants no authority by
+itself. The Verified Launcher remains the identity boundary. Automic Vault
+keeps the exact UUID in memory only and does not include it in Authorization
+History or telemetry.
+
 ### Launcher Identity
 
 The designated requirement stored when the user establishes trust and revalidated for each request. A path, display name, process identifier, or icon is metadata, not identity.
@@ -242,6 +256,22 @@ An explicit human decision to allow one Authorization Request. Approval never na
 ### Authorization Decision
 
 The final allow or deny result and its source. An allowed request is either **automically authorized** by policy or **approved** by the user.
+
+### Temporary Access Grant
+
+An in-memory, user-authenticated delegation of Write Access to one exact
+Tool-specific Authorization Gate, Verified Launcher, accepted Launcher Runtime
+Requirement, and Agent Task Context for ten minutes. It may automically
+authorize recognized read and write operations at that scope. Elevated Secret
+Application, Secret Disclosure, Unknown operations, the Direct Secret Gate, and
+Secret mutation operations remain outside the grant.
+
+A Temporary Access Grant can begin only from an eligible live write-request
+Approval after successful Touch ID without password fallback. It is not a
+durable Authorization Policy or Blessing. Automic Vault shows every active
+grant continuously, lets the user end each grant immediately, and revokes all
+grants when the user session becomes inactive, displays sleep, an update begins,
+or the service terminates. Expiry uses both wall and monotonic clocks.
 
 ### Fail Closed
 
@@ -376,6 +406,10 @@ may preserve the same gate-and-Launcher attribution for one exact live process
 execution after its parent chain disappears. Authority does not propagate to
 sibling Launchers, changed scripts, another gate, a later process execution, or
 a broader operation.
+
+A Temporary Access Grant further narrows its Verified Launcher authority by an
+exact Agent Task Context and accepted runtime posture. Because the task label is
+forgeable, this narrows matching but does not strengthen Launcher identity.
 
 ## Zeroconf above the security boundary
 

@@ -18,6 +18,11 @@ Unknown operation risk requires Approval. Missing or invalid identity, integrity
 
 Policies bind a Gate and Verified Launcher. Approval binds one complete request and process. Blessings bind exact script contents and a complete declaration.
 
+Temporary Access Grants bind one Tool-specific Authorization Gate, one Verified
+Launcher and accepted runtime posture, and one Agent Task Context for a fixed
+ten-minute lifetime. Agent Task Context narrows matching but is not identity or
+a security boundary.
+
 Optional Retained Launcher Provenance binds one Authorization Gate, one Verified
 Launcher, and one exact live process execution. It preserves attribution after
 ancestry loss; it does not preserve an Authorization Decision.
@@ -81,6 +86,20 @@ exact request for a known Tool-specific Gate remains attached to that Gate
 regardless of point-in-time Hardener detection and cannot fall through to the
 broader Direct Secret Gate because a diagnostic check is unavailable.
 
+For recognized agent Launchers, the service may read `CODEX_THREAD_ID` or
+`CLAUDE_CODE_SESSION_ID` directly from the live XPC peer with a bounded
+`KERN_PROCARGS2` query. It accepts only one canonical UUID from exactly one
+provider and adds no client-controlled identity field to XPC. This label is an
+Agent Task Context: same-user software can forge it, so the live Verified
+Launcher remains the identity boundary.
+
+An eligible live write-request Approval can create a ten-minute Temporary
+Access Grant after Touch ID without password fallback. The grant is limited to
+Write Access at the exact Tool-specific gate, Launcher designated requirement,
+accepted runtime posture, provider, and task UUID. The Direct Secret Gate,
+Secret mutations, Elevated Secret Application, Secret Disclosure, Unknown
+operations, and unverifiable Launchers are excluded.
+
 ### Launcher Packaging
 
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a
@@ -142,7 +161,7 @@ flowchart LR
     L --> C["Gate Client"]
     C --> G["Authorization Gate on Mac"]
     G --> I["Verify Launcher identity and request integrity"]
-    I --> P["Evaluate Authorization Policy"]
+    I --> P["Evaluate durable and temporary authority"]
     P -->|"policy allows"| R["Persist and verify Authorization Record"]
     P -->|"human decision required"| A["Approval on Mac or companion"]
     A -->|"allow"| R
@@ -152,6 +171,23 @@ flowchart LR
 ```
 
 The Authorization Request is immutable across this flow. A cached decision may be reused only for the same live process and complete request identity. Reuse still requires an Authorization Record before Secret Application.
+
+An active Blessing is evaluated before a Temporary Access Grant. A matching
+grant may authorize a recognized operation beyond a narrower Blessing only
+inside the grant's exact scope. Matching happens after ordinary Gate Client,
+Target, request, Secret, gate, Launcher, and runtime verification succeeds.
+Each use persists its Authorization Record as policy-authorized by “Temporary
+Access Grant — Write Access” before release. The controller holds a
+generation-bound lease through payload loading, record persistence, retained
+provenance recording, and the XPC reply, so expiry or cancellation cannot race
+with an in-progress release.
+
+Grants are memory-only and use both wall-clock and monotonic deadlines. An exact
+duplicate scope is replaced by a newly authenticated ten-minute generation.
+The service cancels pending biometric attempts and revokes every grant on user
+session inactivity, display sleep, update installation, service stop, or app
+termination. Individual expiry and explicit End actions require no
+authentication.
 
 After a successful policy decision, Automic Vault may record Retained Launcher
 Provenance for signed intermediary process executions.
@@ -176,6 +212,11 @@ Every request rechecks the live signature and permits an equal or stronger
 posture, so removing an exception is safe while adding an unacknowledged
 exception fails closed. Existing strict rules remain strict. Compatibility
 records that predate runtime requirements retain their established behavior.
+
+Temporary Access Grants store the live accepted Launcher Runtime Requirement
+and require an exact posture match on every use. This intentionally rejects a
+runtime posture change in either direction during the short grant instead of
+silently changing its scope.
 
 Retained Launcher Provenance identifies an intermediary by its macOS process
 execution identity, including PID version and process start time, and by its live
@@ -274,6 +315,11 @@ inspection or migration.
 
 Authorization History is bounded local operational history. Same-user compromise or storage failure can damage it. Product copy must not promise an append-only audit trail or complete forensic evidence.
 
+The exact Agent Task Context UUID is not part of the Authorization Record or
+telemetry. History identifies the Temporary Access Grant decision source,
+Verified Launcher, Authorization Gate, and operation without persisting the
+forgeable task label.
+
 ## Mediation limits
 
 Wrappers and PATH stubs mediate the command path they occupy. They do not intercept every `exec`. A process can invoke an underlying executable by absolute path. Vault-managed Secrets should remain unavailable to that direct process, but ambient credential providers may still authorize it. Doctor can report resolution and integrity problems; it cannot turn PATH mediation into system-wide execution containment.
@@ -306,6 +352,13 @@ widens the lifetime of authority and that a Launcher Bundle can bring a
 recurring mutable or injectable harness up to Verified Launcher requirements.
 An enrolled Launcher Bundle payload representing its own bundle is not Retained
 Launcher Provenance and does not require this setting.
+
+While any Temporary Access Grant exists, a non-activating strip remains visible
+directly below the menu-bar item with every scoped grant, second-accurate
+remaining time, and an End action. The menu mirrors those actions and the shield
+turns orange. Automatic-request notifications stack below the strip. This
+continuous presentation is part of the temporary escalation's safety model,
+not a source of authority.
 
 ## Source of truth
 
