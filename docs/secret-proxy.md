@@ -72,4 +72,4 @@ Authorization History, which has one global 50-entry cap.
 
 See [Canonical Domain Language](domain-language.md),
 [Architecture](architecture.md), and
-[ADR 0015](adr/0015-process-bound-secret-proxy.md) for the authoritative model.
+[ADR 0017](adr/0017-process-bound-secret-proxy.md) for the authoritative model.
