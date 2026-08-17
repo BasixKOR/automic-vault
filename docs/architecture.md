@@ -107,7 +107,8 @@ live Varlock resolution process, its live application parent, working
 directory, requested Secret Names, selected Secret Value sources, and Verified
 Launcher. One Approval covers that complete request only. Dynamic Secret Names,
 transient reuse, durable policy, Blessings, and Retained Launcher Provenance do
-not apply.
+not apply. The plugin and signed bridge use exact XPC protocol version 1, first
+available in Automic Vault 3.9.0; either side rejects an incompatible version.
 
 ### Launcher Packaging
 

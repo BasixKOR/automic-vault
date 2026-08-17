@@ -140,7 +140,8 @@ its project-selected key to that operation.
 
 ## Varlock
 
-Install [Varlock](https://varlock.dev) and the published Automic Vault plugin:
+Install [Varlock](https://varlock.dev) and the published
+[Automic Vault plugin](https://github.com/automic-vault/varlock-plugin):
 
 ```sh
 npm install --save-dev varlock @automicvault/varlock-plugin
@@ -174,9 +175,9 @@ be static so the Approval shows the complete set before any Secret Value is
 released.
 
 > [!IMPORTANT]
-> Varlock currently requires one Approval on every run for the complete active
-> Secret set. Automic Authorization and Blessings are not supported for the
-> Varlock plugin yet.
+> Requires Automic Vault 3.9.0 or newer. Varlock currently requires one Approval
+> on every run for the complete active Secret set. Automic Authorization and
+> Blessings are not supported for the Varlock plugin yet.
 
 ## Scripts and Agent Tasks
 

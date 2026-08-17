@@ -15,11 +15,19 @@ unrelated in-process code a trusted Gate Client.
 ## Decision
 
 Automic Vault ships a dedicated, signed Varlock plugin bridge as a Gate Client.
-Before resolution, the JavaScript plugin requires every Automic Vault resolver
-to name its Secret statically. At resolution it collects the complete active
-Secret Name set and starts the bridge once. The bridge submits one multi-Secret
+The JavaScript package lives in the independent
+[automic-vault/varlock-plugin](https://github.com/automic-vault/varlock-plugin)
+repository. Before resolution, it requires every Automic Vault resolver to name
+its Secret statically. At resolution it collects the complete active Secret Name
+set and starts the bridge once. The bridge submits one multi-Secret
 Authorization Request through XPC. This is a Secret Disclosure because Varlock
 receives the raw Secret Values.
+
+The package checks the signed bridge protocol before making a request. Each XPC
+request carries the exact protocol version; the service rejects absent or
+unsupported versions, and a successful response echoes the version for the
+bridge to verify. Protocol version 1 first ships in Automic Vault 3.9.0. A
+version mismatch fails closed.
 
 The request includes a deterministic digest of the active Varlock schema
 sources as descriptive request context. The digest cannot grant authority and
@@ -47,4 +55,6 @@ CLI and without presenting one prompt per Secret. Every Secret Name and selected
 Value source remains explicit in one immutable Authorization Request. Rejecting
 dynamic Secret Names ensures the set cannot grow after Approval. The extra
 signed process keeps the XPC trust boundary narrow. Durable reviewed authority
-still requires a later ADR and implementation.
+still requires a later ADR and implementation. The independent package and app
+can be released separately without silently accepting an incompatible wire
+contract.

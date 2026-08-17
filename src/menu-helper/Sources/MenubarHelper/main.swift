@@ -15,6 +15,7 @@ private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let openMainWindowArgument = "--open-main-window"
 private let pendingMainWindowKey = "pendingMainWindow"
 private let pendingSecretGateKey = "pendingSecretGate"
+private let varlockProtocolVersion: UInt64 = 1
 let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanMaximumDelay: TimeInterval = 5
@@ -3693,6 +3694,10 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
+        guard supportsVarlockProtocol(xpc_dictionary_get_uint64(message, "protocol_version")) else {
+            reply(peer, to: message, ok: false, error: "unsupported Varlock plugin protocol")
+            return
+        }
         guard let requestedKeys = stringArray(message, "keys"),
               let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
               let schemaDigestPointer = xpc_dictionary_get_string(message, "schema_sha256")
@@ -3883,6 +3888,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         ok: true,
                         error: nil,
                         secrets: secrets,
+                        protocolVersion: varlockProtocolVersion,
                         humanApprovalDecision: "approved"
                     )
                 } catch {
@@ -5012,6 +5018,7 @@ private final class ApprovalServer: @unchecked Sendable {
         secrets: [String: String]? = nil,
         value: String? = nil,
         names: [String]? = nil,
+        protocolVersion: UInt64? = nil,
         humanApprovalDecision: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
@@ -5042,6 +5049,9 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             xpc_dictionary_set_value(response, "names", array)
         }
+        if let protocolVersion {
+            xpc_dictionary_set_uint64(response, "protocol_version", protocolVersion)
+        }
         if let humanApprovalDecision {
             humanApprovalDecision.withCString {
                 xpc_dictionary_set_string(response, "human_approval_decision", $0)
@@ -5055,6 +5065,10 @@ private final class ApprovalServer: @unchecked Sendable {
         event.withCString { xpc_dictionary_set_string(message, "event", $0) }
         xpc_connection_send_message(peer, message)
     }
+}
+
+private func supportsVarlockProtocol(_ version: UInt64) -> Bool {
+    version == varlockProtocolVersion
 }
 
 private func matchingDirectAccessLauncher(
@@ -7765,6 +7779,10 @@ private func runApprovalSelfCheck() -> Int32 {
         approvalSource: "Manual"
     ) == nil,
     !makeApprovalPanel().isMovableByWindowBackground
+    else { return 1 }
+    guard supportsVarlockProtocol(1),
+          !supportsVarlockProtocol(0),
+          !supportsVarlockProtocol(2)
     else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",

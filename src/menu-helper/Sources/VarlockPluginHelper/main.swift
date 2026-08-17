@@ -3,6 +3,7 @@ import XPC
 
 private let approvalService = "com.automicvault.av2.approval"
 private let maximumSecretNames = 64
+private let varlockProtocolVersion: UInt64 = 1
 private let menuHelperRequirement = """
 anchor apple generic and certificate leaf[subject.OU] = ZU76A67LGU and \
 identifier "com.automicvault"
@@ -13,15 +14,23 @@ private func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard 3...(maximumSecretNames + 2) ~= CommandLine.arguments.count else {
-    fail("expected a schema digest and between 1 and \(maximumSecretNames) Secret Names")
+if CommandLine.arguments.dropFirst().elementsEqual(["--protocol-version"]) {
+    print(varlockProtocolVersion)
+    exit(0)
 }
-let schemaDigest = CommandLine.arguments[1]
+
+guard 4...(maximumSecretNames + 3) ~= CommandLine.arguments.count else {
+    fail("expected a protocol version, schema digest, and between 1 and \(maximumSecretNames) Secret Names")
+}
+guard UInt64(CommandLine.arguments[1]) == varlockProtocolVersion else {
+    fail("unsupported Varlock protocol version")
+}
+let schemaDigest = CommandLine.arguments[2]
 guard schemaDigest.utf8.count == 64,
       schemaDigest.utf8.allSatisfy({ 48...57 ~= $0 || 97...102 ~= $0 })
 else { fail("invalid Varlock schema digest") }
 
-let secretNames = Array(CommandLine.arguments.dropFirst(2)).sorted()
+let secretNames = Array(CommandLine.arguments.dropFirst(3)).sorted()
 guard Set(secretNames).count == secretNames.count,
       secretNames.allSatisfy({ name in
           let bytes = Array(name.utf8)
@@ -50,6 +59,7 @@ defer { xpc_connection_cancel(connection) }
 
 let request = xpc_dictionary_create_empty()
 xpc_dictionary_set_string(request, "op", "varlock")
+xpc_dictionary_set_uint64(request, "protocol_version", varlockProtocolVersion)
 xpc_dictionary_set_string(request, "schema_sha256", schemaDigest)
 let keys = xpc_array_create_empty()
 for name in secretNames {
@@ -68,6 +78,9 @@ guard xpc_dictionary_get_bool(reply, "ok") else {
     let error = xpc_dictionary_get_string(reply, "error")
         .map(String.init(cString:)) ?? "request denied"
     fail(error)
+}
+guard xpc_dictionary_get_uint64(reply, "protocol_version") == varlockProtocolVersion else {
+    fail("Automic Vault returned an incompatible Varlock protocol response")
 }
 guard let values = xpc_dictionary_get_value(reply, "secrets"),
       xpc_get_type(values) == XPC_TYPE_DICTIONARY
