@@ -6870,6 +6870,7 @@ private struct ApprovalPromptCommandView: View {
                     .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
+            .scrollIndicatorsFlash(onAppear: true)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 14) {
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
@@ -7570,6 +7571,12 @@ private func runApprovalSelfCheck() -> Int32 {
         command: prettyShellCommand(target: "gh", args: []),
         path: "/opt/homebrew/bin/gh"
     )
+    let longShellProgram = #"for n in SPACESHIP_API_KEY SPACESHIP_API_SECRET; do if [[ -n ${(P)n:-} ]]; then echo $n=set; else echo $n=missing; fi; done"#
+    let longCommand = prettyShellCommand(target: "zsh", args: ["-c", longShellProgram])
+    let commandWithLongSingleLineArgument = approvalPromptCommandText(
+        command: longCommand,
+        path: "/bin/zsh"
+    )
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
@@ -7582,6 +7589,8 @@ private func runApprovalSelfCheck() -> Int32 {
             view
           """,
           String(commandWithoutArguments.characters) == "gh    # /opt/homebrew/bin/gh",
+          String(commandWithLongSingleLineArgument.characters)
+            == longCommand.replacingOccurrences(of: "\n", with: "    # /bin/zsh\n", options: [], range: longCommand.range(of: "\n")),
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
