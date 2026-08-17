@@ -4372,7 +4372,6 @@ private final class ApprovalServer: @unchecked Sendable {
             }
         }
     }
-    }
 
     private func matchingBlessedScript(
         request: ApprovalRequest,
