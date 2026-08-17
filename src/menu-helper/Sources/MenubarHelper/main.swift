@@ -3693,29 +3693,48 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
-        guard let keyPointer = xpc_dictionary_get_string(message, "key"),
-              let cwdPointer = xpc_dictionary_get_string(message, "cwd")
+        guard let requestedKeys = stringArray(message, "keys"),
+              let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
+              let schemaDigestPointer = xpc_dictionary_get_string(message, "schema_sha256")
         else {
             reply(peer, to: message, ok: false, error: "invalid Varlock plugin request")
             return
         }
-        let key = String(cString: keyPointer)
+        let keys = requestedKeys.sorted()
         let cwd = String(cString: cwdPointer)
-        guard validSecretKeyName(key) else {
-            reply(peer, to: message, ok: false, error: "invalid Secret Name")
-            return
-        }
-        var parentIdentity = AVProcessIdentity()
-        guard identity.ppid > 1,
-              av_process_identity(identity.ppid, &parentIdentity),
-              let parentExecution = retainedProcessExecution(pid: identity.ppid, identity: parentIdentity)
+        let schemaDigest = String(cString: schemaDigestPointer)
+        guard 1...64 ~= keys.count,
+              Set(keys).count == keys.count,
+              keys.allSatisfy(validSecretKeyName),
+              schemaDigest.utf8.count == 64,
+              schemaDigest.utf8.allSatisfy({ 48...57 ~= $0 || 97...102 ~= $0 })
         else {
-            reply(peer, to: message, ok: false, error: "Varlock process identity is unavailable")
+            reply(peer, to: message, ok: false, error: "invalid Varlock Secret declaration")
             return
         }
-        let parentPath = pathString(parentIdentity)
-        guard !parentPath.isEmpty else {
-            reply(peer, to: message, ok: false, error: "Varlock process path is unavailable")
+        var resolutionIdentity = AVProcessIdentity()
+        guard identity.ppid > 1,
+              av_process_identity(identity.ppid, &resolutionIdentity),
+              let resolutionExecution = retainedProcessExecution(
+                  pid: identity.ppid, identity: resolutionIdentity
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "Varlock resolution process is unavailable")
+            return
+        }
+        var applicationIdentity = AVProcessIdentity()
+        guard resolutionIdentity.ppid > 1,
+              av_process_identity(resolutionIdentity.ppid, &applicationIdentity),
+              let applicationExecution = retainedProcessExecution(
+                  pid: resolutionIdentity.ppid, identity: applicationIdentity
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "Varlock application process is unavailable")
+            return
+        }
+        let applicationPath = pathString(applicationIdentity)
+        guard !applicationPath.isEmpty else {
+            reply(peer, to: message, ok: false, error: "Varlock application path is unavailable")
             return
         }
         let launchers = launcherIdentities(for: identity)
@@ -3748,137 +3767,150 @@ private final class ApprovalServer: @unchecked Sendable {
             case .success(let loaded): storedSecrets = loaded
             case .failure(let status): throw AppError("failed to inspect stored Secrets: \(status)")
             }
-            selected = try resolveStoredSecretValues(names: [key], cwd: cwd, secrets: storedSecrets)
+            selected = try resolveStoredSecretValues(names: keys, cwd: cwd, secrets: storedSecrets)
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
         }
-        guard selected[key] != nil else {
-            reply(peer, to: message, ok: false, error: "failed to load secret \(key): \(errSecItemNotFound)")
+        guard let missingKey = keys.first(where: { selected[$0] == nil }) else {
+            let title = keys.count == 1
+                ? "Allow the Varlock plugin to receive \(keys[0])?"
+                : "Allow the Varlock plugin to receive \(keys.count) Secrets?"
+            let request = ApprovalRequest(
+                op: ApprovalServiceOperation.varlock.rawValue,
+                keys: keys,
+                target: applicationPath,
+                args: Array((processArguments(resolutionIdentity.ppid) ?? []).dropFirst()),
+                cwd: cwd,
+                replaceExistingEnv: false,
+                allowMissingKeys: false,
+                envConflicts: [],
+                shebangScript: nil,
+                scriptData: nil,
+                tool: "Varlock plugin",
+                title: title,
+                detail: "This Secret Disclosure returns the selected Secret Values to Varlock for one application process. Schema SHA-256: \(schemaDigest).",
+                selectedValues: selected
+            )
+            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+                MainActor.assumeIsolated {
+                    guard !cancellation.isCanceled, self.canRequestHumanApproval() else { return }
+                    self.sendEvent(humanApprovalRequiredEvent, to: peer)
+                }
+            }
+            DispatchQueue.main.async {
+                if cancellation.isCanceled {
+                    _ = self.onAccessRequest(canceledAccessRequestRecord(
+                        request: request, callerPath: callerPath, launcher: launcher
+                    ))
+                    return
+                }
+                guard self.canRequestHumanApproval() else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        approvalSource: "Auto",
+                        reason: "Human approval unavailable",
+                        launcher: launcher
+                    ))
+                    self.reply(peer, to: message, ok: false, error: "human approval unavailable")
+                    return
+                }
+                let decision = showApprovalAlert(
+                    request: request,
+                    callerPath: callerPath,
+                    pid: pid,
+                    signing: signing,
+                    scriptApproval: nil,
+                    launcher: launcher,
+                    launcherFallbackPath: ancestorFallbackPath ?? applicationPath,
+                    automaticApprovalExplanation: nil,
+                    cancellation: cancellation
+                )
+                if decision == .canceled {
+                    _ = self.onAccessRequest(canceledAccessRequestRecord(
+                        request: request, callerPath: callerPath, launcher: launcher
+                    ))
+                    return
+                }
+                guard decision == .approved else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        approvalSource: "Manual",
+                        reason: "Denied in prompt",
+                        launcher: launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "Varlock plugin request denied",
+                        humanApprovalDecision: "denied"
+                    )
+                    return
+                }
+                do {
+                    guard retainedProcessExecutionIsLive(resolutionExecution),
+                          retainedProcessExecutionIsLive(applicationExecution),
+                          retainedProcessExecutionIsLive(launcherExecution)
+                    else {
+                        throw AppError(
+                            "Varlock, its application, or its Verified Launcher changed before Secret release"
+                        )
+                    }
+                    let secrets = try self.approvedSecrets(for: request)
+                    guard secrets.count == keys.count,
+                          keys.allSatisfy({ secrets[$0] != nil })
+                    else {
+                        throw AppError("Automic Vault returned an incomplete Secret set")
+                    }
+                    guard self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Manual",
+                        reason: "Approved in prompt",
+                        launcher: launcher
+                    )) else {
+                        throw AppError("approval audit log is unavailable")
+                    }
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: true,
+                        error: nil,
+                        secrets: secrets,
+                        humanApprovalDecision: "approved"
+                    )
+                } catch {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        approvalSource: "Manual",
+                        reason: error.localizedDescription,
+                        launcher: launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: error.localizedDescription,
+                        humanApprovalDecision: "approved"
+                    )
+                }
+            }
             return
         }
-        let request = ApprovalRequest(
-            op: ApprovalServiceOperation.varlock.rawValue,
-            keys: [key],
-            target: parentPath,
-            args: Array((processArguments(identity.ppid) ?? []).dropFirst()),
-            cwd: cwd,
-            replaceExistingEnv: false,
-            allowMissingKeys: false,
-            envConflicts: [],
-            shebangScript: nil,
-            scriptData: nil,
-            tool: "Varlock plugin",
-            title: "Allow the Varlock plugin to receive \(key)?",
-            detail: "This Secret Disclosure returns the selected Secret Value to Varlock for this resolution.",
-            selectedValues: selected
+        reply(
+            peer,
+            to: message,
+            ok: false,
+            error: "failed to load secret \(missingKey): \(errSecItemNotFound)"
         )
-        RunLoop.main.perform(inModes: [.modalPanel, .default]) {
-            MainActor.assumeIsolated {
-                guard !cancellation.isCanceled, self.canRequestHumanApproval() else { return }
-                self.sendEvent(humanApprovalRequiredEvent, to: peer)
-            }
-        }
-        DispatchQueue.main.async {
-            if cancellation.isCanceled {
-                _ = self.onAccessRequest(canceledAccessRequestRecord(
-                    request: request, callerPath: callerPath, launcher: launcher
-                ))
-                return
-            }
-            guard self.canRequestHumanApproval() else {
-                _ = self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Denied",
-                    approvalSource: "Auto",
-                    reason: "Human approval unavailable",
-                    launcher: launcher
-                ))
-                self.reply(peer, to: message, ok: false, error: "human approval unavailable")
-                return
-            }
-            let decision = showApprovalAlert(
-                request: request,
-                callerPath: callerPath,
-                pid: pid,
-                signing: signing,
-                scriptApproval: nil,
-                launcher: launcher,
-                launcherFallbackPath: ancestorFallbackPath ?? parentPath,
-                automaticApprovalExplanation: nil,
-                cancellation: cancellation
-            )
-            if decision == .canceled {
-                _ = self.onAccessRequest(canceledAccessRequestRecord(
-                    request: request, callerPath: callerPath, launcher: launcher
-                ))
-                return
-            }
-            guard decision == .approved else {
-                _ = self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Denied",
-                    approvalSource: "Manual",
-                    reason: "Denied in prompt",
-                    launcher: launcher
-                ))
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: false,
-                    error: "Varlock plugin request denied",
-                    humanApprovalDecision: "denied"
-                )
-                return
-            }
-            do {
-                guard retainedProcessExecutionIsLive(parentExecution),
-                      retainedProcessExecutionIsLive(launcherExecution)
-                else {
-                    throw AppError("Varlock or its Verified Launcher changed before Secret release")
-                }
-                let secrets = try self.approvedSecrets(for: request)
-                guard let value = secrets[key] else {
-                    throw AppError("Automic Vault returned no Secret Value for \(key)")
-                }
-                guard self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Approved",
-                    approvalSource: "Manual",
-                    reason: "Approved in prompt",
-                    launcher: launcher
-                )) else {
-                    throw AppError("approval audit log is unavailable")
-                }
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: true,
-                    error: nil,
-                    value: value,
-                    humanApprovalDecision: "approved"
-                )
-            } catch {
-                _ = self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Failed",
-                    approvalSource: "Manual",
-                    reason: error.localizedDescription,
-                    launcher: launcher
-                ))
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: false,
-                    error: error.localizedDescription,
-                    humanApprovalDecision: "approved"
-                )
-            }
-        }
     }
 
     private func matchingBlessedScript(

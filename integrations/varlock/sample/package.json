@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "start": "node app.mjs",
-    "test": "AUTOMIC_VAULT_VARLOCK_HELPER=/usr/bin/printf node app.mjs"
+    "test": "npm run test:sample && npm run test:batch",
+    "test:sample": "AUTOMIC_VAULT_VARLOCK_HELPER=./mock-helper.mjs AUTOMIC_VAULT_VARLOCK_EXPECTED_NAMES=VARLOCK_SAMPLE_SECRET node app.mjs",
+    "test:batch": "cd batch-fixture && AUTOMIC_VAULT_VARLOCK_HELPER=../mock-helper.mjs AUTOMIC_VAULT_VARLOCK_EXPECTED_NAMES=VARLOCK_SAMPLE_FIRST,VARLOCK_SAMPLE_SECOND node app.mjs"
   },
   "dependencies": {
     "@automicvault/varlock-plugin": "file:..",

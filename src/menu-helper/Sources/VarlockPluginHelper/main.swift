@@ -2,6 +2,7 @@ import Foundation
 import XPC
 
 private let approvalService = "com.automicvault.av2.approval"
+private let maximumSecretNames = 64
 private let menuHelperRequirement = """
 anchor apple generic and certificate leaf[subject.OU] = ZU76A67LGU and \
 identifier "com.automicvault"
@@ -12,15 +13,24 @@ private func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard CommandLine.arguments.count == 2 else {
-    fail("expected one Secret Name")
+guard 3...(maximumSecretNames + 2) ~= CommandLine.arguments.count else {
+    fail("expected a schema digest and between 1 and \(maximumSecretNames) Secret Names")
 }
-let secretName = CommandLine.arguments[1]
-let bytes = Array(secretName.utf8)
-guard let first = bytes.first,
-      first == 95 || 65...90 ~= first || 97...122 ~= first,
-      bytes.dropFirst().allSatisfy({
-          $0 == 95 || 48...57 ~= $0 || 65...90 ~= $0 || 97...122 ~= $0
+let schemaDigest = CommandLine.arguments[1]
+guard schemaDigest.utf8.count == 64,
+      schemaDigest.utf8.allSatisfy({ 48...57 ~= $0 || 97...102 ~= $0 })
+else { fail("invalid Varlock schema digest") }
+
+let secretNames = Array(CommandLine.arguments.dropFirst(2)).sorted()
+guard Set(secretNames).count == secretNames.count,
+      secretNames.allSatisfy({ name in
+          let bytes = Array(name.utf8)
+          guard let first = bytes.first,
+                first == 95 || 65...90 ~= first || 97...122 ~= first
+          else { return false }
+          return bytes.dropFirst().allSatisfy({
+              $0 == 95 || 48...57 ~= $0 || 65...90 ~= $0 || 97...122 ~= $0
+          })
       })
 else {
     fail("invalid Secret Name")
@@ -40,7 +50,12 @@ defer { xpc_connection_cancel(connection) }
 
 let request = xpc_dictionary_create_empty()
 xpc_dictionary_set_string(request, "op", "varlock")
-xpc_dictionary_set_string(request, "key", secretName)
+xpc_dictionary_set_string(request, "schema_sha256", schemaDigest)
+let keys = xpc_array_create_empty()
+for name in secretNames {
+    name.withCString { xpc_array_set_string(keys, XPC_ARRAY_APPEND, $0) }
+}
+xpc_dictionary_set_value(request, "keys", keys)
 xpc_dictionary_set_string(request, "cwd", cwd)
 
 let reply = xpc_connection_send_message_with_reply_sync(connection, request)
@@ -54,7 +69,19 @@ guard xpc_dictionary_get_bool(reply, "ok") else {
         .map(String.init(cString:)) ?? "request denied"
     fail(error)
 }
-guard let value = xpc_dictionary_get_string(reply, "value") else {
-    fail("Automic Vault returned no Secret Value")
+guard let values = xpc_dictionary_get_value(reply, "secrets"),
+      xpc_get_type(values) == XPC_TYPE_DICTIONARY
+else {
+    fail("Automic Vault returned no Secret Values")
 }
-FileHandle.standardOutput.write(Data(String(cString: value).utf8))
+var secrets: [String: String] = [:]
+for name in secretNames {
+    guard let value = xpc_dictionary_get_string(values, name) else {
+        fail("Automic Vault returned no value for \(name)")
+    }
+    secrets[name] = String(cString: value)
+}
+guard let output = try? JSONSerialization.data(withJSONObject: secrets, options: [.sortedKeys]) else {
+    fail("could not encode Secret Values")
+}
+FileHandle.standardOutput.write(output)
