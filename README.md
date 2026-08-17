@@ -1,6 +1,6 @@
 # Automic Vault [![Knock Knock](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
 
-> Your secrets manager should know what the tool is doing.
+> Your secrets manager should know what the secrets *do*.
 
 Automic Vault is a macOS secrets manager for developer tools and agents. It
 moves supported credentials out of plaintext files and checks the complete
