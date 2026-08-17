@@ -102,7 +102,55 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     #expect(refreshed.id == first.id)
     #expect(refreshed.generation != first.generation)
     #expect(refreshed.expiresAt == start.addingTimeInterval(620))
+    #expect(refreshed.useCount == 1)
+    #expect(refreshed.lastUsedAt == start.addingTimeInterval(20))
     #expect(controller.snapshots(wallNow: start, monotonicNow: 30).count == 2)
+}
+
+@Test func successfulUsesUpdateGrantUsage() throws {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let grant = controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 10
+    )
+    #expect(grant.useCount == 1)
+    #expect(grant.lastUsedAt == start)
+
+    _ = controller.withActiveLease(
+        authorizationGateID: "aws",
+        launcherDesignatedRequirement: "identifier com.example.launcher",
+        launcherRuntimeProtection: .hardened,
+        agentTaskContext: AgentTaskContext(provider: .codex, id: codexID),
+        classification: .mutating,
+        wallNow: start.addingTimeInterval(5),
+        monotonicNow: 15
+    ) { _ in false }
+    let afterFailure = try #require(controller.snapshots(
+        wallNow: start.addingTimeInterval(5),
+        monotonicNow: 15
+    ).first)
+    #expect(afterFailure.useCount == 1)
+    #expect(afterFailure.lastUsedAt == start)
+
+    _ = controller.withActiveLease(
+        authorizationGateID: "aws",
+        launcherDesignatedRequirement: "identifier com.example.launcher",
+        launcherRuntimeProtection: .hardened,
+        agentTaskContext: AgentTaskContext(provider: .codex, id: codexID),
+        classification: .mutating,
+        wallNow: start.addingTimeInterval(10),
+        monotonicNow: 20
+    ) { _ in true }
+    let afterSuccess = try #require(controller.snapshots(
+        wallNow: start.addingTimeInterval(10),
+        monotonicNow: 20
+    ).first)
+    #expect(afterSuccess.useCount == 2)
+    #expect(afterSuccess.lastUsedAt == start.addingTimeInterval(10))
 }
 
 @Test func exactScopeAndWriteClassificationAreRequired() {
@@ -176,7 +224,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     let release = DispatchSemaphore(value: 0)
     let leaseFinished = DispatchSemaphore(value: 0)
     Thread.detachNewThread {
-        controller.withActiveLease(
+        _ = controller.withActiveLease(
             authorizationGateID: "aws",
             launcherDesignatedRequirement: "identifier com.example.launcher",
             launcherRuntimeProtection: .hardened,
@@ -187,6 +235,7 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
         ) { _ in
             entered.signal()
             _ = release.wait(timeout: .now() + 5)
+            return true
         }
         leaseFinished.signal()
     }

@@ -269,9 +269,10 @@ Secret mutation operations remain outside the grant.
 A Temporary Access Grant can begin only when the user selects its explicit
 action in an eligible live write-request Approval. It is not a
 durable Authorization Policy or Blessing. Automic Vault shows every active
-grant continuously, lets the user end each grant immediately, and revokes all
-grants when the user session becomes inactive, displays sleep, an update begins,
-or the service terminates. Expiry uses both wall and monotonic clocks.
+grant continuously with its successful-use count and last-use time, lets the
+user end each grant immediately, and revokes all grants when the user session
+becomes inactive, displays sleep, an update begins, or the service terminates.
+Expiry uses both wall and monotonic clocks.
 
 ### Fail Closed
 

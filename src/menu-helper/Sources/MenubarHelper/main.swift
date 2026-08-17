@@ -3642,7 +3642,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: launcher
                     )) else {
                         reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
-                        return true
+                        return false
                     }
                     rememberRetainedProvenance(
                         at: authorizationGate,
@@ -7384,6 +7384,11 @@ private func temporaryAccessGrantRemainingText(_ remaining: TimeInterval) -> Str
     return String(format: "%d:%02d", seconds / 60, seconds % 60)
 }
 
+private func temporaryAccessGrantUsageText(_ grant: TemporaryAccessGrantSnapshot) -> String {
+    let uses = grant.useCount == 1 ? "1 use" : "\(grant.useCount) uses"
+    return "Write Access: \(uses) · Last used \(grant.lastUsedAt.formatted(date: .omitted, time: .standard))"
+}
+
 private func temporaryAccessGrantMenuTitle(
     _ grant: TemporaryAccessGrantSnapshot,
     wallNow: Date,
@@ -7392,7 +7397,7 @@ private func temporaryAccessGrantMenuTitle(
     let remaining = temporaryAccessGrantRemainingText(
         grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow)
     )
-    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) — End"
+    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) · \(temporaryAccessGrantUsageText(grant)) — End"
 }
 
 private final class TemporaryAccessGrantPanel: NSPanel {
@@ -7497,11 +7502,14 @@ private struct TemporaryAccessGrantRow: View {
                 Text("\(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(temporaryAccessGrantRemainingText(remaining)) remaining")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                Text(temporaryAccessGrantUsageText(grant))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining"
+                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining, \(temporaryAccessGrantUsageText(grant))"
             )
 
             Button("End", action: end)
@@ -9601,7 +9609,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
               grant,
               wallNow: grantWallNow,
               monotonicNow: grantMonotonicNow
-          ) == "Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 — End",
+          ).contains("Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 · Write Access: 1 use · Last used "),
           stripView.fittingSize.width == 430,
           stackedToastFrame.maxY == sampleStripFrame.minY - 4,
           grantPanel.styleMask.contains(.borderless),
