@@ -23,6 +23,8 @@ macOS has numerous protections to prevent same user processes from modifying
 ## Important Caveats
 
 - This is not an officially supported configuration for Homebrew.
+- `brew services` is unsupported. Hardening refuses to proceed while any
+  Homebrew service is loaded or registered.
 - Casks that are not simple wrappers around executables are unsupported.
 - ZSH requires its completions to be owned by the executing user for some reason
   so we remove them from `brew shellenv zsh`.
