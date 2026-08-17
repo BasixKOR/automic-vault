@@ -1406,11 +1406,52 @@ private func accessRequestRecord(
         launcher: launcher.map { approvalPromptRequester(launcher: $0, fallback: $0.path).name },
         callerPath: callerPath,
         target: request.target,
+        targetRuntimeProtection: automaticTargetRuntimeProtection(
+            request: request,
+            decision: decision,
+            approvalSource: approvalSource
+        ),
         cwd: request.cwd,
         keys: request.keys.sorted(),
         detail: request.detail,
         secretValueSources: request.selectedValues.mapValues { $0.source.displayName }
     )
+}
+
+private func automaticTargetRuntimeProtection(
+    request: ApprovalRequest,
+    decision: String,
+    approvalSource: String
+) -> String? {
+    guard decision == "Approved",
+          approvalSource.caseInsensitiveCompare("Auto") == .orderedSame,
+          !request.selectedValues.isEmpty
+    else { return nil }
+
+    let protection: LauncherRuntimeProtection?
+    if let parent = request.dockerParent {
+        protection = liveSigningInfo(for: parent)?.runtimeProtection
+    } else {
+        protection = executableSigningInfo(path: request.target)?.runtimeProtection
+    }
+    return protection?.targetAuthorizationHistoryDescription
+        ?? "Hardened Runtime could not be verified; Secret may be exposed to debugging or process-memory inspection"
+}
+
+private func liveSigningInfo(for parent: DockerCredentialParent) -> LiveSigningInfo? {
+    func matches(_ identity: AVProcessIdentity) -> Bool {
+        identity.start_usec == parent.startUsec
+            && identity.euid == parent.euid
+            && pathString(identity) == parent.target
+    }
+    var before = AVProcessIdentity()
+    guard av_process_identity(parent.pid, &before),
+          matches(before),
+          let signing = liveSigningInfo(pid: parent.pid),
+          signing.mainExecutable == parent.target
+    else { return nil }
+    var after = AVProcessIdentity()
+    return av_process_identity(parent.pid, &after) && matches(after) ? signing : nil
 }
 
 private func shortAppName(_ identifier: String) -> String {
@@ -7408,11 +7449,57 @@ private func runSecretMutationSelfCheck() -> Int32 {
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    var selfIdentity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
+        return 1
+    }
+    let reusedDockerPID = DockerCredentialParent(
+        pid: getpid(),
+        startUsec: selfIdentity.start_usec &+ 1,
+        euid: selfIdentity.euid,
+        target: pathString(selfIdentity),
+        arguments: []
+    )
+    guard liveSigningInfo(for: reusedDockerPID) == nil else { return 1 }
+    let targetRuntimeRequest = ApprovalRequest(
+        op: "inject",
+        keys: ["TEST_SECRET"],
+        target: "/bin/zsh",
+        args: [],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil,
+        selectedValues: [
+            "TEST_SECRET": StoredSecretValue(
+                source: .global,
+                keychainAccount: "TEST_SECRET",
+                accessibility: .whenUnlocked,
+                keychainProperties: []
+            ),
+        ]
+    )
     guard processEnvironmentValueSelfCheck() else {
         print("bounded peer environment self-check failed")
         return 2
     }
-    guard !makeApprovalPanel().isMovableByWindowBackground else { return 1 }
+    guard automaticTargetRuntimeProtection(
+        request: targetRuntimeRequest,
+        decision: "Approved",
+        approvalSource: "Auto"
+    ) != nil,
+    automaticTargetRuntimeProtection(
+        request: targetRuntimeRequest,
+        decision: "Approved",
+        approvalSource: "Manual"
+    ) == nil,
+    !makeApprovalPanel().isMovableByWindowBackground
+    else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
         signing: helperSigning
