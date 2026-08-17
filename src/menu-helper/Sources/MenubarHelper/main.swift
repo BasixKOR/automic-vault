@@ -113,6 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var temporaryAccessGrantSeparator: NSMenuItem?
     private var temporaryAccessGrantPanel: TemporaryAccessGrantPanel?
     private var temporaryAccessGrantTimer: Timer?
+    private let liveSecretUses = LiveSecretUseController<LiveSecretUseProcess>()
+    private var liveSecretUseSnapshots: [LiveSecretUseSnapshot] = []
+    private var liveSecretUseMenuItems: [NSMenuItem] = []
+    private var liveSecretUseHeadingItem: NSMenuItem?
+    private var liveSecretUseSeparator: NSMenuItem?
+    private var liveSecretUseTimer: Timer?
     private var baseStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
@@ -282,11 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrants()
+        refreshLiveSecretUses()
         refreshCLIInstallState()
         do {
             let approval = try ApprovalServer(
                 serviceName: approvalServiceName,
-                temporaryAccessGrants: temporaryAccessGrants
+                temporaryAccessGrants: temporaryAccessGrants,
+                liveSecretUses: liveSecretUses
             ) { [weak self] event in
                 self?.recordAutoApproval(event)
             } onAccessRequest: { [weak self] record in
@@ -319,6 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.showMainWindow(secretGateID: secretGateID)
             } onTemporaryAccessGrantsChanged: { [weak self] in
                 self?.refreshTemporaryAccessGrants()
+            } onLiveSecretUsesChanged: { [weak self] in
+                self?.refreshLiveSecretUses()
             } canRequestHumanApproval: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
@@ -349,6 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTemporaryAccessGrants()
         temporaryAccessGrantTimer?.invalidate()
         temporaryAccessGrantTimer = nil
+        liveSecretUses.cancelAll()
+        refreshLiveSecretUses()
+        liveSecretUseTimer?.invalidate()
+        liveSecretUseTimer = nil
         if NSApp.modalWindow is ApprovalPanel {
             NSApp.abortModal()
         }
@@ -1024,15 +1038,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             moreItem.submenu = submenu
             autoApprovalItems.append(moreItem)
         }
+        let insertionIndex = temporaryAccessGrantMenuItemCount + liveSecretUseMenuItemCount
         for item in autoApprovalItems.reversed() {
-            menu.insertItem(item, at: 0)
+            menu.insertItem(item, at: insertionIndex)
         }
         guard let heading = autoApprovalHistoryHeading(hasRecords: !autoApprovalItems.isEmpty) else { return }
-        menu.insertItem(heading, at: 0)
+        menu.insertItem(heading, at: insertionIndex)
         autoApprovalHeadingItem = heading
         let separator = NSMenuItem.separator()
-        menu.insertItem(separator, at: autoApprovalItems.count + 1)
+        menu.insertItem(separator, at: insertionIndex + autoApprovalItems.count + 1)
         autoApprovalSeparator = separator
+    }
+
+    private var temporaryAccessGrantMenuItemCount: Int {
+        temporaryAccessGrantHeadingItem == nil ? 0 : temporaryAccessGrantMenuItems.count + 2
+    }
+
+    private var liveSecretUseMenuItemCount: Int {
+        liveSecretUseHeadingItem == nil ? 0 : liveSecretUseMenuItems.count + 2
     }
 
     private func refreshTemporaryAccessGrants() {
@@ -1106,6 +1129,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
         refreshTemporaryAccessGrants()
+    }
+
+    private func refreshLiveSecretUses() {
+        liveSecretUseSnapshots = liveSecretUses.snapshots(isLive: liveSecretUseProcessIsLive)
+        if liveSecretUseSnapshots.isEmpty {
+            liveSecretUseTimer?.invalidate()
+            liveSecretUseTimer = nil
+        } else if liveSecretUseTimer == nil {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshLiveSecretUses() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            liveSecretUseTimer = timer
+        }
+        refreshLiveSecretUseMenuItems()
+    }
+
+    private func refreshLiveSecretUseMenuItems() {
+        guard !isUpdating, let menu = statusItem.menu else { return }
+        liveSecretUseMenuItems.forEach(menu.removeItem)
+        liveSecretUseMenuItems.removeAll()
+        if let liveSecretUseHeadingItem {
+            menu.removeItem(liveSecretUseHeadingItem)
+            self.liveSecretUseHeadingItem = nil
+        }
+        if let liveSecretUseSeparator {
+            menu.removeItem(liveSecretUseSeparator)
+            self.liveSecretUseSeparator = nil
+        }
+        guard !liveSecretUseSnapshots.isEmpty else { return }
+
+        liveSecretUseMenuItems = liveSecretUseSnapshots.map { use in
+            let launcher = use.launcherName ?? "Launcher unavailable"
+            let target = URL(fileURLWithPath: use.targetPath).lastPathComponent
+            let count = "\(use.secretNames.count) \(use.secretNames.count == 1 ? "Secret" : "Secrets")"
+            let item = NSMenuItem(
+                title: "\(launcher) → \(target) · \(count)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            let submenu = NSMenu()
+            let launcherItem = NSMenuItem(
+                title: use.launcherName.map { "Verified Launcher: \($0)" }
+                    ?? "Verified Launcher unavailable",
+                action: nil,
+                keyEquivalent: ""
+            )
+            launcherItem.isEnabled = false
+            submenu.addItem(launcherItem)
+            let targetItem = NSMenuItem(
+                title: "Target: \(use.targetPath) (PID \(use.processID))",
+                action: nil,
+                keyEquivalent: ""
+            )
+            targetItem.isEnabled = false
+            submenu.addItem(targetItem)
+            submenu.addItem(.separator())
+            submenu.addItem(makeStatusMenuItem(title: "Secret Names"))
+            for name in use.secretNames {
+                let secretItem = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+                secretItem.isEnabled = false
+                submenu.addItem(secretItem)
+            }
+            submenu.addItem(.separator())
+            for text in [
+                "Shown while this Target process remains live.",
+                "The Target may pass values to child processes; released values cannot be revoked.",
+            ] {
+                let note = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                note.isEnabled = false
+                submenu.addItem(note)
+            }
+            item.submenu = submenu
+            return item
+        }
+        let insertionIndex = temporaryAccessGrantMenuItemCount
+        for item in liveSecretUseMenuItems.reversed() {
+            menu.insertItem(item, at: insertionIndex)
+        }
+        let heading = makeStatusMenuItem(title: "Live Secret Uses")
+        menu.insertItem(heading, at: insertionIndex)
+        liveSecretUseHeadingItem = heading
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: insertionIndex + liveSecretUseMenuItems.count + 1)
+        liveSecretUseSeparator = separator
     }
 
     private func refreshTemporaryAccessGrantPanel() {
@@ -1205,6 +1313,7 @@ extension AppDelegate: NSMenuDelegate {
         guard !isStartingUp, !isUpdating else { return }
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrantMenuItems()
+        refreshLiveSecretUses()
         refreshDoctorStatus()
     }
 }
@@ -2106,13 +2215,20 @@ private enum RetainedAuthorizationGate: Hashable {
     case secretGate(String)
 }
 
-private struct RetainedProcessExecution: Hashable {
+private struct RetainedProcessExecution: Hashable, Sendable {
     let pid: Int32
     let pidVersion: Int32
     let startUsec: UInt64
     let effectiveUserID: UInt32
     let auditSessionID: UInt32
     let codeIdentity: Data
+}
+
+private struct LiveSecretUseProcess: Hashable, Sendable {
+    let pid: Int32
+    let startUsec: UInt64
+    let effectiveUserID: UInt32
+    let auditSessionID: UInt32
 }
 
 private struct RetainedProcessChainNode {
@@ -2439,8 +2555,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) -> Void
     private let onOpenWindow: @MainActor () -> Void
     private let onTemporaryAccessGrantsChanged: @MainActor () -> Void
+    private let onLiveSecretUsesChanged: @MainActor () -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private let temporaryAccessGrants: TemporaryAccessGrantController
+    private let liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
     private var transientApprovals = TransientApprovalCache()
@@ -2454,6 +2572,7 @@ private final class ApprovalServer: @unchecked Sendable {
     init(
         serviceName: String,
         temporaryAccessGrants: TemporaryAccessGrantController,
+        liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
@@ -2462,6 +2581,7 @@ private final class ApprovalServer: @unchecked Sendable {
         ) -> Void = { _, completion in completion(.failed("script blessing is unavailable")) },
         onOpenWindow: @escaping @MainActor () -> Void = {},
         onTemporaryAccessGrantsChanged: @escaping @MainActor () -> Void = {},
+        onLiveSecretUsesChanged: @escaping @MainActor () -> Void = {},
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -2469,6 +2589,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         self.serviceName = serviceName
         self.temporaryAccessGrants = temporaryAccessGrants
+        self.liveSecretUses = liveSecretUses
         self.teamIdentifier = teamIdentifier
         self.secretGateDescriptors = try loadSecretGateDescriptors(
             avExecutableURL: avExecutableURL()
@@ -2478,6 +2599,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.onBlessRequest = onBlessRequest
         self.onOpenWindow = onOpenWindow
         self.onTemporaryAccessGrantsChanged = onTemporaryAccessGrantsChanged
+        self.onLiveSecretUsesChanged = onLiveSecretUsesChanged
         self.canRequestHumanApproval = canRequestHumanApproval
     }
 
@@ -3016,6 +3138,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: matchedLauncher
                     ))
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: matchedLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
@@ -3187,6 +3316,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: directAccessLauncher
                     ))
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: directAccessLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(
                     peer,
                     to: message,
@@ -3255,6 +3391,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         ))
                     }
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: authorizingLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
@@ -3370,6 +3513,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                         return
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: promptLauncher,
+                        pid: pid,
+                        identity: identity
+                    )
                     self.reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
@@ -3502,6 +3652,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         )
                         return
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: refreshedCandidate.launcher,
+                        pid: pid,
+                        identity: identity
+                    )
                     self.temporaryAccessGrants.startWithLease(
                         scope: refreshedCandidate.scope,
                         launcherName: refreshedCandidate.launcherName,
@@ -3571,6 +3728,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 if !requiresFreshApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
+                self.recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: promptLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 self.reply(
                     peer,
                     to: message,
@@ -3642,7 +3806,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: launcher
                     )) else {
                         reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
-                        return true
+                        return false
                     }
                     rememberRetainedProvenance(
                         at: authorizationGate,
@@ -3658,6 +3822,13 @@ private final class ApprovalServer: @unchecked Sendable {
                             launcher: launcher
                         ))
                     }
+                    recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: launcher,
+                        pid: pid,
+                        identity: identity
+                    )
                     reply(
                         peer,
                         to: message,
@@ -3826,6 +3997,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     pid: pid,
+                    targetPID: applicationIdentity.pid,
                     signing: signing,
                     scriptApproval: nil,
                     launcher: launcher,
@@ -3882,6 +4054,12 @@ private final class ApprovalServer: @unchecked Sendable {
                     )) else {
                         throw AppError("approval audit log is unavailable")
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        secretNames: Set(secrets.keys),
+                        launcher: launcher,
+                        execution: applicationExecution
+                    )
                     self.reply(
                         peer,
                         to: message,
@@ -4050,6 +4228,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     ))
                 }
             }
+            recordLiveSecretUse(
+                request: request,
+                payload: payload,
+                launcher: launcher,
+                pid: pid,
+                identity: identity
+            )
             reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
         } catch {
             _ = onAccessRequest(accessRequestRecord(
@@ -4740,6 +4925,68 @@ private final class ApprovalServer: @unchecked Sendable {
 
         """
         return ApprovedPayload(secrets: [:], value: config)
+    }
+
+    private func recordLiveSecretUse(
+        request: ApprovalRequest,
+        payload: ApprovedPayload,
+        launcher: LauncherIdentity?,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) {
+        var secretNames = Set(payload.secrets.keys)
+        if request.tool == "aws", payload.value != nil {
+            secretNames.formUnion(request.selectedValues.keys)
+        }
+        guard !secretNames.isEmpty else { return }
+
+        let process: LiveSecretUseProcess?
+        if let parent = request.dockerParent, dockerCredentialParentValid(parent) {
+            var parentIdentity = AVProcessIdentity()
+            process = av_process_identity(parent.pid, &parentIdentity)
+                ? liveSecretUseProcess(pid: parent.pid, identity: parentIdentity)
+                : nil
+        } else {
+            process = liveSecretUseProcess(pid: pid, identity: identity)
+        }
+        guard let process else { return }
+
+        let launcherName = launcher.map {
+            approvalPromptRequester(launcher: $0, fallback: $0.path).name
+        }
+        liveSecretUses.record(
+            process: process,
+            launcherDesignatedRequirement: launcher?.designatedRequirement,
+            launcherName: launcherName,
+            targetPath: request.target,
+            processID: process.pid,
+            secretNames: secretNames
+        )
+        Task { @MainActor in self.onLiveSecretUsesChanged() }
+    }
+
+    private func recordLiveSecretUse(
+        request: ApprovalRequest,
+        secretNames: Set<String>,
+        launcher: LauncherIdentity,
+        execution: RetainedProcessExecution
+    ) {
+        let process = LiveSecretUseProcess(
+            pid: execution.pid,
+            startUsec: execution.startUsec,
+            effectiveUserID: execution.effectiveUserID,
+            auditSessionID: execution.auditSessionID
+        )
+        guard liveSecretUseProcessIsLive(process) else { return }
+        liveSecretUses.record(
+            process: process,
+            launcherDesignatedRequirement: launcher.designatedRequirement,
+            launcherName: approvalPromptRequester(launcher: launcher, fallback: launcher.path).name,
+            targetPath: request.target,
+            processID: process.pid,
+            secretNames: secretNames
+        )
+        Task { @MainActor in self.onLiveSecretUsesChanged() }
     }
 
     private func handleAWSCredentials(
@@ -6134,6 +6381,32 @@ private func retainedProcessExecutionIsLive(_ execution: RetainedProcessExecutio
     return av_process_identity(execution.pid, &after) && matches(after)
 }
 
+private func liveSecretUseProcess(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> LiveSecretUseProcess? {
+    guard identity.pid == pid, identity.euid == geteuid() else { return nil }
+    let process = LiveSecretUseProcess(
+        pid: pid,
+        startUsec: identity.start_usec,
+        effectiveUserID: identity.euid,
+        auditSessionID: identity.audit_session_id
+    )
+    return liveSecretUseProcessIsLive(process) ? process : nil
+}
+
+private func liveSecretUseProcessIsLive(_ process: LiveSecretUseProcess) -> Bool {
+    func matches(_ identity: AVProcessIdentity) -> Bool {
+        identity.start_usec == process.startUsec
+            && identity.euid == process.effectiveUserID
+            && identity.audit_session_id == process.auditSessionID
+    }
+    var before = AVProcessIdentity()
+    guard av_process_identity(process.pid, &before), matches(before) else { return false }
+    var after = AVProcessIdentity()
+    return av_process_identity(process.pid, &after) && matches(after)
+}
+
 private func retainedExecutions(
     leadingTo launcherPID: pid_t,
     in chains: [[RetainedProcessChainNode]]
@@ -6172,28 +6445,236 @@ private func launcherFallbackPath(for identity: AVProcessIdentity) -> String? {
         .path
 }
 
-private func approvalProcessChain(pid: pid_t) -> String? {
+private struct ApprovalProcessIdentity {
+    let pid: pid_t
+    let path: String
+    let execution: RetainedProcessExecution?
+}
+
+private enum ApprovalProcessPosture: Equatable {
+    case meetsRequirements
+    case needsAttention
+    case doesNotMeetRequirements
+}
+
+private struct ApprovalProcessSecurityNode: Identifiable {
+    let pid: pid_t?
+    let path: String
+    let roles: [String]
+    let posture: ApprovalProcessPosture
+    let explanation: String
+
+    var id: String { "\(pid ?? -1):\(path)" }
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+}
+
+private struct ApprovalProcessSecurity {
+    let nodes: [ApprovalProcessSecurityNode]
+
+    var issueCount: Int {
+        nodes.count { $0.posture != .meetsRequirements }
+    }
+}
+
+private func approvalProcessIdentities(
+    gateClientPID: pid_t,
+    launcherPID: pid_t?
+) -> [ApprovalProcessIdentity] {
     var caller = AVProcessIdentity()
-    guard av_process_identity(pid, &caller) else { return nil }
-    var longest: [String] = []
+    guard av_process_identity(gateClientPID, &caller) else { return [] }
+    let callerNode = ApprovalProcessIdentity(
+        pid: gateClientPID,
+        path: pathString(caller),
+        execution: retainedProcessExecution(pid: gateClientPID, identity: caller)
+    )
+    var chains: [[ApprovalProcessIdentity]] = []
     for startPID in launcherAncestorStartPIDs(caller) {
         var currentPID = startPID
         var seen = Set<pid_t>()
-        var paths: [String] = []
+        var nodes = [callerNode]
         for _ in 0..<32 {
             guard currentPID > 1, seen.insert(currentPID).inserted else { break }
             var identity = AVProcessIdentity()
             guard av_process_identity(currentPID, &identity) else { break }
             let path = pathString(identity)
-            if !path.isEmpty { paths.append(path) }
+            if !path.isEmpty {
+                nodes.append(ApprovalProcessIdentity(
+                    pid: currentPID,
+                    path: path,
+                    execution: retainedProcessExecution(pid: currentPID, identity: identity)
+                ))
+            }
             currentPID = identity.ppid
         }
-        if paths.count > longest.count { longest = paths }
+        chains.append(nodes)
     }
-    let callerPath = pathString(caller)
-    if !callerPath.isEmpty { longest.insert(callerPath, at: 0) }
-    guard !longest.isEmpty else { return nil }
-    return processChainLabel(paths: longest.reversed())
+    let chain = launcherPID.flatMap { launcherPID in
+        chains.first { $0.contains(where: { $0.pid == launcherPID }) }
+    } ?? chains.max(by: { $0.count < $1.count }) ?? [callerNode]
+    let bounded = launcherPID.flatMap { launcherPID in
+        chain.firstIndex(where: { $0.pid == launcherPID }).map { Array(chain[...$0]) }
+    } ?? chain
+    return bounded
+}
+
+private func mutableCodeExplanation(path: String) -> String? {
+    let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+    if ["node", "nodejs", "deno", "bun"].contains(name) {
+        return "Executes mutable JavaScript and dependencies"
+    }
+    if name == "python" || name.hasPrefix("python3") || ["ruby", "perl", "php"].contains(name) {
+        return "Executes mutable source code and dependencies"
+    }
+    if ["sh", "bash", "zsh", "fish"].contains(name) {
+        return "Executes mutable shell code"
+    }
+    if name == "java" {
+        return "Loads mutable bytecode and dependencies"
+    }
+    return nil
+}
+
+private func approvalProcessPosture(
+    signing: LiveSigningInfo?,
+    runtimeProtection: LauncherRuntimeProtection? = nil,
+    identityVerified: Bool = false,
+    mutableCode: String?
+) -> (ApprovalProcessPosture, String) {
+    guard let signing else {
+        return (
+            .doesNotMeetRequirements,
+            ["Code signature could not be verified", mutableCode].compactMap(\.self).joined(separator: "; ")
+        )
+    }
+    let runtimeProtection = runtimeProtection ?? signing.runtimeProtection
+    var findings: [String] = []
+    var posture = ApprovalProcessPosture.meetsRequirements
+    if signing.isAdHoc && !identityVerified {
+        posture = .doesNotMeetRequirements
+        findings.append("Ad hoc signature does not authenticate a publisher")
+    } else {
+        findings.append(identityVerified ? "Verified Launcher identity" : "Valid code signature")
+    }
+    switch runtimeProtection {
+    case .hardened:
+        findings.append("Hardened Runtime")
+    case .hardenedWithLibraryValidationDisabled:
+        if posture == .meetsRequirements { posture = .needsAttention }
+        findings.append("Library validation is disabled")
+    case .hardenedRuntimeMissing:
+        posture = .doesNotMeetRequirements
+        findings.append("Hardened Runtime is not enabled")
+    case .unsafeEntitlements(let entitlements):
+        posture = .doesNotMeetRequirements
+        findings.append("Unsafe entitlements: \(entitlements.joined(separator: ", "))")
+    }
+    if let mutableCode {
+        if posture == .meetsRequirements { posture = .needsAttention }
+        findings.append(mutableCode)
+    }
+    return (posture, findings.joined(separator: "; "))
+}
+
+private func approvalTargetPID(
+    explicitPID: pid_t?,
+    dockerPID: pid_t?,
+    targetPath: String,
+    identities: [ApprovalProcessIdentity]
+) -> pid_t? {
+    explicitPID ?? dockerPID ?? identities.first(where: {
+        !targetPath.isEmpty && normalizedExecutablePath($0.path) == targetPath
+    })?.pid
+}
+
+private func approvalProcessSecurity(
+    request: ApprovalRequest,
+    gateClientPID: pid_t,
+    gateClientPath: String,
+    targetPID: pid_t? = nil,
+    launcher: LauncherIdentity?
+) -> ApprovalProcessSecurity {
+    var identities = approvalProcessIdentities(
+        gateClientPID: gateClientPID,
+        launcherPID: launcher?.pid
+    )
+    if let launcher,
+       !identities.contains(where: { $0.pid == launcher.pid })
+    {
+        var identity = AVProcessIdentity()
+        let execution = av_process_identity(launcher.pid, &identity)
+            ? retainedProcessExecution(pid: launcher.pid, identity: identity)
+            : nil
+        identities.append(ApprovalProcessIdentity(
+            pid: launcher.pid,
+            path: launcher.path,
+            execution: execution
+        ))
+    }
+    if !identities.contains(where: { $0.pid == gateClientPID }) {
+        identities.insert(ApprovalProcessIdentity(
+            pid: gateClientPID,
+            path: gateClientPath,
+            execution: nil
+        ), at: 0)
+    }
+
+    let targetPath = normalizedExecutablePath(request.target)
+    let liveTargetPID = approvalTargetPID(
+        explicitPID: targetPID,
+        dockerPID: request.dockerParent?.pid,
+        targetPath: targetPath,
+        identities: identities
+    )
+    var nodes = identities.map { identity -> ApprovalProcessSecurityNode in
+        let isLauncher = identity.pid == launcher?.pid
+        let isGateClient = identity.pid == gateClientPID
+        let isTarget = identity.pid == liveTargetPID
+        var roles: [String] = []
+        if isLauncher { roles.append("Verified Launcher") }
+        if isTarget { roles.append(request.keys.isEmpty ? "Target" : "Secret recipient") }
+        if isGateClient { roles.append("Verified Gate Client") }
+        if roles.isEmpty { roles.append("Intermediary") }
+
+        let signing = identity.execution.flatMap { execution -> LiveSigningInfo? in
+            guard retainedProcessExecutionIsLive(execution) else { return nil }
+            let signing = liveSigningInfo(pid: identity.pid)
+            return retainedProcessExecutionIsLive(execution) ? signing : nil
+        }
+        let result = approvalProcessPosture(
+            signing: signing,
+            runtimeProtection: isLauncher ? launcher?.runtimeProtection : nil,
+            identityVerified: isLauncher,
+            mutableCode: mutableCodeExplanation(path: identity.path)
+        )
+        return ApprovalProcessSecurityNode(
+            pid: identity.pid,
+            path: identity.path,
+            roles: roles,
+            posture: result.0,
+            explanation: result.1
+        )
+    }
+
+    if liveTargetPID == nil, !request.target.isEmpty {
+        let signing = executableSigningInfo(path: request.target)
+        let result = approvalProcessPosture(
+            signing: signing,
+            mutableCode: mutableCodeExplanation(path: request.target)
+        )
+        nodes.insert(ApprovalProcessSecurityNode(
+            pid: nil,
+            path: request.target,
+            roles: [request.keys.isEmpty ? "Target (not started)" : "Secret recipient (not started)"],
+            posture: result.0,
+            explanation: result.1
+        ), at: 0)
+    }
+    return ApprovalProcessSecurity(nodes: nodes)
+}
+
+private func approvalProcessChain(pid: pid_t) -> String? {
+    let paths = approvalProcessIdentities(gateClientPID: pid, launcherPID: nil).map(\.path)
+    return paths.isEmpty ? nil : processChainLabel(paths: paths)
 }
 
 private func processChainLabel<S: Sequence>(paths: S) -> String where S.Element == String {
@@ -6719,6 +7200,7 @@ private func showApprovalAlert(
     request: ApprovalRequest,
     callerPath: String,
     pid: pid_t,
+    targetPID: pid_t? = nil,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
     blessing: BlessedScriptPromptContext? = nil,
@@ -6732,6 +7214,13 @@ private func showApprovalAlert(
     guard cancellation?.isCanceled != true else { return .canceled }
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
+    let processSecurity = approvalProcessSecurity(
+        request: request,
+        gateClientPID: pid,
+        gateClientPath: callerPath,
+        targetPID: targetPID,
+        launcher: launcher
+    )
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
@@ -6747,6 +7236,7 @@ private func showApprovalAlert(
         cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
+        processSecurity: processSecurity,
         sections: approvalPromptSections(
             request: request,
             callerPath: callerPath,
@@ -6754,6 +7244,7 @@ private func showApprovalAlert(
             signing: signing,
             scriptApproval: scriptApproval,
             launcher: launcher,
+            processSecurity: processSecurity,
             receivedAt: receivedAt
         )
     )
@@ -6846,6 +7337,7 @@ private func approvalPromptSections(
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
     launcher: LauncherIdentity?,
+    processSecurity: ApprovalProcessSecurity,
     receivedAt: Date
 ) -> [ApprovalPromptSection] {
     var sections = [
@@ -6879,7 +7371,9 @@ private func approvalPromptSections(
         ), at: 1)
     }
 
-    let chain = approvalProcessChain(pid: pid)
+    let chain = processSecurity.nodes.isEmpty
+        ? approvalProcessChain(pid: pid)
+        : processChainLabel(paths: processSecurity.nodes.map(\.path))
     let chainRows = chain.map { [ApprovalPromptRow("Process chain", $0)] } ?? []
     sections.append(ApprovalPromptSection("Execution Origin", "app.badge", launcher.map {
         [
@@ -6958,6 +7452,7 @@ private struct ApprovalPromptContent {
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
+    let processSecurity: ApprovalProcessSecurity
     let sections: [ApprovalPromptSection]
 }
 
@@ -6973,6 +7468,111 @@ private func approvalPromptFooter(
         : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app."
 }
 
+private struct ApprovalPromptProcessSecurityView: View {
+    let processSecurity: ApprovalProcessSecurity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Process security", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.headline)
+                Spacer(minLength: 8)
+                if processSecurity.issueCount > 0 {
+                    Label(
+                        "\(processSecurity.issueCount) to review",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                }
+            }
+
+            VStack(spacing: 5) {
+                ForEach(Array(processSecurity.nodes.enumerated()), id: \.element.id) { index, node in
+                    if index > 0 {
+                        Image(systemName: "arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    ApprovalPromptProcessNodeView(node: node)
+                }
+            }
+            .accessibilityLabel("Process path from Gate Client to Verified Launcher")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+    }
+}
+
+private struct ApprovalPromptProcessNodeView: View {
+    let node: ApprovalProcessSecurityNode
+
+    private var posturePresentation: (title: String, image: String, color: Color) {
+        switch node.posture {
+        case .meetsRequirements:
+            ("Meets requirements", "checkmark.shield.fill", .green)
+        case .needsAttention:
+            ("Needs attention", "exclamationmark.shield.fill", .orange)
+        case .doesNotMeetRequirements:
+            ("Does not meet requirements", "xmark.shield.fill", .red)
+        }
+    }
+
+    var body: some View {
+        let presentation = posturePresentation
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(node.roles.joined(separator: " • "))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                Text(node.name.isEmpty ? node.path : node.name)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                if let pid = node.pid {
+                    Text("pid \(pid)")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 142, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Label(presentation.title, systemImage: presentation.image)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(presentation.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(node.explanation)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            presentation.color.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(presentation.color.opacity(0.25), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(node.roles.joined(separator: ", ")), \(node.name), \(node.path), \(presentation.title). \(node.explanation)"
+        )
+        .help(node.path)
+    }
+}
+
 private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     var maximumHeight: CGFloat? = nil
@@ -6984,94 +7584,99 @@ private struct ApprovalPromptView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            VStack(spacing: 8) {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: content.requesterIconPath),
-                    ])
-                } label: {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
-                .help("Reveal in Finder")
-                Text(content.requesterName)
-                    .font(.title2.weight(.bold))
-                Text(content.actionLabel)
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.6)
-                    .foregroundStyle(.secondary)
-            }
-
-            ApprovalPromptCommandView(content: content)
-                .layoutPriority(-1)
-
-            if let blessing = content.blessing {
-                ApprovalPromptBlessingView(context: blessing)
-            } else {
-                Text("Credential consumer: \(content.credentialConsumer)")
-                    .font(.callout.weight(.medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                if let title = content.title, !title.isEmpty {
-                    Text(title)
-                        .font(.headline)
-                }
-                if let detail = content.detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if content.blessing == nil,
-                   content.title?.isEmpty != false,
-                   content.detail?.isEmpty != false
-                {
-                    Text("Review the request details before allowing access.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let explanation = content.automaticApprovalExplanation {
-                Label {
-                    Text(explanation)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "exclamationmark.shield.fill")
-                        .foregroundStyle(.orange)
-                }
-                .font(.callout)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityElement(children: .combine)
-            }
-
-            DisclosureGroup(isExpanded: $showsDetails) {
-                ScrollView {
+            ScrollView {
+                VStack(spacing: 18) {
                     VStack(spacing: 8) {
-                        ForEach(content.sections) { section in
-                            ApprovalPromptSectionView(section: section)
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([
+                                URL(fileURLWithPath: content.requesterIconPath),
+                            ])
+                        } label: {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 72, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+                        .help("Reveal in Finder")
+                        Text(content.requesterName)
+                            .font(.title2.weight(.bold))
+                        Text(content.actionLabel)
+                            .font(.caption.weight(.semibold))
+                            .tracking(1.6)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ApprovalPromptCommandView(content: content)
+                        .layoutPriority(-1)
+
+                    if let blessing = content.blessing {
+                        ApprovalPromptBlessingView(context: blessing)
+                    } else {
+                        Text("Credential consumer: \(content.credentialConsumer)")
+                            .font(.callout.weight(.medium))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        if let title = content.title, !title.isEmpty {
+                            Text(title)
+                                .font(.headline)
+                        }
+                        if let detail = content.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if content.blessing == nil,
+                           content.title?.isEmpty != false,
+                           content.detail?.isEmpty != false
+                        {
+                            Text("Review the request details before allowing access.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.top, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let explanation = content.automaticApprovalExplanation {
+                        Label {
+                            Text(explanation)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "exclamationmark.shield.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.callout)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityElement(children: .combine)
+                    }
+
+                    DisclosureGroup(isExpanded: $showsDetails) {
+                        VStack(spacing: 8) {
+                            ForEach(content.sections) { section in
+                                ApprovalPromptSectionView(section: section)
+                            }
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Label("Details", systemImage: "info.circle")
+                            .font(.callout.weight(.medium))
+                    }
+                    .transaction { $0.animation = nil }
+                    .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
                 }
-                .frame(maxHeight: 170)
-                .scrollIndicators(.visible)
-            } label: {
-                Label("Details", systemImage: "info.circle")
-                    .font(.callout.weight(.medium))
             }
-            .transaction { $0.animation = nil }
-            .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
+            .scrollIndicators(.visible)
+            .defaultScrollAnchor(.top)
+            .layoutPriority(1)
 
             HStack(spacing: 12) {
                 Button("Deny", role: .cancel) { decide(.denied) }
@@ -7384,6 +7989,11 @@ private func temporaryAccessGrantRemainingText(_ remaining: TimeInterval) -> Str
     return String(format: "%d:%02d", seconds / 60, seconds % 60)
 }
 
+private func temporaryAccessGrantUsageText(_ grant: TemporaryAccessGrantSnapshot) -> String {
+    let uses = grant.useCount == 1 ? "1 use" : "\(grant.useCount) uses"
+    return "Write Access: \(uses) · Last used \(grant.lastUsedAt.formatted(date: .omitted, time: .standard))"
+}
+
 private func temporaryAccessGrantMenuTitle(
     _ grant: TemporaryAccessGrantSnapshot,
     wallNow: Date,
@@ -7392,7 +8002,7 @@ private func temporaryAccessGrantMenuTitle(
     let remaining = temporaryAccessGrantRemainingText(
         grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow)
     )
-    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) — End"
+    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) · \(temporaryAccessGrantUsageText(grant)) — End"
 }
 
 private final class TemporaryAccessGrantPanel: NSPanel {
@@ -7497,11 +8107,14 @@ private struct TemporaryAccessGrantRow: View {
                 Text("\(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(temporaryAccessGrantRemainingText(remaining)) remaining")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                Text(temporaryAccessGrantUsageText(grant))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining"
+                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining, \(temporaryAccessGrantUsageText(grant))"
             )
 
             Button("End", action: end)
@@ -7733,6 +8346,15 @@ private func runApprovalSelfCheck() -> Int32 {
     guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
         return 1
     }
+    guard let liveUse = liveSecretUseProcess(pid: getpid(), identity: selfIdentity),
+          liveSecretUseProcessIsLive(liveUse),
+          !liveSecretUseProcessIsLive(LiveSecretUseProcess(
+              pid: liveUse.pid,
+              startUsec: liveUse.startUsec &+ 1,
+              effectiveUserID: liveUse.effectiveUserID,
+              auditSessionID: liveUse.auditSessionID
+          ))
+    else { return 1 }
     let reusedDockerPID = DockerCredentialParent(
         pid: getpid(),
         startUsec: selfIdentity.start_usec &+ 1,
@@ -7928,6 +8550,22 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         explanation: "Approval activates this stored authority for one execution."
     )
+    let promptProcessSecurity = ApprovalProcessSecurity(nodes: [
+        ApprovalProcessSecurityNode(
+            pid: 40,
+            path: "/Applications/Example.app/Contents/MacOS/Example",
+            roles: ["Verified Launcher"],
+            posture: .meetsRequirements,
+            explanation: "Valid code signature; Hardened Runtime"
+        ),
+        ApprovalProcessSecurityNode(
+            pid: 41,
+            path: "/opt/homebrew/bin/gh",
+            roles: ["Secret recipient", "Verified Gate Client"],
+            posture: .meetsRequirements,
+            explanation: "Valid code signature; Hardened Runtime"
+        ),
+    ])
     let collapsedPrompt = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -7942,6 +8580,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 blessing: promptBlessing,
+                processSecurity: promptProcessSecurity,
                 sections: []
             ),
             temporaryGrantCandidate: nil,
@@ -7968,6 +8607,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 blessing: nil,
+                processSecurity: promptProcessSecurity,
                 sections: []
             ),
             maximumHeight: 500,
@@ -8017,7 +8657,6 @@ private func runApprovalSelfCheck() -> Int32 {
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
           containsDragHandle(collapsedPrompt),
           collapsedHeight > 0,
-          collapsedHeight < 660,
           constrainedHeight <= 500
     else {
         return 1
@@ -8075,6 +8714,26 @@ private func runApprovalSelfCheck() -> Int32 {
         runtimeProtection: .hardened,
         isDeveloperID: true
     )
+    let hardenedPosture = approvalProcessPosture(
+        signing: unbundledSigning,
+        mutableCode: nil
+    )
+    let nodePosture = approvalProcessPosture(
+        signing: unbundledSigning,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/node")
+    )
+    let unsafePosture = approvalProcessPosture(
+        signing: pythonSigning,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/python3")
+    )
+    let unsignedPosture = approvalProcessPosture(
+        signing: nil,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/node")
+    )
+    let repeatedNodeProcesses = [
+        ApprovalProcessIdentity(pid: 41, path: "/opt/homebrew/bin/node", execution: nil),
+        ApprovalProcessIdentity(pid: 42, path: "/opt/homebrew/bin/node", execution: nil),
+    ]
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
         path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
@@ -8106,6 +8765,18 @@ private func runApprovalSelfCheck() -> Int32 {
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
+          hardenedPosture.0 == .meetsRequirements,
+          nodePosture.0 == .needsAttention,
+          nodePosture.1.contains("mutable JavaScript"),
+          unsafePosture.0 == .doesNotMeetRequirements,
+          unsignedPosture.0 == .doesNotMeetRequirements,
+          unsignedPosture.1.contains("Code signature could not be verified"),
+          approvalTargetPID(
+              explicitPID: 42,
+              dockerPID: nil,
+              targetPath: "/opt/homebrew/bin/node",
+              identities: repeatedNodeProcesses
+          ) == 42,
           launcherIdentity(pid: 46, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
           launcherIdentity(pid: 47, path: "/usr/local/bin/av", signing: unbundledSigning)?.isStandalone == true
     else {
@@ -9601,7 +10272,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
               grant,
               wallNow: grantWallNow,
               monotonicNow: grantMonotonicNow
-          ) == "Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 — End",
+          ).contains("Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 · Write Access: 1 use · Last used "),
           stripView.fittingSize.width == 430,
           stackedToastFrame.maxY == sampleStripFrame.minY - 4,
           grantPanel.styleMask.contains(.borderless),

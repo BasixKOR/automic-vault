@@ -192,6 +192,17 @@ generation-bound lease through payload loading, record persistence, retained
 provenance recording, and the XPC reply, so expiry or cancellation cannot race
 with an in-progress release.
 
+After a recorded Secret Use releases or makes Secret Values available to a
+Target process, the menu bar app keeps a memory-only Live Secret Use while that
+process lifetime remains observable. For `av inject`, observation follows the
+same PID, start time, user, and audit session across the Gate Client's `exec`
+transition because Secret Values can survive `exec`; this observation is never
+used as identity evidence. Varlock binds the already-live application process,
+and process-based credential helpers bind their verified parent Target. The
+menu shows any available Verified Launcher attribution, Target, and Secret
+Names. Process liveness changes display state only: it grants no authority and
+cannot revoke Secret Values already released.
+
 Grants are memory-only and use both wall-clock and monotonic deadlines. An exact
 duplicate scope is replaced by a newly confirmed ten-minute generation. The
 service revokes every grant on user session inactivity, display sleep, update
@@ -235,6 +246,18 @@ generation. Retained records are memory-only, are revalidated before use, and
 expire when the process execution or menu bar helper exits.
 
 The Gate Client and Target remain separate roles. A signed client submits the request. The Target performs the operation and may receive the Secret. Conflating them hides confused-deputy and target-substitution risks.
+
+Every Approval presents the available live process path between the Target and
+Verified Launcher. Each process reports whether its live code signature
+is valid and whether its Hardened Runtime posture meets the same baseline used
+for Launcher eligibility. The Gate Client is identified separately because it
+may transport a request without being the Target or an ancestor of the Target.
+An interpreter that executes mutable source is called out even when its own
+executable is signed and hardened: executable posture does not authenticate the
+application source, dependencies, plug-ins, or native extensions that can
+observe a Secret after Application. These findings inform Approval; they do not
+create authority, replace Target verification, or imply that a Target will keep
+a Secret confidential.
 
 ## Policy model
 
@@ -371,10 +394,10 @@ Launcher Provenance and does not require this setting.
 
 While any Temporary Access Grant exists, a non-activating strip remains visible
 directly below the menu-bar item with every scoped grant, second-accurate
-remaining time, and an End action. The menu mirrors those actions and the shield
-turns orange. Automatic-request notifications stack below the strip. This
-continuous presentation is part of the temporary escalation's safety model,
-not a source of authority.
+remaining time, successful-use count, last-use time, and an End action. The menu
+mirrors those actions and the shield turns orange. Automatic-request
+notifications stack below the strip. This continuous presentation is part of
+the temporary escalation's safety model, not a source of authority.
 
 ## Source of truth
 

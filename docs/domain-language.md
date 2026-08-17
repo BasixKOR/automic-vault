@@ -159,6 +159,13 @@ The signed component that submits an Authorization Request, such as `av`, a patc
 
 The exact executable that performs the requested operation. For a Secret Gate, the Target is the intended consumer of the Secret Application. The designation limits the intended consumer but cannot prevent a compromised Target from leaking a secret after receipt.
 
+An Approval presents the live process path between the Target and Verified
+Launcher and reports the available code-signing and runtime posture for each
+process. This is diagnostic evidence about Secret exposure, not authority or
+Target identity. In particular, signing an interpreter executable does not
+authenticate the mutable source code, dependencies, plug-ins, or native
+extensions that it loads.
+
 ### Tool and Command
 
 A **Tool** is a developer-facing product or integration. A **Command** is a named executable entry point. A Tool may expose several Commands and Targets. A Hardener may manage more than one of them.
@@ -210,6 +217,14 @@ One or more Secrets interpreted by a Tool or service. An AWS credential, for exa
 ### Secret Use
 
 The umbrella term for Secret Application and Secret Disclosure.
+
+### Live Secret Use
+
+An in-memory observation that a Target process lifetime associated with an
+allowed Secret Use remains live. It presents any Verified Launcher attribution,
+the Target, and Secret Names for display; it is not continuing authority, proof
+that a Secret remains in memory, or a way to revoke Secret Values already
+released.
 
 ### Secret Application
 
@@ -269,9 +284,10 @@ Secret mutation operations remain outside the grant.
 A Temporary Access Grant can begin only when the user selects its explicit
 action in an eligible live write-request Approval. It is not a
 durable Authorization Policy or Blessing. Automic Vault shows every active
-grant continuously, lets the user end each grant immediately, and revokes all
-grants when the user session becomes inactive, displays sleep, an update begins,
-or the service terminates. Expiry uses both wall and monotonic clocks.
+grant continuously with its successful-use count and last-use time, lets the
+user end each grant immediately, and revokes all grants when the user session
+becomes inactive, displays sleep, an update begins, or the service terminates.
+Expiry uses both wall and monotonic clocks.
 
 ### Fail Closed
 
