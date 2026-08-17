@@ -1430,12 +1430,28 @@ private func automaticTargetRuntimeProtection(
 
     let protection: LauncherRuntimeProtection?
     if let parent = request.dockerParent {
-        protection = liveSigningInfo(pid: parent.pid)?.runtimeProtection
+        protection = liveSigningInfo(for: parent)?.runtimeProtection
     } else {
         protection = executableSigningInfo(path: request.target)?.runtimeProtection
     }
     return protection?.targetAuthorizationHistoryDescription
         ?? "Hardened Runtime could not be verified; Secret may be exposed to debugging or process-memory inspection"
+}
+
+private func liveSigningInfo(for parent: DockerCredentialParent) -> LiveSigningInfo? {
+    func matches(_ identity: AVProcessIdentity) -> Bool {
+        identity.start_usec == parent.startUsec
+            && identity.euid == parent.euid
+            && pathString(identity) == parent.target
+    }
+    var before = AVProcessIdentity()
+    guard av_process_identity(parent.pid, &before),
+          matches(before),
+          let signing = liveSigningInfo(pid: parent.pid),
+          signing.mainExecutable == parent.target
+    else { return nil }
+    var after = AVProcessIdentity()
+    return av_process_identity(parent.pid, &after) && matches(after) ? signing : nil
 }
 
 private func shortAppName(_ identifier: String) -> String {
@@ -7433,6 +7449,18 @@ private func runSecretMutationSelfCheck() -> Int32 {
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+    var selfIdentity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
+        return 1
+    }
+    let reusedDockerPID = DockerCredentialParent(
+        pid: getpid(),
+        startUsec: selfIdentity.start_usec &+ 1,
+        euid: selfIdentity.euid,
+        target: pathString(selfIdentity),
+        arguments: []
+    )
+    guard liveSigningInfo(for: reusedDockerPID) == nil else { return 1 }
     let targetRuntimeRequest = ApprovalRequest(
         op: "inject",
         keys: ["TEST_SECRET"],
