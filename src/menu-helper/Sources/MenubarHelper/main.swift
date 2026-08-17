@@ -113,6 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var temporaryAccessGrantSeparator: NSMenuItem?
     private var temporaryAccessGrantPanel: TemporaryAccessGrantPanel?
     private var temporaryAccessGrantTimer: Timer?
+    private let liveSecretUses = LiveSecretUseController<LiveSecretUseProcess>()
+    private var liveSecretUseSnapshots: [LiveSecretUseSnapshot] = []
+    private var liveSecretUseMenuItems: [NSMenuItem] = []
+    private var liveSecretUseHeadingItem: NSMenuItem?
+    private var liveSecretUseSeparator: NSMenuItem?
+    private var liveSecretUseTimer: Timer?
     private var baseStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
@@ -282,11 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrants()
+        refreshLiveSecretUses()
         refreshCLIInstallState()
         do {
             let approval = try ApprovalServer(
                 serviceName: approvalServiceName,
-                temporaryAccessGrants: temporaryAccessGrants
+                temporaryAccessGrants: temporaryAccessGrants,
+                liveSecretUses: liveSecretUses
             ) { [weak self] event in
                 self?.recordAutoApproval(event)
             } onAccessRequest: { [weak self] record in
@@ -319,6 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.showMainWindow(secretGateID: secretGateID)
             } onTemporaryAccessGrantsChanged: { [weak self] in
                 self?.refreshTemporaryAccessGrants()
+            } onLiveSecretUsesChanged: { [weak self] in
+                self?.refreshLiveSecretUses()
             } canRequestHumanApproval: { [weak self] in
                 self?.isUserSessionActive == true && self?.areScreensAwake == true
             }
@@ -349,6 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTemporaryAccessGrants()
         temporaryAccessGrantTimer?.invalidate()
         temporaryAccessGrantTimer = nil
+        liveSecretUses.cancelAll()
+        refreshLiveSecretUses()
+        liveSecretUseTimer?.invalidate()
+        liveSecretUseTimer = nil
         if NSApp.modalWindow is ApprovalPanel {
             NSApp.abortModal()
         }
@@ -1024,15 +1038,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             moreItem.submenu = submenu
             autoApprovalItems.append(moreItem)
         }
+        let insertionIndex = temporaryAccessGrantMenuItemCount + liveSecretUseMenuItemCount
         for item in autoApprovalItems.reversed() {
-            menu.insertItem(item, at: 0)
+            menu.insertItem(item, at: insertionIndex)
         }
         guard let heading = autoApprovalHistoryHeading(hasRecords: !autoApprovalItems.isEmpty) else { return }
-        menu.insertItem(heading, at: 0)
+        menu.insertItem(heading, at: insertionIndex)
         autoApprovalHeadingItem = heading
         let separator = NSMenuItem.separator()
-        menu.insertItem(separator, at: autoApprovalItems.count + 1)
+        menu.insertItem(separator, at: insertionIndex + autoApprovalItems.count + 1)
         autoApprovalSeparator = separator
+    }
+
+    private var temporaryAccessGrantMenuItemCount: Int {
+        temporaryAccessGrantHeadingItem == nil ? 0 : temporaryAccessGrantMenuItems.count + 2
+    }
+
+    private var liveSecretUseMenuItemCount: Int {
+        liveSecretUseHeadingItem == nil ? 0 : liveSecretUseMenuItems.count + 2
     }
 
     private func refreshTemporaryAccessGrants() {
@@ -1106,6 +1129,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
         refreshTemporaryAccessGrants()
+    }
+
+    private func refreshLiveSecretUses() {
+        liveSecretUseSnapshots = liveSecretUses.snapshots(isLive: liveSecretUseProcessIsLive)
+        if liveSecretUseSnapshots.isEmpty {
+            liveSecretUseTimer?.invalidate()
+            liveSecretUseTimer = nil
+        } else if liveSecretUseTimer == nil {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshLiveSecretUses() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            liveSecretUseTimer = timer
+        }
+        refreshLiveSecretUseMenuItems()
+    }
+
+    private func refreshLiveSecretUseMenuItems() {
+        guard !isUpdating, let menu = statusItem.menu else { return }
+        liveSecretUseMenuItems.forEach(menu.removeItem)
+        liveSecretUseMenuItems.removeAll()
+        if let liveSecretUseHeadingItem {
+            menu.removeItem(liveSecretUseHeadingItem)
+            self.liveSecretUseHeadingItem = nil
+        }
+        if let liveSecretUseSeparator {
+            menu.removeItem(liveSecretUseSeparator)
+            self.liveSecretUseSeparator = nil
+        }
+        guard !liveSecretUseSnapshots.isEmpty else { return }
+
+        liveSecretUseMenuItems = liveSecretUseSnapshots.map { use in
+            let launcher = use.launcherName ?? "Launcher unavailable"
+            let target = URL(fileURLWithPath: use.targetPath).lastPathComponent
+            let count = "\(use.secretNames.count) \(use.secretNames.count == 1 ? "Secret" : "Secrets")"
+            let item = NSMenuItem(
+                title: "\(launcher) → \(target) · \(count)",
+                action: nil,
+                keyEquivalent: ""
+            )
+            let submenu = NSMenu()
+            let launcherItem = NSMenuItem(
+                title: use.launcherName.map { "Verified Launcher: \($0)" }
+                    ?? "Verified Launcher unavailable",
+                action: nil,
+                keyEquivalent: ""
+            )
+            launcherItem.isEnabled = false
+            submenu.addItem(launcherItem)
+            let targetItem = NSMenuItem(
+                title: "Target: \(use.targetPath) (PID \(use.processID))",
+                action: nil,
+                keyEquivalent: ""
+            )
+            targetItem.isEnabled = false
+            submenu.addItem(targetItem)
+            submenu.addItem(.separator())
+            submenu.addItem(makeStatusMenuItem(title: "Secret Names"))
+            for name in use.secretNames {
+                let secretItem = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+                secretItem.isEnabled = false
+                submenu.addItem(secretItem)
+            }
+            submenu.addItem(.separator())
+            for text in [
+                "Shown while this Target process remains live.",
+                "The Target may pass values to child processes; released values cannot be revoked.",
+            ] {
+                let note = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                note.isEnabled = false
+                submenu.addItem(note)
+            }
+            item.submenu = submenu
+            return item
+        }
+        let insertionIndex = temporaryAccessGrantMenuItemCount
+        for item in liveSecretUseMenuItems.reversed() {
+            menu.insertItem(item, at: insertionIndex)
+        }
+        let heading = makeStatusMenuItem(title: "Live Secret Uses")
+        menu.insertItem(heading, at: insertionIndex)
+        liveSecretUseHeadingItem = heading
+        let separator = NSMenuItem.separator()
+        menu.insertItem(separator, at: insertionIndex + liveSecretUseMenuItems.count + 1)
+        liveSecretUseSeparator = separator
     }
 
     private func refreshTemporaryAccessGrantPanel() {
@@ -1205,6 +1313,7 @@ extension AppDelegate: NSMenuDelegate {
         guard !isStartingUp, !isUpdating else { return }
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrantMenuItems()
+        refreshLiveSecretUses()
         refreshDoctorStatus()
     }
 }
@@ -2106,13 +2215,20 @@ private enum RetainedAuthorizationGate: Hashable {
     case secretGate(String)
 }
 
-private struct RetainedProcessExecution: Hashable {
+private struct RetainedProcessExecution: Hashable, Sendable {
     let pid: Int32
     let pidVersion: Int32
     let startUsec: UInt64
     let effectiveUserID: UInt32
     let auditSessionID: UInt32
     let codeIdentity: Data
+}
+
+private struct LiveSecretUseProcess: Hashable, Sendable {
+    let pid: Int32
+    let startUsec: UInt64
+    let effectiveUserID: UInt32
+    let auditSessionID: UInt32
 }
 
 private struct RetainedProcessChainNode {
@@ -2439,8 +2555,10 @@ private final class ApprovalServer: @unchecked Sendable {
     ) -> Void
     private let onOpenWindow: @MainActor () -> Void
     private let onTemporaryAccessGrantsChanged: @MainActor () -> Void
+    private let onLiveSecretUsesChanged: @MainActor () -> Void
     private let canRequestHumanApproval: @MainActor () -> Bool
     private let temporaryAccessGrants: TemporaryAccessGrantController
+    private let liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
     private var transientApprovals = TransientApprovalCache()
@@ -2454,6 +2572,7 @@ private final class ApprovalServer: @unchecked Sendable {
     init(
         serviceName: String,
         temporaryAccessGrants: TemporaryAccessGrantController,
+        liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>,
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
@@ -2462,6 +2581,7 @@ private final class ApprovalServer: @unchecked Sendable {
         ) -> Void = { _, completion in completion(.failed("script blessing is unavailable")) },
         onOpenWindow: @escaping @MainActor () -> Void = {},
         onTemporaryAccessGrantsChanged: @escaping @MainActor () -> Void = {},
+        onLiveSecretUsesChanged: @escaping @MainActor () -> Void = {},
         canRequestHumanApproval: @escaping @MainActor () -> Bool = { true }
     ) throws {
         guard let teamIdentifier = selfTeamIdentifier() else {
@@ -2469,6 +2589,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         self.serviceName = serviceName
         self.temporaryAccessGrants = temporaryAccessGrants
+        self.liveSecretUses = liveSecretUses
         self.teamIdentifier = teamIdentifier
         self.secretGateDescriptors = try loadSecretGateDescriptors(
             avExecutableURL: avExecutableURL()
@@ -2478,6 +2599,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.onBlessRequest = onBlessRequest
         self.onOpenWindow = onOpenWindow
         self.onTemporaryAccessGrantsChanged = onTemporaryAccessGrantsChanged
+        self.onLiveSecretUsesChanged = onLiveSecretUsesChanged
         self.canRequestHumanApproval = canRequestHumanApproval
     }
 
@@ -3016,6 +3138,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: matchedLauncher
                     ))
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: matchedLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
@@ -3187,6 +3316,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         launcher: directAccessLauncher
                     ))
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: directAccessLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(
                     peer,
                     to: message,
@@ -3255,6 +3391,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         ))
                     }
                 }
+                recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: authorizingLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
@@ -3370,6 +3513,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                         return
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: promptLauncher,
+                        pid: pid,
+                        identity: identity
+                    )
                     self.reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
@@ -3502,6 +3652,13 @@ private final class ApprovalServer: @unchecked Sendable {
                         )
                         return
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: refreshedCandidate.launcher,
+                        pid: pid,
+                        identity: identity
+                    )
                     self.temporaryAccessGrants.startWithLease(
                         scope: refreshedCandidate.scope,
                         launcherName: refreshedCandidate.launcherName,
@@ -3571,6 +3728,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 if !requiresFreshApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
+                self.recordLiveSecretUse(
+                    request: request,
+                    payload: payload,
+                    launcher: promptLauncher,
+                    pid: pid,
+                    identity: identity
+                )
                 self.reply(
                     peer,
                     to: message,
@@ -3658,6 +3822,13 @@ private final class ApprovalServer: @unchecked Sendable {
                             launcher: launcher
                         ))
                     }
+                    recordLiveSecretUse(
+                        request: request,
+                        payload: payload,
+                        launcher: launcher,
+                        pid: pid,
+                        identity: identity
+                    )
                     reply(
                         peer,
                         to: message,
@@ -3882,6 +4053,12 @@ private final class ApprovalServer: @unchecked Sendable {
                     )) else {
                         throw AppError("approval audit log is unavailable")
                     }
+                    self.recordLiveSecretUse(
+                        request: request,
+                        secretNames: Set(secrets.keys),
+                        launcher: launcher,
+                        execution: applicationExecution
+                    )
                     self.reply(
                         peer,
                         to: message,
@@ -4050,6 +4227,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     ))
                 }
             }
+            recordLiveSecretUse(
+                request: request,
+                payload: payload,
+                launcher: launcher,
+                pid: pid,
+                identity: identity
+            )
             reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
         } catch {
             _ = onAccessRequest(accessRequestRecord(
@@ -4740,6 +4924,68 @@ private final class ApprovalServer: @unchecked Sendable {
 
         """
         return ApprovedPayload(secrets: [:], value: config)
+    }
+
+    private func recordLiveSecretUse(
+        request: ApprovalRequest,
+        payload: ApprovedPayload,
+        launcher: LauncherIdentity?,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) {
+        var secretNames = Set(payload.secrets.keys)
+        if request.tool == "aws", payload.value != nil {
+            secretNames.formUnion(request.selectedValues.keys)
+        }
+        guard !secretNames.isEmpty else { return }
+
+        let process: LiveSecretUseProcess?
+        if let parent = request.dockerParent, dockerCredentialParentValid(parent) {
+            var parentIdentity = AVProcessIdentity()
+            process = av_process_identity(parent.pid, &parentIdentity)
+                ? liveSecretUseProcess(pid: parent.pid, identity: parentIdentity)
+                : nil
+        } else {
+            process = liveSecretUseProcess(pid: pid, identity: identity)
+        }
+        guard let process else { return }
+
+        let launcherName = launcher.map {
+            approvalPromptRequester(launcher: $0, fallback: $0.path).name
+        }
+        liveSecretUses.record(
+            process: process,
+            launcherDesignatedRequirement: launcher?.designatedRequirement,
+            launcherName: launcherName,
+            targetPath: request.target,
+            processID: process.pid,
+            secretNames: secretNames
+        )
+        Task { @MainActor in self.onLiveSecretUsesChanged() }
+    }
+
+    private func recordLiveSecretUse(
+        request: ApprovalRequest,
+        secretNames: Set<String>,
+        launcher: LauncherIdentity,
+        execution: RetainedProcessExecution
+    ) {
+        let process = LiveSecretUseProcess(
+            pid: execution.pid,
+            startUsec: execution.startUsec,
+            effectiveUserID: execution.effectiveUserID,
+            auditSessionID: execution.auditSessionID
+        )
+        guard liveSecretUseProcessIsLive(process) else { return }
+        liveSecretUses.record(
+            process: process,
+            launcherDesignatedRequirement: launcher.designatedRequirement,
+            launcherName: approvalPromptRequester(launcher: launcher, fallback: launcher.path).name,
+            targetPath: request.target,
+            processID: process.pid,
+            secretNames: secretNames
+        )
+        Task { @MainActor in self.onLiveSecretUsesChanged() }
     }
 
     private func handleAWSCredentials(
@@ -6132,6 +6378,32 @@ private func retainedProcessExecutionIsLive(_ execution: RetainedProcessExecutio
     else { return false }
     var after = AVProcessIdentity()
     return av_process_identity(execution.pid, &after) && matches(after)
+}
+
+private func liveSecretUseProcess(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> LiveSecretUseProcess? {
+    guard identity.pid == pid, identity.euid == geteuid() else { return nil }
+    let process = LiveSecretUseProcess(
+        pid: pid,
+        startUsec: identity.start_usec,
+        effectiveUserID: identity.euid,
+        auditSessionID: identity.audit_session_id
+    )
+    return liveSecretUseProcessIsLive(process) ? process : nil
+}
+
+private func liveSecretUseProcessIsLive(_ process: LiveSecretUseProcess) -> Bool {
+    func matches(_ identity: AVProcessIdentity) -> Bool {
+        identity.start_usec == process.startUsec
+            && identity.euid == process.effectiveUserID
+            && identity.audit_session_id == process.auditSessionID
+    }
+    var before = AVProcessIdentity()
+    guard av_process_identity(process.pid, &before), matches(before) else { return false }
+    var after = AVProcessIdentity()
+    return av_process_identity(process.pid, &after) && matches(after)
 }
 
 private func retainedExecutions(
@@ -7733,6 +8005,15 @@ private func runApprovalSelfCheck() -> Int32 {
     guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
         return 1
     }
+    guard let liveUse = liveSecretUseProcess(pid: getpid(), identity: selfIdentity),
+          liveSecretUseProcessIsLive(liveUse),
+          !liveSecretUseProcessIsLive(LiveSecretUseProcess(
+              pid: liveUse.pid,
+              startUsec: liveUse.startUsec &+ 1,
+              effectiveUserID: liveUse.effectiveUserID,
+              auditSessionID: liveUse.auditSessionID
+          ))
+    else { return 1 }
     let reusedDockerPID = DockerCredentialParent(
         pid: getpid(),
         startUsec: selfIdentity.start_usec &+ 1,

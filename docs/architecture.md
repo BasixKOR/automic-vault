@@ -192,6 +192,17 @@ generation-bound lease through payload loading, record persistence, retained
 provenance recording, and the XPC reply, so expiry or cancellation cannot race
 with an in-progress release.
 
+After a recorded Secret Use releases or makes Secret Values available to a
+Target process, the menu bar app keeps a memory-only Live Secret Use while that
+process lifetime remains observable. For `av inject`, observation follows the
+same PID, start time, user, and audit session across the Gate Client's `exec`
+transition because Secret Values can survive `exec`; this observation is never
+used as identity evidence. Varlock binds the already-live application process,
+and process-based credential helpers bind their verified parent Target. The
+menu shows any available Verified Launcher attribution, Target, and Secret
+Names. Process liveness changes display state only: it grants no authority and
+cannot revoke Secret Values already released.
+
 Grants are memory-only and use both wall-clock and monotonic deadlines. An exact
 duplicate scope is replaced by a newly confirmed ten-minute generation. The
 service revokes every grant on user session inactivity, display sleep, update
