@@ -155,7 +155,7 @@ Declare the Secret in `.env.schema`:
 # @disableProcessEnvInjection
 # ---
 # @sensitive @required
-API_TOKEN=automicVault()
+API_TOKEN=av()
 ```
 
 Load Varlock, then read the Secret through `ENV` rather than `process.env`:
@@ -170,7 +170,7 @@ const response = await fetch('https://api.example.com/me', {
 ```
 
 The resolver infers the Automic Vault Secret Name from `API_TOKEN`. Use
-`API_TOKEN=automicVault(OTHER_SECRET_NAME)` when they differ. Secret Names must
+`API_TOKEN=av(OTHER_SECRET_NAME)` when they differ. Secret Names must
 be static so the Approval shows the complete set before any Secret Value is
 released.
 
