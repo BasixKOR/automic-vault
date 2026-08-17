@@ -144,14 +144,14 @@ Install [Varlock](https://varlock.dev) and the published
 [Automic Vault plugin](https://github.com/automic-vault/varlock-plugin):
 
 ```sh
-npm install --save-dev varlock @automicvault/varlock-plugin
+npm install --save-dev varlock @automic-vault/varlock-plugin
 av save API_TOKEN
 ```
 
 Declare the Secret in `.env.schema`:
 
 ```dotenv
-# @plugin(@automicvault/varlock-plugin)
+# @plugin(@automic-vault/varlock-plugin)
 # @disableProcessEnvInjection
 # ---
 # @sensitive @required
