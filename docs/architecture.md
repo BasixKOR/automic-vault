@@ -100,6 +100,15 @@ accepted runtime posture, provider, and task UUID. The Direct Secret Gate,
 Secret mutations, Elevated Secret Application, Secret Disclosure, Unknown
 operations, and unverifiable Launchers are excluded.
 
+The Varlock plugin collects every active, statically named Automic Vault
+resolver before resolution and submits one multi-Secret Authorization Request
+through its signed bridge. The request binds the Varlock schema digest, the
+live Varlock resolution process, its live application parent, working
+directory, requested Secret Names, selected Secret Value sources, and Verified
+Launcher. One Approval covers that complete request only. Dynamic Secret Names,
+transient reuse, durable policy, Blessings, and Retained Launcher Provenance do
+not apply.
+
 ### Launcher Packaging
 
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a

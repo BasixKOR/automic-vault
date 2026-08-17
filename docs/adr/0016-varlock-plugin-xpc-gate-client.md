@@ -15,22 +15,36 @@ unrelated in-process code a trusted Gate Client.
 ## Decision
 
 Automic Vault ships a dedicated, signed Varlock plugin bridge as a Gate Client.
-The JavaScript resolver starts that bridge, which requests one exact Secret Name
-through XPC. This is a Secret Disclosure because Varlock receives the raw Secret
-Value. The approval service derives and binds the bridge's live parent,
-selects the Secret Value from the bridge's physical working directory, and shows
-the nearest Verified Launcher as the requester. The prompt and Authorization
-Record identify the credential consumer as the Varlock plugin.
+Before resolution, the JavaScript plugin requires every Automic Vault resolver
+to name its Secret statically. At resolution it collects the complete active
+Secret Name set and starts the bridge once. The bridge submits one multi-Secret
+Authorization Request through XPC. This is a Secret Disclosure because Varlock
+receives the raw Secret Values.
 
-Varlock plugin requests always require a fresh human Approval. They cannot use
-Authorization Policy, Direct Access Rules, transient Approval reuse, Blessings,
-or Retained Launcher Provenance. The service revalidates the live bridge parent
-and Verified Launcher after Approval and persists and verifies the Authorization
-Record before it releases the selected Secret Value.
+The request includes a deterministic digest of the active Varlock schema
+sources as descriptive request context. The digest cannot grant authority and
+must not be reused as a Blessing or policy identity without independent trusted
+verification.
+
+The approval service derives and binds the bridge's live Varlock resolution
+parent and that process's live application parent, selects Secret Values from
+the bridge's physical working directory, and shows the nearest Verified
+Launcher as the requester. The prompt and single Authorization Record identify
+the credential consumer as the Varlock plugin and show every requested Secret
+Name.
+
+Each Varlock resolution run requires a fresh human Approval for its complete
+multi-Secret request. It cannot use Authorization Policy, Direct Access Rules,
+transient Approval reuse, Blessings, or Retained Launcher Provenance. The
+service revalidates the live Varlock resolution process, application process,
+and Verified Launcher after Approval and persists and verifies one
+Authorization Record before releasing any selected Secret Value.
 
 ## Consequences
 
-The plugin can resolve Secrets without the `av` CLI, and each Secret Use is
-explicit. The extra signed process keeps the XPC trust boundary narrow. Initial
-use is intentionally tedious; durable reviewed authority requires a later ADR
-and implementation.
+The plugin can resolve all Secrets needed by one Varlock run without the `av`
+CLI and without presenting one prompt per Secret. Every Secret Name and selected
+Value source remains explicit in one immutable Authorization Request. Rejecting
+dynamic Secret Names ensures the set cannot grow after Approval. The extra
+signed process keeps the XPC trust boundary narrow. Durable reviewed authority
+still requires a later ADR and implementation.
