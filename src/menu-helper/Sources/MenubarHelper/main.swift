@@ -6365,6 +6365,17 @@ private final class ApprovalPanel: NSPanel {
     }
 }
 
+private final class ApprovalPanelDragView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+}
+
+private struct ApprovalPanelDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> ApprovalPanelDragView { ApprovalPanelDragView() }
+    func updateNSView(_ nsView: ApprovalPanelDragView, context: Context) {}
+}
+
 @MainActor
 private func makeApprovalPanel() -> ApprovalPanel {
     let panel = ApprovalPanel(
@@ -6809,6 +6820,18 @@ private struct ApprovalPromptView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .stroke(.white.opacity(0.18), lineWidth: 1)
+        }
+        .overlay(alignment: .top) {
+            ApprovalPanelDragHandle()
+                .frame(width: 64, height: 20)
+                .overlay {
+                    Capsule()
+                        .fill(.secondary.opacity(0.35))
+                        .frame(width: 36, height: 5)
+                        .allowsHitTesting(false)
+                }
+                .padding(.top, 4)
+                .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
@@ -7520,7 +7543,7 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         explanation: "Approval activates this stored authority for one execution."
     )
-    let collapsedHeight = NSHostingView(
+    let collapsedPrompt = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
                 requesterName: requester.name,
@@ -7540,7 +7563,12 @@ private func runApprovalSelfCheck() -> Int32 {
             decide: { _ in },
             contentSizeDidChange: {}
         )
-    ).fittingSize.height
+    )
+    collapsedPrompt.layoutSubtreeIfNeeded()
+    let collapsedHeight = collapsedPrompt.fittingSize.height
+    func containsDragHandle(_ view: NSView) -> Bool {
+        view is ApprovalPanelDragView || view.subviews.contains(where: containsDragHandle)
+    }
     let constrainedHeight = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -7602,6 +7630,7 @@ private func runApprovalSelfCheck() -> Int32 {
           cliRequester.iconPath == "/opt/homebrew/bin/gh",
           automaticApprovalExplanation.contains("ChatGPT contains signed app resources"),
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
+          containsDragHandle(collapsedPrompt),
           collapsedHeight > 0,
           collapsedHeight < 660,
           constrainedHeight <= 500
