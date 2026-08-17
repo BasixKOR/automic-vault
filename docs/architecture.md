@@ -382,10 +382,10 @@ Launcher Provenance and does not require this setting.
 
 While any Temporary Access Grant exists, a non-activating strip remains visible
 directly below the menu-bar item with every scoped grant, second-accurate
-remaining time, and an End action. The menu mirrors those actions and the shield
-turns orange. Automatic-request notifications stack below the strip. This
-continuous presentation is part of the temporary escalation's safety model,
-not a source of authority.
+remaining time, successful-use count, last-use time, and an End action. The menu
+mirrors those actions and the shield turns orange. Automatic-request
+notifications stack below the strip. This continuous presentation is part of
+the temporary escalation's safety model, not a source of authority.
 
 ## Source of truth
 

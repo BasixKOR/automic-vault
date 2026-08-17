@@ -92,6 +92,8 @@ public struct TemporaryAccessGrantSnapshot: Identifiable, Equatable, Sendable {
     public let grantedAt: Date
     public let expiresAt: Date
     public let monotonicDeadline: TimeInterval
+    public let useCount: Int
+    public let lastUsedAt: Date
 
     public func remaining(wallNow: Date, monotonicNow: TimeInterval) -> TimeInterval {
         max(0, min(expiresAt.timeIntervalSince(wallNow), monotonicDeadline - monotonicNow))
@@ -110,6 +112,8 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         let grantedAt: Date
         let expiresAt: Date
         let monotonicDeadline: TimeInterval
+        var useCount: Int
+        var lastUsedAt: Date
 
         var snapshot: TemporaryAccessGrantSnapshot {
             TemporaryAccessGrantSnapshot(
@@ -120,7 +124,9 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
                 authorizationGateName: authorizationGateName,
                 grantedAt: grantedAt,
                 expiresAt: expiresAt,
-                monotonicDeadline: monotonicDeadline
+                monotonicDeadline: monotonicDeadline,
+                useCount: useCount,
+                lastUsedAt: lastUsedAt
             )
         }
 
@@ -172,7 +178,9 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
             authorizationGateName: authorizationGateName,
             grantedAt: wallNow,
             expiresAt: wallNow.addingTimeInterval(Self.duration),
-            monotonicDeadline: monotonicNow + Self.duration
+            monotonicDeadline: monotonicNow + Self.duration,
+            useCount: 1,
+            lastUsedAt: wallNow
         )
         grants[id] = grant
         return try (grant.snapshot, body(grant.snapshot))
@@ -205,7 +213,7 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         grants.removeAll()
     }
 
-    public func withActiveLease<Result>(
+    public func withActiveLease(
         authorizationGateID: String,
         launcherDesignatedRequirement: String,
         launcherRuntimeProtection: LauncherRuntimeProtection,
@@ -213,12 +221,12 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         classification: SecretGateRequestClassification,
         wallNow: Date = Date(),
         monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime,
-        _ body: (TemporaryAccessGrantSnapshot) throws -> Result
-    ) rethrows -> Result? {
+        _ didUse: (TemporaryAccessGrantSnapshot) throws -> Bool
+    ) rethrows -> Bool? {
         lock.lock()
         defer { lock.unlock() }
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
-        guard let grant = grants.values.first(where: {
+        guard var grant = grants.values.first(where: {
             $0.scope.matches(
                 authorizationGateID: authorizationGateID,
                 launcherDesignatedRequirement: launcherDesignatedRequirement,
@@ -227,7 +235,12 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
                 classification: classification
             )
         }) else { return nil }
-        return try body(grant.snapshot)
+        if try didUse(grant.snapshot) {
+            grant.useCount += 1
+            grant.lastUsedAt = wallNow
+            grants[grant.id] = grant
+        }
+        return true
     }
 
     private func removeExpired(wallNow: Date, monotonicNow: TimeInterval) {
