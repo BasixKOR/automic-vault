@@ -6729,6 +6729,7 @@ private func showApprovalAlert(
         title: request.title,
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
+        supportsAutomicAuthorization: request.op != ApprovalServiceOperation.varlock.rawValue,
         cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
@@ -6939,10 +6940,23 @@ private struct ApprovalPromptContent {
     let title: String?
     let detail: String?
     let automaticApprovalExplanation: String?
+    var supportsAutomicAuthorization = true
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
     let sections: [ApprovalPromptSection]
+}
+
+private func approvalPromptFooter(
+    supportsAutomicAuthorization: Bool,
+    allowsPersistentApproval: Bool
+) -> String {
+    guard supportsAutomicAuthorization else {
+        return "Varlock requests require Approval on every run; Automic Authorization is not currently available."
+    }
+    return allowsPersistentApproval
+        ? "Always Allow trusts this verified app until removed in Settings"
+        : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app."
 }
 
 private struct ApprovalPromptView: View {
@@ -7090,9 +7104,10 @@ private struct ApprovalPromptView: View {
 
             }
 
-            Text(allowsPersistentApproval
-                ? "Always Allow trusts this verified app until removed in Settings"
-                : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app.")
+            Text(approvalPromptFooter(
+                supportsAutomicAuthorization: content.supportsAutomicAuthorization,
+                allowsPersistentApproval: allowsPersistentApproval
+            ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -7764,6 +7779,11 @@ private func runApprovalSelfCheck() -> Int32 {
         path: "/Applications/Automic Vault.app/Contents/Resources/AutomicVaultVarlockPlugin",
         signing: varlockSigning
     ), !isTrustedVarlockPluginHelperCaller(path: "/tmp/av", signing: varlockSigning)
+    else { return 1 }
+    guard approvalPromptFooter(
+        supportsAutomicAuthorization: false,
+        allowsPersistentApproval: false
+    ) == "Varlock requests require Approval on every run; Automic Authorization is not currently available."
     else { return 1 }
 
     let approvedBlessing = blessingReply(for: .approved)
