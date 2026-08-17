@@ -7273,13 +7273,11 @@ private func showApprovalAlert(
         requesterIconPath: requester.iconPath,
         actionLabel: request.op == ApprovalServiceOperation.varlock.rawValue
             ? "WANTS TO USE A SECRET" : "WANTS TO RUN",
-        credentialConsumer: autoApprovalToolName(request),
-        command: exactAuthorizationCommand(request),
-        commandPath: approvalCommandPath(request),
+        command: approvalPromptCommand(request),
+        commandPath: escapedSecurityPath(approvalCommandPath(request)),
         title: request.title,
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
-        supportsAutomicAuthorization: request.op != ApprovalServiceOperation.varlock.rawValue,
         cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
@@ -7324,14 +7322,6 @@ private func showApprovalAlert(
                 }
                 #endif
                 NSApp.stopModal()
-            },
-            contentSizeDidChange: { [weak panel] in
-                Task { @MainActor in
-                    await Task.yield()
-                    if let panel {
-                        fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: true)
-                    }
-                }
             }
         )
     )
@@ -7442,6 +7432,11 @@ private func prettyShellCommand(target: String, args: [String]) -> String {
         if args.isEmpty { return word }
         return index == 0 ? "\(word) \\" : "  \(word)" + (index == args.count ? "" : " \\")
     }.joined(separator: "\n")
+}
+
+private func approvalPromptCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    let parts = authorizationCommandParts(request, scriptPath: scriptPath)
+    return ([parts.tool] + parts.arguments).map(shellQuote).joined(separator: " ")
 }
 
 private func shellQuote(_ word: String) -> String {
@@ -7566,13 +7561,11 @@ private struct ApprovalPromptContent {
     let requesterName: String
     let requesterIconPath: String
     var actionLabel = "WANTS TO RUN"
-    let credentialConsumer: String
     let command: String
     let commandPath: String
     let title: String?
     let detail: String?
     let automaticApprovalExplanation: String?
-    var supportsAutomicAuthorization = true
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
@@ -7580,64 +7573,9 @@ private struct ApprovalPromptContent {
     let sections: [ApprovalPromptSection]
 }
 
-private func approvalPromptFooter(
-    supportsAutomicAuthorization: Bool,
-    allowsPersistentApproval: Bool
-) -> String {
-    guard supportsAutomicAuthorization else {
-        return "Varlock requests require Approval on every run; Automic Authorization is not currently available."
-    }
-    return allowsPersistentApproval
-        ? "Always Allow trusts this verified app until removed in Settings"
-        : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app."
-}
-
-private struct ApprovalPromptProcessSecurityView: View {
-    let processSecurity: ApprovalProcessSecurity
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("Process security", systemImage: "point.3.connected.trianglepath.dotted")
-                    .font(.headline)
-                Spacer(minLength: 8)
-                if processSecurity.issueCount > 0 {
-                    Label(
-                        "\(processSecurity.issueCount) to review",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-                }
-            }
-
-            VStack(spacing: 5) {
-                ForEach(Array(processSecurity.nodes.enumerated()), id: \.element.id) { index, node in
-                    if index > 0 {
-                        Image(systemName: "arrow.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .accessibilityHidden(true)
-                    }
-                    ApprovalPromptProcessNodeView(node: node)
-                }
-            }
-            .accessibilityLabel("Process path from Gate Client to Verified Launcher")
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.72),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-    }
-}
-
-private struct ApprovalPromptProcessNodeView: View {
-    let node: ApprovalProcessSecurityNode
-
-    private var posturePresentation: (title: String, image: String, color: Color) {
-        switch node.posture {
+private extension ApprovalProcessPosture {
+    var presentation: (title: String, image: String, color: Color) {
+        switch self {
         case .meetsRequirements:
             ("Meets requirements", "checkmark.shield.fill", .green)
         case .needsAttention:
@@ -7646,54 +7584,275 @@ private struct ApprovalPromptProcessNodeView: View {
             ("Does not meet requirements", "xmark.shield.fill", .red)
         }
     }
+}
+
+private extension ApprovalProcessSecurityNode {
+    var isLauncher: Bool { roles.contains("Verified Launcher") }
+    var isTarget: Bool {
+        roles.contains { $0.hasPrefix("Target") || $0.hasPrefix("Secret recipient") }
+    }
+    var displayRoles: String {
+        roles.map { $0 == "Verified Gate Client" ? "Gate Client" : $0 }
+            .joined(separator: " • ")
+    }
+    var details: String {
+        [
+            "\(displayRoles): \(name.isEmpty ? path : name)",
+            "Path: \(escapedSecurityPath(path))",
+            pid.map { "PID: \($0)" },
+            "Status: \(posture.presentation.title)",
+            explanation,
+        ]
+        .compactMap(\.self)
+        .joined(separator: "\n")
+    }
+}
+
+private extension ApprovalProcessSecurity {
+    var launcher: ApprovalProcessSecurityNode? { nodes.first(where: \.isLauncher) }
+    var target: ApprovalProcessSecurityNode? { nodes.first(where: \.isTarget) }
+    var middleNodes: [ApprovalProcessSecurityNode] {
+        Array(nodes.filter { !$0.isLauncher && !$0.isTarget }.reversed())
+    }
+}
+
+private func approvalPromptDetails(_ sections: [ApprovalPromptSection]) -> String {
+    sections.map { section in
+        ([section.title] + section.rows.map { "\($0.label): \($0.value)" })
+            .joined(separator: "\n")
+    }
+    .joined(separator: "\n\n")
+}
+
+private struct ApprovalPromptInfoButton: View {
+    let title: String
+    let details: String
+    @State private var isPresented = false
 
     var body: some View {
-        let presentation = posturePresentation
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(node.roles.joined(separator: " • "))
-                    .font(.caption2.weight(.semibold))
+        Button { isPresented.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(.body)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(details)
+        .accessibilityLabel(title)
+        .accessibilityHint("Shows \(title.lowercased())")
+        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+            ScrollView {
+                Text(details)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+            .frame(width: 380, height: 280)
+        }
+    }
+}
+
+private struct ApprovalPromptHeaderView: View {
+    let content: ApprovalPromptContent
+
+    private var details: String {
+        [content.processSecurity.launcher?.details, approvalPromptDetails(content.sections)]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .joined(separator: "\n\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(content.actionLabel)
+                .font(.caption.weight(.semibold))
+                .tracking(1.6)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 18) {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([
+                        URL(fileURLWithPath: content.requesterIconPath),
+                    ])
+                } label: {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 72, height: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+                .help("Reveal in Finder")
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(content.requesterName)
+                        .font(.title2.weight(.bold))
+                    HStack(spacing: 10) {
+                        if let launcher = content.processSecurity.launcher {
+                            Text(launcher.name)
+                                .font(.system(.callout, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Label("Verified Launcher", systemImage: "checkmark.shield.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.green.opacity(0.1), in: Capsule())
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                ApprovalPromptInfoButton(
+                    title: "Request details",
+                    details: details.isEmpty ? "No additional request details." : details
+                )
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.45),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            }
+        }
+    }
+}
+
+private struct ApprovalPromptProcessSecurityView: View {
+    let processSecurity: ApprovalProcessSecurity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text("Process security")
+                    .font(.headline)
+                if processSecurity.issueCount > 0 {
+                    Label(
+                        "\(processSecurity.issueCount) to review",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if processSecurity.middleNodes.isEmpty {
+                Image(systemName: "arrow.down")
                     .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: "arrow.down")
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 124)
+                    .accessibilityHidden(true)
+
+                ScrollView(.horizontal) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(processSecurity.middleNodes.enumerated()), id: \.element.id) { index, node in
+                            if index > 0 {
+                                Image(systemName: "arrow.right")
+                                    .foregroundStyle(.tertiary)
+                                    .accessibilityHidden(true)
+                            }
+                            ApprovalPromptProcessNodeView(node: node)
+                                .frame(width: 248)
+                        }
+                    }
+                }
+                .scrollIndicators(.visible)
+
+                Image(systemName: "arrow.down")
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 124)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Process path from Verified Launcher to Target")
+    }
+}
+
+private struct ApprovalPromptProcessNodeView: View {
+    let node: ApprovalProcessSecurityNode
+
+    var body: some View {
+        let presentation = node.posture.presentation
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(node.displayRoles)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(presentation.color)
                     .textCase(.uppercase)
                 Text(node.name.isEmpty ? node.path : node.name)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(2)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
                     .truncationMode(.middle)
-                if let pid = node.pid {
-                    Text("pid \(pid)")
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                }
             }
-            .frame(width: 142, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Label(presentation.title, systemImage: presentation.image)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(presentation.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(node.explanation)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
+            Image(systemName: presentation.image)
+                .font(.body)
+                .foregroundStyle(presentation.color)
+                .accessibilityHidden(true)
+            ApprovalPromptInfoButton(title: "\(node.name) process details", details: node.details)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
         .background(
             presentation.color.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(presentation.color.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(presentation.color.opacity(0.35), lineWidth: 1)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(node.roles.joined(separator: ", ")), \(node.name), \(node.path), \(presentation.title). \(node.explanation)"
-        )
-        .help(node.path)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
+    }
+}
+
+private struct ApprovalPromptApprovalMenu: View {
+    let allowsPersistentApproval: Bool
+    let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
+    let decide: (ApprovalDecision) -> Void
+
+    var body: some View {
+        Menu {
+            Button("Approve Once") { decide(.approved) }
+            if let candidate = temporaryGrantCandidate {
+                Button { decide(.temporaryWriteAccess) } label: {
+                    Label("Allow Write Access for 10 Minutes…", systemImage: "clock.badge.checkmark")
+                }
+                .help(
+                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
+                )
+                .accessibilityLabel(
+                    "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+                )
+            }
+            if allowsPersistentApproval {
+                Button("Always Allow") { decide(.alwaysApproved) }
+            }
+        } label: {
+            Text("Approve Once")
+                .frame(maxWidth: .infinity)
+        } primaryAction: {
+            decide(.approved)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(.blue)
+        .frame(maxWidth: .infinity)
+        .keyboardShortcut(.defaultAction)
+        .accessibilityLabel("Approve Once and more approval options")
+        .accessibilityHint("Use the menu for temporary or persistent access options when available")
     }
 }
 
@@ -7705,71 +7864,36 @@ private struct ApprovalPromptView: View {
     var usesIPhoneApproval = false
     var usesTouchIDApproval = false
     let decide: (ApprovalDecision) -> Void
-    let contentSizeDidChange: () -> Void
-    @State private var showsDetails = false
     @State private var isAuthenticatingWithTouchID = false
 
     var body: some View {
         VStack(spacing: 18) {
             ScrollView {
-                VStack(spacing: 18) {
-                    VStack(spacing: 8) {
-                        Button {
-                            NSWorkspace.shared.activateFileViewerSelecting([
-                                URL(fileURLWithPath: content.requesterIconPath),
-                            ])
-                        } label: {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                                .resizable()
-                                .interpolation(.high)
-                                .frame(width: 72, height: 72)
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Reveal \(content.requesterName) in Finder")
-                        .help("Reveal in Finder")
-                        Text(content.requesterName)
-                            .font(.title2.weight(.bold))
-                        Text(content.actionLabel)
-                            .font(.caption.weight(.semibold))
-                            .tracking(1.6)
-                            .foregroundStyle(.secondary)
-                    }
-
+                VStack(spacing: 16) {
+                    ApprovalPromptHeaderView(content: content)
+                    ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
                     ApprovalPromptCommandView(content: content)
                         .layoutPriority(-1)
 
                     if let blessing = content.blessing {
                         ApprovalPromptBlessingView(context: blessing)
-                    } else {
-                        Text("Credential consumer: \(content.credentialConsumer)")
-                            .font(.callout.weight(.medium))
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        if let title = content.title, !title.isEmpty {
-                            Text(title)
-                                .font(.headline)
+                    if content.title?.isEmpty == false || content.detail?.isEmpty == false {
+                        VStack(alignment: .leading, spacing: 5) {
+                            if let title = content.title, !title.isEmpty {
+                                Text(title)
+                                    .font(.headline)
+                            }
+                            if let detail = content.detail, !detail.isEmpty {
+                                Text(detail)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                        if let detail = content.detail, !detail.isEmpty {
-                            Text(detail)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if content.blessing == nil,
-                           content.title?.isEmpty != false,
-                           content.detail?.isEmpty != false
-                        {
-                            Text("Review the request details before allowing access.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let explanation = content.automaticApprovalExplanation {
                         Label {
@@ -7785,20 +7909,6 @@ private struct ApprovalPromptView: View {
                         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
                         .accessibilityElement(children: .combine)
                     }
-
-                    DisclosureGroup(isExpanded: $showsDetails) {
-                        VStack(spacing: 8) {
-                            ForEach(content.sections) { section in
-                                ApprovalPromptSectionView(section: section)
-                            }
-                        }
-                        .padding(.top, 8)
-                    } label: {
-                        Label("Details", systemImage: "info.circle")
-                            .font(.callout.weight(.medium))
-                    }
-                    .transaction { $0.animation = nil }
-                    .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
                 }
             }
             .scrollIndicators(.visible)
@@ -7839,70 +7949,44 @@ private struct ApprovalPromptView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .keyboardShortcut(.cancelAction)
-            } else {
-                HStack(spacing: 12) {
-                    Button("Deny", role: .cancel) { decide(.denied) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .frame(maxWidth: .infinity)
-                        .keyboardShortcut(.cancelAction)
-                    Button("Approve Once") { decide(.approved) }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(.blue)
-                        .frame(maxWidth: .infinity)
-                        .keyboardShortcut(.defaultAction)
-                    if allowsPersistentApproval {
-                        Button("Always Allow") { decide(.alwaysApproved) }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                            .tint(.blue)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
 
-                if let candidate = temporaryGrantCandidate {
-                    Button { decide(.temporaryWriteAccess) } label: {
-                        HStack {
-                            Image(systemName: "clock.badge.checkmark")
-                            Text("Allow Write Access for 10 Minutes…")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .accessibilityLabel(
-                        "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
-                    )
-
-                    Text(
-                        "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
-                    )
+                Text("This Mac cannot approve while iPhone Approval is enabled.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                HStack(alignment: .top, spacing: 18) {
+                    Button("Deny", role: .cancel) { decide(.denied) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .keyboardShortcut(.cancelAction)
 
+                    VStack(spacing: 6) {
+                        ApprovalPromptApprovalMenu(
+                            allowsPersistentApproval: allowsPersistentApproval,
+                            temporaryGrantCandidate: temporaryGrantCandidate,
+                            decide: decide
+                        )
+                        Text("Review the request details before allowing access.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
             }
-
-            Text(usesTouchIDApproval
-                ? (usesIPhoneApproval
+            if usesTouchIDApproval {
+                Text(usesIPhoneApproval
                     ? "Approve on iPhone or with fresh Touch ID on this Mac."
                     : "Fresh Touch ID is required for every Approval on this Mac.")
-                : (usesIPhoneApproval
-                    ? "This Mac cannot approve while iPhone Approval is enabled."
-                    : approvalPromptFooter(
-                    supportsAutomicAuthorization: content.supportsAutomicAuthorization,
-                    allowsPersistentApproval: allowsPersistentApproval
-                )))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(28)
         .frame(maxHeight: maximumHeight)
-        .frame(width: 560)
+        .frame(width: 680)
         .fixedSize(horizontal: false, vertical: true)
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -7989,26 +8073,40 @@ private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String 
 private struct ApprovalPromptCommandView: View {
     let content: ApprovalPromptContent
 
+    private var details: String {
+        [content.processSecurity.target?.details, "Command path: \(content.commandPath)"]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ScrollView([.horizontal, .vertical]) {
-                Text(approvalPromptCommandText(command: content.command, path: content.commandPath))
+            HStack(alignment: .firstTextBaseline) {
+                Text("Target")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .textCase(.uppercase)
+                Spacer(minLength: 0)
+                ApprovalPromptInfoButton(title: "Target details", details: details)
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+            ScrollView(.horizontal) {
+                Text(content.command)
                     .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.white)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: true, vertical: true)
             }
             .scrollIndicators(.visible)
             .scrollIndicatorsFlash(onAppear: true)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) {
-                    ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
-                    ApprovalPromptInlineMeta(label: "keys", value: content.keys)
-                }
-                VStack(alignment: .leading, spacing: 5) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ApprovalPromptInlineMeta(label: "path", value: content.commandPath)
                     ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
                     ApprovalPromptInlineMeta(label: "keys", value: content.keys)
                 }
             }
+            .scrollIndicators(.hidden)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -8018,21 +8116,6 @@ private struct ApprovalPromptCommandView: View {
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
     }
-}
-
-private func approvalPromptCommandText(command: String, path: String) -> AttributedString {
-    let lineBreak = command.firstIndex(of: "\n") ?? command.endIndex
-    var text = AttributedString(String(command[..<lineBreak]))
-    text.foregroundColor = .white
-    var comment = AttributedString("    # \(path)")
-    comment.foregroundColor = .white.opacity(0.55)
-    text += comment
-    if lineBreak != command.endIndex {
-        var remainder = AttributedString(String(command[lineBreak...]))
-        remainder.foregroundColor = .white
-        text += remainder
-    }
-    return text
 }
 
 private struct ApprovalPromptInlineMeta: View {
@@ -8048,42 +8131,12 @@ private struct ApprovalPromptInlineMeta: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
-                .truncationMode(.middle)
                 .textSelection(.enabled)
         }
-    }
-}
-
-private struct ApprovalPromptSectionView: View {
-    let section: ApprovalPromptSection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(section.title, systemImage: section.systemImage)
-                .font(.headline)
-                .symbolRenderingMode(.hierarchical)
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(section.rows) { row in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(row.label)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 124, alignment: .trailing)
-                        Text(row.value)
-                            .font(.system(.callout, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.72),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -8599,12 +8652,6 @@ private func runApprovalSelfCheck() -> Int32 {
         signing: varlockSigning
     ), !isTrustedVarlockPluginHelperCaller(path: "/tmp/av", signing: varlockSigning)
     else { return 1 }
-    guard approvalPromptFooter(
-        supportsAutomicAuthorization: false,
-        allowsPersistentApproval: false
-    ) == "Varlock requests require Approval on every run; Automic Authorization is not currently available."
-    else { return 1 }
-
     let approvedBlessing = blessingReply(for: .approved)
     let deniedBlessing = blessingReply(for: .denied)
     let failedBlessing = blessingReply(for: .failed("failed"))
@@ -8755,7 +8802,6 @@ private func runApprovalSelfCheck() -> Int32 {
             content: ApprovalPromptContent(
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
-                credentialConsumer: "gh",
                 command: "gh auth token",
                 commandPath: "/opt/homebrew/bin/gh",
                 title: "GitHub token requested",
@@ -8768,8 +8814,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 sections: []
             ),
             temporaryGrantCandidate: nil,
-            decide: { _ in },
-            contentSizeDidChange: {}
+            decide: { _ in }
         )
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
@@ -8782,7 +8827,6 @@ private func runApprovalSelfCheck() -> Int32 {
             content: ApprovalPromptContent(
                 requesterName: requester.name,
                 requesterIconPath: requester.iconPath,
-                credentialConsumer: "gh",
                 command: Array(repeating: "  --long-option \\", count: 100).joined(separator: "\n"),
                 commandPath: "/opt/homebrew/bin/gh",
                 title: nil,
@@ -8796,38 +8840,18 @@ private func runApprovalSelfCheck() -> Int32 {
             ),
             maximumHeight: 500,
             temporaryGrantCandidate: nil,
-            decide: { _ in },
-            contentSizeDidChange: {}
+            decide: { _ in }
         )
     ).fittingSize.height
-    let commandWithArguments = approvalPromptCommandText(
-        command: prettyShellCommand(target: "gh", args: ["repo", "view"]),
-        path: "/opt/homebrew/bin/gh"
-    )
-    let commandWithoutArguments = approvalPromptCommandText(
-        command: prettyShellCommand(target: "gh", args: []),
-        path: "/opt/homebrew/bin/gh"
-    )
-    let longShellProgram = #"for n in SPACESHIP_API_KEY SPACESHIP_API_SECRET; do if [[ -n ${(P)n:-} ]]; then echo $n=set; else echo $n=missing; fi; done"#
-    let longCommand = prettyShellCommand(target: "zsh", args: ["-c", longShellProgram])
-    let commandWithLongSingleLineArgument = approvalPromptCommandText(
-        command: longCommand,
-        path: "/bin/zsh"
-    )
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
     /bin/echo \\
       'hello world' \\
       'it'\\''s-ok'
     """,
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
-          String(commandWithArguments.characters) == """
-          gh \\    # /opt/homebrew/bin/gh
-            repo \\
-            view
-          """,
-          String(commandWithoutArguments.characters) == "gh    # /opt/homebrew/bin/gh",
-          String(commandWithLongSingleLineArgument.characters)
-            == longCommand.replacingOccurrences(of: "\n", with: "    # /bin/zsh\n", options: [], range: longCommand.range(of: "\n")),
+          promptProcessSecurity.launcher?.pid == 40,
+          promptProcessSecurity.target?.pid == 41,
+          promptProcessSecurity.middleNodes.isEmpty,
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
