@@ -211,6 +211,14 @@ One or more Secrets interpreted by a Tool or service. An AWS credential, for exa
 
 The umbrella term for Secret Application and Secret Disclosure.
 
+### Live Secret Use
+
+An in-memory observation that a Target process lifetime associated with an
+allowed Secret Use remains live. It presents any Verified Launcher attribution,
+the Target, and Secret Names for display; it is not continuing authority, proof
+that a Secret remains in memory, or a way to revoke Secret Values already
+released.
+
 ### Secret Application
 
 The release of a Secret to its designated Target for an authorized operation. This is the normal way Automic Vault uses secrets.
