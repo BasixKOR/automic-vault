@@ -236,6 +236,18 @@ expire when the process execution or menu bar helper exits.
 
 The Gate Client and Target remain separate roles. A signed client submits the request. The Target performs the operation and may receive the Secret. Conflating them hides confused-deputy and target-substitution risks.
 
+Every Approval presents the available live process path from the Verified
+Launcher to the Target. Each process reports whether its live code signature
+is valid and whether its Hardened Runtime posture meets the same baseline used
+for Launcher eligibility. The Gate Client is identified separately because it
+may transport a request without being the Target or an ancestor of the Target.
+An interpreter that executes mutable source is called out even when its own
+executable is signed and hardened: executable posture does not authenticate the
+application source, dependencies, plug-ins, or native extensions that can
+observe a Secret after Application. These findings inform Approval; they do not
+create authority, replace Target verification, or imply that a Target will keep
+a Secret confidential.
+
 ## Policy model
 
 Each Authorization Gate owns one Authorization Policy:
