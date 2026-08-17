@@ -3826,6 +3826,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     request: request,
                     callerPath: callerPath,
                     pid: pid,
+                    targetPID: applicationIdentity.pid,
                     signing: signing,
                     scriptApproval: nil,
                     launcher: launcher,
@@ -6172,28 +6173,236 @@ private func launcherFallbackPath(for identity: AVProcessIdentity) -> String? {
         .path
 }
 
-private func approvalProcessChain(pid: pid_t) -> String? {
+private struct ApprovalProcessIdentity {
+    let pid: pid_t
+    let path: String
+    let execution: RetainedProcessExecution?
+}
+
+private enum ApprovalProcessPosture: Equatable {
+    case meetsRequirements
+    case needsAttention
+    case doesNotMeetRequirements
+}
+
+private struct ApprovalProcessSecurityNode: Identifiable {
+    let pid: pid_t?
+    let path: String
+    let roles: [String]
+    let posture: ApprovalProcessPosture
+    let explanation: String
+
+    var id: String { "\(pid ?? -1):\(path)" }
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+}
+
+private struct ApprovalProcessSecurity {
+    let nodes: [ApprovalProcessSecurityNode]
+
+    var issueCount: Int {
+        nodes.count { $0.posture != .meetsRequirements }
+    }
+}
+
+private func approvalProcessIdentities(
+    gateClientPID: pid_t,
+    launcherPID: pid_t?
+) -> [ApprovalProcessIdentity] {
     var caller = AVProcessIdentity()
-    guard av_process_identity(pid, &caller) else { return nil }
-    var longest: [String] = []
+    guard av_process_identity(gateClientPID, &caller) else { return [] }
+    let callerNode = ApprovalProcessIdentity(
+        pid: gateClientPID,
+        path: pathString(caller),
+        execution: retainedProcessExecution(pid: gateClientPID, identity: caller)
+    )
+    var chains: [[ApprovalProcessIdentity]] = []
     for startPID in launcherAncestorStartPIDs(caller) {
         var currentPID = startPID
         var seen = Set<pid_t>()
-        var paths: [String] = []
+        var nodes = [callerNode]
         for _ in 0..<32 {
             guard currentPID > 1, seen.insert(currentPID).inserted else { break }
             var identity = AVProcessIdentity()
             guard av_process_identity(currentPID, &identity) else { break }
             let path = pathString(identity)
-            if !path.isEmpty { paths.append(path) }
+            if !path.isEmpty {
+                nodes.append(ApprovalProcessIdentity(
+                    pid: currentPID,
+                    path: path,
+                    execution: retainedProcessExecution(pid: currentPID, identity: identity)
+                ))
+            }
             currentPID = identity.ppid
         }
-        if paths.count > longest.count { longest = paths }
+        chains.append(nodes)
     }
-    let callerPath = pathString(caller)
-    if !callerPath.isEmpty { longest.insert(callerPath, at: 0) }
-    guard !longest.isEmpty else { return nil }
-    return processChainLabel(paths: longest.reversed())
+    let chain = launcherPID.flatMap { launcherPID in
+        chains.first { $0.contains(where: { $0.pid == launcherPID }) }
+    } ?? chains.max(by: { $0.count < $1.count }) ?? [callerNode]
+    let bounded = launcherPID.flatMap { launcherPID in
+        chain.firstIndex(where: { $0.pid == launcherPID }).map { Array(chain[...$0]) }
+    } ?? chain
+    return bounded
+}
+
+private func mutableCodeExplanation(path: String) -> String? {
+    let name = URL(fileURLWithPath: path).lastPathComponent.lowercased()
+    if ["node", "nodejs", "deno", "bun"].contains(name) {
+        return "Executes mutable JavaScript and dependencies"
+    }
+    if name == "python" || name.hasPrefix("python3") || ["ruby", "perl", "php"].contains(name) {
+        return "Executes mutable source code and dependencies"
+    }
+    if ["sh", "bash", "zsh", "fish"].contains(name) {
+        return "Executes mutable shell code"
+    }
+    if name == "java" {
+        return "Loads mutable bytecode and dependencies"
+    }
+    return nil
+}
+
+private func approvalProcessPosture(
+    signing: LiveSigningInfo?,
+    runtimeProtection: LauncherRuntimeProtection? = nil,
+    identityVerified: Bool = false,
+    mutableCode: String?
+) -> (ApprovalProcessPosture, String) {
+    guard let signing else {
+        return (
+            .doesNotMeetRequirements,
+            ["Code signature could not be verified", mutableCode].compactMap(\.self).joined(separator: "; ")
+        )
+    }
+    let runtimeProtection = runtimeProtection ?? signing.runtimeProtection
+    var findings: [String] = []
+    var posture = ApprovalProcessPosture.meetsRequirements
+    if signing.isAdHoc && !identityVerified {
+        posture = .doesNotMeetRequirements
+        findings.append("Ad hoc signature does not authenticate a publisher")
+    } else {
+        findings.append(identityVerified ? "Verified Launcher identity" : "Valid code signature")
+    }
+    switch runtimeProtection {
+    case .hardened:
+        findings.append("Hardened Runtime")
+    case .hardenedWithLibraryValidationDisabled:
+        if posture == .meetsRequirements { posture = .needsAttention }
+        findings.append("Library validation is disabled")
+    case .hardenedRuntimeMissing:
+        posture = .doesNotMeetRequirements
+        findings.append("Hardened Runtime is not enabled")
+    case .unsafeEntitlements(let entitlements):
+        posture = .doesNotMeetRequirements
+        findings.append("Unsafe entitlements: \(entitlements.joined(separator: ", "))")
+    }
+    if let mutableCode {
+        if posture == .meetsRequirements { posture = .needsAttention }
+        findings.append(mutableCode)
+    }
+    return (posture, findings.joined(separator: "; "))
+}
+
+private func approvalTargetPID(
+    explicitPID: pid_t?,
+    dockerPID: pid_t?,
+    targetPath: String,
+    identities: [ApprovalProcessIdentity]
+) -> pid_t? {
+    explicitPID ?? dockerPID ?? identities.first(where: {
+        !targetPath.isEmpty && normalizedExecutablePath($0.path) == targetPath
+    })?.pid
+}
+
+private func approvalProcessSecurity(
+    request: ApprovalRequest,
+    gateClientPID: pid_t,
+    gateClientPath: String,
+    targetPID: pid_t? = nil,
+    launcher: LauncherIdentity?
+) -> ApprovalProcessSecurity {
+    var identities = approvalProcessIdentities(
+        gateClientPID: gateClientPID,
+        launcherPID: launcher?.pid
+    )
+    if let launcher,
+       !identities.contains(where: { $0.pid == launcher.pid })
+    {
+        var identity = AVProcessIdentity()
+        let execution = av_process_identity(launcher.pid, &identity)
+            ? retainedProcessExecution(pid: launcher.pid, identity: identity)
+            : nil
+        identities.append(ApprovalProcessIdentity(
+            pid: launcher.pid,
+            path: launcher.path,
+            execution: execution
+        ))
+    }
+    if !identities.contains(where: { $0.pid == gateClientPID }) {
+        identities.insert(ApprovalProcessIdentity(
+            pid: gateClientPID,
+            path: gateClientPath,
+            execution: nil
+        ), at: 0)
+    }
+
+    let targetPath = normalizedExecutablePath(request.target)
+    let liveTargetPID = approvalTargetPID(
+        explicitPID: targetPID,
+        dockerPID: request.dockerParent?.pid,
+        targetPath: targetPath,
+        identities: identities
+    )
+    var nodes = identities.map { identity -> ApprovalProcessSecurityNode in
+        let isLauncher = identity.pid == launcher?.pid
+        let isGateClient = identity.pid == gateClientPID
+        let isTarget = identity.pid == liveTargetPID
+        var roles: [String] = []
+        if isLauncher { roles.append("Verified Launcher") }
+        if isTarget { roles.append(request.keys.isEmpty ? "Target" : "Secret recipient") }
+        if isGateClient { roles.append("Verified Gate Client") }
+        if roles.isEmpty { roles.append("Intermediary") }
+
+        let signing = identity.execution.flatMap { execution -> LiveSigningInfo? in
+            guard retainedProcessExecutionIsLive(execution) else { return nil }
+            let signing = liveSigningInfo(pid: identity.pid)
+            return retainedProcessExecutionIsLive(execution) ? signing : nil
+        }
+        let result = approvalProcessPosture(
+            signing: signing,
+            runtimeProtection: isLauncher ? launcher?.runtimeProtection : nil,
+            identityVerified: isLauncher,
+            mutableCode: mutableCodeExplanation(path: identity.path)
+        )
+        return ApprovalProcessSecurityNode(
+            pid: identity.pid,
+            path: identity.path,
+            roles: roles,
+            posture: result.0,
+            explanation: result.1
+        )
+    }
+
+    if liveTargetPID == nil, !request.target.isEmpty {
+        let signing = executableSigningInfo(path: request.target)
+        let result = approvalProcessPosture(
+            signing: signing,
+            mutableCode: mutableCodeExplanation(path: request.target)
+        )
+        nodes.insert(ApprovalProcessSecurityNode(
+            pid: nil,
+            path: request.target,
+            roles: [request.keys.isEmpty ? "Target (not started)" : "Secret recipient (not started)"],
+            posture: result.0,
+            explanation: result.1
+        ), at: 0)
+    }
+    return ApprovalProcessSecurity(nodes: nodes)
+}
+
+private func approvalProcessChain(pid: pid_t) -> String? {
+    let paths = approvalProcessIdentities(gateClientPID: pid, launcherPID: nil).map(\.path)
+    return paths.isEmpty ? nil : processChainLabel(paths: paths)
 }
 
 private func processChainLabel<S: Sequence>(paths: S) -> String where S.Element == String {
@@ -6719,6 +6928,7 @@ private func showApprovalAlert(
     request: ApprovalRequest,
     callerPath: String,
     pid: pid_t,
+    targetPID: pid_t? = nil,
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
     blessing: BlessedScriptPromptContext? = nil,
@@ -6732,6 +6942,13 @@ private func showApprovalAlert(
     guard cancellation?.isCanceled != true else { return .canceled }
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
+    let processSecurity = approvalProcessSecurity(
+        request: request,
+        gateClientPID: pid,
+        gateClientPath: callerPath,
+        targetPID: targetPID,
+        launcher: launcher
+    )
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
@@ -6747,6 +6964,7 @@ private func showApprovalAlert(
         cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
+        processSecurity: processSecurity,
         sections: approvalPromptSections(
             request: request,
             callerPath: callerPath,
@@ -6754,6 +6972,7 @@ private func showApprovalAlert(
             signing: signing,
             scriptApproval: scriptApproval,
             launcher: launcher,
+            processSecurity: processSecurity,
             receivedAt: receivedAt
         )
     )
@@ -6846,6 +7065,7 @@ private func approvalPromptSections(
     signing: SigningInfo,
     scriptApproval: ScriptApproval?,
     launcher: LauncherIdentity?,
+    processSecurity: ApprovalProcessSecurity,
     receivedAt: Date
 ) -> [ApprovalPromptSection] {
     var sections = [
@@ -6879,7 +7099,9 @@ private func approvalPromptSections(
         ), at: 1)
     }
 
-    let chain = approvalProcessChain(pid: pid)
+    let chain = processSecurity.nodes.isEmpty
+        ? approvalProcessChain(pid: pid)
+        : processChainLabel(paths: processSecurity.nodes.map(\.path))
     let chainRows = chain.map { [ApprovalPromptRow("Process chain", $0)] } ?? []
     sections.append(ApprovalPromptSection("Execution Origin", "app.badge", launcher.map {
         [
@@ -6958,6 +7180,7 @@ private struct ApprovalPromptContent {
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
+    let processSecurity: ApprovalProcessSecurity
     let sections: [ApprovalPromptSection]
 }
 
@@ -6973,6 +7196,111 @@ private func approvalPromptFooter(
         : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app."
 }
 
+private struct ApprovalPromptProcessSecurityView: View {
+    let processSecurity: ApprovalProcessSecurity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Process security", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.headline)
+                Spacer(minLength: 8)
+                if processSecurity.issueCount > 0 {
+                    Label(
+                        "\(processSecurity.issueCount) to review",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                }
+            }
+
+            VStack(spacing: 5) {
+                ForEach(Array(processSecurity.nodes.enumerated()), id: \.element.id) { index, node in
+                    if index > 0 {
+                        Image(systemName: "arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    ApprovalPromptProcessNodeView(node: node)
+                }
+            }
+            .accessibilityLabel("Process path from Gate Client to Verified Launcher")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+    }
+}
+
+private struct ApprovalPromptProcessNodeView: View {
+    let node: ApprovalProcessSecurityNode
+
+    private var posturePresentation: (title: String, image: String, color: Color) {
+        switch node.posture {
+        case .meetsRequirements:
+            ("Meets requirements", "checkmark.shield.fill", .green)
+        case .needsAttention:
+            ("Needs attention", "exclamationmark.shield.fill", .orange)
+        case .doesNotMeetRequirements:
+            ("Does not meet requirements", "xmark.shield.fill", .red)
+        }
+    }
+
+    var body: some View {
+        let presentation = posturePresentation
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(node.roles.joined(separator: " • "))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                Text(node.name.isEmpty ? node.path : node.name)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                if let pid = node.pid {
+                    Text("pid \(pid)")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 142, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Label(presentation.title, systemImage: presentation.image)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(presentation.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(node.explanation)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            presentation.color.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(presentation.color.opacity(0.25), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(node.roles.joined(separator: ", ")), \(node.name), \(node.path), \(presentation.title). \(node.explanation)"
+        )
+        .help(node.path)
+    }
+}
+
 private struct ApprovalPromptView: View {
     let content: ApprovalPromptContent
     var maximumHeight: CGFloat? = nil
@@ -6984,94 +7312,99 @@ private struct ApprovalPromptView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            VStack(spacing: 8) {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: content.requesterIconPath),
-                    ])
-                } label: {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
-                .help("Reveal in Finder")
-                Text(content.requesterName)
-                    .font(.title2.weight(.bold))
-                Text(content.actionLabel)
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.6)
-                    .foregroundStyle(.secondary)
-            }
-
-            ApprovalPromptCommandView(content: content)
-                .layoutPriority(-1)
-
-            if let blessing = content.blessing {
-                ApprovalPromptBlessingView(context: blessing)
-            } else {
-                Text("Credential consumer: \(content.credentialConsumer)")
-                    .font(.callout.weight(.medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                if let title = content.title, !title.isEmpty {
-                    Text(title)
-                        .font(.headline)
-                }
-                if let detail = content.detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if content.blessing == nil,
-                   content.title?.isEmpty != false,
-                   content.detail?.isEmpty != false
-                {
-                    Text("Review the request details before allowing access.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let explanation = content.automaticApprovalExplanation {
-                Label {
-                    Text(explanation)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "exclamationmark.shield.fill")
-                        .foregroundStyle(.orange)
-                }
-                .font(.callout)
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                .accessibilityElement(children: .combine)
-            }
-
-            DisclosureGroup(isExpanded: $showsDetails) {
-                ScrollView {
+            ScrollView {
+                VStack(spacing: 18) {
                     VStack(spacing: 8) {
-                        ForEach(content.sections) { section in
-                            ApprovalPromptSectionView(section: section)
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([
+                                URL(fileURLWithPath: content.requesterIconPath),
+                            ])
+                        } label: {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 72, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+                        .help("Reveal in Finder")
+                        Text(content.requesterName)
+                            .font(.title2.weight(.bold))
+                        Text(content.actionLabel)
+                            .font(.caption.weight(.semibold))
+                            .tracking(1.6)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ApprovalPromptCommandView(content: content)
+                        .layoutPriority(-1)
+
+                    if let blessing = content.blessing {
+                        ApprovalPromptBlessingView(context: blessing)
+                    } else {
+                        Text("Credential consumer: \(content.credentialConsumer)")
+                            .font(.callout.weight(.medium))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        if let title = content.title, !title.isEmpty {
+                            Text(title)
+                                .font(.headline)
+                        }
+                        if let detail = content.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if content.blessing == nil,
+                           content.title?.isEmpty != false,
+                           content.detail?.isEmpty != false
+                        {
+                            Text("Review the request details before allowing access.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.top, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let explanation = content.automaticApprovalExplanation {
+                        Label {
+                            Text(explanation)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "exclamationmark.shield.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.callout)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityElement(children: .combine)
+                    }
+
+                    DisclosureGroup(isExpanded: $showsDetails) {
+                        VStack(spacing: 8) {
+                            ForEach(content.sections) { section in
+                                ApprovalPromptSectionView(section: section)
+                            }
+                        }
+                        .padding(.top, 8)
+                    } label: {
+                        Label("Details", systemImage: "info.circle")
+                            .font(.callout.weight(.medium))
+                    }
+                    .transaction { $0.animation = nil }
+                    .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
                 }
-                .frame(maxHeight: 170)
-                .scrollIndicators(.visible)
-            } label: {
-                Label("Details", systemImage: "info.circle")
-                    .font(.callout.weight(.medium))
             }
-            .transaction { $0.animation = nil }
-            .onChange(of: showsDetails) { _, _ in contentSizeDidChange() }
+            .scrollIndicators(.visible)
+            .defaultScrollAnchor(.top)
+            .layoutPriority(1)
 
             HStack(spacing: 12) {
                 Button("Deny", role: .cancel) { decide(.denied) }
@@ -7928,6 +8261,22 @@ private func runApprovalSelfCheck() -> Int32 {
         ),
         explanation: "Approval activates this stored authority for one execution."
     )
+    let promptProcessSecurity = ApprovalProcessSecurity(nodes: [
+        ApprovalProcessSecurityNode(
+            pid: 40,
+            path: "/Applications/Example.app/Contents/MacOS/Example",
+            roles: ["Verified Launcher"],
+            posture: .meetsRequirements,
+            explanation: "Valid code signature; Hardened Runtime"
+        ),
+        ApprovalProcessSecurityNode(
+            pid: 41,
+            path: "/opt/homebrew/bin/gh",
+            roles: ["Secret recipient", "Verified Gate Client"],
+            posture: .meetsRequirements,
+            explanation: "Valid code signature; Hardened Runtime"
+        ),
+    ])
     let collapsedPrompt = NSHostingView(
         rootView: ApprovalPromptView(
             content: ApprovalPromptContent(
@@ -7942,6 +8291,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 blessing: promptBlessing,
+                processSecurity: promptProcessSecurity,
                 sections: []
             ),
             temporaryGrantCandidate: nil,
@@ -7968,6 +8318,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 blessing: nil,
+                processSecurity: promptProcessSecurity,
                 sections: []
             ),
             maximumHeight: 500,
@@ -8017,7 +8368,6 @@ private func runApprovalSelfCheck() -> Int32 {
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
           containsDragHandle(collapsedPrompt),
           collapsedHeight > 0,
-          collapsedHeight < 660,
           constrainedHeight <= 500
     else {
         return 1
@@ -8075,6 +8425,26 @@ private func runApprovalSelfCheck() -> Int32 {
         runtimeProtection: .hardened,
         isDeveloperID: true
     )
+    let hardenedPosture = approvalProcessPosture(
+        signing: unbundledSigning,
+        mutableCode: nil
+    )
+    let nodePosture = approvalProcessPosture(
+        signing: unbundledSigning,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/node")
+    )
+    let unsafePosture = approvalProcessPosture(
+        signing: pythonSigning,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/python3")
+    )
+    let unsignedPosture = approvalProcessPosture(
+        signing: nil,
+        mutableCode: mutableCodeExplanation(path: "/opt/homebrew/bin/node")
+    )
+    let repeatedNodeProcesses = [
+        ApprovalProcessIdentity(pid: 41, path: "/opt/homebrew/bin/node", execution: nil),
+        ApprovalProcessIdentity(pid: 42, path: "/opt/homebrew/bin/node", execution: nil),
+    ]
     let parentlessVaulttyLauncher = launcherIdentity(
         pid: 43,
         path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
@@ -8106,6 +8476,18 @@ private func runApprovalSelfCheck() -> Int32 {
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
+          hardenedPosture.0 == .meetsRequirements,
+          nodePosture.0 == .needsAttention,
+          nodePosture.1.contains("mutable JavaScript"),
+          unsafePosture.0 == .doesNotMeetRequirements,
+          unsignedPosture.0 == .doesNotMeetRequirements,
+          unsignedPosture.1.contains("Code signature could not be verified"),
+          approvalTargetPID(
+              explicitPID: 42,
+              dockerPID: nil,
+              targetPath: "/opt/homebrew/bin/node",
+              identities: repeatedNodeProcesses
+          ) == 42,
           launcherIdentity(pid: 46, path: pythonSigning.mainExecutable, signing: pythonSigning) == nil,
           launcherIdentity(pid: 47, path: "/usr/local/bin/av", signing: unbundledSigning)?.isStandalone == true
     else {

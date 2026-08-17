@@ -236,8 +236,8 @@ expire when the process execution or menu bar helper exits.
 
 The Gate Client and Target remain separate roles. A signed client submits the request. The Target performs the operation and may receive the Secret. Conflating them hides confused-deputy and target-substitution risks.
 
-Every Approval presents the available live process path from the Verified
-Launcher to the Target. Each process reports whether its live code signature
+Every Approval presents the available live process path between the Target and
+Verified Launcher. Each process reports whether its live code signature
 is valid and whether its Hardened Runtime posture meets the same baseline used
 for Launcher eligibility. The Gate Client is identified separately because it
 may transport a request without being the Target or an ancestor of the Target.

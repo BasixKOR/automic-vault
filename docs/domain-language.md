@@ -159,8 +159,8 @@ The signed component that submits an Authorization Request, such as `av`, a patc
 
 The exact executable that performs the requested operation. For a Secret Gate, the Target is the intended consumer of the Secret Application. The designation limits the intended consumer but cannot prevent a compromised Target from leaking a secret after receipt.
 
-An Approval presents the live process path from the Verified Launcher to the
-Target and reports the available code-signing and runtime posture for each
+An Approval presents the live process path between the Target and Verified
+Launcher and reports the available code-signing and runtime posture for each
 process. This is diagnostic evidence about Secret exposure, not authority or
 Target identity. In particular, signing an interpreter executable does not
 authenticate the mutable source code, dependencies, plug-ins, or native
