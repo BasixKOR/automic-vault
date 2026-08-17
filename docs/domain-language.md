@@ -391,7 +391,7 @@ Permission for one Verified Launcher to execute an exact Blessing with automic a
 
 ### Authorization Record
 
-A local record of an Authorization Request and its Authorization Decision. It includes the decision source, Launcher, Gate Client, Target, Secret Names, and operation.
+A local record of an Authorization Request and its Authorization Decision. It includes the decision source, Launcher, Gate Client, Target, Secret Names, and operation. For an automically authorized Secret Use, it also records the Target's available Hardened Runtime posture at authorization time. This posture is diagnostic metadata, not Target identity evidence or an authorization input.
 
 Automic Vault persists and verifies a record of allowed Secret Use before releasing a Secret. Failure to persist that required record denies the request. Records of denials and failures are best effort. Authorization History is bounded and local; it is not an append-only, tamper-proof, or complete forensic log.
 

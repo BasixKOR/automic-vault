@@ -72,3 +72,19 @@ import Testing
 
     #expect(LauncherRuntimeRequirement.legacyUnchecked.allows(.hardenedRuntimeMissing))
 }
+
+@Test func targetRuntimeHistoryExplainsSecretExposure() {
+    #expect(
+        LauncherRuntimeProtection.hardened.targetAuthorizationHistoryDescription
+            == "Hardened Runtime"
+    )
+    #expect(
+        LauncherRuntimeProtection.hardenedRuntimeMissing.targetAuthorizationHistoryDescription
+            .contains("Secret may be exposed to debugging or process-memory inspection")
+    )
+    #expect(
+        LauncherRuntimeProtection.unsafeEntitlements([
+            "com.apple.security.get-task-allow",
+        ]).targetAuthorizationHistoryDescription.contains("debugging code")
+    )
+}

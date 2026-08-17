@@ -314,6 +314,13 @@ inspection or migration.
 
 Authorization History is bounded local operational history. Same-user compromise or storage failure can damage it. Product copy must not promise an append-only audit trail or complete forensic evidence.
 
+For an automically authorized Secret Use, the Authorization Record includes the
+Target's available Hardened Runtime posture at authorization time. Ordinary
+`av inject` requests inspect the resolved Target executable because it has not
+started yet; integrations with an existing Target process inspect that live
+process. Missing or unsafe posture is recorded as exposure information without
+changing the Authorization Decision.
+
 The exact Agent Task Context UUID is not part of the Authorization Record or
 telemetry. History identifies the Temporary Access Grant decision source,
 Verified Launcher, Authorization Gate, and operation without persisting the

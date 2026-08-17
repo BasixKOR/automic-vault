@@ -494,6 +494,19 @@ public enum LauncherRuntimeProtection: Equatable, Sendable {
     }
 
     public var allowsSecretGateAccess: Bool { secretGateAdmissionRequirement != nil }
+
+    public var targetAuthorizationHistoryDescription: String {
+        switch self {
+        case .hardened:
+            "Hardened Runtime"
+        case .hardenedWithLibraryValidationDisabled:
+            "Hardened Runtime; library validation disabled; third-party code can run inside the Target"
+        case .hardenedRuntimeMissing:
+            "Hardened Runtime not enabled; Secret may be exposed to debugging or process-memory inspection"
+        case .unsafeEntitlements(let entitlements):
+            "Hardened Runtime weakened by \(entitlements.joined(separator: ", ")); Secret may be exposed to injected or debugging code"
+        }
+    }
 }
 
 public enum LauncherRuntimeRequirement: String, Codable, Hashable, Sendable {
@@ -730,6 +743,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     public let launcher: String?
     public let callerPath: String
     public let target: String
+    public let targetRuntimeProtection: String?
     public let cwd: String
     public let keys: [String]
     public let detail: String?
@@ -747,6 +761,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         launcher: String?,
         callerPath: String,
         target: String,
+        targetRuntimeProtection: String? = nil,
         cwd: String,
         keys: [String],
         detail: String?,
@@ -763,6 +778,7 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         self.launcher = launcher
         self.callerPath = callerPath
         self.target = target
+        self.targetRuntimeProtection = targetRuntimeProtection
         self.cwd = cwd
         self.keys = keys
         self.detail = detail

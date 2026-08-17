@@ -2947,6 +2947,9 @@ private struct AccessRequestRow: View {
                     }
                     AccessMetaLine("Gate client", record.callerPath)
                     AccessMetaLine("Target", record.target)
+                    if let runtime = record.targetRuntimeProtection {
+                        AccessMetaLine("Target runtime", runtime)
+                    }
                     AccessMetaLine("Working directory", escapedSecurityPath(record.cwd))
                     if let detail = record.detail, !detail.isEmpty {
                         AccessMetaLine("Detail", detail)

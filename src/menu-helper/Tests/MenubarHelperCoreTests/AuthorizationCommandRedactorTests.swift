@@ -91,6 +91,7 @@ import Testing
         launcher: "Terminal",
         callerPath: "/usr/local/bin/av",
         target: "/usr/bin/curl",
+        targetRuntimeProtection: "Hardened Runtime",
         cwd: "/tmp",
         keys: [],
         detail: nil
@@ -99,6 +100,7 @@ import Testing
     let decoded = try JSONDecoder().decode(AccessRequestRecord.self, from: JSONEncoder().encode(record))
     #expect(decoded.command == "curl --api-key api-secret")
     #expect(decoded.commandForDisplay == "curl --api-key <redacted>")
+    #expect(decoded.targetRuntimeProtection == "Hardened Runtime")
     #expect(!decoded.commandForDisplay.contains("api-secret"))
 }
 
@@ -123,5 +125,6 @@ import Testing
     let record = try JSONDecoder().decode(AccessRequestRecord.self, from: data)
     #expect(record.command == "gh api --header Authorization:secret-value")
     #expect(record.commandForDisplay == "gh <arguments hidden>")
+    #expect(record.targetRuntimeProtection == nil)
     #expect(!record.commandForDisplay.contains("secret-value"))
 }
