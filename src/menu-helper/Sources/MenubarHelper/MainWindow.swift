@@ -1202,8 +1202,36 @@ func runDashboardSearchSelfCheck() -> Int32 {
     )
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
     let appPolicy = gate.appPolicies[0]
+    let launcherBundleRequirement = #"cdhash H"0123456789abcdef0123456789abcdef01234567""#
+    let launcherBundle = LauncherBundleEnrollment(
+        generation: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        displayName: "herdr",
+        commandName: "herdr",
+        bundleIdentifier: "com.automicvault.launcher-bundle.test",
+        bundlePath: "/Applications/Automic Vault/herdr.app",
+        launcherIdentifier: "com.automicvault.launcher-bundle.test.runner",
+        launcherRequirement: launcherBundleRequirement,
+        bundleCodeIdentifiers: [Data([1])],
+        launcherCodeIdentifiers: [Data([2])],
+        payloadCodeIdentifiers: [Data([3])],
+        sourceSHA256: String(repeating: "1", count: 64),
+        payloadSHA256: String(repeating: "2", count: 64),
+        payloadEntitlements: [],
+        runtimeRequirement: .hardened,
+        signingKind: .adHoc,
+        signingIdentity: nil
+    )
+    let launcherBundleDisplay = ApprovedAppDisplay(
+        SecretGatePolicy(
+            bundleIdentifier: "unknown",
+            requirement: launcherBundleRequirement,
+            protection: .readOnly
+        ),
+        launcherBundle: launcherBundle
+    )
     let appRowHeight = NSHostingView(rootView: ApprovedAppRow(
         app: appPolicy,
+        launcherBundle: nil,
         gate: gate,
         setProtection: { _ in },
         remove: {}
@@ -1227,7 +1255,10 @@ func runDashboardSearchSelfCheck() -> Int32 {
           secretDetailHeight.map({ $0 > 0 }) == true,
           aboutHeight > 0,
           detachedProcessAccessHeight > 0,
-          appRowHeight < 140
+          appRowHeight < 140,
+          launcherBundleDisplay.name == "herdr",
+          launcherBundleDisplay.bundleIdentifier == launcherBundle.bundleIdentifier,
+          launcherBundleDisplay.signingSummary == "Ad Hoc"
     else { return 1 }
     guard model.items.first(where: { $0.id == "aws" })?.isHardened == true,
           model.items.first(where: { $0.id == "git" })?.isHardened == false
@@ -3282,6 +3313,9 @@ private struct SecretGateDetailView: View {
                     ForEach(gate.appPolicies, id: \.requirement) { app in
                         ApprovedAppRow(
                             app: app,
+                            launcherBundle: model.launcherBundles.first {
+                                $0.launcherRequirement == app.requirement
+                            },
                             gate: gate,
                             setProtection: { model.setProtection($0, for: app, in: gate) },
                             remove: { model.removeAppPolicy(app, from: gate) }
@@ -3330,13 +3364,14 @@ private struct SecretGateField: View {
 
 private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
+    let launcherBundle: LauncherBundleEnrollment?
     let gate: SecretGate
     let setProtection: (SecretGateProtection) -> Void
     let remove: () -> Void
     @State private var isConfirmingDelete = false
 
     private var display: ApprovedAppDisplay {
-        ApprovedAppDisplay(app)
+        ApprovedAppDisplay(app, launcherBundle: launcherBundle)
     }
 
     var body: some View {
@@ -3483,7 +3518,14 @@ private struct ApprovedAppDisplay {
     let icon: NSImage
     let signingSummary: String
 
-    init(_ app: SecretGatePolicy) {
+    init(_ app: SecretGatePolicy, launcherBundle: LauncherBundleEnrollment? = nil) {
+        if let launcherBundle {
+            name = launcherBundle.displayName
+            bundleIdentifier = launcherBundle.bundleIdentifier
+            icon = NSWorkspace.shared.icon(forFile: launcherBundle.bundlePath)
+            signingSummary = launcherBundle.signingIdentity ?? launcherBundle.signingKind.title
+            return
+        }
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
         let bundle = url.flatMap(Bundle.init(url:))
         name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
