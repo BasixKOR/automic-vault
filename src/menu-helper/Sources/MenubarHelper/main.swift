@@ -6516,10 +6516,6 @@ private struct ApprovalProcessSecurityNode: Identifiable {
 
 private struct ApprovalProcessSecurity {
     let nodes: [ApprovalProcessSecurityNode]
-
-    var issueCount: Int {
-        nodes.count { $0.posture != .meetsRequirements }
-    }
 }
 
 private func approvalProcessIdentities(
@@ -7271,8 +7267,6 @@ private func showApprovalAlert(
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
-        actionLabel: request.op == ApprovalServiceOperation.varlock.rawValue
-            ? "WANTS TO USE A SECRET" : "WANTS TO RUN",
         command: approvalPromptCommand(request),
         commandPath: escapedSecurityPath(approvalCommandPath(request)),
         title: request.title,
@@ -7560,7 +7554,6 @@ private struct BlessedScriptPromptContext {
 private struct ApprovalPromptContent {
     let requesterName: String
     let requesterIconPath: String
-    var actionLabel = "WANTS TO RUN"
     let command: String
     let commandPath: String
     let title: String?
@@ -7663,61 +7656,54 @@ private struct ApprovalPromptHeaderView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(content.actionLabel)
-                .font(.caption.weight(.semibold))
-                .tracking(1.6)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 18) {
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([
+                    URL(fileURLWithPath: content.requesterIconPath),
+                ])
+            } label: {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 72, height: 72)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+            .help("Reveal in Finder")
 
-            HStack(spacing: 18) {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: content.requesterIconPath),
-                    ])
-                } label: {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
-                .help("Reveal in Finder")
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(content.requesterName)
-                        .font(.title2.weight(.bold))
-                    HStack(spacing: 10) {
-                        if let launcher = content.processSecurity.launcher {
-                            Text(launcher.name)
-                                .font(.system(.callout, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                            Label("Verified Launcher", systemImage: "checkmark.shield.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.green.opacity(0.1), in: Capsule())
-                        }
+            VStack(alignment: .leading, spacing: 7) {
+                Text(content.requesterName)
+                    .font(.title2.weight(.bold))
+                HStack(spacing: 10) {
+                    if let launcher = content.processSecurity.launcher {
+                        Text(launcher.name)
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Label("Verified Launcher", systemImage: "checkmark.shield.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.green.opacity(0.1), in: Capsule())
                     }
                 }
-                Spacer(minLength: 0)
-                ApprovalPromptInfoButton(
-                    title: "Request details",
-                    details: details.isEmpty ? "No additional request details." : details
-                )
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color(nsColor: .controlBackgroundColor).opacity(0.45),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            Spacer(minLength: 0)
+            ApprovalPromptInfoButton(
+                title: "Request details",
+                details: details.isEmpty ? "No additional request details." : details
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.45),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
         }
     }
 }
@@ -7727,20 +7713,6 @@ private struct ApprovalPromptProcessSecurityView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text("Process security")
-                    .font(.headline)
-                if processSecurity.issueCount > 0 {
-                    Label(
-                        "\(processSecurity.issueCount) to review",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-                }
-                Spacer(minLength: 0)
-            }
-
             if processSecurity.middleNodes.isEmpty {
                 Image(systemName: "arrow.down")
                     .foregroundStyle(.tertiary)
