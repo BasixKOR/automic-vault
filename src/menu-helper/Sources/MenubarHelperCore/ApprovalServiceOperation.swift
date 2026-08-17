@@ -2,6 +2,7 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case awsHelperVersion = "aws-helper-version"
     case dockerHelperVersion = "docker-helper-version"
     case inject
+    case varlock
     case keys
     case authorize
     case awsCredentials = "aws-credentials"

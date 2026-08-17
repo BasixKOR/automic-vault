@@ -9,6 +9,10 @@ import Testing
     #expect(ApprovalServiceOperation.saveIfAbsentOrEqual.rawValue == "save-if-absent")
 }
 
+@Test func varlockHasADedicatedWireOperation() {
+    #expect(ApprovalServiceOperation.varlock.rawValue == "varlock")
+}
+
 @Test func approvalServiceOperationValuesAreUnique() {
     let values = ApprovalServiceOperation.allCases.map(\.rawValue)
     #expect(Set(values).count == values.count)

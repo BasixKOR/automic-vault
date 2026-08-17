@@ -138,6 +138,47 @@ av inject +DOTENV_PRIVATE_KEY -- dotenvx run -- npm test
 dotenvx decrypts the project file only after Automic Vault authorizes applying
 its project-selected key to that operation.
 
+## Varlock
+
+Install [Varlock](https://varlock.dev) and the published
+[Automic Vault plugin](https://github.com/automic-vault/varlock-plugin):
+
+```sh
+npm install --save-dev varlock @automic-vault/varlock-plugin
+av save API_TOKEN
+```
+
+Declare the Secret in `.env.schema`:
+
+```dotenv
+# @plugin(@automic-vault/varlock-plugin)
+# @disableProcessEnvInjection
+# ---
+# @sensitive @required
+API_TOKEN=av()
+```
+
+Load Varlock, then read the Secret through `ENV` rather than `process.env`:
+
+```js
+import 'varlock/auto-load';
+import { ENV } from 'varlock/env';
+
+const response = await fetch('https://api.example.com/me', {
+  headers: { Authorization: `Bearer ${ENV.API_TOKEN}` },
+});
+```
+
+The resolver infers the Automic Vault Secret Name from `API_TOKEN`. Use
+`API_TOKEN=av(OTHER_SECRET_NAME)` when they differ. Secret Names must
+be static so the Approval shows the complete set before any Secret Value is
+released.
+
+> [!IMPORTANT]
+> Requires Automic Vault 3.9.0 or newer. Varlock currently requires one Approval
+> on every run for the complete active Secret set. Automic Authorization and
+> Blessings are not supported for the Varlock plugin yet.
+
 ## Scripts and Agent Tasks
 
 ### Blessed Scripts

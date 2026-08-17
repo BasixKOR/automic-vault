@@ -15,6 +15,7 @@ private let approvalLaunchAgentName = "com.automicvault.menubar-helper"
 private let openMainWindowArgument = "--open-main-window"
 private let pendingMainWindowKey = "pendingMainWindow"
 private let pendingSecretGateKey = "pendingSecretGate"
+private let varlockProtocolVersion: UInt64 = 1
 let secCodeSignatureAdHoc: UInt32 = 0x2
 private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanMaximumDelay: TimeInterval = 5
@@ -2494,6 +2495,7 @@ private final class ApprovalServer: @unchecked Sendable {
         anchor apple generic and certificate leaf[subject.OU] = \(teamIdentifier) and \
         (identifier "com.automicvault" or identifier "com.automicvault.av" or \
         identifier "com.automicvault.av-brew-stub" or \
+        identifier "com.automicvault.varlock-plugin-helper" or \
         identifier "gh" or identifier "com.github.cli" or identifier "stripe" or \
         identifier "supabase" or identifier "supabase-go" or identifier "com.supabase.cli")
         """
@@ -2617,6 +2619,16 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: true, error: nil, value: "1")
         case .inject, .keys, .authorize, .dockerGet:
             handleInject(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
+        case .varlock where isTrustedVarlockPluginHelperCaller(path: callerPath, signing: signing):
+            handleVarlock(
                 message,
                 on: peer,
                 cancellation: cancellation,
@@ -3671,6 +3683,240 @@ private final class ApprovalServer: @unchecked Sendable {
             }
         }
         return false
+    }
+
+    private func handleVarlock(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) {
+        guard supportsVarlockProtocol(xpc_dictionary_get_uint64(message, "protocol_version")) else {
+            reply(peer, to: message, ok: false, error: "unsupported Varlock plugin protocol")
+            return
+        }
+        guard let requestedKeys = stringArray(message, "keys"),
+              let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
+              let schemaDigestPointer = xpc_dictionary_get_string(message, "schema_sha256")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Varlock plugin request")
+            return
+        }
+        let keys = requestedKeys.sorted()
+        let cwd = String(cString: cwdPointer)
+        let schemaDigest = String(cString: schemaDigestPointer)
+        guard 1...64 ~= keys.count,
+              Set(keys).count == keys.count,
+              keys.allSatisfy(validSecretKeyName),
+              schemaDigest.utf8.count == 64,
+              schemaDigest.utf8.allSatisfy({ 48...57 ~= $0 || 97...102 ~= $0 })
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Varlock Secret declaration")
+            return
+        }
+        var resolutionIdentity = AVProcessIdentity()
+        guard identity.ppid > 1,
+              av_process_identity(identity.ppid, &resolutionIdentity),
+              let resolutionExecution = retainedProcessExecution(
+                  pid: identity.ppid, identity: resolutionIdentity
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "Varlock resolution process is unavailable")
+            return
+        }
+        var applicationIdentity = AVProcessIdentity()
+        guard resolutionIdentity.ppid > 1,
+              av_process_identity(resolutionIdentity.ppid, &applicationIdentity),
+              let applicationExecution = retainedProcessExecution(
+                  pid: resolutionIdentity.ppid, identity: applicationIdentity
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "Varlock application process is unavailable")
+            return
+        }
+        let applicationPath = pathString(applicationIdentity)
+        guard !applicationPath.isEmpty else {
+            reply(peer, to: message, ok: false, error: "Varlock application path is unavailable")
+            return
+        }
+        let launchers = launcherIdentities(for: identity)
+        let ancestorFallbackPath = launcherFallbackPath(for: identity)
+        guard let launcher = executionOrigin(
+            among: launchers,
+            callerPID: pid,
+            ancestorFallbackPath: ancestorFallbackPath
+        ) else {
+            reply(peer, to: message, ok: false, error: "Verified Launcher is unavailable")
+            return
+        }
+        var launcherProcessIdentity = AVProcessIdentity()
+        guard av_process_identity(launcher.pid, &launcherProcessIdentity),
+              let launcherExecution = retainedProcessExecution(
+                  pid: launcher.pid, identity: launcherProcessIdentity
+              )
+        else {
+            reply(peer, to: message, ok: false, error: "Verified Launcher process is unavailable")
+            return
+        }
+        let selected: [String: StoredSecretValue]
+        do {
+            let repairStatus = resumePendingSecretMutation()
+            guard repairStatus == errSecSuccess else {
+                throw AppError("secret repair must complete before this request: \(repairStatus)")
+            }
+            let storedSecrets: [StoredSecret]
+            switch loadStoredSecretsResult() {
+            case .success(let loaded): storedSecrets = loaded
+            case .failure(let status): throw AppError("failed to inspect stored Secrets: \(status)")
+            }
+            selected = try resolveStoredSecretValues(names: keys, cwd: cwd, secrets: storedSecrets)
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+            return
+        }
+        guard let missingKey = keys.first(where: { selected[$0] == nil }) else {
+            let title = keys.count == 1
+                ? "Allow the Varlock plugin to receive \(keys[0])?"
+                : "Allow the Varlock plugin to receive \(keys.count) Secrets?"
+            let request = ApprovalRequest(
+                op: ApprovalServiceOperation.varlock.rawValue,
+                keys: keys,
+                target: applicationPath,
+                args: Array((processArguments(resolutionIdentity.ppid) ?? []).dropFirst()),
+                cwd: cwd,
+                replaceExistingEnv: false,
+                allowMissingKeys: false,
+                envConflicts: [],
+                shebangScript: nil,
+                scriptData: nil,
+                tool: "Varlock plugin",
+                title: title,
+                detail: "This Secret Disclosure returns the selected Secret Values to Varlock for one application process. Schema SHA-256: \(schemaDigest).",
+                selectedValues: selected
+            )
+            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+                MainActor.assumeIsolated {
+                    guard !cancellation.isCanceled, self.canRequestHumanApproval() else { return }
+                    self.sendEvent(humanApprovalRequiredEvent, to: peer)
+                }
+            }
+            DispatchQueue.main.async {
+                if cancellation.isCanceled {
+                    _ = self.onAccessRequest(canceledAccessRequestRecord(
+                        request: request, callerPath: callerPath, launcher: launcher
+                    ))
+                    return
+                }
+                guard self.canRequestHumanApproval() else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        approvalSource: "Auto",
+                        reason: "Human approval unavailable",
+                        launcher: launcher
+                    ))
+                    self.reply(peer, to: message, ok: false, error: "human approval unavailable")
+                    return
+                }
+                let decision = showApprovalAlert(
+                    request: request,
+                    callerPath: callerPath,
+                    pid: pid,
+                    signing: signing,
+                    scriptApproval: nil,
+                    launcher: launcher,
+                    launcherFallbackPath: ancestorFallbackPath ?? applicationPath,
+                    automaticApprovalExplanation: nil,
+                    cancellation: cancellation
+                )
+                if decision == .canceled {
+                    _ = self.onAccessRequest(canceledAccessRequestRecord(
+                        request: request, callerPath: callerPath, launcher: launcher
+                    ))
+                    return
+                }
+                guard decision == .approved else {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Denied",
+                        approvalSource: "Manual",
+                        reason: "Denied in prompt",
+                        launcher: launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: "Varlock plugin request denied",
+                        humanApprovalDecision: "denied"
+                    )
+                    return
+                }
+                do {
+                    guard retainedProcessExecutionIsLive(resolutionExecution),
+                          retainedProcessExecutionIsLive(applicationExecution),
+                          retainedProcessExecutionIsLive(launcherExecution)
+                    else {
+                        throw AppError(
+                            "Varlock, its application, or its Verified Launcher changed before Secret release"
+                        )
+                    }
+                    let secrets = try self.approvedSecrets(for: request)
+                    guard secrets.count == keys.count,
+                          keys.allSatisfy({ secrets[$0] != nil })
+                    else {
+                        throw AppError("Automic Vault returned an incomplete Secret set")
+                    }
+                    guard self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Manual",
+                        reason: "Approved in prompt",
+                        launcher: launcher
+                    )) else {
+                        throw AppError("approval audit log is unavailable")
+                    }
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: true,
+                        error: nil,
+                        secrets: secrets,
+                        protocolVersion: varlockProtocolVersion,
+                        humanApprovalDecision: "approved"
+                    )
+                } catch {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Failed",
+                        approvalSource: "Manual",
+                        reason: error.localizedDescription,
+                        launcher: launcher
+                    ))
+                    self.reply(
+                        peer,
+                        to: message,
+                        ok: false,
+                        error: error.localizedDescription,
+                        humanApprovalDecision: "approved"
+                    )
+                }
+            }
+            return
+        }
+        reply(
+            peer,
+            to: message,
+            ok: false,
+            error: "failed to load secret \(missingKey): \(errSecItemNotFound)"
+        )
     }
 
     private func matchingBlessedScript(
@@ -4772,6 +5018,7 @@ private final class ApprovalServer: @unchecked Sendable {
         secrets: [String: String]? = nil,
         value: String? = nil,
         names: [String]? = nil,
+        protocolVersion: UInt64? = nil,
         humanApprovalDecision: String? = nil
     ) {
         let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
@@ -4802,6 +5049,9 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             xpc_dictionary_set_value(response, "names", array)
         }
+        if let protocolVersion {
+            xpc_dictionary_set_uint64(response, "protocol_version", protocolVersion)
+        }
         if let humanApprovalDecision {
             humanApprovalDecision.withCString {
                 xpc_dictionary_set_string(response, "human_approval_decision", $0)
@@ -4815,6 +5065,10 @@ private final class ApprovalServer: @unchecked Sendable {
         event.withCString { xpc_dictionary_set_string(message, "event", $0) }
         xpc_connection_send_message(peer, message)
     }
+}
+
+private func supportsVarlockProtocol(_ version: UInt64) -> Bool {
+    version == varlockProtocolVersion
 }
 
 private func matchingDirectAccessLauncher(
@@ -4888,6 +5142,9 @@ private func isAllowedCaller(path: String, signing: SigningInfo) -> Bool {
     if isTrustedBrewStubCaller(path: path, signing: signing) {
         return true
     }
+    if isTrustedVarlockPluginHelperCaller(path: path, signing: signing) {
+        return true
+    }
     let name = URL(fileURLWithPath: path).lastPathComponent
     return (name == "supabase" || name == "supabase-go")
         && (signing.identifier == "supabase"
@@ -4919,6 +5176,11 @@ private func isTrustedBrewStubCaller(path: String, signing: SigningInfo) -> Bool
     let name = URL(fileURLWithPath: path).lastPathComponent
     return (name == "brew" || name == "av-brew-stub")
         && signing.identifier == "com.automicvault.av-brew-stub"
+}
+
+private func isTrustedVarlockPluginHelperCaller(path: String, signing: SigningInfo) -> Bool {
+    URL(fileURLWithPath: path).lastPathComponent == "AutomicVaultVarlockPlugin"
+        && signing.identifier == "com.automicvault.varlock-plugin-helper"
 }
 
 private struct ResolvedSecretGatePolicy {
@@ -6473,12 +6735,15 @@ private func showApprovalAlert(
     let content = ApprovalPromptContent(
         requesterName: requester.name,
         requesterIconPath: requester.iconPath,
+        actionLabel: request.op == ApprovalServiceOperation.varlock.rawValue
+            ? "WANTS TO USE A SECRET" : "WANTS TO RUN",
         credentialConsumer: autoApprovalToolName(request),
         command: exactAuthorizationCommand(request),
         commandPath: approvalCommandPath(request),
         title: request.title,
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
+        supportsAutomicAuthorization: request.op != ApprovalServiceOperation.varlock.rawValue,
         cwd: escapedSecurityPath(request.cwd),
         keys: request.keys.joined(separator: ", "),
         blessing: blessing,
@@ -6682,16 +6947,30 @@ private struct BlessedScriptPromptContext {
 private struct ApprovalPromptContent {
     let requesterName: String
     let requesterIconPath: String
+    var actionLabel = "WANTS TO RUN"
     let credentialConsumer: String
     let command: String
     let commandPath: String
     let title: String?
     let detail: String?
     let automaticApprovalExplanation: String?
+    var supportsAutomicAuthorization = true
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
     let sections: [ApprovalPromptSection]
+}
+
+private func approvalPromptFooter(
+    supportsAutomicAuthorization: Bool,
+    allowsPersistentApproval: Bool
+) -> String {
+    guard supportsAutomicAuthorization else {
+        return "Varlock requests require Approval on every run; Automic Authorization is not currently available."
+    }
+    return allowsPersistentApproval
+        ? "Always Allow trusts this verified app until removed in Settings"
+        : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app."
 }
 
 private struct ApprovalPromptView: View {
@@ -6722,7 +7001,7 @@ private struct ApprovalPromptView: View {
                 .help("Reveal in Finder")
                 Text(content.requesterName)
                     .font(.title2.weight(.bold))
-                Text("WANTS TO RUN")
+                Text(content.actionLabel)
                     .font(.caption.weight(.semibold))
                     .tracking(1.6)
                     .foregroundStyle(.secondary)
@@ -6839,9 +7118,10 @@ private struct ApprovalPromptView: View {
 
             }
 
-            Text(allowsPersistentApproval
-                ? "Always Allow trusts this verified app until removed in Settings"
-                : "Automic Authorization can be configured for Verified Launchers in the Automic Vault app.")
+            Text(approvalPromptFooter(
+                supportsAutomicAuthorization: content.supportsAutomicAuthorization,
+                allowsPersistentApproval: allowsPersistentApproval
+            ))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -7500,10 +7780,28 @@ private func runApprovalSelfCheck() -> Int32 {
     ) == nil,
     !makeApprovalPanel().isMovableByWindowBackground
     else { return 1 }
+    guard supportsVarlockProtocol(1),
+          !supportsVarlockProtocol(0),
+          !supportsVarlockProtocol(2)
+    else { return 1 }
     guard isTrustedMenuHelperCaller(
         path: "/Applications/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar",
         signing: helperSigning
     ), !isTrustedMenuHelperCaller(path: "/tmp/av", signing: helperSigning)
+    else { return 1 }
+    let varlockSigning = SigningInfo(
+        identifier: "com.automicvault.varlock-plugin-helper",
+        teamIdentifier: "TEAM"
+    )
+    guard isTrustedVarlockPluginHelperCaller(
+        path: "/Applications/Automic Vault.app/Contents/Resources/AutomicVaultVarlockPlugin",
+        signing: varlockSigning
+    ), !isTrustedVarlockPluginHelperCaller(path: "/tmp/av", signing: varlockSigning)
+    else { return 1 }
+    guard approvalPromptFooter(
+        supportsAutomicAuthorization: false,
+        allowsPersistentApproval: false
+    ) == "Varlock requests require Approval on every run; Automic Authorization is not currently available."
     else { return 1 }
 
     let approvedBlessing = blessingReply(for: .approved)
