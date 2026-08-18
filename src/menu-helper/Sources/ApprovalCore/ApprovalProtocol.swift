@@ -273,6 +273,8 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
 }
 
 public struct PhoneApprovalTicket: Codable, Equatable, Sendable {
+    private static let maximumSummaryFieldUTF8Bytes = 128
+
     public let version: UInt16
     public let requestID: UUID
     public let requestDigest: Data
@@ -287,12 +289,25 @@ public struct PhoneApprovalTicket: Codable, Equatable, Sendable {
         version = 1
         requestID = request.id
         requestDigest = try request.digest()
-        macName = request.macName
-        launcher = request.launcher
-        tool = request.tool
-        command = request.command
-        reason = request.reason
+        macName = Self.summary(request.macName)
+        launcher = Self.summary(request.launcher)
+        tool = Self.summary(request.tool)
+        command = Self.summary(request.command)
+        reason = Self.summary(request.reason)
         requiresFullReview = request.requiresFullReview
+    }
+
+    private static func summary(_ value: String) -> String {
+        guard value.utf8.count > maximumSummaryFieldUTF8Bytes else { return value }
+        var result = ""
+        var byteCount = 0
+        for character in value {
+            let text = String(character)
+            guard byteCount + text.utf8.count <= maximumSummaryFieldUTF8Bytes else { break }
+            result += text
+            byteCount += text.utf8.count
+        }
+        return result
     }
 }
 

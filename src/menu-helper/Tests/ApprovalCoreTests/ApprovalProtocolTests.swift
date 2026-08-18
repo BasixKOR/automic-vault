@@ -55,6 +55,19 @@ import Testing
     }
 }
 
+@Test func longRequestFitsNotificationEnvelopeWithoutChangingDigest() throws {
+    let request = try sampleRequest(command: String(repeating: "x", count: 8_000))
+    let ticket = try PhoneApprovalTicket(request: request)
+    let requestDigest = try request.digest()
+    let crypto = try ApprovalCrypto(rootKeyData: Data(repeating: 7, count: 32))
+    let notification = try JSONEncoder().encode(
+        crypto.seal(JSONEncoder().encode(ticket), purpose: "notification")
+    )
+
+    #expect(ticket.requestDigest == requestDigest)
+    #expect(notification.count <= ApprovalRelayClient.maximumNotificationBytes)
+}
+
 @Test func temporaryWriteAccessRequiresExplicitRequestCapability() throws {
     let request = try sampleRequest(
         command: "gh repo create",
