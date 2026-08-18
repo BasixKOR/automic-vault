@@ -48,11 +48,6 @@ struct ApprovalRootView: View {
             .sheet(isPresented: $showingSubscription) {
                 NavigationStack {
                     ApprovalSubscriptionView(subscription: subscription)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { showingSubscription = false }
-                            }
-                        }
                 }
             }
             .onChange(of: subscription.state) { _, state in
@@ -207,12 +202,11 @@ struct ApprovalDetailView: View {
         .sheet(isPresented: $showingSubscription) {
             NavigationStack {
                 ApprovalSubscriptionView(subscription: subscription)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showingSubscription = false }
-                        }
-                    }
             }
+        }
+        .onChange(of: subscription.state) { _, state in
+            guard state == .active else { return }
+            showingSubscription = false
         }
     }
 

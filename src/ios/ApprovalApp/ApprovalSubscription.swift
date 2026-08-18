@@ -28,8 +28,7 @@ final class ApprovalSubscription {
                     await self?.refresh()
                     continue
                 }
-                await transaction.finish()
-                await self?.refresh()
+                await self?.handle(transaction)
             }
         }
     }
@@ -75,7 +74,8 @@ final class ApprovalSubscription {
                 await refresh()
                 return
             }
-            await transaction.finish()
+            await handle(transaction)
+            return
         case .success(.pending):
             errorMessage = "The purchase is pending approval from the App Store."
         case .success(.userCancelled):
@@ -86,5 +86,17 @@ final class ApprovalSubscription {
             errorMessage = "The App Store returned an unknown purchase result."
         }
         await refresh()
+    }
+
+    private func handle(_ transaction: Transaction) async {
+        await transaction.finish()
+        guard Self.productIDs.contains(transaction.productID),
+              transaction.revocationDate == nil,
+              !transaction.isUpgraded,
+              transaction.expirationDate.map({ $0 > .now }) ?? false else {
+            await refresh()
+            return
+        }
+        state = .active
     }
 }
