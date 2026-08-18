@@ -97,6 +97,7 @@ final class ApprovalModel {
         case connecting
         case connected
         case unavailable(String)
+        case reconnecting(String)
     }
 
     static var biometricProtectionEnabled: Bool {
@@ -171,6 +172,12 @@ final class ApprovalModel {
 
     func registrationFailed(_ error: Error) {
         state = .unavailable("Push registration failed: \(error.localizedDescription)")
+    }
+
+    func refresh() async {
+        guard case .reconnecting = state else { return }
+        reconnectDelay = 1
+        await connect()
     }
 
     func approve(_ request: PhoneApprovalRequest) async {
@@ -386,7 +393,7 @@ final class ApprovalModel {
     }
 
     private func scheduleReconnect(_ message: String) {
-        state = .unavailable(message)
+        state = .reconnecting(message)
         let delay = reconnectDelay
         reconnectDelay = min(reconnectDelay * 2, 30)
         Task { [weak self] in

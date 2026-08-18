@@ -80,6 +80,13 @@ struct ApprovalRootView: View {
             Label("No Pending Approvals", systemImage: "checkmark.shield")
         } description: {
             Text(connectionText)
+        } actions: {
+            if case .reconnecting = model.state {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task { await model.refresh() }
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 
@@ -92,6 +99,7 @@ struct ApprovalRootView: View {
         case .connected:
             "Connected Macs: \(model.connectedMacs.values.sorted().joined(separator: ", "))."
         case .unavailable(let reason): reason
+        case .reconnecting(let reason): reason
         }
     }
 
@@ -259,6 +267,7 @@ struct ApprovalSettingsView: View {
         case .connecting: "Connecting…"
         case .connected: "Connected"
         case .unavailable(let reason): reason
+        case .reconnecting(let reason): reason
         }
     }
 }
