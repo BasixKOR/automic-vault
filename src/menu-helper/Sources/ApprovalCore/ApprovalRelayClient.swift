@@ -49,7 +49,7 @@ public actor ApprovalRelayClient {
         self.session = session
     }
 
-    public func connect(peerID: String) throws {
+    public func connect(peerID: String) async throws {
         guard socket == nil else { return }
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
             throw ApprovalRelayClientError.invalidEndpoint
@@ -63,6 +63,19 @@ public actor ApprovalRelayClient {
         self.socket = socket
         self.peerID = peerID
         socket.resume()
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                socket.sendPing { error in
+                    if let error { continuation.resume(throwing: error) }
+                    else { continuation.resume() }
+                }
+            }
+        } catch {
+            socket.cancel(with: .goingAway, reason: nil)
+            self.socket = nil
+            self.peerID = nil
+            throw error
+        }
     }
 
     public func receive() async throws -> ApprovalWireMessage {
