@@ -11,7 +11,7 @@ nonisolated func phoneApprovalIsEnabled() -> Bool {
     UserDefaults.standard.bool(forKey: phoneApprovalEnabledDefaultsKey)
 }
 
-enum PhoneApprovalResult {
+enum PhoneApprovalResult: Sendable {
     case approved
     case denied
     case canceled
@@ -34,6 +34,135 @@ enum PhoneApprovalSetupError: LocalizedError {
     }
 }
 
+private actor PhoneApprovalRelayWorker {
+    typealias ResultHandler = @Sendable (UUID, PhoneApprovalResult) -> Void
+
+    private let macID: String
+    private let resultHandler: ResultHandler
+    private var generation: UInt64
+    private var pending: [UUID: PhoneApprovalRequest] = [:]
+    private var canceled: Set<UUID> = []
+    private var relay: ApprovalRelayClient?
+    private var connectionTask: Task<Void, Never>?
+    private var connectionID: UUID?
+
+    init(macID: String, generation: UInt64, resultHandler: @escaping ResultHandler) {
+        self.macID = macID
+        self.generation = generation
+        self.resultHandler = resultHandler
+    }
+
+    func start(generation: UInt64) async {
+        guard generation >= self.generation else { return }
+        if generation > self.generation { await reset(generation: generation) }
+        startConnectionIfNeeded()
+    }
+
+    func submit(_ request: PhoneApprovalRequest, generation: UInt64) async {
+        guard self.generation == generation,
+              canceled.remove(request.id) == nil else { return }
+        pending[request.id] = request
+        startConnectionIfNeeded()
+        guard let relay else { return }
+        do {
+            try await relay.publish(request)
+        } catch {
+            await relay.disconnect()
+        }
+    }
+
+    func cancel(_ requestID: UUID, generation: UInt64) async {
+        guard self.generation == generation else { return }
+        canceled.insert(requestID)
+        guard pending.removeValue(forKey: requestID) != nil else { return }
+        if let relay { try? await relay.send(.cancel(requestID)) }
+    }
+
+    func stop(generation: UInt64) async {
+        guard generation >= self.generation else { return }
+        await reset(generation: generation)
+    }
+
+    private func reset(generation: UInt64) async {
+        self.generation = generation
+        connectionID = nil
+        connectionTask?.cancel()
+        connectionTask = nil
+        if let relay { await relay.disconnect() }
+        relay = nil
+        pending.removeAll()
+        canceled.removeAll()
+    }
+
+    private func startConnectionIfNeeded() {
+        guard connectionTask == nil else { return }
+        let connectionID = UUID()
+        self.connectionID = connectionID
+        connectionTask = Task { [weak self] in
+            await self?.runConnection(connectionID: connectionID)
+        }
+    }
+
+    private func runConnection(connectionID: UUID) async {
+        var retrySeconds: UInt64 = 1
+        while self.connectionID == connectionID && !Task.isCancelled {
+            do {
+                let key = try ICloudApprovalRootKey().loadOrCreate()
+                let relay = try ApprovalRelayClient(endpoint: phoneApprovalRelayURL, rootKeyData: key)
+                try await relay.connect(peerID: "mac-\(macID)")
+                guard self.connectionID == connectionID else {
+                    await relay.disconnect()
+                    return
+                }
+                self.relay = relay
+                try await relay.send(.presence(try presence()))
+                for request in pending.values { try await relay.publish(request) }
+                retrySeconds = 1
+                while self.connectionID == connectionID && !Task.isCancelled {
+                    try await handle(try await relay.receive(), relay: relay)
+                }
+            } catch {
+                if let relay = self.relay { await relay.disconnect() }
+                if self.connectionID == connectionID {
+                    self.relay = nil
+                    try? await Task.sleep(for: .seconds(retrySeconds))
+                    retrySeconds = min(retrySeconds * 2, 30)
+                }
+            }
+        }
+        if self.connectionID == connectionID {
+            self.relay = nil
+            self.connectionID = nil
+            connectionTask = nil
+        }
+    }
+
+    private func handle(_ message: ApprovalWireMessage, relay: ApprovalRelayClient) async throws {
+        switch message {
+        case .response(let response):
+            guard let request = pending[response.requestID] else { return }
+            try response.validate(for: request)
+            pending.removeValue(forKey: response.requestID)
+            resultHandler(
+                response.requestID,
+                response.outcome == .approved ? .approved : .denied
+            )
+        case .sync:
+            try await relay.send(.presence(try presence()))
+            for request in pending.values { try await relay.publish(request) }
+        case .request, .cancel, .presence:
+            return
+        }
+    }
+
+    private func presence() throws -> ApprovalMacPresence {
+        try ApprovalMacPresence(
+            macID: macID,
+            macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        )
+    }
+}
+
 @MainActor
 final class PhoneApprovalCoordinator {
     static let shared = PhoneApprovalCoordinator()
@@ -42,14 +171,22 @@ final class PhoneApprovalCoordinator {
     var pendingCount: Int { pending.count }
 
     private struct Pending {
-        let request: PhoneApprovalRequest
         let completion: (PhoneApprovalResult) -> Void
     }
 
     private let macID: String
+    private var workerGeneration: UInt64 = 0
     private var pending: [UUID: Pending] = [:]
-    private var relay: ApprovalRelayClient?
-    private var connectionTask: Task<Void, Never>?
+    private lazy var worker = PhoneApprovalRelayWorker(
+        macID: macID,
+        generation: workerGeneration
+    ) { [weak self] requestID, result in
+        RunLoop.main.perform(inModes: [.modalPanel, .default]) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.finish(requestID, with: result)
+            }
+        }
+    }
 
     private init() {
         if let existing = UserDefaults.standard.string(forKey: phoneApprovalMacIDDefaultsKey) {
@@ -77,7 +214,8 @@ final class PhoneApprovalCoordinator {
             throw PhoneApprovalSetupError.noRegisteredPhone
         }
         UserDefaults.standard.set(true, forKey: phoneApprovalEnabledDefaultsKey)
-        startConnectionIfNeeded()
+        workerGeneration += 1
+        await worker.start(generation: workerGeneration)
     }
 
     func submit(
@@ -85,13 +223,11 @@ final class PhoneApprovalCoordinator {
         completion: @escaping (PhoneApprovalResult) -> Void
     ) throws {
         guard pending.count < 100 else { throw PhoneApprovalSetupError.pendingLimit }
-        pending[request.id] = Pending(request: request, completion: completion)
-        startConnectionIfNeeded()
-        if let relay {
-            Task { [weak self] in
-                do { try await relay.publish(request) }
-                catch { self?.restartConnection() }
-            }
+        pending[request.id] = Pending(completion: completion)
+        let worker = worker
+        let generation = workerGeneration
+        Task { @concurrent in
+            await worker.submit(request, generation: generation)
         }
     }
 
@@ -138,7 +274,11 @@ final class PhoneApprovalCoordinator {
     func cancel(_ requestID: UUID) {
         guard let item = pending.removeValue(forKey: requestID) else { return }
         item.completion(.canceled)
-        if let relay { Task { try? await relay.send(.cancel(requestID)) } }
+        let worker = worker
+        let generation = workerGeneration
+        Task { @concurrent in
+            await worker.cancel(requestID, generation: generation)
+        }
     }
 
     func disableAfterPhoneApproval() {
@@ -160,70 +300,18 @@ final class PhoneApprovalCoordinator {
         stopConnection(cancelPending: true)
     }
 
-    private func startConnectionIfNeeded() {
-        guard isEnabled, connectionTask == nil else { return }
-        connectionTask = Task { [weak self] in
-            guard let self else { return }
-            var retrySeconds: UInt64 = 1
-            while self.isEnabled && !Task.isCancelled {
-                do {
-                    let key = try ICloudApprovalRootKey().loadOrCreate()
-                    let relay = try ApprovalRelayClient(endpoint: phoneApprovalRelayURL, rootKeyData: key)
-                    try await relay.connect(peerID: "mac-\(self.macID)")
-                    self.relay = relay
-                    try await relay.send(.presence(try self.presence()))
-                    for item in self.pending.values { try await relay.publish(item.request) }
-                    retrySeconds = 1
-                    while self.isEnabled && !Task.isCancelled {
-                        try await self.handle(try await relay.receive())
-                    }
-                } catch {
-                    self.relay = nil
-                    try? await Task.sleep(for: .seconds(retrySeconds))
-                    retrySeconds = min(retrySeconds * 2, 30)
-                }
-            }
-            self.relay = nil
-            self.connectionTask = nil
-        }
-    }
-
-    private func handle(_ message: ApprovalWireMessage) async throws {
-        switch message {
-        case .response(let response):
-            guard let item = pending[response.requestID] else { return }
-            try response.validate(for: item.request)
-            pending.removeValue(forKey: response.requestID)
-            item.completion(response.outcome == .approved ? .approved : .denied)
-        case .sync:
-            guard let relay else { return }
-            try await relay.send(.presence(try presence()))
-            for item in pending.values { try await relay.publish(item.request) }
-        case .request, .cancel, .presence:
-            return
-        }
-    }
-
-    private func presence() throws -> ApprovalMacPresence {
-        try ApprovalMacPresence(
-            macID: macID,
-            macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName
-        )
-    }
-
-    private func restartConnection() {
-        connectionTask?.cancel()
-        connectionTask = nil
-        if let relay { Task { await relay.disconnect() } }
-        relay = nil
-        startConnectionIfNeeded()
+    private func finish(_ requestID: UUID, with result: PhoneApprovalResult) {
+        guard let item = pending.removeValue(forKey: requestID) else { return }
+        item.completion(result)
     }
 
     private func stopConnection(cancelPending: Bool) {
-        connectionTask?.cancel()
-        connectionTask = nil
-        if let relay { Task { await relay.disconnect() } }
-        relay = nil
+        let worker = worker
+        workerGeneration += 1
+        let generation = workerGeneration
+        Task { @concurrent in
+            await worker.stop(generation: generation)
+        }
         if cancelPending {
             let items = Array(pending.values)
             pending.removeAll()
