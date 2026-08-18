@@ -149,7 +149,7 @@ private actor PhoneApprovalRelayWorker {
             )
         case .sync:
             try await relay.send(.presence(try presence()))
-            for request in pending.values { try await relay.publish(request) }
+            for request in pending.values { try await relay.send(.request(request)) }
         case .request, .cancel, .presence:
             return
         }

@@ -23,6 +23,7 @@ final class NotificationService: UNNotificationServiceExtension {
             content.title = "Approval waiting"
             content.body = "Review the full request on your Mac or open Automic Vault."
             content.categoryIdentifier = ticket.requiresFullReview ? "AV_REVIEW" : "AV_ROUTINE"
+            content.threadIdentifier = ticket.requestID.uuidString
             contentHandler(content)
             handler = nil
         } catch {

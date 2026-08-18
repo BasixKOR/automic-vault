@@ -257,8 +257,10 @@ final class ApprovalModel {
                     if !pending.contains(where: { $0.id == request.id }) { pending.append(request) }
                 case .response(let response):
                     pending.removeAll { $0.id == response.requestID }
+                    await removeDeliveredNotifications(for: response.requestID)
                 case .cancel(let requestID):
                     pending.removeAll { $0.id == requestID }
+                    await removeDeliveredNotifications(for: requestID)
                 case .presence(let presence):
                     connectedMacs[presence.macID] = presence.macName
                 case .sync:
@@ -280,6 +282,7 @@ final class ApprovalModel {
             let response = try PhoneApprovalResponse(request: request, outcome: outcome, deviceID: deviceID)
             try await relay.send(.response(response))
             pending.removeAll { $0.id == request.id }
+            await removeDeliveredNotifications(for: request.id)
         } catch {
             errorMessage = "The response was not delivered. The request remains pending."
         }
@@ -297,6 +300,7 @@ final class ApprovalModel {
             )
             try await relay.send(.response(response))
             pending.removeAll { $0.id == ticket.requestID }
+            await removeDeliveredNotifications(for: ticket.requestID)
         } catch {
             errorMessage = "The response was not delivered. Open Automic Vault and try again."
         }
@@ -314,6 +318,14 @@ final class ApprovalModel {
             errorMessage = "This Approval notification could not be authenticated."
             return nil
         }
+    }
+
+    private func removeDeliveredNotifications(for requestID: UUID) async {
+        let center = UNUserNotificationCenter.current()
+        let identifiers = await center.deliveredNotifications()
+            .filter { $0.request.content.threadIdentifier == requestID.uuidString }
+            .map(\.request.identifier)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     private func authenticateBiometrically() async -> Bool {
