@@ -4,6 +4,7 @@ import SwiftUI
 struct ApprovalRootView: View {
     @Bindable var model: ApprovalModel
     @Bindable var subscription: ApprovalSubscription
+    @State private var showingSubscription = false
 
     var body: some View {
         NavigationStack {
@@ -14,9 +15,7 @@ struct ApprovalRootView: View {
                     list
                 } else if subscription.state == .loading {
                     ProgressView("Checking subscription…")
-                } else if subscription.state == .inactive {
-                    ApprovalSubscriptionView(subscription: subscription)
-                } else if model.state == .setup {
+                } else if model.state == .setup || subscription.state == .inactive {
                     setup
                 } else {
                     empty
@@ -46,6 +45,21 @@ struct ApprovalRootView: View {
             } message: {
                 Text(subscription.errorMessage ?? "")
             }
+            .sheet(isPresented: $showingSubscription) {
+                NavigationStack {
+                    ApprovalSubscriptionView(subscription: subscription)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingSubscription = false }
+                            }
+                        }
+                }
+            }
+            .onChange(of: subscription.state) { _, state in
+                guard state == .active, showingSubscription else { return }
+                showingSubscription = false
+                Task { await model.enable() }
+            }
         }
     }
 
@@ -55,7 +69,13 @@ struct ApprovalRootView: View {
         } description: {
             Text("Use this iPhone for every human Approval on an enrolled Mac. iCloud Keychain and notifications are required.")
         } actions: {
-            Button("Enable iPhone Approval") { Task { await model.enable() } }
+            Button("Enable iPhone Approval") {
+                if subscription.state == .active {
+                    Task { await model.enable() }
+                } else {
+                    showingSubscription = true
+                }
+            }
                 .buttonStyle(.borderedProminent)
         }
     }
