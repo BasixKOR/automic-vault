@@ -19,6 +19,7 @@
 		A1000000000000000000000B /* ICloudApprovalRootKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ICloudApprovalRootKey.swift */; };
 		A1000000000000000000000C /* ApprovalRelayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* ApprovalRelayClient.swift */; };
 		A1000000000000000000000D /* ICloudApprovalRootKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ICloudApprovalRootKey.swift */; };
+		A1000000000000000000000E /* ApprovalSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ApprovalSubscription.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +46,8 @@
 		A2000000000000000000000E /* ApprovalProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ApprovalProtocol.swift; sourceTree = "<group>"; };
 		A2000000000000000000000F /* ApprovalRelayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ApprovalRelayClient.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* ICloudApprovalRootKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ICloudApprovalRootKey.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* ApprovalSubscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSubscription.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +59,8 @@
 		A40000000000000000000001 = {isa = PBXGroup; children = (
 			A20000000000000000000001 /* ApprovalApp.swift */,
 			A20000000000000000000002 /* ApprovalViews.swift */,
+			A20000000000000000000011 /* ApprovalSubscription.swift */,
+			A20000000000000000000012 /* Products.storekit */,
 			A20000000000000000000003 /* NotificationService.swift */,
 			A20000000000000000000004 /* Info.plist */,
 			A20000000000000000000005 /* NotificationService-Info.plist */,
@@ -86,7 +91,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A1000000000000000000000A, A1000000000000000000000B,); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000E,); runOnlyForDeploymentPostprocessing = 0; };
 		A60000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000007, A10000000000000000000008, A1000000000000000000000C, A1000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 

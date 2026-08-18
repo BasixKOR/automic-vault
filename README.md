@@ -119,6 +119,9 @@ Approval for that Mac moves to eligible iPhones on the same iCloud Keychain
 account. The Mac shows the request and its cancellation state with no local
 allow action.
 
+The iPhone app requires an iPhone Approval subscription: $4.99 monthly, or
+$39.99 annually with a 14-day free trial. Family Sharing is not supported.
+
 The Mac remains the Local Execution Boundary. It verifies the complete
 Authorization Request, rejects stale or mismatched responses, persists the
 Authorization Record, and enforces the final decision. The iPhone never

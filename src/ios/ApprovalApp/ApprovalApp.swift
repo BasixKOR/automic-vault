@@ -9,8 +9,11 @@ struct AutomicVaultApprovalApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ApprovalRootView(model: .shared)
-                .task { await ApprovalModel.shared.start() }
+            ApprovalRootView(model: .shared, subscription: .shared)
+                .task {
+                    await ApprovalSubscription.shared.start()
+                    await ApprovalModel.shared.start()
+                }
         }
     }
 }
@@ -143,6 +146,7 @@ final class ApprovalModel {
     }
 
     func enable() async {
+        guard await subscriptionPermits(.approved) else { return }
         guard ICloudApprovalRootKey.hasActiveICloudAccount() else {
             state = .unavailable("Sign in to iCloud and enable iCloud Keychain to use iPhone Approval.")
             return
@@ -285,6 +289,7 @@ final class ApprovalModel {
     }
 
     private func respond(to request: PhoneApprovalRequest, outcome: PhoneApprovalOutcome) async {
+        guard await subscriptionPermits(outcome) else { return }
         do {
             guard let relay else { throw ApprovalRelayClientError.disconnected }
             let response = try PhoneApprovalResponse(request: request, outcome: outcome, deviceID: deviceID)
@@ -297,6 +302,7 @@ final class ApprovalModel {
     }
 
     private func respond(to ticket: PhoneApprovalTicket, outcome: PhoneApprovalOutcome) async {
+        guard await subscriptionPermits(outcome) else { return }
         do {
             if relay == nil { await connect() }
             guard let relay else { throw ApprovalRelayClientError.disconnected }
@@ -312,6 +318,18 @@ final class ApprovalModel {
         } catch {
             errorMessage = "The response was not delivered. Open Automic Vault and try again."
         }
+    }
+
+    private func subscriptionPermits(_ outcome: PhoneApprovalOutcome) async -> Bool {
+        if PhoneApprovalSubscriptionAccess.unavailable.permits(outcome) { return true }
+        let access: PhoneApprovalSubscriptionAccess = await ApprovalSubscription.shared.refresh()
+            ? .active
+            : .unavailable
+        guard access.permits(outcome) else {
+            errorMessage = "An active iPhone Approval subscription is required to approve."
+            return false
+        }
+        return true
     }
 
     private func ticket(from userInfo: [AnyHashable: Any]) async -> PhoneApprovalTicket? {

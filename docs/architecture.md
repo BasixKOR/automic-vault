@@ -387,6 +387,14 @@ Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
 values. The iPhone does not persist Authorization History.
 
+Before signing and transmitting any allow response, the iPhone app verifies a
+current iPhone Approval subscription from StoreKit's signed transaction ledger.
+Missing, expired, revoked, or unverified entitlement state fails closed. Denial
+does not require a subscription. Subscription state is not sent to the relay or
+Mac and does not participate in Authorization Policy; a subscription never
+authorizes a request or weakens the Mac's response validation and recording
+requirements.
+
 Biometric protection is optional and configured independently on each iPhone.
 When enabled, an Approval requires Face ID or Touch ID on that physical iPhone,
 without passcode or companion-Mac fallback; Apple Watch Approval is then

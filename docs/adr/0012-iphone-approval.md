@@ -38,6 +38,10 @@ Automic Vault provides opt-in iPhone Approval per Mac.
   notification action. Higher-risk requests open the full app.
 - Face ID or Touch ID is optional per iPhone. When enabled, Approval has no
   passcode or companion-device fallback. Denial never requires authentication.
+- An allow response requires a current, locally verified iPhone Approval
+  subscription. Missing, expired, revoked, or unverified entitlement state
+  fails closed. Denial remains available without a subscription, and a billing
+  failure never restores a Mac-local allow action.
 - The app ships for iPhone only. Designed-for-iPhone-on-Mac distribution,
   Catalyst, iPad, and visionOS are excluded.
 - Emergency Mac-local recovery requires system authentication and rotates the
@@ -64,3 +68,8 @@ rather than per-device revocation.
 A relay or APNs outage can indefinitely delay work, but cannot grant authority.
 This availability cost is intentional: silently restoring a Mac Approval button
 would defeat the feature's purpose.
+
+StoreKit subscription state is a product-eligibility gate on the iPhone app,
+not Authorization Policy and not authority to release a Secret. The relay and
+Mac do not receive billing state; every response remains subject to the same
+cryptographic validation, first-response rule, recording, and enforcement.

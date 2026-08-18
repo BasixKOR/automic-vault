@@ -92,6 +92,15 @@ import Testing
     }
 }
 
+@Test func subscriptionFailureFailsClosedWithoutBlockingDenial() {
+    #expect(PhoneApprovalSubscriptionAccess.active.permits(.approved))
+    #expect(PhoneApprovalSubscriptionAccess.active.permits(.temporaryWriteAccess))
+    #expect(PhoneApprovalSubscriptionAccess.active.permits(.denied))
+    #expect(!PhoneApprovalSubscriptionAccess.unavailable.permits(.approved))
+    #expect(!PhoneApprovalSubscriptionAccess.unavailable.permits(.temporaryWriteAccess))
+    #expect(PhoneApprovalSubscriptionAccess.unavailable.permits(.denied))
+}
+
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
     command: String,

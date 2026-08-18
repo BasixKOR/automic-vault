@@ -287,6 +287,12 @@ it never restores a Mac Approval action. The Mac continues to verify the exact
 Authorization Request, reject stale or replayed responses, persist the required
 Authorization Record, and enforce the resulting Authorization Decision.
 
+The responding iPhone requires an active, App Store-verified iPhone Approval
+subscription to carry an allow response. Missing, expired, revoked, or
+unverified subscription state fails closed but does not prevent denial. A
+subscription is product eligibility, not Authorization Policy or authority to
+release a Secret.
+
 ### Authorization Decision
 
 The final allow or deny result and its source. An allowed request is either **automically authorized** by policy or **approved** by the user.

@@ -207,6 +207,15 @@ public enum PhoneApprovalOutcome: String, Codable, Sendable {
     case temporaryWriteAccess
 }
 
+public enum PhoneApprovalSubscriptionAccess: Sendable {
+    case active
+    case unavailable
+
+    public func permits(_ outcome: PhoneApprovalOutcome) -> Bool {
+        self == .active || outcome == .denied
+    }
+}
+
 public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
     public let version: UInt16
     public let requestID: UUID
