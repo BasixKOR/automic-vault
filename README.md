@@ -75,6 +75,8 @@ Hardened Runtime, and live process identity. Its features include:
   Names;
 - Blessed Scripts bound to reviewed contents and declared capabilities;
 - in-memory Temporary Access Grants for eligible agent tasks;
+- optional iPhone Approval for carrying every human Approval away from an
+  enrolled Mac;
 - local Authorization History for allowed and denied requests.
 
 Your terminals, IDEs, agents, and projects keep their normal commands. Agents
@@ -109,6 +111,47 @@ setting.
 Code signing proves identity and integrity, not intent. You decide which
 Verified Launchers receive authority. A failed identity or runtime check blocks
 automic authorization.
+
+## Move Every Human Approval to iPhone
+
+iPhone Approval is optional and enabled per Mac. Once enabled, every human
+Approval for that Mac moves to eligible iPhones on the same iCloud Keychain
+account. The Mac shows the request and its cancellation state with no local
+allow action.
+
+The Mac remains the Local Execution Boundary. It verifies the complete
+Authorization Request, rejects stale or mismatched responses, persists the
+Authorization Record, and enforces the final decision. The iPhone never
+receives Secret Values or Authorization History.
+
+To enroll:
+
+1. Sign in to the same iCloud account on the Mac and iPhone, with iCloud
+   Keychain enabled.
+2. Open Automic Vault on the iPhone, tap **Enable iPhone Approval**, and allow
+   notifications.
+3. On the Mac, open **Settings → iPhone Approval** and click
+   **Enable iPhone Approval**.
+
+Routine requests can offer **Approve Once** in an authenticated notification.
+Requests with Unknown operation risk, Secret Disclosure, Unconstrained Secret
+Application, or a security warning require review in the full app. Face ID or
+Touch ID is optional and configured on each iPhone. When enabled, a passcode,
+Apple Watch, or companion Mac cannot substitute for biometrics on that phone.
+
+Every iPhone enabled on the account can carry Approvals. The initial release
+has no per-device pairing or revocation; emergency recovery invalidates the
+whole account enrollment.
+
+> [!WARNING]
+> iPhone Mirroring and **Show on Mac** can put Approval controls back onto a Mac
+> when biometric protection is off. Disable those features wherever an agent
+> can control the Mac, or require Face ID or Touch ID on every eligible iPhone.
+
+If no phone or relay is available, the request waits until its Gate Client
+cancels. Automic Vault never restores a Mac allow button. Emergency recovery
+from the Mac requires system authentication, cancels pending requests, rotates
+the iCloud key, and invalidates every enrolled iPhone and Mac on the account.
 
 ## Project Values Under Stable Names
 
@@ -300,6 +343,4 @@ requires those permissions.
 - [Homebrew tap](https://github.com/automic-vault/homebrew-isotopes)
 - [Ephemeral chat](https://outclaw.dev/automic-vault/automic-vault)
 
-Automic Vault is free and open source under Apache-2.0. The optional iPhone
-companion moves Approval to a separate device, preventing software on the Mac
-from approving its own request.
+Automic Vault is free and open source under Apache-2.0.
