@@ -3,6 +3,8 @@ import Foundation
 public enum ApprovalRelayClientError: Error, Equatable {
     case invalidEndpoint
     case disconnected
+    case alreadyConnected
+    case connectionTimedOut
     case unexpectedMessage
     case invalidResponse(Int)
     case notificationTooLarge
@@ -35,12 +37,18 @@ private struct ApprovalRelayPublication: Codable {
 public actor ApprovalRelayClient {
     public static let maximumNotificationBytes = 2_500
 
+    private struct Connection {
+        let id: UUID
+        let peerID: String
+        let socket: URLSessionWebSocketTask
+        let readiness: Task<Void, any Error>
+    }
+
     private let endpoint: URL
     private let crypto: ApprovalCrypto
     private let address: ApprovalRelayAddress
     private let session: URLSession
-    private var socket: URLSessionWebSocketTask?
-    private var peerID: String?
+    private var connection: Connection?
 
     public init(endpoint: URL, rootKeyData: Data, session: URLSession = .shared) throws {
         self.endpoint = endpoint
@@ -50,7 +58,13 @@ public actor ApprovalRelayClient {
     }
 
     public func connect(peerID: String) async throws {
-        guard socket == nil else { return }
+        if let connection {
+            guard connection.peerID == peerID else {
+                throw ApprovalRelayClientError.alreadyConnected
+            }
+            try await waitUntilReady(connection)
+            return
+        }
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
             throw ApprovalRelayClientError.invalidEndpoint
         }
@@ -60,27 +74,17 @@ public actor ApprovalRelayClient {
         var request = authorizedRequest(url: url)
         request.timeoutInterval = 60
         let socket = session.webSocketTask(with: request)
-        self.socket = socket
-        self.peerID = peerID
         socket.resume()
-        do {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                socket.sendPing { error in
-                    if let error { continuation.resume(throwing: error) }
-                    else { continuation.resume() }
-                }
-            }
-        } catch {
-            socket.cancel(with: .goingAway, reason: nil)
-            self.socket = nil
-            self.peerID = nil
-            throw error
-        }
+        let readiness = Task { try await Self.waitUntilReady(socket) }
+        let connection = Connection(id: UUID(), peerID: peerID, socket: socket, readiness: readiness)
+        self.connection = connection
+        try await waitUntilReady(connection)
     }
 
     public func receive() async throws -> ApprovalWireMessage {
-        guard let socket else { throw ApprovalRelayClientError.disconnected }
-        guard case .data(let data) = try await socket.receive() else {
+        guard let connection else { throw ApprovalRelayClientError.disconnected }
+        try await waitUntilReady(connection)
+        guard case .data(let data) = try await connection.socket.receive() else {
             throw ApprovalRelayClientError.unexpectedMessage
         }
         let envelope = try JSONDecoder().decode(ApprovalCiphertext.self, from: data)
@@ -89,7 +93,8 @@ public actor ApprovalRelayClient {
     }
 
     public func publish(_ request: PhoneApprovalRequest) async throws {
-        guard let peerID else { throw ApprovalRelayClientError.disconnected }
+        guard let connection else { throw ApprovalRelayClientError.disconnected }
+        try await waitUntilReady(connection)
         let messageData = try JSONEncoder().encode(ApprovalWireMessage.request(request))
         let ticketData = try JSONEncoder().encode(PhoneApprovalTicket(request: request))
         let notification = try crypto.seal(ticketData, purpose: "notification")
@@ -103,16 +108,17 @@ public actor ApprovalRelayClient {
         )
         try await post(
             publication,
-            path: ["v1", "request", address.room, peerID],
+            path: ["v1", "request", address.room, connection.peerID],
             accepted: 204
         )
     }
 
     public func send(_ message: ApprovalWireMessage) async throws {
-        guard let peerID else { throw ApprovalRelayClientError.disconnected }
+        guard let connection else { throw ApprovalRelayClientError.disconnected }
+        try await waitUntilReady(connection)
         let plaintext = try JSONEncoder().encode(message)
         let envelope = try crypto.seal(plaintext, purpose: "transport")
-        try await post(envelope, path: ["v1", "send", address.room, peerID], accepted: 204)
+        try await post(envelope, path: ["v1", "send", address.room, connection.peerID], accepted: 204)
     }
 
     public func register(deviceID: String, token: Data, environment: ApprovalDeviceRegistration.Environment) async throws {
@@ -147,9 +153,62 @@ public actor ApprovalRelayClient {
     }
 
     public func disconnect() {
-        socket?.cancel(with: .goingAway, reason: nil)
-        socket = nil
-        peerID = nil
+        guard let connection else { return }
+        self.connection = nil
+        connection.readiness.cancel()
+        connection.socket.cancel(with: .goingAway, reason: nil)
+    }
+
+    private func waitUntilReady(_ connection: Connection) async throws {
+        do {
+            try await withTaskCancellationHandler {
+                try await connection.readiness.value
+                try Task.checkCancellation()
+            } onCancel: {
+                connection.readiness.cancel()
+                connection.socket.cancel(with: .goingAway, reason: nil)
+            }
+            guard self.connection?.id == connection.id else {
+                throw ApprovalRelayClientError.disconnected
+            }
+        } catch {
+            if self.connection?.id == connection.id {
+                self.connection = nil
+                connection.readiness.cancel()
+                connection.socket.cancel(with: .goingAway, reason: nil)
+            }
+            throw error
+        }
+    }
+
+    private static func waitUntilReady(_ socket: URLSessionWebSocketTask) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await waitForPong(socket.sendPing) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(60))
+                throw ApprovalRelayClientError.connectionTimedOut
+            }
+            defer { group.cancelAll() }
+            guard try await group.next() != nil else {
+                throw ApprovalRelayClientError.disconnected
+            }
+        }
+    }
+
+    static func waitForPong(
+        _ sendPing: (@escaping @Sendable ((any Error)?) -> Void) -> Void
+    ) async throws {
+        let pongs = AsyncThrowingStream<Void, any Error> { continuation in
+            sendPing { error in
+                if let error { continuation.finish(throwing: error) }
+                else {
+                    continuation.yield()
+                    continuation.finish()
+                }
+            }
+        }
+        for try await _ in pongs { return }
+        throw CancellationError()
     }
 
     private func post<T: Encodable>(_ value: T, path: [String], accepted: Int) async throws {
