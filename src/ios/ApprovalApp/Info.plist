@@ -9,6 +9,7 @@
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>ApprovalRelayURL</key><string>https://approval-relay.automicvault.com</string>
     <key>NSFaceIDUsageDescription</key><string>Automic Vault uses Face ID only when you opt in to authenticate Approvals on this iPhone.</string>
     <key>UILaunchScreen</key><dict/>
