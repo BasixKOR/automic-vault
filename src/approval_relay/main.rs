@@ -525,6 +525,9 @@ impl ApnsClient {
         if response.status().is_success() {
             Ok(())
         } else {
+            let status = response.status();
+            let reason = response.text().await.unwrap_or_default();
+            eprintln!("APNs device validation failed: status={status} response={reason}");
             Err(())
         }
     }
