@@ -1,0 +1,191 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ApprovalApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* ApprovalApp.swift */; };
+		A10000000000000000000002 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ApprovalViews.swift */; };
+		A10000000000000000000003 /* ApprovalProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* ApprovalProtocol.swift */; };
+		A10000000000000000000004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* PrivacyInfo.xcprivacy */; };
+		A10000000000000000000005 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* AppIcon.icon */; };
+		A10000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* Assets.xcassets */; };
+		A10000000000000000000007 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* NotificationService.swift */; };
+		A10000000000000000000008 /* ApprovalProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* ApprovalProtocol.swift */; };
+		A10000000000000000000009 /* ApprovalNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* ApprovalNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1000000000000000000000A /* ApprovalRelayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* ApprovalRelayClient.swift */; };
+		A1000000000000000000000B /* ICloudApprovalRootKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ICloudApprovalRootKey.swift */; };
+		A1000000000000000000000C /* ApprovalRelayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* ApprovalRelayClient.swift */; };
+		A1000000000000000000000D /* ICloudApprovalRootKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* ICloudApprovalRootKey.swift */; };
+		A1000000000000000000000E /* ApprovalSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* ApprovalSubscription.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000001 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001 /* Project object */; proxyType = 1; remoteGlobalIDString = A50000000000000000000002; remoteInfo = ApprovalNotificationService; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A60000000000000000000004 /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (A10000000000000000000009 /* ApprovalNotificationService.appex in Embed App Extensions */,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* ApprovalApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* ApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalViews.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000005 /* NotificationService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "NotificationService-Info.plist"; sourceTree = "<group>"; };
+		A20000000000000000000006 /* AutomicVaultApproval.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AutomicVaultApproval.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000007 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000008 /* Automic Vault.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Automic Vault.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000009 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A2000000000000000000000A /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = ../../menu-helper/Resources/AppIcon.icon; sourceTree = "<group>"; };
+		A2000000000000000000000B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2000000000000000000000D /* ApprovalNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ApprovalNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000E /* ApprovalProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ApprovalProtocol.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* ApprovalRelayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ApprovalRelayClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* ICloudApprovalRootKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../../menu-helper/Sources/ApprovalCore/ICloudApprovalRootKey.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* ApprovalSubscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalSubscription.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {isa = PBXGroup; children = (
+			A20000000000000000000001 /* ApprovalApp.swift */,
+			A20000000000000000000002 /* ApprovalViews.swift */,
+			A20000000000000000000011 /* ApprovalSubscription.swift */,
+			A20000000000000000000012 /* Products.storekit */,
+			A20000000000000000000003 /* NotificationService.swift */,
+			A20000000000000000000004 /* Info.plist */,
+			A20000000000000000000005 /* NotificationService-Info.plist */,
+			A20000000000000000000006 /* AutomicVaultApproval.entitlements */,
+			A20000000000000000000007 /* NotificationService.entitlements */,
+			A20000000000000000000009 /* PrivacyInfo.xcprivacy */,
+			A2000000000000000000000A /* AppIcon.icon */,
+			A2000000000000000000000B /* Assets.xcassets */,
+			A2000000000000000000000E /* ApprovalProtocol.swift */,
+			A2000000000000000000000F /* ApprovalRelayClient.swift */,
+			A20000000000000000000010 /* ICloudApprovalRootKey.swift */,
+			A40000000000000000000002 /* Products */,
+		); sourceTree = "<group>"; };
+		A40000000000000000000002 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000008 /* Automic Vault.app */, A2000000000000000000000D /* ApprovalNotificationService.appex */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* AutomicVaultApproval */ = {isa = PBXNativeTarget; buildConfigurationList = A80000000000000000000002; buildPhases = (A60000000000000000000001, A30000000000000000000001, A60000000000000000000002, A60000000000000000000004,); buildRules = (); dependencies = (AA0000000000000000000002 /* PBXTargetDependency */,); name = AutomicVaultApproval; packageProductDependencies = (); productName = "Automic Vault"; productReference = A20000000000000000000008; productType = "com.apple.product-type.application"; };
+		A50000000000000000000002 /* ApprovalNotificationService */ = {isa = PBXNativeTarget; buildConfigurationList = A80000000000000000000003; buildPhases = (A60000000000000000000003, A30000000000000000000002,); buildRules = (); dependencies = (); name = ApprovalNotificationService; packageProductDependencies = (); productName = ApprovalNotificationService; productReference = A2000000000000000000000D; productType = "com.apple.product-type.app-extension"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A90000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2650; LastUpgradeCheck = 2650; TargetAttributes = {A50000000000000000000001 = {CreatedOnToolsVersion = 26.5; }; A50000000000000000000002 = {CreatedOnToolsVersion = 26.5; };};}; buildConfigurationList = A80000000000000000000001; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A40000000000000000000001; minimizedProjectReferenceProxies = 1; packageReferences = (); preferredProjectObjectVersion = 77; productRefGroup = A40000000000000000000002; projectDirPath = ""; projectRoot = ""; targets = (A50000000000000000000001, A50000000000000000000002,); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000E,); runOnlyForDeploymentPostprocessing = 0; };
+		A60000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000007, A10000000000000000000008, A1000000000000000000000C, A1000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000002 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A50000000000000000000002 /* ApprovalNotificationService */; targetProxy = AA0000000000000000000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		B10000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; IPHONEOS_DEPLOYMENT_TARGET = 26.1; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 6.0; }; name = Debug; };
+		B10000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; IPHONEOS_DEPLOYMENT_TARGET = 26.1; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Release; };
+		B10000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			APS_ENVIRONMENT = development;
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			CODE_SIGN_ENTITLEMENTS = AutomicVaultApproval.entitlements;
+			CODE_SIGN_STYLE = Automatic;
+			CURRENT_PROJECT_VERSION = 1;
+			DEVELOPMENT_TEAM = ZU76A67LGU;
+			GENERATE_INFOPLIST_FILE = NO;
+			INFOPLIST_FILE = Info.plist;
+			IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+			MARKETING_VERSION = 1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.automicvault.approval;
+			PRODUCT_NAME = "Automic Vault";
+			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SWIFT_STRICT_CONCURRENCY = complete;
+			SWIFT_VERSION = 6.0;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Debug; };
+		B10000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			APS_ENVIRONMENT = production;
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			CODE_SIGN_ENTITLEMENTS = AutomicVaultApproval.entitlements;
+			CODE_SIGN_STYLE = Automatic;
+			CURRENT_PROJECT_VERSION = 1;
+			DEVELOPMENT_TEAM = ZU76A67LGU;
+			GENERATE_INFOPLIST_FILE = NO;
+			INFOPLIST_FILE = Info.plist;
+			IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+			MARKETING_VERSION = 1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.automicvault.approval;
+			PRODUCT_NAME = "Automic Vault";
+			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+			SUPPORTS_MACCATALYST = NO;
+			SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+			SWIFT_COMPILATION_MODE = wholemodule;
+			SWIFT_STRICT_CONCURRENCY = complete;
+			SWIFT_VERSION = 6.0;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Release; };
+		B10000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+			CODE_SIGN_ENTITLEMENTS = NotificationService.entitlements;
+			CODE_SIGN_STYLE = Automatic;
+			CURRENT_PROJECT_VERSION = 1;
+			DEVELOPMENT_TEAM = ZU76A67LGU;
+			GENERATE_INFOPLIST_FILE = NO;
+			INFOPLIST_FILE = "NotificationService-Info.plist";
+			IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+			MARKETING_VERSION = 1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.automicvault.approval.notifications;
+			PRODUCT_NAME = ApprovalNotificationService;
+			SKIP_INSTALL = YES;
+			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+			SWIFT_STRICT_CONCURRENCY = complete;
+			SWIFT_VERSION = 6.0;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Debug; };
+		B10000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+			CODE_SIGN_ENTITLEMENTS = NotificationService.entitlements;
+			CODE_SIGN_STYLE = Automatic;
+			CURRENT_PROJECT_VERSION = 1;
+			DEVELOPMENT_TEAM = ZU76A67LGU;
+			GENERATE_INFOPLIST_FILE = NO;
+			INFOPLIST_FILE = "NotificationService-Info.plist";
+			IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+			MARKETING_VERSION = 1.0;
+			PRODUCT_BUNDLE_IDENTIFIER = com.automicvault.approval.notifications;
+			PRODUCT_NAME = ApprovalNotificationService;
+			SKIP_INSTALL = YES;
+			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+			SWIFT_COMPILATION_MODE = wholemodule;
+			SWIFT_STRICT_CONCURRENCY = complete;
+			SWIFT_VERSION = 6.0;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000001, B10000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000003, B10000000000000000000004,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A80000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (B10000000000000000000005, B10000000000000000000006,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+	};
+	rootObject = A90000000000000000000001 /* Project object */;
+}

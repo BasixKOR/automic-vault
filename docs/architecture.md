@@ -10,6 +10,12 @@ The [domain language](domain-language.md) is authoritative. The ADRs in [`docs/a
 
 The Mac stores Secrets, verifies identities, evaluates policy, records decisions, and releases credentials. A companion device may carry a user's Approval response. It cannot release a Secret or execute a Target.
 
+When iPhone Approval is enabled for a Mac, every human Approval—including an
+Approval required to broaden durable authority—is carried by an eligible
+iPhone. The Mac presents request details and cancellation status but no allow
+action. Losing relay or phone availability fails closed and does not restore a
+local allow action.
+
 ### Security uncertainty fails closed
 
 Unknown operation risk requires Approval. Missing or invalid identity, integrity, request data, Secret matching, or required record persistence denies the request. No failure path grants broader access.
@@ -335,6 +341,77 @@ Value revokes its rules so recreating an old Secret Name cannot silently restore
 authority.
 
 Human Approval requires an active user session and awake displays. Requests that still need a human decision are denied if the session becomes inactive or the displays sleep. Policy-authorized requests may proceed while locked only when every requested Secret has Available While Locked enabled.
+
+iPhone Approval changes the human-presence surface, not the Local Execution
+Boundary. While enabled and backed by at least one registered iPhone, a pending
+request may remain eligible for Approval while the Mac session is inactive or
+its displays sleep. The originating process must remain alive, and the Mac must
+still validate the exact response and persist and verify its Authorization
+Record before allowing the operation. AWS MFA entry remains Mac-local and keeps
+the active-session and awake-display requirement.
+
+## iPhone Approval
+
+iPhone Approval uses a product-specific 256-bit account root key generated on
+an Apple device and stored as a synchronizable iCloud Keychain item. It does not
+reuse another product's key. Possession of this key makes every eligible iPhone
+on that iCloud Keychain account an Approval carrier for every enrolled Mac.
+There is no per-device pairing or revocation in the initial design.
+
+The root key derives independent keys and opaque identifiers for relay routing,
+relay authorization, Authorization Requests, responses, cancellations, and
+device registration. Request and response envelopes are authenticated and
+encrypted before reaching the relay. Responses bind the request identifier and
+digest of the complete immutable request. The first valid response accepted by
+the Mac wins; stale, modified, replayed, or mismatched responses are rejected.
+
+The relay may observe opaque routing identifiers, ciphertext size, timing,
+delivery status, and APNs device tokens required for delivery. It cannot read or
+forge Authorization Requests or responses. It stores no request history. It
+durably retains only opaque revoked room identifiers so emergency recovery
+continues to invalidate old keys after a relay restart.
+Pending requests remain authoritative on their Macs and are republished after a
+relay reconnect. A relay restart may delay an Approval and may lose an
+unacknowledged response; either case fails closed.
+
+An iPhone registers only after proving possession of the account root key and
+obtaining notification authorization and an APNs token. A Mac may enable iPhone
+Approval only after observing a recent eligible registration. Once enabled,
+APNs delivery is a wake-up mechanism rather than proof that a notification was
+shown. The phone is the sole allow surface until the feature is deliberately
+disabled or recovered.
+
+Notification Approvals bind the same exact request as the full app. Requests
+with Unknown operation risk, Secret Disclosure, Unconstrained Secret
+Application, or a security warning require review in the full iPhone app.
+Notification content is redacted on the lock screen and never includes Secret
+values. The iPhone does not persist Authorization History.
+
+Before signing and transmitting any allow response, the iPhone app verifies a
+current iPhone Approval subscription from StoreKit's signed transaction ledger.
+Missing, expired, revoked, or unverified entitlement state fails closed. Denial
+does not require a subscription. Subscription state is not sent to the relay or
+Mac and does not participate in Authorization Policy; a subscription never
+authorizes a request or weakens the Mac's response validation and recording
+requirements.
+
+Biometric protection is optional and configured independently on each iPhone.
+When enabled, an Approval requires Face ID or Touch ID on that physical iPhone,
+without passcode or companion-Mac fallback; Apple Watch Approval is then
+unavailable. When disabled, actionable notifications may also appear on Apple
+Watch. Deny is the first non-destructive notification action so Apple Watch
+Double Tap cannot approve.
+
+iPhone Mirroring and forwarding iPhone notifications to a Mac can weaken the
+intended physical separation when biometrics are disabled. Setup warns the user
+and points to Apple's per-app Show on Mac and Mirroring controls. The product
+does not claim a physical-phone boundary unless biometric protection is enabled
+on every eligible iPhone.
+
+Emergency recovery requires macOS system authentication, disables iPhone
+Approval, cancels pending requests, rotates the account root key, and
+invalidates all prior phone registrations across the account. Re-enrollment is
+account-wide. Ordinary disable and re-enable does not rotate the key.
 
 ## Recording before release
 

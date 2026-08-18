@@ -4,9 +4,15 @@ version = "3.9.0"
 edition = "2024"
 
 [dependencies]
+axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
+futures-util = "0.3"
 libc = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls"] }
 ring = "0.17"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
 
 [lib]
@@ -23,3 +29,7 @@ path = "src/brew_stub/main.rs"
 [[bin]]
 name = "scanner"
 path = "src/scanner/main.rs"
+
+[[bin]]
+name = "av-approval-relay"
+path = "src/approval_relay/main.rs"

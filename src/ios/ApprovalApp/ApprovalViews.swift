@@ -1,0 +1,300 @@
+import StoreKit
+import SwiftUI
+
+struct ApprovalRootView: View {
+    @Bindable var model: ApprovalModel
+    @Bindable var subscription: ApprovalSubscription
+    @State private var showingSubscription = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if model.pending.count == 1, let request = model.pending.first {
+                    ApprovalDetailView(request: request, model: model, subscription: subscription)
+                } else if model.pending.count > 1 {
+                    list
+                } else if subscription.state == .loading {
+                    ProgressView("Checking subscription…")
+                } else if model.state == .setup || subscription.state == .inactive {
+                    setup
+                } else {
+                    empty
+                }
+            }
+            .navigationTitle("Approvals")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { ApprovalSettingsView(model: model, subscription: subscription) } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
+                }
+            }
+            .alert("Approval Error", isPresented: Binding(
+                get: { model.errorMessage != nil },
+                set: { if !$0 { model.errorMessage = nil } }
+            )) {
+                Button("OK") { model.errorMessage = nil }
+            } message: {
+                Text(model.errorMessage ?? "")
+            }
+            .alert("Subscription Error", isPresented: Binding(
+                get: { subscription.errorMessage != nil },
+                set: { if !$0 { subscription.errorMessage = nil } }
+            )) {
+                Button("OK") { subscription.errorMessage = nil }
+            } message: {
+                Text(subscription.errorMessage ?? "")
+            }
+            .sheet(isPresented: $showingSubscription) {
+                NavigationStack {
+                    ApprovalSubscriptionView(subscription: subscription)
+                }
+            }
+            .onChange(of: subscription.state) { _, state in
+                guard state == .active, showingSubscription else { return }
+                showingSubscription = false
+                Task { await model.enable() }
+            }
+        }
+    }
+
+    private var setup: some View {
+        ContentUnavailableView {
+            Label("Approve Away from Your Mac", systemImage: "iphone.and.arrow.forward")
+        } description: {
+            Text("Use this iPhone for every human Approval on an enrolled Mac. iCloud Keychain and notifications are required.")
+        } actions: {
+            Button("Enable iPhone Approval") {
+                if subscription.state == .active {
+                    Task { await model.enable() }
+                } else {
+                    showingSubscription = true
+                }
+            }
+                .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var empty: some View {
+        ContentUnavailableView {
+            Label("No Pending Approvals", systemImage: "checkmark.shield")
+        } description: {
+            Text(connectionText)
+        }
+    }
+
+    private var connectionText: String {
+        switch model.state {
+        case .setup: "Enable notifications to receive Approval requests."
+        case .connecting: "Connecting to your Macs…"
+        case .connected where model.connectedMacs.isEmpty:
+            "Connected. Waiting to hear from an enrolled Mac."
+        case .connected:
+            "Connected Macs: \(model.connectedMacs.values.sorted().joined(separator: ", "))."
+        case .unavailable(let reason): reason
+        }
+    }
+
+    private var list: some View {
+        List {
+            Section {
+                ForEach(model.pending) { request in
+                    NavigationLink {
+                        ApprovalDetailView(request: request, model: model, subscription: subscription)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(request.launcher).font(.headline)
+                            Text(request.command).font(.callout.monospaced()).lineLimit(2)
+                            Text("\(request.macName) · \(request.secretNames.count) secret\(request.secretNames.count == 1 ? "" : "s")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("\(model.pending.count) pending")
+            } footer: {
+                Button("Deny All", role: .destructive) { Task { await model.denyAll() } }
+            }
+        }
+    }
+}
+
+struct ApprovalDetailView: View {
+    let request: PhoneApprovalRequest
+    @Bindable var model: ApprovalModel
+    @Bindable var subscription: ApprovalSubscription
+    @State private var showingSubscription = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(request.launcher).font(.title2.bold())
+                    Text("on \(request.macName)").foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Tool", value: request.tool)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Command").font(.caption).foregroundStyle(.secondary)
+                    Text(request.command)
+                        .font(.body.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                }
+                LabeledContent("Working Directory", value: request.cwd)
+                LabeledContent("Secrets", value: request.secretNames.joined(separator: ", "))
+                HStack {
+                    Text("Requested").foregroundStyle(.secondary)
+                    Spacer()
+                    Text(Date(timeIntervalSince1970: TimeInterval(request.createdAtMilliseconds) / 1_000), style: .relative)
+                }
+
+                Label(request.reason, systemImage: request.requiresFullReview ? "exclamationmark.shield.fill" : "shield")
+                    .foregroundStyle(request.requiresFullReview ? .orange : .primary)
+
+                ForEach(Array(request.details.enumerated()), id: \.offset) { _, section in
+                    DisclosureGroup(section.title) {
+                        VStack(spacing: 10) {
+                            ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
+                                LabeledContent(row.label, value: row.value)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+
+                if subscription.state == .active {
+                    HStack(spacing: 12) {
+                        denyButton
+                        Button("Approve Once") { Task { await model.approve(request) } }
+                            .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                    }
+                } else {
+                    denyButton
+                    Button("Subscribe to Approve") { showingSubscription = true }
+                        .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                }
+
+                if subscription.state == .active, let scope = request.temporaryAccessGrantScope {
+                    Button {
+                        Task { await model.allowTemporaryWriteAccess(request) }
+                    } label: {
+                        Label("Allow Write Access for 10 Minutes…", systemImage: "clock.badge.checkmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityLabel("Allow Write Access for 10 minutes for \(scope)")
+
+                    Text("Limited to \(scope).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Approval")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingSubscription) {
+            NavigationStack {
+                ApprovalSubscriptionView(subscription: subscription)
+            }
+        }
+        .onChange(of: subscription.state) { _, state in
+            guard state == .active else { return }
+            showingSubscription = false
+        }
+    }
+
+    private var denyButton: some View {
+        Button("Deny", role: .destructive) { Task { await model.deny(request) } }
+            .buttonStyle(.bordered).controlSize(.large).frame(maxWidth: .infinity)
+    }
+}
+
+struct ApprovalSettingsView: View {
+    @Bindable var model: ApprovalModel
+    @Bindable var subscription: ApprovalSubscription
+    @State private var showingManageSubscriptions = false
+
+    var body: some View {
+        Form {
+            Section("Protection") {
+                Toggle("Require Face ID or Touch ID", isOn: Binding(
+                    get: { model.biometricProtectionEnabled },
+                    set: { enabled in Task { await model.setBiometricProtection(enabled) } }
+                ))
+                Text("When enabled, Approve requires biometrics on this iPhone. Passcode, Apple Watch, and a companion Mac cannot substitute.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("Physical Separation") {
+                Label("iPhone Mirroring and Show on Mac can put Approval controls back onto a Mac when biometric protection is off.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Turn off Show on Mac for Automic Vault notifications and revoke iPhone Mirroring access if agents can control your Mac.")
+                    .font(.footnote)
+            }
+            Section("Subscription") {
+                LabeledContent("iPhone Approval", value: subscription.state == .active ? "Active" : "Required")
+                if subscription.state == .active {
+                    Button("Manage Subscription") { showingManageSubscriptions = true }
+                } else {
+                    NavigationLink("Subscribe") {
+                        ApprovalSubscriptionView(subscription: subscription)
+                    }
+                }
+            }
+            Section("Connection") { Text(connectionLabel) }
+        }
+        .navigationTitle("Settings")
+        .manageSubscriptionsSheet(isPresented: $showingManageSubscriptions)
+    }
+
+    private var connectionLabel: String {
+        switch model.state {
+        case .setup: "Not enabled"
+        case .connecting: "Connecting…"
+        case .connected: "Connected"
+        case .unavailable(let reason): reason
+        }
+    }
+}
+
+struct ApprovalSubscriptionView: View {
+    @Bindable var subscription: ApprovalSubscription
+
+    var body: some View {
+        SubscriptionStoreView(productIDs: ApprovalSubscription.productIDs) {
+            VStack(spacing: 12) {
+                Image(systemName: "iphone.and.arrow.forward")
+                    .font(.system(size: 52))
+                    .foregroundStyle(.tint)
+                Text("iPhone Approval")
+                    .font(.largeTitle.bold())
+                Text("Keep every human Approval away from agents that can control your Mac.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+        }
+        .subscriptionStoreControlStyle(.prominentPicker)
+        .subscriptionStoreButtonLabel(.multiline)
+        .storeButton(.visible, for: .restorePurchases)
+        .subscriptionStorePolicyDestination(
+            url: URL(string: "https://www.automicvault.com/privacy/")!,
+            for: .privacyPolicy
+        )
+        .subscriptionStorePolicyDestination(
+            url: URL(string: "https://www.automicvault.com/terms/")!,
+            for: .termsOfService
+        )
+        .onInAppPurchaseCompletion { _, result in
+            await subscription.handlePurchase(result)
+        }
+        .navigationTitle("Subscription")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
