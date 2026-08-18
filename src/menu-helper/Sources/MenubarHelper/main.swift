@@ -7297,6 +7297,9 @@ private func showApprovalAlert(
                         title: section.title,
                         rows: section.rows.map { .init(label: $0.label, value: $0.value) }
                     )
+                },
+                temporaryAccessGrantScope: temporaryGrantCandidate.map { candidate in
+                    "\(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
                 }
             )
             remoteRequestID = phoneRequest.id
@@ -7304,6 +7307,7 @@ private func showApprovalAlert(
                 decision = switch result {
                 case .approved: .approved
                 case .denied: .denied
+                case .temporaryWriteAccess: .temporaryWriteAccess
                 case .canceled: .canceled
                 }
                 if NSApp.modalWindow === panel {

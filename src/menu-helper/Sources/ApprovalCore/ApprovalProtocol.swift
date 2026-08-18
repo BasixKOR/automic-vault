@@ -142,6 +142,7 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     public let reason: String
     public let risks: [ApprovalRisk]
     public let details: [ApprovalDetailSection]
+    public let temporaryAccessGrantScope: String?
 
     public init(
         version: UInt16 = 1,
@@ -155,7 +156,8 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
         secretNames: [String],
         reason: String,
         risks: [ApprovalRisk],
-        details: [ApprovalDetailSection]
+        details: [ApprovalDetailSection],
+        temporaryAccessGrantScope: String? = nil
     ) throws {
         guard version == 1,
               !macName.isEmpty,
@@ -164,7 +166,8 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
               !command.isEmpty,
               !reason.isEmpty,
               !secretNames.contains(where: \.isEmpty),
-              !risks.isEmpty else {
+              !risks.isEmpty,
+              temporaryAccessGrantScope?.isEmpty != true else {
             throw ApprovalProtocolError.invalidRequest
         }
         self.version = version
@@ -179,6 +182,7 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
         self.reason = reason
         self.risks = Array(Set(risks)).sorted { $0.rawValue < $1.rawValue }
         self.details = details
+        self.temporaryAccessGrantScope = temporaryAccessGrantScope
         guard try canonicalData().count <= Self.maximumEncodedBytes else {
             throw ApprovalProtocolError.invalidRequest
         }
@@ -200,6 +204,7 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
 public enum PhoneApprovalOutcome: String, Codable, Sendable {
     case approved
     case denied
+    case temporaryWriteAccess
 }
 
 public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
@@ -216,7 +221,10 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
         deviceID: String,
         decidedAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
     ) throws {
-        guard !deviceID.isEmpty else { throw ApprovalProtocolError.invalidRequest }
+        guard !deviceID.isEmpty,
+              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil else {
+            throw ApprovalProtocolError.invalidRequest
+        }
         version = 1
         requestID = request.id
         requestDigest = try request.digest()
@@ -232,7 +240,9 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
         deviceID: String,
         decidedAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
     ) throws {
-        guard requestDigest.count == SHA256.byteCount, !deviceID.isEmpty else {
+        guard requestDigest.count == SHA256.byteCount,
+              !deviceID.isEmpty,
+              outcome != .temporaryWriteAccess else {
             throw ApprovalProtocolError.invalidRequest
         }
         version = 1
@@ -246,7 +256,8 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
     public func validate(for request: PhoneApprovalRequest) throws {
         guard version == 1,
               requestID == request.id,
-              requestDigest == (try request.digest()) else {
+              requestDigest == (try request.digest()),
+              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil else {
             throw ApprovalProtocolError.mismatchedResponse
         }
     }

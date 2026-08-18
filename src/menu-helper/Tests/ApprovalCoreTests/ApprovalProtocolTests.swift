@@ -55,9 +55,47 @@ import Testing
     }
 }
 
+@Test func temporaryWriteAccessRequiresExplicitRequestCapability() throws {
+    let request = try sampleRequest(
+        command: "gh repo create",
+        temporaryAccessGrantScope: "Ghostty, GH Authorization Gate, and Codex task AAAAAAAA"
+    )
+    let response = try PhoneApprovalResponse(
+        request: request,
+        outcome: .temporaryWriteAccess,
+        deviceID: "phone"
+    )
+    try response.validate(for: request)
+
+    let ineligible = try sampleRequest(command: "aws s3 ls")
+    #expect(throws: ApprovalProtocolError.invalidRequest) {
+        try PhoneApprovalResponse(
+            request: ineligible,
+            outcome: .temporaryWriteAccess,
+            deviceID: "phone"
+        )
+    }
+
+    let forged = try JSONDecoder().decode(
+        PhoneApprovalResponse.self,
+        from: JSONSerialization.data(withJSONObject: [
+            "version": 1,
+            "requestID": ineligible.id.uuidString,
+            "requestDigest": try ineligible.digest().base64EncodedString(),
+            "outcome": "temporaryWriteAccess",
+            "deviceID": "phone",
+            "decidedAtMilliseconds": 1,
+        ])
+    )
+    #expect(throws: ApprovalProtocolError.mismatchedResponse) {
+        try forged.validate(for: ineligible)
+    }
+}
+
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
-    command: String
+    command: String,
+    temporaryAccessGrantScope: String? = nil
 ) throws -> PhoneApprovalRequest {
     try PhoneApprovalRequest(
         id: id,
@@ -70,6 +108,7 @@ private func sampleRequest(
         secretNames: ["AWS_ACCESS_KEY_ID"],
         reason: "Unknown operation requires Approval",
         risks: [.unknown],
-        details: []
+        details: [],
+        temporaryAccessGrantScope: temporaryAccessGrantScope
     )
 }

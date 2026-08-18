@@ -14,6 +14,7 @@ nonisolated func phoneApprovalIsEnabled() -> Bool {
 enum PhoneApprovalResult: Sendable {
     case approved
     case denied
+    case temporaryWriteAccess
     case canceled
 }
 
@@ -143,10 +144,12 @@ private actor PhoneApprovalRelayWorker {
             guard let request = pending[response.requestID] else { return }
             try response.validate(for: request)
             pending.removeValue(forKey: response.requestID)
-            resultHandler(
-                response.requestID,
-                response.outcome == .approved ? .approved : .denied
-            )
+            let result: PhoneApprovalResult = switch response.outcome {
+            case .approved: .approved
+            case .denied: .denied
+            case .temporaryWriteAccess: .temporaryWriteAccess
+            }
+            resultHandler(response.requestID, result)
         case .sync:
             try await relay.send(.presence(try presence()))
             for request in pending.values { try await relay.send(.request(request)) }

@@ -170,10 +170,18 @@ final class ApprovalModel {
     }
 
     func approve(_ request: PhoneApprovalRequest) async {
+        await approve(request, outcome: .approved)
+    }
+
+    func allowTemporaryWriteAccess(_ request: PhoneApprovalRequest) async {
+        await approve(request, outcome: .temporaryWriteAccess)
+    }
+
+    private func approve(_ request: PhoneApprovalRequest, outcome: PhoneApprovalOutcome) async {
         if biometricProtectionEnabled {
             guard await authenticateBiometrically() else { return }
         }
-        await respond(to: request, outcome: .approved)
+        await respond(to: request, outcome: outcome)
     }
 
     func deny(_ request: PhoneApprovalRequest) async {

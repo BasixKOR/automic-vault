@@ -140,6 +140,24 @@ struct ApprovalDetailView: View {
                     Button("Approve Once") { Task { await model.approve(request) } }
                         .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
                 }
+
+                if let scope = request.temporaryAccessGrantScope {
+                    Button {
+                        Task { await model.allowTemporaryWriteAccess(request) }
+                    } label: {
+                        Label("Allow Write Access for 10 Minutes…", systemImage: "clock.badge.checkmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .accessibilityLabel("Allow Write Access for 10 minutes for \(scope)")
+
+                    Text("Limited to \(scope).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .padding()
         }
