@@ -221,6 +221,15 @@ final class PhoneApprovalCoordinator {
         await worker.start(generation: workerGeneration)
     }
 
+    func startIfEnabled() {
+        guard isEnabled else { return }
+        let worker = worker
+        let generation = workerGeneration
+        Task { @concurrent in
+            await worker.start(generation: generation)
+        }
+    }
+
     func submit(
         _ request: PhoneApprovalRequest,
         completion: @escaping (PhoneApprovalResult) -> Void
