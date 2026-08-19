@@ -7676,38 +7676,49 @@ private struct ApprovalPromptHeaderView: View {
 
     var body: some View {
         let launcher = content.processSecurity.launcher
-        HStack(alignment: .top, spacing: approvalPromptColumnSpacing) {
-            Text(launcher == nil ? "" : "Verified Launcher")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .frame(width: approvalPromptRoleWidth, alignment: .leading)
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([
-                        URL(fileURLWithPath: content.requesterIconPath),
-                    ])
-                } label: {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Reveal \(content.requesterName) in Finder")
-                .help("Reveal in Finder")
-                Text(content.requesterName)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(2)
-                    .help(content.requesterName)
+        VStack(alignment: .leading, spacing: 12) {
+            if launcher != nil {
+                Label("Verified Launcher", systemImage: "checkmark.shield")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.purple)
+                    .textCase(.uppercase)
             }
-            .frame(width: approvalPromptToolWidth, alignment: .leading)
-            ApprovalPromptPathView(path: escapedSecurityPath(launcher?.path ?? content.requesterIconPath))
-            ApprovalPromptInfoButton(
-                title: "Request details",
-                details: details.isEmpty ? "No additional request details." : details
-            )
+            HStack(alignment: .center, spacing: approvalPromptColumnSpacing) {
+                HStack(spacing: 14) {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([
+                            URL(fileURLWithPath: content.requesterIconPath),
+                        ])
+                    } label: {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Reveal \(content.requesterName) in Finder")
+                    .help("Reveal in Finder")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(content.requesterName)
+                            .font(.title3.weight(.semibold))
+                            .lineLimit(2)
+                            .help(content.requesterName)
+                        Text(URL(fileURLWithPath: content.requesterIconPath).lastPathComponent)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(
+                    width: approvalPromptRoleWidth + approvalPromptColumnSpacing + approvalPromptToolWidth,
+                    alignment: .leading
+                )
+                ApprovalPromptPathView(path: escapedSecurityPath(launcher?.path ?? content.requesterIconPath))
+                ApprovalPromptInfoButton(
+                    title: "Request details",
+                    details: details.isEmpty ? "No additional request details." : details
+                )
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -7725,6 +7736,7 @@ private struct ApprovalPromptProcessSecurityView: View {
                     .padding(.leading, approvalPromptNameInset)
                     .padding(.vertical, 3)
                     .accessibilityHidden(true)
+                Divider()
                 ApprovalPromptProcessNodeView(node: node)
             }
             Image(systemName: "arrow.down")
@@ -7732,6 +7744,7 @@ private struct ApprovalPromptProcessSecurityView: View {
                 .padding(.leading, approvalPromptNameInset)
                 .padding(.vertical, 3)
                 .accessibilityHidden(true)
+            Divider()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Process path from Verified Launcher to Target")
@@ -7775,12 +7788,10 @@ private struct ApprovalPromptRequestView: View {
     let content: ApprovalPromptContent
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 0) {
             ApprovalPromptHeaderView(content: content)
-            VStack(spacing: 0) {
-                ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
-                ApprovalPromptCommandView(content: content)
-            }
+            ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
+            ApprovalPromptCommandView(content: content)
         }
         .padding(18)
         .background(
@@ -7889,9 +7900,29 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
+            Divider()
+
             if usesIPhoneApproval {
-                Label("Waiting for iPhone Approval", systemImage: "iphone.and.arrow.forward")
-                    .font(.headline)
+                VStack(spacing: 6) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "iphone")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.purple)
+                        Text("Waiting for iPhone Approval")
+                            .font(.headline)
+                    }
+                    Text(usesTouchIDApproval
+                        ? "Approve on iPhone or with fresh Touch ID on this Mac."
+                        : "Approve this request on your iPhone.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            } else if usesTouchIDApproval {
+                Text("Fresh Touch ID is required for every Approval on this Mac.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
 
             if usesTouchIDApproval {
@@ -7948,14 +7979,6 @@ private struct ApprovalPromptView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-            }
-            if usesTouchIDApproval {
-                Text(usesIPhoneApproval
-                    ? "Approve on iPhone or with fresh Touch ID on this Mac."
-                    : "Fresh Touch ID is required for every Approval on this Mac.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
             }
         }
         .padding(28)
@@ -8074,9 +8097,23 @@ private struct ApprovalPromptCommandView: View {
                     .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 5) {
-                ApprovalPromptInlineMeta(label: "Working Directory", value: content.cwd)
-                ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys)
+                ApprovalPromptInlineMeta(
+                    label: "Working Directory",
+                    value: content.cwd,
+                    systemImage: "folder"
+                )
+                ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys, systemImage: "key")
             }
+            .padding(12)
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.35),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            }
+            .padding(.leading, approvalPromptNameInset)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -8085,15 +8122,18 @@ private struct ApprovalPromptCommandView: View {
 private struct ApprovalPromptInlineMeta: View {
     let label: String
     let value: String
+    let systemImage: String
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: approvalPromptColumnSpacing) {
-            Color.clear
-                .frame(width: approvalPromptRoleWidth, height: 1)
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .frame(width: approvalPromptToolWidth, alignment: .leading)
+                .frame(width: approvalPromptToolWidth - 34, alignment: .leading)
             Text(value.isEmpty ? "(none)" : value)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
