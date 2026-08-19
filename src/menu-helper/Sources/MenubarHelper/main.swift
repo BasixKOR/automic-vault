@@ -1886,6 +1886,7 @@ private struct TransientApprovalKey: Hashable {
 
 private enum ApprovalDecision: Equatable {
     case canceled
+    case interrupted
     case denied
     case approved
     case alwaysApproved
@@ -1897,7 +1898,7 @@ private func terminalApprovalDecision(
     cancellation: ApprovalCancellation?
 ) -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
-    return decision == .canceled ? .denied : decision
+    return decision == .canceled ? .interrupted : decision
 }
 
 private func canceledAccessRequestRecord(
@@ -1911,6 +1912,21 @@ private func canceledAccessRequestRecord(
         decision: "Canceled",
         approvalSource: "Manual",
         reason: "Gate client exited",
+        launcher: launcher
+    )
+}
+
+private func interruptedAccessRequestRecord(
+    request: ApprovalRequest,
+    callerPath: String,
+    launcher: LauncherIdentity?
+) -> AccessRequestRecord {
+    accessRequestRecord(
+        request: request,
+        callerPath: callerPath,
+        decision: "Failed",
+        approvalSource: "Auto",
+        reason: "Approval presentation interrupted",
         launcher: launcher
     )
 }
@@ -1961,6 +1977,12 @@ private func performApprovedSecretMutation(
         automaticApprovalExplanation: nil,
         cancellation: cancellation
     )
+    if approval == .interrupted {
+        _ = onAccessRequest(interruptedAccessRequestRecord(
+            request: request, callerPath: callerPath, launcher: launcher
+        ))
+        return (nil, "approval presentation interrupted")
+    }
     guard approval == .approved else {
         let canceled = approval == .canceled
         _ = onAccessRequest(accessRequestRecord(
@@ -2096,7 +2118,7 @@ private struct TransientApprovalCache {
         prune(now: now)
         let cacheKey: Key
         switch decision {
-        case .canceled, .temporaryWriteAccess: return
+        case .canceled, .interrupted, .temporaryWriteAccess: return
         case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
         case .approved, .alwaysApproved: cacheKey = .approval(key)
         }
@@ -2784,6 +2806,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
+            if decision == .interrupted {
+                _ = self.onAccessRequest(interruptedAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                self.reply(peer, to: message, ok: false, error: "approval presentation interrupted")
+                return
+            }
             guard decision != .denied else {
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
@@ -3432,6 +3461,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
+            if decision == .interrupted {
+                _ = self.onAccessRequest(interruptedAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: promptLauncher
+                ))
+                self.reply(peer, to: message, ok: false, error: "approval presentation interrupted")
+                return
+            }
             guard decision != .denied else {
                 if !requiresFreshApproval {
                     self.transientApprovals.remember(.denied, for: transientApproval)
@@ -3845,6 +3881,13 @@ private final class ApprovalServer: @unchecked Sendable {
                     _ = self.onAccessRequest(canceledAccessRequestRecord(
                         request: request, callerPath: callerPath, launcher: launcher
                     ))
+                    return
+                }
+                if decision == .interrupted {
+                    _ = self.onAccessRequest(interruptedAccessRequestRecord(
+                        request: request, callerPath: callerPath, launcher: launcher
+                    ))
+                    self.reply(peer, to: message, ok: false, error: "approval presentation interrupted")
                     return
                 }
                 guard decision == .approved else {
@@ -7835,7 +7878,7 @@ private func runApprovalSelfCheck() -> Int32 {
     cancellation.cancel()
     guard cancellation.isCanceled,
           !cancellation.observe({}),
-          terminalApprovalDecision(.canceled, cancellation: nil) == .denied,
+          terminalApprovalDecision(.canceled, cancellation: nil) == .interrupted,
           terminalApprovalDecision(.canceled, cancellation: cancellation) == .canceled,
           terminalApprovalDecision(.approved, cancellation: nil) == .approved
     else { return 1 }
@@ -9192,6 +9235,7 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
     let temporaryGrant = key(startUsec: 987, args: ["repo", "create"])
+    let interrupted = key(startUsec: 988, args: ["repo", "delete"])
     let fallbackAfterDenial = key(args: ["auth", "token"])
     var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
@@ -9207,9 +9251,11 @@ private func runTransientApprovalSelfCheck() -> Int32 {
         for: temporaryGrant,
         now: Date(timeIntervalSince1970: 200)
     )
+    cache.remember(.interrupted, for: interrupted, now: Date(timeIntervalSince1970: 200))
     guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: temporaryGrant, now: Date(timeIntervalSince1970: 300)) == nil,
+          cache.decision(for: interrupted, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 501)) == nil
     else {
