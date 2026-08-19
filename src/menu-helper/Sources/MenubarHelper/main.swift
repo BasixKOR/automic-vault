@@ -7647,8 +7647,23 @@ private struct ApprovalPromptInfoButton: View {
 }
 
 private let approvalPromptRoleWidth: CGFloat = 112
+private let approvalPromptToolWidth: CGFloat = 170
 private let approvalPromptColumnSpacing: CGFloat = 10
 private let approvalPromptNameInset = approvalPromptRoleWidth + approvalPromptColumnSpacing
+
+private struct ApprovalPromptPathView: View {
+    let path: String
+
+    var body: some View {
+        Text(path)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.tertiary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(path)
+    }
+}
 
 private struct ApprovalPromptHeaderView: View {
     let content: ApprovalPromptContent
@@ -7661,7 +7676,7 @@ private struct ApprovalPromptHeaderView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
+            HStack(spacing: approvalPromptColumnSpacing) {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([
                         URL(fileURLWithPath: content.requesterIconPath),
@@ -7676,10 +7691,14 @@ private struct ApprovalPromptHeaderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Reveal \(content.requesterName) in Finder")
                 .help("Reveal in Finder")
+                .frame(width: approvalPromptRoleWidth, alignment: .leading)
 
                 Text(content.requesterName)
                     .font(.title3.weight(.semibold))
-                Spacer(minLength: 0)
+                    .lineLimit(2)
+                    .frame(width: approvalPromptToolWidth, alignment: .leading)
+                    .help(content.requesterName)
+                ApprovalPromptPathView(path: escapedSecurityPath(content.requesterIconPath))
                 ApprovalPromptInfoButton(
                     title: "Request details",
                     details: details.isEmpty ? "No additional request details." : details
@@ -7694,7 +7713,8 @@ private struct ApprovalPromptHeaderView: View {
                         .frame(width: approvalPromptRoleWidth, alignment: .leading)
                     Text(launcher.name)
                         .font(.system(.headline, design: .monospaced))
-                    Spacer(minLength: 0)
+                        .frame(width: approvalPromptToolWidth, alignment: .leading)
+                    ApprovalPromptPathView(path: escapedSecurityPath(launcher.path))
                 }
             }
         }
@@ -7742,7 +7762,8 @@ private struct ApprovalPromptProcessNodeView: View {
                 .font(.system(.headline, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: 0)
+                .frame(width: approvalPromptToolWidth, alignment: .leading)
+            ApprovalPromptPathView(path: escapedSecurityPath(node.path))
             if node.posture != .meetsRequirements {
                 Image(systemName: presentation.image)
                     .font(.body)
@@ -7765,7 +7786,6 @@ private struct ApprovalPromptRequestView: View {
     var body: some View {
         VStack(spacing: 14) {
             ApprovalPromptHeaderView(content: content)
-            Divider()
             VStack(spacing: 0) {
                 ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
                 ApprovalPromptCommandView(content: content)
@@ -8056,17 +8076,16 @@ private struct ApprovalPromptCommandView: View {
                     .font(.system(.headline, design: .monospaced))
                     .lineLimit(2)
                     .truncationMode(.middle)
+                    .frame(width: approvalPromptToolWidth, alignment: .leading)
                     .help(content.command)
-                Spacer(minLength: 0)
+                ApprovalPromptPathView(path: content.commandPath)
                 ApprovalPromptInfoButton(title: "Target details", details: details)
                     .foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 5) {
-                ApprovalPromptInlineMeta(label: "Path", value: content.commandPath)
                 ApprovalPromptInlineMeta(label: "Working Directory", value: content.cwd)
                 ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys)
             }
-            .padding(.leading, approvalPromptNameInset)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -8077,11 +8096,13 @@ private struct ApprovalPromptInlineMeta: View {
     let value: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: approvalPromptColumnSpacing) {
+            Color.clear
+                .frame(width: approvalPromptRoleWidth, height: 1)
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .frame(width: 112, alignment: .leading)
+                .frame(width: approvalPromptToolWidth, alignment: .leading)
             Text(value.isEmpty ? "(none)" : value)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
