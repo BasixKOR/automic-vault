@@ -7430,7 +7430,11 @@ private func prettyShellCommand(target: String, args: [String]) -> String {
 
 private func approvalPromptCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
     let parts = authorizationCommandParts(request, scriptPath: scriptPath)
-    return ([parts.tool] + parts.arguments).map(shellQuote).joined(separator: " ")
+    let resolvedScript = scriptPath ?? resolvedShebangScriptPath(request)
+    let invokedScript = resolvedScript.flatMap { path in
+        request.args.first { !$0.hasPrefix("/") && standardizedPath($0, cwd: request.cwd) == path }
+    }
+    return ([invokedScript ?? parts.tool] + parts.arguments).map(shellQuote).joined(separator: " ")
 }
 
 private func shellQuote(_ word: String) -> String {
@@ -7876,10 +7880,6 @@ private struct ApprovalPromptView: View {
                     ApprovalPromptRequestView(content: content)
                         .layoutPriority(-1)
 
-                    if let blessing = content.blessing {
-                        ApprovalPromptBlessingView(context: blessing)
-                    }
-
                     if content.title?.isEmpty == false || content.detail?.isEmpty == false {
                         VStack(alignment: .leading, spacing: 5) {
                             if let title = content.title, !title.isEmpty {
@@ -8047,7 +8047,6 @@ private struct ApprovalPromptView: View {
 
 private struct ApprovalPromptBlessingView: View {
     let context: BlessedScriptPromptContext
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -8072,13 +8071,7 @@ private struct ApprovalPromptBlessingView: View {
                     .multilineTextAlignment(.trailing)
             }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.green.opacity(colorScheme == .light ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.green.opacity(0.25), lineWidth: 1)
-        }
     }
 }
 
@@ -8121,6 +8114,9 @@ private struct ApprovalPromptCommandView: View {
                         value: content.commandPath,
                         systemImage: "terminal"
                     )
+                }
+                if let blessing = content.blessing {
+                    ApprovalPromptBlessingView(context: blessing)
                 }
             }
             .padding(18)
@@ -10392,6 +10388,21 @@ private func runMenuStatusSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let relativeScriptRequest = ApprovalRequest(
+        op: "inject",
+        keys: [],
+        target: "/bin/bash",
+        args: ["./scripts/publish.sh"],
+        cwd: "/Users/mxcl/src/av",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: "/Users/mxcl/src/av/scripts/publish.sh",
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
     let rawCredential = ["ghp", String(repeating: "a", count: 24)].joined(separator: "_")
     let sensitiveRequest = ApprovalRequest(
         op: "inject",
@@ -10564,6 +10575,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
           autoApprovalToolName(request) == "aws",
           approvalCommandPath(request) == "/usr/local/bin/aws",
           approvalCommandPath(envWrapperRequest) == "/usr/local/bin/pulumi",
+          approvalPromptCommand(relativeScriptRequest) == "./scripts/publish.sh",
           exactAuthorizationCommand(envWrapperRequest) == """
           pulumi \\
             stack \\
