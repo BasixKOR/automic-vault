@@ -2,6 +2,8 @@ import AppKit
 import ApprovalCore
 import Foundation
 import LocalAuthentication
+import MenubarHelperCore
+import Security
 
 let phoneApprovalEnabledDefaultsKey = "phoneApprovalEnabled"
 private let phoneApprovalMacIDDefaultsKey = "phoneApprovalMacID"
@@ -16,6 +18,63 @@ enum PhoneApprovalResult: Sendable {
     case denied
     case temporaryWriteAccess
     case canceled
+}
+
+enum TouchIDApprovalError: LocalizedError {
+    case unavailable
+    case authenticationFailed
+    case storage(OSStatus)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            "Touch ID is unavailable or not enrolled on this Mac."
+        case .authenticationFailed:
+            "Touch ID authentication was canceled or failed."
+        case .storage(let status):
+            "Could not update Touch ID Approval: \(SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)")"
+        }
+    }
+}
+
+@MainActor
+enum TouchIDApproval {
+    static var isEnabled: Bool { touchIDApprovalIsEnabled() }
+
+    static var isAvailable: Bool {
+        let context = LAContext()
+        var error: NSError?
+        return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+            && context.biometryType == .touchID
+    }
+
+    static func authenticate(reason: String) async -> Bool {
+        let context = LAContext()
+        context.touchIDAuthenticationAllowableReuseDuration = 0
+        context.localizedFallbackTitle = ""
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
+              context.biometryType == .touchID
+        else { return false }
+        return (try? await context.evaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics,
+            localizedReason: reason
+        )) == true
+    }
+
+    static func enable() async throws {
+        guard isAvailable else { throw TouchIDApprovalError.unavailable }
+        guard await authenticate(reason: "Enable Touch ID Approval on this Mac") else {
+            throw TouchIDApprovalError.authenticationFailed
+        }
+        let status = setTouchIDApprovalEnabled(true)
+        guard status == errSecSuccess else { throw TouchIDApprovalError.storage(status) }
+    }
+
+    static func disable() throws {
+        let status = setTouchIDApprovalEnabled(false)
+        guard status == errSecSuccess else { throw TouchIDApprovalError.storage(status) }
+    }
 }
 
 enum PhoneApprovalSetupError: LocalizedError {
@@ -274,7 +333,7 @@ final class PhoneApprovalCoordinator {
     }
 
     func requestDisable(completion: @escaping (Bool) -> Void) {
-        approveAuthorityChange(
+        requestAuthorityChangeApproval(
             title: "Disable iPhone Approval",
             detail: "Future human Approvals will return to this Mac. Existing requests will be canceled."
         ) { [weak self] approved in
@@ -330,4 +389,31 @@ final class PhoneApprovalCoordinator {
             items.forEach { $0.completion(.canceled) }
         }
     }
+}
+
+@MainActor
+func requestAuthorityChangeApproval(
+    title: String,
+    detail: String,
+    completion: @escaping (Bool) -> Void
+) {
+    if TouchIDApproval.isEnabled {
+        if TouchIDApproval.isAvailable {
+            Task {
+                completion(await TouchIDApproval.authenticate(
+                    reason: "Approve this Automic Vault authority change"
+                ))
+            }
+            return
+        }
+        guard PhoneApprovalCoordinator.shared.isEnabled else {
+            completion(false)
+            return
+        }
+    }
+    PhoneApprovalCoordinator.shared.approveAuthorityChange(
+        title: title,
+        detail: detail,
+        completion: completion
+    )
 }

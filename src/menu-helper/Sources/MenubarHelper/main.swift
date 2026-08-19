@@ -3451,11 +3451,15 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
         let usesIPhoneApproval = phoneApprovalIsEnabled()
+        let usesTouchIDApproval = touchIDApprovalIsEnabled()
+        let requiresFreshHumanApproval = requiresFreshApproval
+            || usesIPhoneApproval
+            || usesTouchIDApproval
         RunLoop.main.perform(inModes: [.modalPanel, .default]) {
             MainActor.assumeIsolated {
                 guard !cancellation.isCanceled,
                       let event = approvalEvent(
-                          for: requiresFreshApproval || usesIPhoneApproval
+                          for: requiresFreshHumanApproval
                               ? nil
                               : self.transientApprovals.decision(for: transientApproval),
                           humanApprovalAvailable: self.canRequestHumanApproval()
@@ -3471,7 +3475,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            let cachedDecision = requiresFreshApproval || usesIPhoneApproval
+            let cachedDecision = requiresFreshHumanApproval
                 ? nil
                 : self.transientApprovals.decision(for: transientApproval)
             if let decision = cachedDecision {
@@ -3566,7 +3570,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             guard decision != .denied else {
-                if !requiresFreshApproval && !usesIPhoneApproval {
+                if !requiresFreshHumanApproval {
                     self.transientApprovals.remember(.denied, for: transientApproval)
                 }
                 _ = self.onAccessRequest(accessRequestRecord(
@@ -3716,7 +3720,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 {
                     self.registerBlessedExecution(script, pid: pid, identity: identity)
                 }
-                if !requiresFreshApproval && !usesIPhoneApproval {
+                if !requiresFreshHumanApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
                 self.recordLiveSecretUse(
@@ -7241,7 +7245,9 @@ private func showApprovalAlert(
         )
     )
     let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
+    let usesTouchIDApproval = TouchIDApproval.isEnabled
     var decision = ApprovalDecision.canceled
+    var hasDecision = false
     var remoteRequestID: UUID?
     var completedBeforeModal = false
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
@@ -7253,7 +7259,10 @@ private func showApprovalAlert(
             allowsPersistentApproval: allowsPersistentApproval,
             temporaryGrantCandidate: temporaryGrantCandidate,
             usesIPhoneApproval: usesIPhoneApproval,
+            usesTouchIDApproval: usesTouchIDApproval,
             decide: {
+                guard !hasDecision else { return }
+                hasDecision = true
                 decision = $0
                 if usesIPhoneApproval, let remoteRequestID {
                     PhoneApprovalCoordinator.shared.cancel(remoteRequestID)
@@ -7305,6 +7314,8 @@ private func showApprovalAlert(
             )
             remoteRequestID = phoneRequest.id
             try PhoneApprovalCoordinator.shared.submit(phoneRequest) { result in
+                guard !hasDecision else { return }
+                hasDecision = true
                 decision = switch result {
                 case .approved: .approved
                 case .denied: .denied
@@ -7641,9 +7652,11 @@ private struct ApprovalPromptView: View {
     var allowsPersistentApproval = false
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
     var usesIPhoneApproval = false
+    var usesTouchIDApproval = false
     let decide: (ApprovalDecision) -> Void
     let contentSizeDidChange: () -> Void
     @State private var showsDetails = false
+    @State private var isAuthenticatingWithTouchID = false
 
     var body: some View {
         VStack(spacing: 18) {
@@ -7744,6 +7757,33 @@ private struct ApprovalPromptView: View {
             if usesIPhoneApproval {
                 Label("Waiting for iPhone Approval", systemImage: "iphone.and.arrow.forward")
                     .font(.headline)
+            }
+
+            if usesTouchIDApproval {
+                HStack(spacing: 12) {
+                    Button(usesIPhoneApproval ? "Cancel Request" : "Deny", role: .cancel) {
+                        decide(usesIPhoneApproval ? .canceled : .denied)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .keyboardShortcut(.cancelAction)
+                    Button {
+                        authenticateWithTouchID()
+                    } label: {
+                        Label(
+                            isAuthenticatingWithTouchID ? "Waiting for Touch ID…" : "Approve with Touch ID",
+                            systemImage: "touchid"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.blue)
+                    .frame(maxWidth: .infinity)
+                    .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
+                }
+            } else if usesIPhoneApproval {
                 Button("Cancel Request", role: .cancel) { decide(.canceled) }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -7795,12 +7835,16 @@ private struct ApprovalPromptView: View {
                 }
             }
 
-            Text(usesIPhoneApproval
-                ? "This Mac cannot approve while iPhone Approval is enabled."
-                : approvalPromptFooter(
+            Text(usesTouchIDApproval
+                ? (usesIPhoneApproval
+                    ? "Approve on iPhone or with fresh Touch ID on this Mac."
+                    : "Fresh Touch ID is required for every Approval on this Mac.")
+                : (usesIPhoneApproval
+                    ? "This Mac cannot approve while iPhone Approval is enabled."
+                    : approvalPromptFooter(
                     supportsAutomicAuthorization: content.supportsAutomicAuthorization,
                     allowsPersistentApproval: allowsPersistentApproval
-                ))
+                )))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -7834,6 +7878,17 @@ private struct ApprovalPromptView: View {
                 .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    private func authenticateWithTouchID() {
+        isAuthenticatingWithTouchID = true
+        Task {
+            let approved = await TouchIDApproval.authenticate(
+                reason: "Approve this exact Automic Vault request"
+            )
+            isAuthenticatingWithTouchID = false
+            if approved { decide(.approved) }
+        }
     }
 }
 

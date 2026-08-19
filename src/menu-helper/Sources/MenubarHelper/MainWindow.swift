@@ -268,6 +268,14 @@ final class DashboardModel: ObservableObject {
         case .settings:
             [
                 DashboardItem(
+                    id: "touch-id-approval",
+                    title: "Touch ID Approval",
+                    subtitle: TouchIDApproval.isEnabled
+                        ? "Approve on this Mac with Touch ID"
+                        : "Require biometrics for Mac Approval",
+                    detail: "Add an explicit biometric-only Approval surface on this Mac."
+                ),
+                DashboardItem(
                     id: "iphone-approval",
                     title: "iPhone Approval",
                     subtitle: PhoneApprovalCoordinator.shared.isEnabled
@@ -961,7 +969,7 @@ final class DashboardModel: ObservableObject {
         detail: String,
         perform: @escaping () -> Void
     ) {
-        PhoneApprovalCoordinator.shared.approveAuthorityChange(title: title, detail: detail) {
+        requestAuthorityChangeApproval(title: title, detail: detail) {
             if $0 { perform() }
         }
     }
@@ -1761,7 +1769,13 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .settings {
-                if model.selectedItem?.id == "iphone-approval" {
+                if model.selectedItem?.id == "touch-id-approval" {
+                    TouchIDApprovalSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "iphone-approval" {
                     IPhoneApprovalSettingsView()
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
@@ -3282,7 +3296,9 @@ private struct IPhoneApprovalSettingsView: View {
                 Text("iPhone Approval")
                     .font(.system(size: 24, weight: .semibold))
                 Text(enabled
-                    ? "Every human Approval for this Mac must come from an eligible iPhone."
+                    ? (TouchIDApproval.isEnabled
+                        ? "Human Approval may come from an eligible iPhone or Touch ID on this Mac."
+                        : "Every human Approval for this Mac must come from an eligible iPhone.")
                     : "Keep agents with computer-use access away from their own Approval controls.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
@@ -3298,7 +3314,7 @@ private struct IPhoneApprovalSettingsView: View {
             )
 
             if enabled {
-                Button("Disable on iPhone") {
+                Button("Disable iPhone Approval") {
                     isWorking = true
                     status = "Waiting for Approval on iPhone…"
                     PhoneApprovalCoordinator.shared.requestDisable { approved in
@@ -3318,7 +3334,9 @@ private struct IPhoneApprovalSettingsView: View {
                     Task {
                         do {
                             try await PhoneApprovalCoordinator.shared.enable()
-                            status = "Enabled. This Mac no longer exposes an allow action."
+                            status = TouchIDApproval.isEnabled
+                                ? "Enabled. Approve on iPhone or with Touch ID on this Mac."
+                                : "Enabled. This Mac no longer exposes an allow action."
                         } catch {
                             status = error.localizedDescription
                         }
@@ -3357,6 +3375,78 @@ private struct IPhoneApprovalSettingsView: View {
                 : "\(registration.count) iPhone registration\(registration.count == 1 ? "" : "s") available."
         } catch {
             status = error.localizedDescription
+        }
+    }
+}
+
+private struct TouchIDApprovalSettingsView: View {
+    @State private var enabled = TouchIDApproval.isEnabled
+    @State private var status = TouchIDApproval.isAvailable
+        ? "Touch ID is available on this Mac."
+        : "Touch ID is unavailable or not enrolled on this Mac."
+    @State private var isWorking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Touch ID Approval")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Approve an exact request on this Mac without exposing an agent-drivable allow button.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Label(enabled ? "Enabled" : "Disabled", systemImage: "touchid")
+                .foregroundStyle(enabled ? .green : .secondary)
+            Text(status).font(.caption).foregroundStyle(.secondary)
+
+            InfoBlock(
+                title: "Explicit local authority",
+                text: "Touch ID Approval works independently of relay availability and may coexist with iPhone Approval. It never accepts a password, Apple Watch, pointer, or keyboard action."
+            )
+
+            if enabled {
+                Button("Disable Touch ID Approval") {
+                    do {
+                        try TouchIDApproval.disable()
+                        enabled = false
+                        status = "Disabled. This Mac no longer accepts Touch ID Approval."
+                    } catch {
+                        status = error.localizedDescription
+                    }
+                }
+                .disabled(isWorking)
+            } else {
+                Button("Enable Touch ID Approval") {
+                    isWorking = true
+                    status = PhoneApprovalCoordinator.shared.isEnabled
+                        ? "Waiting for Approval on iPhone…"
+                        : "Waiting for Touch ID…"
+                    requestAuthorityChangeApproval(
+                        title: "Enable Touch ID Approval",
+                        detail: "Add biometric-only Approval as a human-presence surface on this Mac."
+                    ) { approved in
+                        guard approved else {
+                            status = "Enable was denied or canceled."
+                            isWorking = false
+                            return
+                        }
+                        Task {
+                            do {
+                                status = "Waiting for Touch ID…"
+                                try await TouchIDApproval.enable()
+                                enabled = true
+                                status = "Enabled. Each Mac Approval now requires fresh Touch ID."
+                            } catch {
+                                status = error.localizedDescription
+                            }
+                            isWorking = false
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isWorking || !TouchIDApproval.isAvailable)
+            }
         }
     }
 }
@@ -3410,7 +3500,7 @@ private struct DetachedProcessAccessSettingsView: View {
                             keepsLauncherAccess = false
                             return
                         }
-                        PhoneApprovalCoordinator.shared.approveAuthorityChange(
+                        requestAuthorityChangeApproval(
                             title: "Keep Launcher Access for Detached Processes",
                             detail: "A live process may retain Launcher authority after its verified parent chain exits."
                         ) { approved in
