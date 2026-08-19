@@ -7197,7 +7197,7 @@ private final class ApprovalPanelDragView: NSView {
     }
 }
 
-private struct ApprovalPanelDragHandle: NSViewRepresentable {
+private struct ApprovalPanelDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> ApprovalPanelDragView { ApprovalPanelDragView() }
     func updateNSView(_ nsView: ApprovalPanelDragView, context: Context) {}
 }
@@ -7680,12 +7680,9 @@ private struct ApprovalPromptHeaderView: View {
                         Text(launcher.name)
                             .font(.system(.callout, design: .monospaced))
                             .foregroundStyle(.secondary)
-                        Label("Verified Launcher", systemImage: "checkmark.shield.fill")
+                        Text("Verified Launcher")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.green.opacity(0.1), in: Capsule())
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -7712,39 +7709,39 @@ private struct ApprovalPromptProcessSecurityView: View {
     let processSecurity: ApprovalProcessSecurity
 
     var body: some View {
+        let nodes = processSecurity.middleNodes
         VStack(alignment: .leading, spacing: 8) {
-            if processSecurity.middleNodes.isEmpty {
+            if nodes.isEmpty {
                 Image(systemName: "arrow.down")
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
             } else {
-                Image(systemName: "arrow.down")
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 124)
-                    .accessibilityHidden(true)
-
                 ScrollView(.horizontal) {
-                    HStack(spacing: 10) {
-                        ForEach(Array(processSecurity.middleNodes.enumerated()), id: \.element.id) { index, node in
+                    HStack(spacing: 8) {
+                        ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
                             if index > 0 {
                                 Image(systemName: "arrow.right")
                                     .foregroundStyle(.tertiary)
                                     .accessibilityHidden(true)
                             }
-                            ApprovalPromptProcessNodeView(node: node)
-                                .frame(width: 248)
+                            VStack(spacing: 6) {
+                                if index == 0 {
+                                    Image(systemName: "arrow.down")
+                                        .foregroundStyle(.tertiary)
+                                        .accessibilityHidden(true)
+                                }
+                                ApprovalPromptProcessNodeView(node: node)
+                                if index == nodes.count - 1 {
+                                    Image(systemName: "arrow.down")
+                                        .foregroundStyle(.tertiary)
+                                        .accessibilityHidden(true)
+                                }
+                            }
                         }
                     }
                 }
                 .scrollIndicators(.visible)
-
-                Image(systemName: "arrow.down")
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 124)
-                    .accessibilityHidden(true)
             }
         }
         .accessibilityElement(children: .contain)
@@ -7761,7 +7758,7 @@ private struct ApprovalPromptProcessNodeView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(node.displayRoles)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(presentation.color)
+                    .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
                 Text(node.name.isEmpty ? node.path : node.name)
                     .font(.title3.weight(.semibold))
@@ -7769,22 +7766,16 @@ private struct ApprovalPromptProcessNodeView: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            Image(systemName: presentation.image)
-                .font(.body)
-                .foregroundStyle(presentation.color)
-                .accessibilityHidden(true)
+            if node.posture != .meetsRequirements {
+                Image(systemName: presentation.image)
+                    .font(.body)
+                    .foregroundStyle(presentation.color)
+                    .accessibilityHidden(true)
+            }
             ApprovalPromptInfoButton(title: "\(node.name) process details", details: node.details)
+                .foregroundStyle(.secondary)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .background(
-            presentation.color.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(presentation.color.opacity(0.35), lineWidth: 1)
-        }
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
     }
@@ -7973,15 +7964,17 @@ private struct ApprovalPromptView: View {
                 .stroke(.white.opacity(0.18), lineWidth: 1)
         }
         .overlay(alignment: .top) {
-            ApprovalPanelDragHandle()
-                .frame(width: 64, height: 20)
+            ApprovalPanelDragRegion()
+                .frame(maxWidth: .infinity)
+                .frame(height: 18)
                 .overlay {
-                    Capsule()
-                        .fill(.secondary.opacity(0.35))
-                        .frame(width: 36, height: 5)
+                    Text("AUTOMIC VAULT")
+                        .font(.caption2.weight(.semibold))
+                        .tracking(1.6)
+                        .foregroundStyle(.tertiary)
                         .allowsHitTesting(false)
                 }
-                .padding(.top, 4)
+                .padding(.top, 3)
                 .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -8791,8 +8784,8 @@ private func runApprovalSelfCheck() -> Int32 {
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
     let collapsedHeight = collapsedPrompt.fittingSize.height
-    func containsDragHandle(_ view: NSView) -> Bool {
-        view is ApprovalPanelDragView || view.subviews.contains(where: containsDragHandle)
+    func containsDragRegion(_ view: NSView) -> Bool {
+        view is ApprovalPanelDragView || view.subviews.contains(where: containsDragRegion)
     }
     let constrainedHeight = NSHostingView(
         rootView: ApprovalPromptView(
@@ -8835,7 +8828,7 @@ private func runApprovalSelfCheck() -> Int32 {
           cliRequester.iconPath == "/opt/homebrew/bin/gh",
           automaticApprovalExplanation.contains("ChatGPT contains signed app resources"),
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
-          containsDragHandle(collapsedPrompt),
+          containsDragRegion(collapsedPrompt),
           collapsedHeight > 0,
           constrainedHeight <= 500
     else {
