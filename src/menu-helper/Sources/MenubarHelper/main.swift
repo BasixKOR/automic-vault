@@ -7682,7 +7682,7 @@ private struct ApprovalPromptHeaderView: View {
                     .foregroundStyle(.purple)
                     .textCase(.uppercase)
             }
-            HStack(alignment: .center, spacing: approvalPromptColumnSpacing) {
+            HStack(alignment: .top, spacing: approvalPromptColumnSpacing) {
                 HStack(spacing: 14) {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([
@@ -7736,17 +7736,17 @@ private struct ApprovalPromptProcessSecurityView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Execution Chain")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                Spacer(minLength: 0)
                 ApprovalPromptInfoButton(
                     title: "Execution chain details",
                     details: details.isEmpty ? "No process details available." : details
                 )
                 .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
@@ -7917,7 +7917,7 @@ private struct ApprovalPromptView: View {
             .layoutPriority(1)
 
             if usesIPhoneApproval {
-                VStack(spacing: 6) {
+                VStack(spacing: 10) {
                     HStack(spacing: 10) {
                         Image(systemName: "iphone")
                             .symbolRenderingMode(.hierarchical)
@@ -8031,7 +8031,7 @@ private struct ApprovalPromptView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 18)
                 .overlay {
-                    Text("AUTOMIC VAULT")
+                    Text("AUTHORIZATION REQUEST")
                         .font(.caption2.weight(.semibold))
                         .tracking(1.6)
                         .foregroundStyle(.tertiary)
@@ -8108,20 +8108,12 @@ private struct ApprovalPromptCommandView: View {
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text(content.command)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 300, alignment: .leading)
-                        .help(content.command)
-                    Text("#  →  \(content.commandPath)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
+                Text(content.command)
+                    .font(.system(.title3, design: .monospaced).weight(.semibold))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(content.command)
                 VStack(alignment: .leading, spacing: 8) {
                     ApprovalPromptInlineMeta(
                         label: "Working Directory",
@@ -8132,6 +8124,11 @@ private struct ApprovalPromptCommandView: View {
                         label: "Secret Names",
                         value: content.keys,
                         systemImage: "key"
+                    )
+                    ApprovalPromptInlineMeta(
+                        label: "Full Path",
+                        value: content.commandPath,
+                        systemImage: "terminal"
                     )
                 }
             }
