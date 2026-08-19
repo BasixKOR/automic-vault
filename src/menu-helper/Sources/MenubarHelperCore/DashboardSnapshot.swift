@@ -1567,6 +1567,7 @@ public enum ProjectDirectoryValidationError: Error, LocalizedError, Equatable {
     case notCanonical(String)
     case filesystemIdentityUnavailable
     case filesystemRoot
+    case filesystemCycle
 
     public var errorDescription: String? {
         switch self {
@@ -1576,6 +1577,7 @@ public enum ProjectDirectoryValidationError: Error, LocalizedError, Equatable {
         case .notCanonical(let path): "project directory must be canonical: \(path)"
         case .filesystemIdentityUnavailable: "project directory filesystem is unavailable"
         case .filesystemRoot: "project directory cannot be a filesystem root"
+        case .filesystemCycle: "project directory ancestry contains a filesystem cycle"
         }
     }
 }
@@ -1625,23 +1627,34 @@ public func canonicalProjectDirectory(_ path: String) throws -> String {
     return directory.path
 }
 
-public func physicalDirectoryAncestors(_ path: String) throws -> [String] {
-    let start = try canonicalDirectory(path)
+func physicalDirectoryAncestors(
+    _ path: String,
+    canonicalize: (String) throws -> (path: String, device: UInt64)
+) throws -> [String] {
+    let start = try canonicalize(path)
     guard start.path == path else {
         throw ProjectDirectoryValidationError.notCanonical(start.path)
     }
     var result = [start.path]
+    var seen = Set(result)
     var current = start.path
     while true {
         let parent = URL(fileURLWithPath: current, isDirectory: true)
             .deletingLastPathComponent().path
         guard parent != current else { break }
-        let parentDirectory = try canonicalDirectory(parent)
+        let parentDirectory = try canonicalize(parent)
         guard parentDirectory.device == start.device else { break }
+        guard seen.insert(parentDirectory.path).inserted else {
+            throw ProjectDirectoryValidationError.filesystemCycle
+        }
         result.append(parentDirectory.path)
         current = parentDirectory.path
     }
     return result
+}
+
+public func physicalDirectoryAncestors(_ path: String) throws -> [String] {
+    try physicalDirectoryAncestors(path, canonicalize: canonicalDirectory)
 }
 
 public enum StoredSecretSelectionError: Error, LocalizedError, Equatable {
