@@ -7273,7 +7273,10 @@ private func showApprovalAlert(
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
         cwd: escapedSecurityPath(request.cwd),
-        keys: request.keys.joined(separator: ", "),
+        keys: approvalPromptSecretNames(
+            requested: request.keys,
+            blessed: blessing?.script.keys ?? []
+        ),
         blessing: blessing,
         processSecurity: processSecurity,
         sections: approvalPromptSections(
@@ -8045,41 +8048,15 @@ private struct ApprovalPromptView: View {
     }
 }
 
-private struct ApprovalPromptBlessingView: View {
-    let context: BlessedScriptPromptContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Label("Blessed script authority", systemImage: "checkmark.seal.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
-                Spacer(minLength: 0)
-                Text(context.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            LabeledContent("Secrets (\(context.script.keys.count))") {
-                Text(context.script.keys.isEmpty ? "(none)" : context.script.keys.joined(separator: ", "))
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-            }
-            LabeledContent("Capabilities (\(context.script.capabilities.count))") {
-                Text(approvalPromptCapabilitySummary(context.script))
-                    .multilineTextAlignment(.trailing)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String {
     let summary = script.capabilities.sorted(by: { $0.key < $1.key })
         .map { "\($0.key): \($0.value.title)" }
         .joined(separator: " • ")
     return summary.isEmpty ? "(none)" : summary
+}
+
+private func approvalPromptSecretNames(requested: [String], blessed: [String]) -> String {
+    Set(requested + blessed).sorted().joined(separator: ", ")
 }
 
 private struct ApprovalPromptCommandView: View {
@@ -8098,6 +8075,19 @@ private struct ApprovalPromptCommandView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(content.command)
+                if let blessing = content.blessing {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Label("Blessed script authority", systemImage: "checkmark.seal.fill")
+                            .font(.headline)
+                            .foregroundStyle(.green)
+                        Spacer(minLength: 0)
+                        Text(blessing.explanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     ApprovalPromptInlineMeta(
                         label: "Secret Names",
@@ -8114,9 +8104,13 @@ private struct ApprovalPromptCommandView: View {
                         value: content.commandPath,
                         systemImage: "terminal"
                     )
-                }
-                if let blessing = content.blessing {
-                    ApprovalPromptBlessingView(context: blessing)
+                    if let blessing = content.blessing {
+                        ApprovalPromptInlineMeta(
+                            label: "Capabilities",
+                            value: approvalPromptCapabilitySummary(blessing.script),
+                            systemImage: "checkmark.seal"
+                        )
+                    }
                 }
             }
             .padding(18)
@@ -8876,6 +8870,10 @@ private func runApprovalSelfCheck() -> Int32 {
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
+          approvalPromptSecretNames(
+              requested: ["PUBLISH_TOKEN", "AWS_ACCESS_KEY_ID"],
+              blessed: ["PUBLISH_TOKEN", "AWS_SECRET_ACCESS_KEY"]
+          ) == "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, PUBLISH_TOKEN",
           requester.name == "Vaultty",
           requester.iconPath == "/Applications/Vaultty.app",
           unverifiedRequester.name == "vaultty-sessiond",
