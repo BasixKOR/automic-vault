@@ -1892,6 +1892,14 @@ private enum ApprovalDecision: Equatable {
     case temporaryWriteAccess
 }
 
+private func terminalApprovalDecision(
+    _ decision: ApprovalDecision,
+    cancellation: ApprovalCancellation?
+) -> ApprovalDecision {
+    guard cancellation?.isCanceled != true else { return .canceled }
+    return decision == .canceled ? .denied : decision
+}
+
 private func canceledAccessRequestRecord(
     request: ApprovalRequest,
     callerPath: String,
@@ -6797,7 +6805,7 @@ private func showApprovalAlert(
     panel.orderFrontRegardless()
     NSApp.runModal(for: panel)
     panel.orderOut(nil)
-    return cancellation?.isCanceled == true ? .canceled : decision
+    return terminalApprovalDecision(decision, cancellation: cancellation)
 }
 
 private func approvalPromptRequester(
@@ -7825,7 +7833,12 @@ private func runApprovalSelfCheck() -> Int32 {
           !cancellation.isCanceled
     else { return 1 }
     cancellation.cancel()
-    guard cancellation.isCanceled, !cancellation.observe({}) else { return 1 }
+    guard cancellation.isCanceled,
+          !cancellation.observe({}),
+          terminalApprovalDecision(.canceled, cancellation: nil) == .denied,
+          terminalApprovalDecision(.canceled, cancellation: cancellation) == .canceled,
+          terminalApprovalDecision(.approved, cancellation: nil) == .approved
+    else { return 1 }
 
     let requester = approvalPromptRequester(
         launcher: LauncherIdentity(
