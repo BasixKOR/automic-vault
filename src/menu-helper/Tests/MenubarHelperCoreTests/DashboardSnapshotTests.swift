@@ -833,6 +833,21 @@ func protectionPolicyMatrix(
     #expect(keychainAccessibility(account: "API_TOKEN", service: service) == kSecAttrAccessibleWhenUnlocked as String)
 }
 
+@Test func touchIDApprovalOptInPersistsAndInvalidDataFailsClosed() {
+    guard dataProtectionKeychainAvailable() else { return }
+    let service = "com.automicvault.tests.touch-id.\(UUID().uuidString)"
+    let account = "TouchIDApproval"
+    defer { _ = setTouchIDApprovalEnabled(false, service: service, account: account) }
+
+    #expect(!touchIDApprovalIsEnabled(service: service, account: account))
+    #expect(setTouchIDApprovalEnabled(true, service: service, account: account) == errSecSuccess)
+    #expect(touchIDApprovalIsEnabled(service: service, account: account))
+    #expect(saveKeychainData(Data([0]), service: service, account: account) == errSecSuccess)
+    #expect(!touchIDApprovalIsEnabled(service: service, account: account))
+    #expect(setTouchIDApprovalEnabled(false, service: service, account: account) == errSecSuccess)
+    #expect(!touchIDApprovalIsEnabled(service: service, account: account))
+}
+
 @Test func conditionalSecretSaveNeverReplacesDifferingValue() {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.conditional-save.\(UUID().uuidString)"

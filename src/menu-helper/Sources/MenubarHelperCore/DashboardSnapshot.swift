@@ -10,6 +10,8 @@ public let secretNameAccessKeychainService = "com.automicvault.secret-name-acces
 public let secretNameAccessKeychainAccount = "SecretNameAccessV1"
 public let directAccessKeychainService = "com.automicvault.direct-secret-access"
 public let directAccessKeychainAccount = "DirectAccessRulesV1"
+public let touchIDApprovalKeychainService = "com.automicvault.touch-id-approval"
+public let touchIDApprovalKeychainAccount = "TouchIDApprovalV1"
 public let accessRequestLogDefaultsKey = "AccessRequestLog"
 public let accessRequestLogKeychainService = "com.automicvault.access-log"
 private let secretMutationKeychainService = "com.automicvault.secret-mutations"
@@ -2133,6 +2135,40 @@ func loadKeychainDataResult(service: String, account: String) -> KeychainDataLoa
     if status == errSecItemNotFound { return .notFound }
     guard status == errSecSuccess, let data = result as? Data else { return .failure(status) }
     return .success(data)
+}
+
+public func touchIDApprovalIsEnabled(
+    service: String = touchIDApprovalKeychainService,
+    account: String = touchIDApprovalKeychainAccount
+) -> Bool {
+    guard case .success(let data) = loadKeychainDataResult(service: service, account: account)
+    else { return false }
+    return data == Data([1])
+}
+
+@discardableResult
+public func setTouchIDApprovalEnabled(
+    _ enabled: Bool,
+    service: String = touchIDApprovalKeychainService,
+    account: String = touchIDApprovalKeychainAccount
+) -> OSStatus {
+    if enabled {
+        return saveKeychainData(
+            Data([1]),
+            service: service,
+            account: account,
+            accessibility: .afterFirstUnlock
+        )
+    }
+    var query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecUseDataProtectionKeychain as String: true,
+    ]
+    addCanonicalAccessGroup(to: &query)
+    let status = SecItemDelete(query as CFDictionary)
+    return status == errSecItemNotFound ? errSecSuccess : status
 }
 
 @discardableResult
