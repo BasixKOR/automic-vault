@@ -1001,6 +1001,18 @@ func protectionPolicyMatrix(
     }
 }
 
+@Test func physicalDirectoryAncestorsRejectsCanonicalizationCycles() {
+    #expect(throws: ProjectDirectoryValidationError.filesystemCycle) {
+        try physicalDirectoryAncestors("/cycle/child") { path in
+            switch path {
+            case "/cycle/child": (path, 1)
+            case "/cycle": ("/cycle/child", 1)
+            default: (path, 1)
+            }
+        }
+    }
+}
+
 @Test func multiValueAvailabilityAndRenameCompleteAsForwardOperations() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.project-mutation.\(UUID().uuidString)"
