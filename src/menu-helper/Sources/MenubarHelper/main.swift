@@ -7324,7 +7324,7 @@ private func showApprovalAlert(
             let phoneRequest = try PhoneApprovalRequest(
                 macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
                 launcher: content.requesterName,
-                tool: content.credentialConsumer,
+                tool: autoApprovalToolName(request),
                 command: content.command,
                 cwd: content.cwd,
                 secretNames: request.keys.sorted(),
