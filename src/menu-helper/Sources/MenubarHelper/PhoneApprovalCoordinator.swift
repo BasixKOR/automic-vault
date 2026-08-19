@@ -49,17 +49,37 @@ enum TouchIDApproval {
     }
 
     static func authenticate(reason: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            authenticate(reason: reason) { approved in
+                continuation.resume(returning: approved)
+            }
+        }
+    }
+
+    static func authenticate(
+        reason: String,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = 0
         context.localizedFallbackTitle = ""
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
               context.biometryType == .touchID
-        else { return false }
-        return (try? await context.evaluatePolicy(
+        else {
+            completion(false)
+            return
+        }
+        context.evaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics,
             localizedReason: reason
-        )) == true
+        ) { approved, _ in
+            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+                MainActor.assumeIsolated {
+                    completion(approved)
+                }
+            }
+        }
     }
 
     static func enable() async throws {

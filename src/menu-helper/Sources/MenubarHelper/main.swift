@@ -7882,10 +7882,9 @@ private struct ApprovalPromptView: View {
 
     private func authenticateWithTouchID() {
         isAuthenticatingWithTouchID = true
-        Task {
-            let approved = await TouchIDApproval.authenticate(
-                reason: "Approve this exact Automic Vault request"
-            )
+        TouchIDApproval.authenticate(
+            reason: "Approve this exact Automic Vault request"
+        ) { approved in
             isAuthenticatingWithTouchID = false
             if approved { decide(.approved) }
         }
