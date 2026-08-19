@@ -7675,8 +7675,14 @@ private struct ApprovalPromptHeaderView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: approvalPromptColumnSpacing) {
+        let launcher = content.processSecurity.launcher
+        HStack(alignment: .top, spacing: approvalPromptColumnSpacing) {
+            Text(launcher == nil ? "" : "Verified Launcher")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .frame(width: approvalPromptRoleWidth, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6) {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([
                         URL(fileURLWithPath: content.requesterIconPath),
@@ -7691,32 +7697,17 @@ private struct ApprovalPromptHeaderView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Reveal \(content.requesterName) in Finder")
                 .help("Reveal in Finder")
-                .frame(width: approvalPromptRoleWidth, alignment: .leading)
-
                 Text(content.requesterName)
                     .font(.title3.weight(.semibold))
                     .lineLimit(2)
-                    .frame(width: approvalPromptToolWidth, alignment: .leading)
                     .help(content.requesterName)
-                ApprovalPromptPathView(path: escapedSecurityPath(content.requesterIconPath))
-                ApprovalPromptInfoButton(
-                    title: "Request details",
-                    details: details.isEmpty ? "No additional request details." : details
-                )
             }
-            if let launcher = content.processSecurity.launcher {
-                HStack(spacing: approvalPromptColumnSpacing) {
-                    Text("Verified Launcher")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .frame(width: approvalPromptRoleWidth, alignment: .leading)
-                    Text(launcher.name)
-                        .font(.system(.headline, design: .monospaced))
-                        .frame(width: approvalPromptToolWidth, alignment: .leading)
-                    ApprovalPromptPathView(path: escapedSecurityPath(launcher.path))
-                }
-            }
+            .frame(width: approvalPromptToolWidth, alignment: .leading)
+            ApprovalPromptPathView(path: escapedSecurityPath(launcher?.path ?? content.requesterIconPath))
+            ApprovalPromptInfoButton(
+                title: "Request details",
+                details: details.isEmpty ? "No additional request details." : details
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
