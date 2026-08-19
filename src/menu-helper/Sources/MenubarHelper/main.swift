@@ -4273,6 +4273,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 automaticApprovalExplanation: warning,
                 cancellation: cancellation
             )
+            if decision == .interrupted {
+                _ = self.onAccessRequest(interruptedAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                self.reply(peer, to: message, ok: false, error: "approval presentation interrupted")
+                return
+            }
             guard decision == .approved else {
                 let canceled = decision == .canceled
                 _ = self.onAccessRequest(accessRequestRecord(
@@ -4354,7 +4361,8 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .denied, .temporaryWriteAccess: ProxyDestinationDecision.deny
+                            case .canceled, .interrupted, .denied, .temporaryWriteAccess:
+                                ProxyDestinationDecision.deny
                             }
                         }
                     )
