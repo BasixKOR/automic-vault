@@ -7656,7 +7656,7 @@ private struct ApprovalPromptHeaderView: View {
     }
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([
                     URL(fileURLWithPath: content.requesterIconPath),
@@ -7665,16 +7665,16 @@ private struct ApprovalPromptHeaderView: View {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: content.requesterIconPath))
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Reveal \(content.requesterName) in Finder")
             .help("Reveal in Finder")
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(content.requesterName)
-                    .font(.title2.weight(.bold))
+                    .font(.title3.weight(.semibold))
                 HStack(spacing: 10) {
                     if let launcher = content.processSecurity.launcher {
                         Text(launcher.name)
@@ -7692,16 +7692,7 @@ private struct ApprovalPromptHeaderView: View {
                 details: details.isEmpty ? "No additional request details." : details
             )
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.45),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
     }
 }
 
@@ -7710,39 +7701,22 @@ private struct ApprovalPromptProcessSecurityView: View {
 
     var body: some View {
         let nodes = processSecurity.middleNodes
-        VStack(alignment: .leading, spacing: 8) {
-            if nodes.isEmpty {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(nodes) { node in
                 Image(systemName: "arrow.down")
                     .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
+                    .frame(width: 112, alignment: .trailing)
+                    .padding(.trailing, 12)
+                    .padding(.vertical, 3)
                     .accessibilityHidden(true)
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
-                            if index > 0 {
-                                Image(systemName: "arrow.right")
-                                    .foregroundStyle(.tertiary)
-                                    .accessibilityHidden(true)
-                            }
-                            VStack(spacing: 6) {
-                                if index == 0 {
-                                    Image(systemName: "arrow.down")
-                                        .foregroundStyle(.tertiary)
-                                        .accessibilityHidden(true)
-                                }
-                                ApprovalPromptProcessNodeView(node: node)
-                                if index == nodes.count - 1 {
-                                    Image(systemName: "arrow.down")
-                                        .foregroundStyle(.tertiary)
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                        }
-                    }
-                }
-                .scrollIndicators(.visible)
+                ApprovalPromptProcessNodeView(node: node)
             }
+            Image(systemName: "arrow.down")
+                .foregroundStyle(.tertiary)
+                .frame(width: 112, alignment: .trailing)
+                .padding(.trailing, 12)
+                .padding(.vertical, 3)
+                .accessibilityHidden(true)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Process path from Verified Launcher to Target")
@@ -7755,16 +7729,15 @@ private struct ApprovalPromptProcessNodeView: View {
     var body: some View {
         let presentation = node.posture.presentation
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(node.displayRoles)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-                Text(node.name.isEmpty ? node.path : node.name)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            Text(node.displayRoles)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .frame(width: 112, alignment: .leading)
+            Text(node.name.isEmpty ? node.path : node.name)
+                .font(.system(.headline, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
             if node.posture != .meetsRequirements {
                 Image(systemName: presentation.image)
@@ -7775,9 +7748,34 @@ private struct ApprovalPromptProcessNodeView: View {
             ApprovalPromptInfoButton(title: "\(node.name) process details", details: node.details)
                 .foregroundStyle(.secondary)
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
+    }
+}
+
+private struct ApprovalPromptRequestView: View {
+    let content: ApprovalPromptContent
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ApprovalPromptHeaderView(content: content)
+            Divider()
+            VStack(spacing: 0) {
+                ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
+                ApprovalPromptCommandView(content: content)
+            }
+        }
+        .padding(18)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.45),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
     }
 }
 
@@ -7833,9 +7831,7 @@ private struct ApprovalPromptView: View {
         VStack(spacing: 18) {
             ScrollView {
                 VStack(spacing: 16) {
-                    ApprovalPromptHeaderView(content: content)
-                    ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
-                    ApprovalPromptCommandView(content: content)
+                    ApprovalPromptRequestView(content: content)
                         .layoutPriority(-1)
 
                     if let blessing = content.blessing {
@@ -8045,41 +8041,30 @@ private struct ApprovalPromptCommandView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 Text("Target")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
                     .textCase(.uppercase)
+                    .frame(width: 112, alignment: .leading)
+                Text(content.command)
+                    .font(.system(.headline, design: .monospaced))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .help(content.command)
                 Spacer(minLength: 0)
                 ApprovalPromptInfoButton(title: "Target details", details: details)
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(.secondary)
             }
-            ScrollView(.horizontal) {
-                Text(content.command)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: true)
+            VStack(alignment: .leading, spacing: 5) {
+                ApprovalPromptInlineMeta(label: "Path", value: content.commandPath)
+                ApprovalPromptInlineMeta(label: "Working Directory", value: content.cwd)
+                ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys)
             }
-            .scrollIndicators(.visible)
-            .scrollIndicatorsFlash(onAppear: true)
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ApprovalPromptInlineMeta(label: "path", value: content.commandPath)
-                    ApprovalPromptInlineMeta(label: "cwd", value: content.cwd)
-                    ApprovalPromptInlineMeta(label: "keys", value: content.keys)
-                }
-            }
-            .scrollIndicators(.hidden)
+            .padding(.leading, 124)
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
     }
 }
 
@@ -8091,17 +8076,17 @@ private struct ApprovalPromptInlineMeta: View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(label)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.tertiary)
+                .frame(width: 112, alignment: .leading)
             Text(value.isEmpty ? "(none)" : value)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .textSelection(.enabled)
+                .help(value.isEmpty ? "(none)" : value)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
