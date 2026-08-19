@@ -8001,15 +8001,6 @@ private struct ApprovalPromptView: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(18)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.35),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        }
         .padding(22)
         .frame(maxHeight: maximumHeight)
         .frame(width: 680)
@@ -8031,7 +8022,7 @@ private struct ApprovalPromptView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 18)
                 .overlay {
-                    Text("AUTHORIZATION REQUEST")
+                    Text("AUTOMIC VAULT")
                         .font(.caption2.weight(.semibold))
                         .tracking(1.6)
                         .foregroundStyle(.tertiary)
@@ -8103,7 +8094,7 @@ private struct ApprovalPromptCommandView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Command")
+            Text("Authorization Request")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
@@ -8116,14 +8107,14 @@ private struct ApprovalPromptCommandView: View {
                     .help(content.command)
                 VStack(alignment: .leading, spacing: 8) {
                     ApprovalPromptInlineMeta(
-                        label: "Working Directory",
-                        value: content.cwd,
-                        systemImage: "folder"
-                    )
-                    ApprovalPromptInlineMeta(
                         label: "Secret Names",
                         value: content.keys,
                         systemImage: "key"
+                    )
+                    ApprovalPromptInlineMeta(
+                        label: "Working Directory",
+                        value: content.cwd,
+                        systemImage: "folder"
                     )
                     ApprovalPromptInlineMeta(
                         label: "Full Path",
