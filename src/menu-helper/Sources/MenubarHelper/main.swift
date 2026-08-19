@@ -7736,7 +7736,6 @@ private struct ApprovalPromptProcessSecurityView: View {
                     .padding(.leading, approvalPromptNameInset)
                     .padding(.vertical, 3)
                     .accessibilityHidden(true)
-                Divider()
                 ApprovalPromptProcessNodeView(node: node)
             }
             Image(systemName: "arrow.down")
@@ -7744,7 +7743,6 @@ private struct ApprovalPromptProcessSecurityView: View {
                 .padding(.leading, approvalPromptNameInset)
                 .padding(.vertical, 3)
                 .accessibilityHidden(true)
-            Divider()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Process path from Verified Launcher to Target")
@@ -7899,8 +7897,6 @@ private struct ApprovalPromptView: View {
             .scrollIndicators(.visible)
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
-
-            Divider()
 
             if usesIPhoneApproval {
                 VStack(spacing: 6) {
@@ -8103,15 +8099,6 @@ private struct ApprovalPromptCommandView: View {
                     systemImage: "folder"
                 )
                 ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys, systemImage: "key")
-            }
-            .padding(12)
-            .background(
-                Color(nsColor: .controlBackgroundColor).opacity(0.35),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
             }
             .padding(.leading, approvalPromptNameInset)
         }
