@@ -36,6 +36,8 @@ Automic Vault decides whether a complete operation may use it.
   elevated credential use.
 - Policy can authorize recognized operations. The user handles requests that
   require Approval.
+- Optional iPhone Approval and Touch ID Approval move allow actions away from
+  agent-controlled pointer and keyboard input.
 - An eligible agent write Approval can grant ten minutes of Write Access to one
   Verified Launcher, Tool-specific Authorization Gate, and agent task. A
   persistent strip shows the grant and provides an End action.

@@ -12,9 +12,9 @@ The Mac stores Secrets, verifies identities, evaluates policy, records decisions
 
 When iPhone Approval is enabled for a Mac, every human Approval—including an
 Approval required to broaden durable authority—is carried by an eligible
-iPhone. The Mac presents request details and cancellation status but no allow
-action. Losing relay or phone availability fails closed and does not restore a
-local allow action.
+iPhone unless the user separately enabled Touch ID Approval. The Mac never
+exposes a pointer- or keyboard-driven allow action. Losing relay or phone
+availability fails closed and does not enable another Approval surface.
 
 ### Security uncertainty fails closed
 
@@ -350,6 +350,12 @@ still validate the exact response and persist and verify its Authorization
 Record before allowing the operation. AWS MFA entry remains Mac-local and keeps
 the active-session and awake-display requirement.
 
+Touch ID Approval remains Mac-local and therefore keeps the active-session and
+awake-display requirements. Each allow action evaluates biometric-only Local
+Authentication with no reuse interval or credential and companion fallback.
+The result applies only to the exact Approval panel or authority change that
+requested it.
+
 ## iPhone Approval
 
 iPhone Approval uses a product-specific 256-bit account root key generated on
@@ -412,6 +418,21 @@ Emergency recovery requires macOS system authentication, disables iPhone
 Approval, cancels pending requests, rotates the account root key, and
 invalidates all prior phone registrations across the account. Re-enrollment is
 account-wide. Ordinary disable and re-enable does not rotate the key.
+
+## Touch ID Approval
+
+Touch ID Approval is a separately enabled Mac-local human-presence surface. Its
+choice is stored in the app's Data Protection Keychain so same-user software
+cannot add the surface by editing preferences. Enrollment first uses the current
+human Approval surface to authorize the broader authority model, then requires
+Touch ID on that Mac. Disabling it removes authority and is immediate.
+
+Every use creates a new Local Authentication context, disables biometric result
+reuse, and requests biometrics only. A password, passcode, Apple Watch, or
+pointer-driven allow action cannot satisfy it. When iPhone Approval is also
+enabled, either a valid phone response or a successful Touch ID evaluation may
+carry the Approval; the first result wins and the other pending transport is
+canceled. Relay state never toggles this choice.
 
 ## Recording before release
 

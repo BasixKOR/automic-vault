@@ -244,7 +244,7 @@ The Keychain availability chosen for a Secret and shared by all its Values:
 Availability can prevent an authorized operation. It cannot authorize one. Human Approval requires an active user session and awake displays. An automically authorized operation may continue while locked only when every requested Secret is Available While Locked.
 
 When iPhone Approval is enabled and at least one iPhone has registered for the
-same iCloud Keychain account, the iPhone is the active human-presence surface.
+same iCloud Keychain account, the iPhone is an active human-presence surface.
 The Mac user session may be inactive or its displays asleep while it waits for
 that Approval. This exception does not apply to Mac-local input such as an AWS
 MFA code, and it ends immediately when iPhone Approval is disabled or recovered.
@@ -281,17 +281,31 @@ Mac to an iPhone signed in to the same iCloud Keychain account. The iPhone
 carries an Approval; it does not evaluate Authorization Policy, retrieve a
 Secret, persist Authorization History, or enforce an Authorization Decision.
 
-While iPhone Approval is enabled, the Mac exposes no local allow action. An
-unavailable phone or relay delays the request until its Gate Client cancels it;
-it never restores a Mac Approval action. The Mac continues to verify the exact
-Authorization Request, reject stale or replayed responses, persist the required
-Authorization Record, and enforce the resulting Authorization Decision.
+While iPhone Approval is enabled, the Mac exposes no pointer- or keyboard-driven
+allow action. An unavailable phone or relay never restores one. If the user has
+separately enabled Touch ID Approval, the Mac may expose that biometric-only
+surface whether or not the relay is available. The Mac continues to verify the
+exact Authorization Request, reject stale or replayed responses, persist the
+required Authorization Record, and enforce the resulting Authorization Decision.
 
 The responding iPhone requires an active, App Store-verified iPhone Approval
 subscription to carry an allow response. Missing, expired, revoked, or
 unverified subscription state fails closed but does not prevent denial. A
 subscription is product eligibility, not Authorization Policy or authority to
 release a Secret.
+
+### Touch ID Approval
+
+An optional Mac-local Approval surface that requires a fresh Touch ID result for
+one exact Authorization Request. It has no password, passcode, Apple Watch, or
+pointer-driven allow fallback and does not reuse a prior biometric result.
+
+Touch ID Approval is an explicit per-Mac choice stored in the macOS Data
+Protection Keychain. Enabling it requires the current human Approval surface and
+a successful Touch ID evaluation. Disabling it removes authority and needs no
+Approval. It may coexist with iPhone Approval, but relay failure never enables it
+or changes its policy. It requires an active Mac user session and awake displays
+and does not provide iPhone Approval's physical separation from the Mac.
 
 ### Authorization Decision
 

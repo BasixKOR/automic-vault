@@ -1,6 +1,6 @@
 # ADR 0012: Carry human Approval on iPhone
 
-Status: accepted
+Status: accepted; Mac-local fallback decision amended by ADR 0017
 
 ## Context
 
@@ -26,7 +26,8 @@ Automic Vault provides opt-in iPhone Approval per Mac.
 - A Mac may enable the feature only after at least one iPhone has recently
   registered an APNs endpoint while proving possession of the root key.
 - Once enabled, every human Approval moves to an iPhone. This includes requests
-  to broaden durable authority. The Mac has no local allow fallback.
+  to broaden durable authority. ADR 0017 later permits the separately enrolled,
+  biometric-only Touch ID Approval surface; relay failure never enables it.
 - Requests live until the originating Gate Client cancels. Relay or phone
   unavailability leaves them pending and fails closed.
 - The Mac remains authoritative for pending requests and republishes them after
@@ -65,9 +66,10 @@ device security, Mirroring configuration, and every device holding the root key
 part of the Approval trust model. The initial release has account-wide recovery
 rather than per-device revocation.
 
-A relay or APNs outage can indefinitely delay work, but cannot grant authority.
-This availability cost is intentional: silently restoring a Mac Approval button
-would defeat the feature's purpose.
+A relay or APNs outage can indefinitely delay work when Touch ID Approval was
+not separately enrolled, but cannot grant authority. This availability cost is
+intentional: silently restoring a Mac Approval button would defeat the
+feature's purpose.
 
 StoreKit subscription state is a product-eligibility gate on the iPhone app,
 not Authorization Policy and not authority to release a Secret. The relay and
