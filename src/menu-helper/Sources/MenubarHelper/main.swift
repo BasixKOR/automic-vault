@@ -7649,7 +7649,6 @@ private struct ApprovalPromptInfoButton: View {
 private let approvalPromptRoleWidth: CGFloat = 112
 private let approvalPromptToolWidth: CGFloat = 170
 private let approvalPromptColumnSpacing: CGFloat = 10
-private let approvalPromptNameInset = approvalPromptRoleWidth + approvalPromptColumnSpacing
 
 private struct ApprovalPromptPathView: View {
     let path: String
@@ -7727,22 +7726,42 @@ private struct ApprovalPromptHeaderView: View {
 private struct ApprovalPromptProcessSecurityView: View {
     let processSecurity: ApprovalProcessSecurity
 
+    private var nodes: [ApprovalProcessSecurityNode] {
+        processSecurity.middleNodes + (processSecurity.target.map { [$0] } ?? [])
+    }
+
+    private var details: String {
+        nodes.map(\.details).joined(separator: "\n\n")
+    }
+
     var body: some View {
-        let nodes = processSecurity.middleNodes
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(nodes) { node in
-                Image(systemName: "arrow.down")
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, approvalPromptNameInset)
-                    .padding(.vertical, 3)
-                    .accessibilityHidden(true)
-                ApprovalPromptProcessNodeView(node: node)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Execution Chain")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                Spacer(minLength: 0)
+                ApprovalPromptInfoButton(
+                    title: "Execution chain details",
+                    details: details.isEmpty ? "No process details available." : details
+                )
+                .foregroundStyle(.secondary)
             }
-            Image(systemName: "arrow.down")
-                .foregroundStyle(.tertiary)
-                .padding(.leading, approvalPromptNameInset)
-                .padding(.vertical, 3)
-                .accessibilityHidden(true)
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                        if index > 0 {
+                            Image(systemName: "arrow.right")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 9)
+                                .accessibilityHidden(true)
+                        }
+                        ApprovalPromptProcessNodeView(node: node)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Process path from Verified Launcher to Target")
@@ -7754,29 +7773,32 @@ private struct ApprovalPromptProcessNodeView: View {
 
     var body: some View {
         let presentation = node.posture.presentation
-        HStack(alignment: .center, spacing: approvalPromptColumnSpacing) {
-            Text(node.displayRoles)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .frame(width: approvalPromptRoleWidth, alignment: .leading)
-            Text(node.name.isEmpty ? node.path : node.name)
-                .font(.system(.headline, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: approvalPromptToolWidth, alignment: .leading)
-            ApprovalPromptPathView(path: escapedSecurityPath(node.path))
-            if node.posture != .meetsRequirements {
-                Image(systemName: presentation.image)
-                    .font(.body)
-                    .foregroundStyle(presentation.color)
-                    .accessibilityHidden(true)
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text(node.name.isEmpty ? node.path : node.name)
+                    .font(.system(.headline, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if node.posture != .meetsRequirements {
+                    Image(systemName: presentation.image)
+                        .font(.body)
+                        .foregroundStyle(presentation.color)
+                        .accessibilityHidden(true)
+                }
             }
-            ApprovalPromptInfoButton(title: "\(node.name) process details", details: node.details)
-                .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.35),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule().stroke(.white.opacity(0.1), lineWidth: 1)
+            }
+            ApprovalPromptPathView(path: escapedSecurityPath(node.path))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 5)
+        .frame(width: 150)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
     }
@@ -7787,18 +7809,14 @@ private struct ApprovalPromptRequestView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ApprovalPromptHeaderView(content: content)
-            ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
             ApprovalPromptCommandView(content: content)
-        }
-        .padding(18)
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.45),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
+                .padding(18)
+            Divider()
+            ApprovalPromptHeaderView(content: content)
+                .padding(18)
+            Divider()
+            ApprovalPromptProcessSecurityView(processSecurity: content.processSecurity)
+                .padding(18)
         }
     }
 }
@@ -7976,8 +7994,23 @@ private struct ApprovalPromptView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+            if allowsPersistentApproval {
+                Text("Manage this Verified Launcher's Access Level in Automic Vault.")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
         }
-        .padding(28)
+        .padding(18)
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.35),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .padding(22)
         .frame(maxHeight: maximumHeight)
         .frame(width: 680)
         .fixedSize(horizontal: false, vertical: true)
@@ -8068,39 +8101,50 @@ private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String 
 private struct ApprovalPromptCommandView: View {
     let content: ApprovalPromptContent
 
-    private var details: String {
-        [content.processSecurity.target?.details, "Command path: \(content.commandPath)"]
-            .compactMap { $0 }
-            .joined(separator: "\n\n")
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: approvalPromptColumnSpacing) {
-                Text("Target")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .frame(width: approvalPromptRoleWidth, alignment: .leading)
-                Text(content.command)
-                    .font(.system(.headline, design: .monospaced))
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .frame(width: approvalPromptToolWidth, alignment: .leading)
-                    .help(content.command)
-                ApprovalPromptPathView(path: content.commandPath)
-                ApprovalPromptInfoButton(title: "Target details", details: details)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Command")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(content.command)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 300, alignment: .leading)
+                        .help(content.command)
+                    Text("#  →  \(content.commandPath)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    ApprovalPromptInlineMeta(
+                        label: "Working Directory",
+                        value: content.cwd,
+                        systemImage: "folder"
+                    )
+                    ApprovalPromptInlineMeta(
+                        label: "Secret Names",
+                        value: content.keys,
+                        systemImage: "key"
+                    )
+                }
             }
-            VStack(alignment: .leading, spacing: 5) {
-                ApprovalPromptInlineMeta(
-                    label: "Working Directory",
-                    value: content.cwd,
-                    systemImage: "folder"
-                )
-                ApprovalPromptInlineMeta(label: "Secret Names", value: content.keys, systemImage: "key")
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: .textBackgroundColor).opacity(0.45),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(0.1), lineWidth: 1)
             }
-            .padding(.leading, approvalPromptNameInset)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -8119,8 +8163,8 @@ private struct ApprovalPromptInlineMeta: View {
                 .accessibilityHidden(true)
             Text(label)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .frame(width: approvalPromptToolWidth - 34, alignment: .leading)
+                .foregroundStyle(.secondary)
+                .frame(width: 125, alignment: .leading)
             Text(value.isEmpty ? "(none)" : value)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
