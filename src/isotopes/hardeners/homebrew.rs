@@ -223,12 +223,20 @@ fn preflight() -> Result<(PathBuf, PathBuf, PathBuf, SourceUser), String> {
     }
     let casks = incompatible_installed_casks(&prefix)?;
     if !casks.is_empty() {
-        return Err(format!(
-            "these Homebrew Casks are incompatible with hardened Homebrew: {}. Only CLI-only casks containing protected `binary` artifacts are supported. Run `av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again",
-            casks.join(", ")
-        ));
+        return Err(incompatible_casks_error(&casks));
     }
     Ok((prefix, stub, source, source_user))
+}
+
+fn incompatible_casks_error(casks: &[String]) -> String {
+    format!(
+        "incompatible Homebrew Casks\n│\n{}\n│\n├─ only CLI-only casks containing protected `binary` artifacts are supported\n╰─ next: run `av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again",
+        casks
+            .iter()
+            .map(|cask| format!("├─ {cask}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
 }
 
 fn homebrew_services(target: &Path, source_user: &SourceUser) -> Result<Vec<String>, String> {
@@ -1916,6 +1924,14 @@ mod tests {
         assert!(!legacy.exists());
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn incompatible_cask_error_uses_hardener_output_style() {
+        assert_eq!(
+            incompatible_casks_error(&["gcloud-cli".into(), "zoom".into()]),
+            "incompatible Homebrew Casks\n│\n├─ gcloud-cli\n├─ zoom\n│\n├─ only CLI-only casks containing protected `binary` artifacts are supported\n╰─ next: run `av unharden brew`, remove or migrate the incompatible casks, then run `av harden brew` again"
+        );
     }
 
     #[test]
