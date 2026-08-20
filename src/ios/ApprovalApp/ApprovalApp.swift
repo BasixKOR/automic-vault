@@ -105,7 +105,6 @@ final class ApprovalModel {
     }
 
     private(set) var pending: [PhoneApprovalRequest] = []
-    private(set) var connectedMacs: [String: String] = [:]
     private(set) var state: ConnectionState = .setup
     var errorMessage: String?
     var biometricProtectionEnabled = UserDefaults.standard.bool(forKey: biometricDefaultsKey) {
@@ -280,8 +279,8 @@ final class ApprovalModel {
                 case .cancel(let requestID):
                     pending.removeAll { $0.id == requestID }
                     await removeDeliveredNotifications(for: requestID)
-                case .presence(let presence):
-                    connectedMacs[presence.macID] = presence.macName
+                case .presence:
+                    break
                 case .sync:
                     break
                 }
