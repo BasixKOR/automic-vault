@@ -25,6 +25,16 @@ Direct Secret Access is appropriate only when commands must be selected
 dynamically, no suitable Hardener exists, and an exact Blessed Script is too
 restrictive.
 
+## Blessed Script lifecycle
+
+Automic Vault keeps a running Blessed Script's active execution state in
+memory. Quitting, restarting, or updating Automic Vault ends that state, even
+if the script continues running and its Blessing remains valid. Later gated
+operations from that execution require fresh Approval.
+
+Wait for running Blessed Scripts to finish before quitting, restarting, or
+updating Automic Vault.
+
 ## What a rule permits
 
 A Direct Access Rule binds:
