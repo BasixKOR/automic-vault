@@ -197,6 +197,11 @@ An active Blessing is evaluated before a Temporary Access Grant. A matching
 grant may authorize a recognized operation beyond a narrower Blessing only
 inside the grant's exact scope. Matching happens after ordinary Gate Client,
 Target, request, Secret, gate, Launcher, and runtime verification succeeds.
+Before presenting a queued Approval, the service checks Temporary Access Grants
+again against the still-live Gate Client, current Agent Task Context, and
+freshly verified Launcher and runtime posture. This permits a matching request
+received before grant activation to receive its Authorization Decision under
+the now-active grant without trusting stale eligibility evidence.
 Each use persists its Authorization Record as policy-authorized by “Temporary
 Access Grant — Write Access” before release. The controller holds a
 generation-bound lease through payload loading, record persistence, retained

@@ -328,6 +328,11 @@ user end each grant immediately, and revokes all grants when the user session
 becomes inactive, displays sleep, an update begins, or the service terminates.
 Expiry uses both wall and monotonic clocks.
 
+Grant matching occurs when Automic Vault makes the Authorization Decision. A
+still-live request received before the grant began may therefore use it when
+the request reaches that decision point, but only after every live identity,
+runtime, task-context, operation, recording, and release check succeeds.
+
 ### Fail Closed
 
 Uncertainty about policy or operation risk disables automic authorization and requires Approval. Uncertainty about identity, integrity, request completeness, Secret matching, selected Secret Value, or required Authorization Record persistence denies the request. An error must not fall back to another Secret Value or broader access.
