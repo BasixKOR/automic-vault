@@ -7836,6 +7836,8 @@ private struct ApprovalPromptRequestView: View {
 private struct ApprovalPromptApprovalMenu: View {
     let allowsPersistentApproval: Bool
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
+    var title = "Approve Once"
+    var systemImage: String?
     let decide: (ApprovalDecision) -> Void
 
     var body: some View {
@@ -7856,8 +7858,14 @@ private struct ApprovalPromptApprovalMenu: View {
                 Button("Always Allow") { decide(.alwaysApproved) }
             }
         } label: {
-            Text("Approve Once")
-                .frame(maxWidth: .infinity)
+            Group {
+                if let systemImage {
+                    Label(title, systemImage: systemImage)
+                } else {
+                    Text(title)
+                }
+            }
+            .frame(maxWidth: .infinity)
         } primaryAction: {
             decide(.approved)
         }
@@ -7866,7 +7874,7 @@ private struct ApprovalPromptApprovalMenu: View {
         .tint(.blue)
         .frame(maxWidth: .infinity)
         .keyboardShortcut(.defaultAction)
-        .accessibilityLabel("Approve Once and more approval options")
+        .accessibilityLabel("\(title) and more approval options")
         .accessibilityHint("Use the menu for temporary or persistent access options when available")
     }
 }
@@ -7956,19 +7964,13 @@ private struct ApprovalPromptView: View {
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
                     .keyboardShortcut(.cancelAction)
-                    Button {
-                        authenticateWithTouchID()
-                    } label: {
-                        Label(
-                            isAuthenticatingWithTouchID ? "Waiting for Touch ID…" : "Approve with Touch ID",
-                            systemImage: "touchid"
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.blue)
-                    .frame(maxWidth: .infinity)
+                    ApprovalPromptApprovalMenu(
+                        allowsPersistentApproval: allowsPersistentApproval,
+                        temporaryGrantCandidate: temporaryGrantCandidate,
+                        title: isAuthenticatingWithTouchID ? "Waiting for Touch ID…" : "Approve with Touch ID",
+                        systemImage: "touchid",
+                        decide: authenticateWithTouchID
+                    )
                     .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                 }
             } else if usesIPhoneApproval {
@@ -7986,6 +7988,7 @@ private struct ApprovalPromptView: View {
                     Button("Deny", role: .cancel) { decide(.denied) }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
+                        .frame(maxWidth: .infinity)
                         .keyboardShortcut(.cancelAction)
 
                     VStack(spacing: 6) {
@@ -8042,13 +8045,13 @@ private struct ApprovalPromptView: View {
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
-    private func authenticateWithTouchID() {
+    private func authenticateWithTouchID(_ decision: ApprovalDecision) {
         isAuthenticatingWithTouchID = true
         TouchIDApproval.authenticate(
             reason: "Approve this exact Automic Vault request"
         ) { approved in
             isAuthenticatingWithTouchID = false
-            if approved { decide(.approved) }
+            if approved { decide(decision) }
         }
     }
 }
