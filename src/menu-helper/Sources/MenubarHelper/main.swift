@@ -3526,33 +3526,48 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            var currentLaunchers = launcherIdentities(for: identity)
-            if currentLaunchers.isEmpty,
-               let currentLauncher = launcherIdentity(pid: pid, identity: identity)
+            var currentIdentity = AVProcessIdentity()
+            if av_process_identity(pid, &currentIdentity),
+               sameProcessIdentity(identity, currentIdentity),
+               let currentLiveSigning = liveSigningInfo(pid: pid)
             {
-                currentLaunchers.append(currentLauncher)
-            }
-            if let configuredGate,
-               let classification,
-               let currentAgentTaskContext = agentTaskContext(pid: pid),
-               self.handleTemporaryAccessGrant(
-                   request: request,
-                   gate: configuredGate,
-                   classification: classification,
-                   agentTaskContext: currentAgentTaskContext,
-                   launchers: currentLaunchers,
-                   callerPath: callerPath,
-                   awsRegistration: awsRegistration,
-                   scriptApproval: scriptApproval,
-                   authorizationGate: authorizationGate,
-                   processChains: retainedProcessChains(for: identity),
-                   pid: pid,
-                   identity: identity,
-                   peer: peer,
-                   message: message
-               )
-            {
-                return
+                let currentCallerPath = pathString(currentIdentity)
+                let currentSigning = SigningInfo(
+                    identifier: currentLiveSigning.identifier,
+                    teamIdentifier: currentLiveSigning.teamIdentifier
+                )
+                var currentLaunchers = launcherIdentities(for: currentIdentity)
+                if currentLaunchers.isEmpty,
+                   let currentLauncher = launcherIdentity(pid: pid, identity: currentIdentity)
+                {
+                    currentLaunchers.append(currentLauncher)
+                }
+                if currentLiveSigning.mainExecutable == currentCallerPath,
+                   currentSigning.identifier == signing.identifier,
+                   currentSigning.teamIdentifier == signing.teamIdentifier,
+                   isAllowedCaller(path: currentCallerPath, signing: currentSigning),
+                   let configuredGate,
+                   let classification,
+                   let currentAgentTaskContext = agentTaskContext(pid: pid),
+                   self.handleTemporaryAccessGrant(
+                       request: request,
+                       gate: configuredGate,
+                       classification: classification,
+                       agentTaskContext: currentAgentTaskContext,
+                       launchers: currentLaunchers,
+                       callerPath: currentCallerPath,
+                       awsRegistration: awsRegistration,
+                       scriptApproval: scriptApproval,
+                       authorizationGate: authorizationGate,
+                       processChains: retainedProcessChains(for: currentIdentity),
+                       pid: pid,
+                       identity: currentIdentity,
+                       peer: peer,
+                       message: message
+                   )
+                {
+                    return
+                }
             }
             let cachedDecision = self.transientApprovals.decision(
                 for: transientApproval,
@@ -6353,6 +6368,17 @@ private func pathString(_ identity: AVProcessIdentity) -> String {
     }
 }
 
+private func sameProcessIdentity(
+    _ expected: AVProcessIdentity,
+    _ current: AVProcessIdentity
+) -> Bool {
+    expected.pid == current.pid
+        && expected.pidversion == current.pidversion
+        && expected.start_usec == current.start_usec
+        && expected.euid == current.euid
+        && expected.audit_session_id == current.audit_session_id
+}
+
 private func signingInfo(path: String) -> SigningInfo {
     var staticCode: SecStaticCode?
     let url = URL(fileURLWithPath: path) as CFURL
@@ -8703,6 +8729,11 @@ private func runApprovalSelfCheck() -> Int32 {
     guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
         return 1
     }
+    var reusedIdentity = selfIdentity
+    reusedIdentity.start_usec &+= 1
+    guard sameProcessIdentity(selfIdentity, selfIdentity),
+          !sameProcessIdentity(selfIdentity, reusedIdentity)
+    else { return 1 }
     guard let liveUse = liveSecretUseProcess(pid: getpid(), identity: selfIdentity),
           liveSecretUseProcessIsLive(liveUse),
           !liveSecretUseProcessIsLive(LiveSecretUseProcess(
