@@ -88,6 +88,8 @@ closed with a precise error.
 - `av harden aws` verifies the running app and installed CLI, then requests
   elevation to copy and reverify the package, extract it without scripts,
   protect and atomically activate the release, and replace `/usr/local/bin/aws`.
+- `av doctor aws` checks AWS's official v2 changelog and directs you back to the
+  Hardener when a newer release is available.
 - The AWS process can use any credential it receives for the lifetime and IAM
   scope of that credential. Automic Vault confines issuance to the approved
   invocation; it cannot harden the upstream AWS CLI process itself.

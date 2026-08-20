@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(crate) const DOWNLOAD_URL: &str = "https://awscli.amazonaws.com/AWSCLIV2.pkg";
+const CHANGELOG_URL: &str = "https://raw.githubusercontent.com/aws/aws-cli/v2/CHANGELOG.rst";
 pub(crate) const TARGET_PATH: &str = "/opt/av/aws/current/aws";
 const INSTALL_ROOT: &str = "/opt/av/aws";
 const PACKAGE_IDENTIFIER: &str = "com.amazon.aws.cli2";
@@ -126,6 +127,37 @@ pub(crate) fn current_release_valid() -> Result<(), String> {
     validate_protected_tree(&release_root, true)?;
     verify_manifest(&release_root)?;
     verify_aws_executable(&target)
+}
+
+pub(crate) fn current_version() -> Result<String, String> {
+    release_metadata(&install_root().join("current")).map(|release| release.version)
+}
+
+pub(crate) fn latest_version() -> Result<String, String> {
+    if let Some(changelog) = crate::test_env_string("AUTOMIC_VAULT_TEST_AWS_CHANGELOG") {
+        return parse_latest_version(&changelog);
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .https_only(true)
+        .max_redirects(0)
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .into();
+    let mut changelog = String::new();
+    agent
+        .get(CHANGELOG_URL)
+        .call()
+        .map_err(|err| format!("failed to fetch {CHANGELOG_URL}: {err}"))?
+        .into_body()
+        .into_reader()
+        .take(64 * 1024)
+        .read_to_string(&mut changelog)
+        .map_err(|err| format!("failed to read {CHANGELOG_URL}: {err}"))?;
+    parse_latest_version(&changelog)
+}
+
+pub(crate) fn update_available(installed: &str, latest: &str) -> Result<bool, String> {
+    compare_versions(latest, installed).map(|ordering| ordering.is_gt())
 }
 
 pub(crate) fn target_path() -> PathBuf {
@@ -525,6 +557,20 @@ fn compare_versions(left: &str, right: &str) -> Result<std::cmp::Ordering, Strin
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(left.cmp(&right))
+}
+
+fn parse_latest_version(changelog: &str) -> Result<String, String> {
+    let lines = changelog.lines().collect::<Vec<_>>();
+    lines
+        .windows(2)
+        .find_map(|lines| {
+            let version = lines[0].trim();
+            (validate_version(version).is_ok()
+                && lines[1].len() == version.len()
+                && lines[1].bytes().all(|byte| byte == b'='))
+            .then(|| version.to_string())
+        })
+        .ok_or_else(|| "AWS CLI changelog does not begin with a valid release".to_string())
 }
 
 fn build_manifest(root: &Path) -> Result<String, String> {
@@ -943,6 +989,19 @@ mod tests {
             compare_versions("2.35.99", "2.36.1").unwrap(),
             std::cmp::Ordering::Less
         );
+        assert!(update_available("2.36.21", "2.36.22").unwrap());
+        assert!(!update_available("2.36.22", "2.36.22").unwrap());
+        assert!(!update_available("2.36.22", "2.36.21").unwrap());
+    }
+
+    #[test]
+    fn latest_version_requires_a_numeric_changelog_heading() {
+        assert_eq!(
+            parse_latest_version("=========\nCHANGELOG\n=========\n\n2.36.22\n=======\nnotes\n")
+                .unwrap(),
+            "2.36.22"
+        );
+        assert!(parse_latest_version("CHANGELOG\nlatest\n======\n").is_err());
     }
 
     #[test]

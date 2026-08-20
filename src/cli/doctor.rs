@@ -8,8 +8,8 @@ use std::process::Command;
 use std::process::Stdio;
 
 use crate::isotopes::hardeners::{
-    self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, executable,
-    isotope,
+    self, HardenerCommand, HardenerMetadata, RequiredExecutable, StubRequirements, aws_release,
+    executable, isotope,
 };
 
 use super::scan::Style;
@@ -414,6 +414,19 @@ fn diagnose_one(
             .iter()
             .flat_map(|command| diagnose_command(hardener.name, command, path)),
     );
+    if hardener.name == "aws"
+        && hardener.detection.diagnostics.is_empty()
+        && let Some(command) = commands.iter().find(|command| {
+            command.stub_valid
+                && Path::new(&command.target_path) == aws_release::target_path().as_path()
+        })
+    {
+        issues.extend(aws_update_issue(
+            command,
+            aws_release::current_version(),
+            aws_release::latest_version(),
+        ));
+    }
 
     DoctorResult {
         name: hardener.name.to_string(),
@@ -422,6 +435,41 @@ fn diagnose_one(
             .map(|command| command.name.clone())
             .collect(),
         issues,
+    }
+}
+
+fn aws_update_issue(
+    command: &HardenerCommand,
+    installed: Result<String, String>,
+    latest: Result<String, String>,
+) -> Option<DoctorIssue> {
+    match installed.and_then(|installed| {
+        latest.and_then(|latest| {
+            aws_release::update_available(&installed, &latest)
+                .map(|available| (installed, latest, available))
+        })
+    }) {
+        Ok((_, _, false)) => None,
+        Ok((installed, latest, true)) => Some(DoctorIssue {
+            kind: "aws_update_available",
+            command: Some(command.name.clone()),
+            message: format!("AWS CLI {latest} is available; {installed} is installed"),
+            remediation:
+                "Run `av harden aws` to download and install the current verified AWS CLI release."
+                    .into(),
+            stub_path: command.stub_path.clone(),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        }),
+        Err(error) => Some(DoctorIssue {
+            kind: "aws_update_check_failed",
+            command: Some(command.name.clone()),
+            message: format!("could not check AWS CLI for updates: {error}"),
+            remediation: "Check the network connection and rerun `av doctor aws`.".into(),
+            stub_path: command.stub_path.clone(),
+            target_path: Some(command.target_path.clone()),
+            resolved_path: None,
+        }),
     }
 }
 
@@ -1562,6 +1610,18 @@ mod tests {
             "isotope_not_first_on_path"
         );
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn aws_update_check_directs_updates_back_to_the_hardener() {
+        let command = command("aws", true, "/usr/local/bin/aws", aws_release::TARGET_PATH);
+        let issue = aws_update_issue(&command, Ok("2.36.21".into()), Ok("2.36.22".into())).unwrap();
+
+        assert_eq!(issue.kind, "aws_update_available");
+        assert!(issue.message.contains("2.36.21"));
+        assert!(issue.message.contains("2.36.22"));
+        assert!(issue.remediation.contains("av harden aws"));
+        assert!(aws_update_issue(&command, Ok("2.36.22".into()), Ok("2.36.22".into())).is_none());
     }
 
     #[test]
