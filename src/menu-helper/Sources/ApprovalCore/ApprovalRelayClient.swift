@@ -92,6 +92,20 @@ public actor ApprovalRelayClient {
         return try JSONDecoder().decode(ApprovalWireMessage.self, from: plaintext)
     }
 
+    public func ping() async throws {
+        guard let connection else { throw ApprovalRelayClientError.disconnected }
+        try await waitUntilReady(connection)
+        do {
+            try await Self.waitUntilReady(connection.socket)
+            guard self.connection?.id == connection.id else {
+                throw ApprovalRelayClientError.disconnected
+            }
+        } catch {
+            if self.connection?.id == connection.id { disconnect() }
+            throw error
+        }
+    }
+
     public func publish(_ request: PhoneApprovalRequest) async throws {
         guard let connection else { throw ApprovalRelayClientError.disconnected }
         try await waitUntilReady(connection)

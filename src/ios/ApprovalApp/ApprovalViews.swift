@@ -93,11 +93,8 @@ struct ApprovalRootView: View {
     private var connectionText: String {
         switch model.state {
         case .setup: "Enable notifications to receive Approval requests."
-        case .connecting: "Connecting to your Macs…"
-        case .connected where model.connectedMacs.isEmpty:
-            "Connected. Waiting to hear from an enrolled Mac."
-        case .connected:
-            "Connected Macs: \(model.connectedMacs.values.sorted().joined(separator: ", "))."
+        case .connecting: "Connecting…"
+        case .connected: "Ready for Approval requests."
         case .unavailable(let reason): reason
         case .reconnecting(let reason): reason
         }

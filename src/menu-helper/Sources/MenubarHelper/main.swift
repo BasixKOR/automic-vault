@@ -339,7 +339,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try approval.start()
             self.approval = approval
-            PhoneApprovalCoordinator.shared.startIfEnabled()
             scheduleScan(after: 0)
             scanQueue.async { [weak self] in
                 let metadata = loadDetectorMetadata(avExecutableURL: avExecutableURL())
