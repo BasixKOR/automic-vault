@@ -113,8 +113,16 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
     public let capabilities: [String: SecretGateProtection]
     public let launchers: [BlessedScriptLauncher]
     public let blessedAt: Date
+    public let reviewedContents: Data?
 
     public var id: String { path }
+
+    public var verifiedReviewedContents: Data? {
+        guard let reviewedContents,
+              SHA256.hash(data: reviewedContents).map({ String(format: "%02x", $0) }).joined() == checksum
+        else { return nil }
+        return reviewedContents
+    }
 
     public func matchesBlessing(path: String, checksum: String) -> Bool {
         self.path == path && self.checksum == checksum
@@ -172,7 +180,8 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         allowsCanonicalPathExecution: Bool = false,
         capabilities: [String: SecretGateProtection],
         launchers: [BlessedScriptLauncher],
-        blessedAt: Date = Date()
+        blessedAt: Date = Date(),
+        reviewedContents: Data? = nil
     ) {
         self.path = path
         self.checksum = checksum
@@ -184,6 +193,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         self.capabilities = capabilities
         self.launchers = launchers
         self.blessedAt = blessedAt
+        self.reviewedContents = reviewedContents
     }
 
     func removingLauncher(requirement: String) -> BlessedScript {
@@ -201,7 +211,44 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         capabilities = script.capabilities
         self.launchers = launchers
         blessedAt = script.blessedAt
+        reviewedContents = script.reviewedContents
     }
+}
+
+public func blessedScriptDiff(previous: Data, current: Data) -> [String]? {
+    guard let previous = String(data: previous, encoding: .utf8),
+          let current = String(data: current, encoding: .utf8)
+    else { return nil }
+    let old = previous.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let new = current.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let changes = new.difference(from: old)
+    let removals = Dictionary(uniqueKeysWithValues: changes.removals.map { change in
+        if case .remove(let offset, let line, _) = change { return (offset, line) }
+        preconditionFailure("Expected a removal")
+    })
+    let insertions = Dictionary(uniqueKeysWithValues: changes.insertions.map { change in
+        if case .insert(let offset, let line, _) = change { return (offset, line) }
+        preconditionFailure("Expected an insertion")
+    })
+    var rows = ["--- Blessed", "+++ Current"]
+    var oldIndex = 0
+    var newIndex = 0
+    while oldIndex < old.count || newIndex < new.count {
+        if let removed = removals[oldIndex] {
+            rows.append("- \(removed)")
+            oldIndex += 1
+        } else if let inserted = insertions[newIndex] {
+            rows.append("+ \(inserted)")
+            newIndex += 1
+        } else if oldIndex < old.count, newIndex < new.count {
+            rows.append("  \(old[oldIndex])")
+            oldIndex += 1
+            newIndex += 1
+        } else {
+            break
+        }
+    }
+    return rows
 }
 
 public enum BlessedScriptManifestError: Error, Equatable, LocalizedError {

@@ -175,6 +175,54 @@ import Testing
     let script = try JSONDecoder().decode(BlessedScript.self, from: data)
 
     #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
+    #expect(script.reviewedContents == nil)
+}
+
+@Test func reviewedBlessingContentsMustMatchTheBlessedChecksum() throws {
+    let reviewed = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho old\n".utf8)
+    let declaration = try blessedScriptDeclaration(data: reviewed)
+    let script = BlessedScript(
+        path: "/tmp/script",
+        checksum: declaration.checksum,
+        keys: declaration.keys,
+        target: declaration.target,
+        replaceExistingEnv: declaration.replaceExistingEnv,
+        allowMissingKeys: declaration.allowMissingKeys,
+        capabilities: declaration.manifest.capabilities,
+        launchers: [],
+        reviewedContents: reviewed
+    )
+
+    #expect(script.verifiedReviewedContents == reviewed)
+    #expect(BlessedScript(
+        path: script.path,
+        checksum: script.checksum,
+        keys: script.keys,
+        target: script.target,
+        replaceExistingEnv: script.replaceExistingEnv,
+        allowMissingKeys: script.allowMissingKeys,
+        capabilities: script.capabilities,
+        launchers: [],
+        reviewedContents: Data("changed".utf8)
+    ).verifiedReviewedContents == nil)
+}
+
+@Test func blessedScriptDiffShowsReviewedAndCurrentLines() {
+    let rows = blessedScriptDiff(
+        previous: Data("one\ntwo\nthree\n".utf8),
+        current: Data("one\nchanged\nthree\nfour\n".utf8)
+    )
+
+    #expect(rows == [
+        "--- Blessed",
+        "+++ Current",
+        "  one",
+        "- two",
+        "+ changed",
+        "  three",
+        "+ four",
+        "  ",
+    ])
 }
 
 @Test func removingLauncherPreservesLegacyCanonicalPathExecutionValue() throws {
