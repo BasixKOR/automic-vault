@@ -7841,41 +7841,59 @@ private struct ApprovalPromptApprovalMenu: View {
     let decide: (ApprovalDecision) -> Void
 
     var body: some View {
-        Menu {
-            Button("Approve Once") { decide(.approved) }
-            if let candidate = temporaryGrantCandidate {
-                Button { decide(.temporaryWriteAccess) } label: {
-                    Label("Allow Write Access for 10 Minutes…", systemImage: "clock.badge.checkmark")
+        Group {
+            if hasAlternateActions {
+                Menu {
+                    Button("Approve Once") { decide(.approved) }
+                    if let candidate = temporaryGrantCandidate {
+                        Button { decide(.temporaryWriteAccess) } label: {
+                            Label("Allow Write Access for 10 Minutes…", systemImage: "clock.badge.checkmark")
+                        }
+                        .help(
+                            "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
+                        )
+                        .accessibilityLabel(
+                            "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+                        )
+                    }
+                    if allowsPersistentApproval {
+                        Button("Always Allow") { decide(.alwaysApproved) }
+                    }
+                } label: {
+                    buttonLabel
+                } primaryAction: {
+                    decide(.approved)
                 }
-                .help(
-                    "Limited to \(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)."
-                )
-                .accessibilityLabel(
-                    "Allow Write Access for 10 minutes for \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
-                )
-            }
-            if allowsPersistentApproval {
-                Button("Always Allow") { decide(.alwaysApproved) }
-            }
-        } label: {
-            Group {
-                if let systemImage {
-                    Label(title, systemImage: systemImage)
-                } else {
-                    Text(title)
+                .accessibilityLabel("\(title) and more approval options")
+                .accessibilityHint("Use the menu for temporary or persistent access options when available")
+            } else {
+                Button {
+                    decide(.approved)
+                } label: {
+                    buttonLabel
                 }
+                .accessibilityLabel(title)
             }
-            .frame(maxWidth: .infinity)
-        } primaryAction: {
-            decide(.approved)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
         .tint(.blue)
         .frame(maxWidth: .infinity)
         .keyboardShortcut(.defaultAction)
-        .accessibilityLabel("\(title) and more approval options")
-        .accessibilityHint("Use the menu for temporary or persistent access options when available")
+    }
+
+    private var hasAlternateActions: Bool {
+        temporaryGrantCandidate != nil || allowsPersistentApproval
+    }
+
+    @ViewBuilder private var buttonLabel: some View {
+        if let systemImage {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
+        } else {
+            Text(title)
+                .frame(maxWidth: .infinity)
+        }
     }
 }
 
