@@ -225,6 +225,24 @@ import Testing
     ])
 }
 
+@Test func legacyBlessingBackfillOnlyRecordsMatchingContents() throws {
+    let contents = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho reviewed\n".utf8)
+    let declaration = try blessedScriptDeclaration(data: contents)
+    let blessing = BlessedScript(
+        path: "/tmp/script",
+        checksum: declaration.checksum,
+        keys: declaration.keys,
+        target: declaration.target,
+        replaceExistingEnv: declaration.replaceExistingEnv,
+        allowMissingKeys: declaration.allowMissingKeys,
+        capabilities: declaration.manifest.capabilities,
+        launchers: []
+    )
+
+    #expect(blessingByRecordingReviewedContents(blessing, contents: contents)?.verifiedReviewedContents == contents)
+    #expect(blessingByRecordingReviewedContents(blessing, contents: Data("changed".utf8)) == nil)
+}
+
 @Test func removingLauncherPreservesLegacyCanonicalPathExecutionValue() throws {
     let data = Data(#"[{"path":"/tmp/script","checksum":"checksum","keys":["Z","A"],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"capabilities":{},"launchers":[{"bundleIdentifier":"com.example.launcher","requirement":"identifier \"com.example.launcher\""}],"blessedAt":0}]"#.utf8)
     let script = try #require(JSONDecoder().decode([BlessedScript].self, from: data).first)

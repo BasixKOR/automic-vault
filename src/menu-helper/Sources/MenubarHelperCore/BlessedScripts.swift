@@ -197,10 +197,22 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
     }
 
     func removingLauncher(requirement: String) -> BlessedScript {
-        BlessedScript(copying: self, launchers: launchers.filter { $0.requirement != requirement })
+        BlessedScript(
+            copying: self,
+            launchers: launchers.filter { $0.requirement != requirement },
+            reviewedContents: reviewedContents
+        )
     }
 
-    private init(copying script: BlessedScript, launchers: [BlessedScriptLauncher]) {
+    fileprivate func recordingReviewedContents(_ contents: Data) -> BlessedScript {
+        BlessedScript(copying: self, launchers: launchers, reviewedContents: contents)
+    }
+
+    private init(
+        copying script: BlessedScript,
+        launchers: [BlessedScriptLauncher],
+        reviewedContents: Data?
+    ) {
         path = script.path
         checksum = script.checksum
         keys = script.keys
@@ -211,7 +223,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         capabilities = script.capabilities
         self.launchers = launchers
         blessedAt = script.blessedAt
-        reviewedContents = script.reviewedContents
+        self.reviewedContents = reviewedContents
     }
 }
 
@@ -429,6 +441,33 @@ public func loadBlessedScripts(
         return []
     }
     return scripts.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+}
+
+func blessingByRecordingReviewedContents(
+    _ script: BlessedScript,
+    contents: Data
+) -> BlessedScript? {
+    guard script.reviewedContents == nil,
+          let declaration = try? blessedScriptDeclaration(data: contents),
+          declaration.checksum == script.checksum
+    else { return nil }
+    return script.recordingReviewedContents(contents)
+}
+
+@discardableResult
+public func backfillBlessedScriptReviewedContents(
+    service: String = blessedScriptsKeychainService,
+    account: String = blessedScriptsKeychainAccount
+) -> OSStatus {
+    var changed = false
+    let scripts = loadBlessedScripts(service: service, account: account).map { script in
+        guard let contents = try? readBlessedScript(path: script.path),
+              let updated = blessingByRecordingReviewedContents(script, contents: contents)
+        else { return script }
+        changed = true
+        return updated
+    }
+    return changed ? saveBlessedScripts(scripts, service: service, account: account) : errSecSuccess
 }
 
 @discardableResult

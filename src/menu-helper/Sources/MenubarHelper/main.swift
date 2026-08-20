@@ -286,6 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
         _ = migrateBackgroundKeychainItems()
+        _ = backfillBlessedScriptReviewedContents()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrants()
@@ -1826,23 +1827,30 @@ enum SecretMutation {
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
 
+    fileprivate var usesCompactApproval: Bool {
+        switch self {
+        case .save, .saveProject, .saveIfAbsentOrEqual: true
+        default: false
+        }
+    }
+
     fileprivate func approvalRequest(callerPath: String) -> ApprovalRequest {
         let properties: (op: String, keys: [String], args: [String], title: String, detail: String)
         switch self {
         case .save(let account, _, _, let warning):
             properties = (
-                "save", [account], ["save", account], "Store \(account)?",
+                "save", [account], ["save", account], "Add or modify \(account)?",
                 "This will create or replace a Global Value in Automic Vault."
                     + (warning.isEmpty ? "" : " \(warning)")
             )
         case .saveProject(let account, _, let directory, _, let warning):
             properties = (
                 "save", [account], ["save", "--project-directory=\(escapedSecurityPath(directory))", account],
-                "Store \(account) Project Value?", warning
+                "Add or modify \(account) Project Value?", warning
             )
         case .saveIfAbsentOrEqual(let account, _, let warning):
             properties = (
-                "save-if-absent", [account], ["save-if-absent", account], "Store \(account)?",
+                "save-if-absent", [account], ["save-if-absent", account], "Add \(account)?",
                 "This will create the Global Value only if no differing value already exists."
                     + (warning.isEmpty ? "" : " \(warning)")
             )
@@ -2089,7 +2097,8 @@ private func performApprovedSecretMutation(
         launcher: launcher,
         launcherFallbackPath: launcherFallbackPath,
         automaticApprovalExplanation: nil,
-        cancellation: cancellation
+        cancellation: cancellation,
+        compact: mutation.usesCompactApproval
     )
     if approval == .interrupted {
         _ = onAccessRequest(interruptedAccessRequestRecord(
@@ -4434,9 +4443,11 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "script path must be canonical")
             return
         }
+        let scriptData: Data
         let declaration: BlessedScriptDeclaration
         do {
-            declaration = try blessedScriptDeclaration(data: readBlessedScript(path: path))
+            scriptData = try readBlessedScript(path: path)
+            declaration = try blessedScriptDeclaration(data: scriptData)
         } catch {
             reply(peer, to: message, ok: false, error: "script cannot be blessed: \(error.localizedDescription)")
             return
@@ -4473,6 +4484,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let request = BlessedScriptReviewRequest(
             path: path,
             declaration: declaration,
+            scriptData: scriptData,
             launcher: launcher.map {
                 BlessedScriptLauncher(
                     bundleIdentifier: $0.identifier,
@@ -7257,7 +7269,8 @@ private func showApprovalAlert(
     temporaryGrantCandidate: TemporaryAccessGrantCandidate? = nil,
     allowsPersistentApproval: Bool = false,
     classification: SecretGateRequestClassification? = nil,
-    cancellation: ApprovalCancellation? = nil
+    cancellation: ApprovalCancellation? = nil,
+    compact: Bool = false
 ) -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let receivedAt = Date()
@@ -7311,6 +7324,7 @@ private func showApprovalAlert(
             temporaryGrantCandidate: temporaryGrantCandidate,
             usesIPhoneApproval: usesIPhoneApproval,
             usesTouchIDApproval: usesTouchIDApproval,
+            compact: compact,
             decide: {
                 guard !hasDecision else { return }
                 hasDecision = true
@@ -7833,6 +7847,42 @@ private struct ApprovalPromptRequestView: View {
     }
 }
 
+private struct CompactSecretMutationApprovalView: View {
+    let content: ApprovalPromptContent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(content.title ?? "Add or modify this secret?", systemImage: "key.fill")
+                .font(.title3.weight(.semibold))
+            if let detail = content.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(content.keys)
+                .font(.system(.callout, design: .monospaced).weight(.medium))
+                .textSelection(.enabled)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            HStack(spacing: 8) {
+                Text("Requested by \(content.requesterName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                ApprovalPromptInfoButton(
+                    title: "Request details",
+                    details: approvalPromptDetails(content.sections)
+                )
+                .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct ApprovalPromptApprovalMenu: View {
     let allowsPersistentApproval: Bool
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
@@ -7904,6 +7954,7 @@ private struct ApprovalPromptView: View {
     let temporaryGrantCandidate: TemporaryAccessGrantCandidate?
     var usesIPhoneApproval = false
     var usesTouchIDApproval = false
+    var compact = false
     let decide: (ApprovalDecision) -> Void
     @State private var isAuthenticatingWithTouchID = false
 
@@ -7911,23 +7962,27 @@ private struct ApprovalPromptView: View {
         VStack(spacing: 18) {
             ScrollView {
                 VStack(spacing: 16) {
-                    ApprovalPromptRequestView(content: content)
-                        .layoutPriority(-1)
+                    if compact {
+                        CompactSecretMutationApprovalView(content: content)
+                    } else {
+                        ApprovalPromptRequestView(content: content)
+                            .layoutPriority(-1)
 
-                    if content.title?.isEmpty == false || content.detail?.isEmpty == false {
-                        VStack(alignment: .leading, spacing: 5) {
-                            if let title = content.title, !title.isEmpty {
-                                Text(title)
-                                    .font(.headline)
+                        if content.title?.isEmpty == false || content.detail?.isEmpty == false {
+                            VStack(alignment: .leading, spacing: 5) {
+                                if let title = content.title, !title.isEmpty {
+                                    Text(title)
+                                        .font(.headline)
+                                }
+                                if let detail = content.detail, !detail.isEmpty {
+                                    Text(detail)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
-                            if let detail = content.detail, !detail.isEmpty {
-                                Text(detail)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     if let explanation = content.automaticApprovalExplanation {
@@ -8015,7 +8070,9 @@ private struct ApprovalPromptView: View {
                             temporaryGrantCandidate: temporaryGrantCandidate,
                             decide: decide
                         )
-                        Text("Review the request details before allowing access.")
+                        Text(compact
+                            ? "This Approval applies only to this secret change."
+                            : "Review the request details before allowing access.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -8032,7 +8089,7 @@ private struct ApprovalPromptView: View {
         }
         .padding(22)
         .frame(maxHeight: maximumHeight)
-        .frame(width: 680)
+        .frame(width: compact ? 420 : 680)
         .fixedSize(horizontal: false, vertical: true)
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -8838,28 +8895,37 @@ private func runApprovalSelfCheck() -> Int32 {
             explanation: "Valid code signature; Hardened Runtime"
         ),
     ])
+    let promptContent = ApprovalPromptContent(
+        requesterName: requester.name,
+        requesterIconPath: requester.iconPath,
+        command: "gh auth token",
+        commandPath: "/opt/homebrew/bin/gh",
+        title: "GitHub token requested",
+        detail: "gh needs the GitHub token",
+        automaticApprovalExplanation: automaticApprovalExplanation,
+        cwd: "/tmp",
+        keys: "GH_TOKEN_GITHUB_COM",
+        blessing: promptBlessing,
+        processSecurity: promptProcessSecurity,
+        sections: []
+    )
     let collapsedPrompt = NSHostingView(
         rootView: ApprovalPromptView(
-            content: ApprovalPromptContent(
-                requesterName: requester.name,
-                requesterIconPath: requester.iconPath,
-                command: "gh auth token",
-                commandPath: "/opt/homebrew/bin/gh",
-                title: "GitHub token requested",
-                detail: "gh needs the GitHub token",
-                automaticApprovalExplanation: automaticApprovalExplanation,
-                cwd: "/tmp",
-                keys: "GH_TOKEN_GITHUB_COM",
-                blessing: promptBlessing,
-                processSecurity: promptProcessSecurity,
-                sections: []
-            ),
+            content: promptContent,
             temporaryGrantCandidate: nil,
             decide: { _ in }
         )
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
     let collapsedHeight = collapsedPrompt.fittingSize.height
+    let compactSize = NSHostingView(
+        rootView: ApprovalPromptView(
+            content: promptContent,
+            temporaryGrantCandidate: nil,
+            compact: true,
+            decide: { _ in }
+        )
+    ).fittingSize
     func containsDragRegion(_ view: NSView) -> Bool {
         view is ApprovalPanelDragView || view.subviews.contains(where: containsDragRegion)
     }
@@ -8910,6 +8976,14 @@ private func runApprovalSelfCheck() -> Int32 {
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
           containsDragRegion(collapsedPrompt),
           collapsedHeight > 0,
+          compactSize.width == 420,
+          compactSize.height < collapsedHeight,
+          SecretMutation.save(
+              account: "TEST_SECRET",
+              value: "value",
+              accessibility: .whenUnlocked
+          ).usesCompactApproval,
+          !SecretMutation.delete(account: "TEST_SECRET").usesCompactApproval,
           constrainedHeight <= 500
     else {
         return 1

@@ -41,7 +41,23 @@ private extension SecretGateProtection {
 struct BlessedScriptReviewRequest: Sendable {
     let path: String
     let declaration: BlessedScriptDeclaration
+    let scriptData: Data
     let launcher: BlessedScriptLauncher?
+    let previousContents: Data?
+
+    init(
+        path: String,
+        declaration: BlessedScriptDeclaration,
+        scriptData: Data,
+        launcher: BlessedScriptLauncher?,
+        previousContents: Data? = nil
+    ) {
+        self.path = path
+        self.declaration = declaration
+        self.scriptData = scriptData
+        self.launcher = launcher
+        self.previousContents = previousContents
+    }
 }
 
 enum BlessedScriptReviewOutcome: Sendable {
@@ -343,11 +359,6 @@ final class DashboardModel: ObservableObject {
         return snapshot.blessedScripts.first
     }
 
-    var selectedPendingBlessing: BlessedScriptReviewRequest? {
-        guard pendingBlessing?.path == selectedItem?.id else { return nil }
-        return pendingBlessing
-    }
-
     var selectedStoredSecret: StoredSecret? {
         if let selectedItemID,
            let secret = snapshot.secrets.first(where: { $0.account == selectedItemID }) {
@@ -429,17 +440,19 @@ final class DashboardModel: ObservableObject {
             completion(.failed("another script blessing is already awaiting review"))
             return
         }
-        pendingBlessing = request
-        let previouslyEndorsed = loadBlessedScripts()
-            .first(where: { $0.path == request.path })?
-            .launchers ?? []
+        let previous = loadBlessedScripts().first { $0.path == request.path }
+        pendingBlessing = BlessedScriptReviewRequest(
+            path: request.path,
+            declaration: request.declaration,
+            scriptData: request.scriptData,
+            launcher: request.launcher,
+            previousContents: request.previousContents ?? previous?.verifiedReviewedContents
+        )
         pendingBlessingLaunchers = launcherEndorsementsForReblessing(
-            previouslyEndorsed: previouslyEndorsed,
+            previouslyEndorsed: previous?.launchers ?? [],
             requestedLauncher: request.launcher
         )
         blessingCompletion = completion
-        selectedSection = .blessedScripts
-        selectedItemID = request.path
     }
 
     func approvePendingBlessing() {
@@ -454,7 +467,8 @@ final class DashboardModel: ObservableObject {
             allowMissingKeys: declaration.allowMissingKeys,
             allowsCanonicalPathExecution: declaration.snapshotIncompatibleInterpreter != nil,
             capabilities: declaration.manifest.capabilities,
-            launchers: pendingBlessingLaunchers
+            launchers: pendingBlessingLaunchers,
+            reviewedContents: request.scriptData
         )
         approveAuthorityChange(
             "Bless \(URL(fileURLWithPath: script.path).lastPathComponent)",
@@ -482,6 +496,32 @@ final class DashboardModel: ObservableObject {
     func cancelPendingBlessing() {
         guard pendingBlessing != nil else { return }
         finishPendingBlessing(.denied)
+    }
+
+    func reviewChanges(to script: BlessedScript) {
+        guard let previousContents = script.verifiedReviewedContents else {
+            errorMessage = "The original reviewed contents are unavailable. Run `av bless` once to create a new review baseline."
+            return
+        }
+        do {
+            let scriptData = try readBlessedScript(path: script.path)
+            let declaration = try blessedScriptDeclaration(data: scriptData)
+            guard declaration.checksum != script.checksum else {
+                reload()
+                return
+            }
+            reviewBlessing(BlessedScriptReviewRequest(
+                path: script.path,
+                declaration: declaration,
+                scriptData: scriptData,
+                launcher: nil,
+                previousContents: previousContents
+            )) { [weak self] outcome in
+                if case .failed(let error) = outcome { self?.errorMessage = error }
+            }
+        } catch {
+            errorMessage = "Could not review changes: \(error.localizedDescription)"
+        }
     }
 
     func addAppToPendingBlessing() {
@@ -512,7 +552,8 @@ final class DashboardModel: ObservableObject {
                 allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
                 capabilities: script.capabilities,
                 launchers: script.launchers + [launcher],
-                blessedAt: script.blessedAt
+                blessedAt: script.blessedAt,
+                reviewedContents: script.reviewedContents
             )
             self.approveAuthorityChange(
                 "Add \(launcher.bundleIdentifier) to a Blessing",
@@ -562,7 +603,8 @@ final class DashboardModel: ObservableObject {
             allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
             capabilities: script.capabilities,
             launchers: launchers,
-            blessedAt: script.blessedAt
+            blessedAt: script.blessedAt,
+            reviewedContents: script.reviewedContents
         )
         finishPolicyUpdate(saveBlessedScript(updated), error: "Could not remove calling app")
     }
@@ -1046,17 +1088,22 @@ private func detectorItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) ->
 }
 
 private func blessedScriptItem(_ script: BlessedScript) -> DashboardItem {
-    var info = stat()
-    let isGone = script.path.withCString { lstat($0, &info) != 0 && errno == ENOENT }
-    let currentChecksum = isGone ? nil : try? blessedScriptDeclaration(data: readBlessedScript(path: script.path)).checksum
-    let status = isGone ? "Gone" : currentChecksum == script.checksum ? "Blessed" : "Changed"
     return DashboardItem(
         id: script.path,
         title: URL(fileURLWithPath: script.path).lastPathComponent,
         subtitle: blessedScriptDirectory(script.path),
         detail: script.path,
-        blessingStatus: status
+        blessingStatus: blessedScriptStatus(script)
     )
+}
+
+private func blessedScriptStatus(_ script: BlessedScript) -> String {
+    var info = stat()
+    if script.path.withCString({ lstat($0, &info) != 0 && errno == ENOENT }) { return "Gone" }
+    guard let data = try? readBlessedScript(path: script.path),
+          let checksum = try? blessedScriptDeclaration(data: data).checksum
+    else { return "Changed" }
+    return checksum == script.checksum ? "Blessed" : "Changed"
 }
 
 private func blessedScriptItems(
@@ -1332,6 +1379,65 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let detachedProcessAccessHeight = NSHostingView(
         rootView: DetachedProcessAccessSettingsView()
     ).fittingSize.height
+    let previousScriptData = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho old\n".utf8)
+    let currentScriptData = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho current\n".utf8)
+    guard let currentDeclaration = try? blessedScriptDeclaration(data: currentScriptData) else { return 1 }
+    let selectedSectionBeforeReview = model.selectedSection
+    var canceledBlessing = false
+    model.reviewBlessing(BlessedScriptReviewRequest(
+        path: "/tmp/av-dashboard-self-check-\(UUID().uuidString)",
+        declaration: currentDeclaration,
+        scriptData: currentScriptData,
+        launcher: nil,
+        previousContents: previousScriptData
+    )) { outcome in
+        if case .denied = outcome { canceledBlessing = true }
+    }
+    guard let pendingBlessing = model.pendingBlessing else { return 1 }
+    let blessingReviewSize = NSHostingView(
+        rootView: BlessedScriptReviewView(model: model, request: pendingBlessing)
+    ).fittingSize
+    model.cancelPendingBlessing()
+    guard selectedSectionBeforeReview == model.selectedSection,
+          blessingReviewSize.width == 720,
+          blessingReviewSize.height == 680,
+          canceledBlessing
+    else {
+        print("blessing modal self-check failed: \(selectedSectionBeforeReview), \(model.selectedSection), \(blessingReviewSize), \(canceledBlessing)")
+        return 1
+    }
+    let changedScriptDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("av-rebless-self-check-\(UUID().uuidString)", isDirectory: true)
+    let changedScriptURL = changedScriptDirectory.appendingPathComponent("script")
+    guard (try? FileManager.default.createDirectory(
+        at: changedScriptDirectory,
+        withIntermediateDirectories: true
+    )) != nil,
+    (try? currentScriptData.write(to: changedScriptURL)) != nil,
+    let previousDeclaration = try? blessedScriptDeclaration(data: previousScriptData)
+    else { return 1 }
+    defer { try? FileManager.default.removeItem(at: changedScriptDirectory) }
+    let changedScript = BlessedScript(
+        path: changedScriptURL.resolvingSymlinksInPath().path,
+        checksum: previousDeclaration.checksum,
+        keys: previousDeclaration.keys,
+        target: previousDeclaration.target,
+        replaceExistingEnv: previousDeclaration.replaceExistingEnv,
+        allowMissingKeys: previousDeclaration.allowMissingKeys,
+        capabilities: previousDeclaration.manifest.capabilities,
+        launchers: [],
+        reviewedContents: previousScriptData
+    )
+    var changedSnapshot = DashboardSnapshot.empty
+    changedSnapshot.blessedScripts = [changedScript]
+    let changedModel = DashboardModel(snapshot: changedSnapshot)
+    changedModel.reviewChanges(to: changedScript)
+    guard changedModel.pendingBlessing?.scriptData == currentScriptData,
+          changedModel.pendingBlessing?.previousContents == previousScriptData,
+          blessedScriptDiff(previous: previousScriptData, current: currentScriptData)?.contains("- echo old") == true,
+          blessedScriptDiff(previous: previousScriptData, current: currentScriptData)?.contains("+ echo current") == true
+    else { return 1 }
+    changedModel.cancelPendingBlessing()
     guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
@@ -1420,13 +1526,14 @@ func runDashboardSearchSelfCheck() -> Int32 {
     model.searchText = ""
     model.selectSection(.settings)
     guard model.items.map(\.id) == [
+        "touch-id-approval",
         "iphone-approval",
         "automatic-approval-feedback",
         "detached-process-access",
         "secret-name-access",
         "about",
     ],
-          model.selectedItemID == "iphone-approval",
+          model.selectedItemID == "touch-id-approval",
           guiPATH(environment: ["PATH": "/usr/bin:/bin"]) == "/usr/bin:/bin",
           guiPATH(environment: [:]) == "<unset>"
     else { return 1 }
@@ -1581,9 +1688,7 @@ struct DashboardRootView: View {
                     }
                     if model.selectedSection == .blessedScripts {
                         Button {
-                            if model.selectedPendingBlessing != nil {
-                                model.addAppToPendingBlessing()
-                            } else if let script = model.selectedBlessedScript {
+                            if let script = model.selectedBlessedScript {
                                 model.addApp(to: script)
                             }
                         } label: {
@@ -1612,6 +1717,14 @@ struct DashboardRootView: View {
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
         .sheet(isPresented: $model.isCreatingLauncherBundle) {
             CreateLauncherBundleView(model: model)
+        }
+        .sheet(isPresented: Binding(
+            get: { model.pendingBlessing != nil },
+            set: { if !$0 { model.cancelPendingBlessing() } }
+        )) {
+            if let request = model.pendingBlessing {
+                BlessedScriptReviewView(model: model, request: request)
+            }
         }
     }
 }
@@ -1737,13 +1850,6 @@ private struct DashboardDetailView: View {
         ScrollView {
             if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
                 SecretGateDetailView(model: model, gate: gate)
-                    .padding(.horizontal, 22)
-                    .padding(.top, 32)
-                    .padding(.bottom, 28)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if model.selectedSection == .blessedScripts,
-                      let pending = model.selectedPendingBlessing {
-                BlessedScriptReviewView(model: model, request: pending)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -3111,47 +3217,108 @@ private struct BlessedScriptReviewView: View {
     let request: BlessedScriptReviewRequest
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(URL(fileURLWithPath: request.path).lastPathComponent)
-                    .font(.system(size: 24, weight: .semibold))
-                Text("Review before granting durable script authority.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(URL(fileURLWithPath: request.path).lastPathComponent)
+                            .font(.system(size: 24, weight: .semibold))
+                        Text(request.previousContents == nil
+                            ? "Review before granting durable script authority."
+                            : "Review every change before replacing the invalidated Blessing.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let previous = request.previousContents,
+                       let rows = blessedScriptDiff(previous: previous, current: request.scriptData) {
+                        BlessedScriptDiffView(rows: rows)
+                    }
+                    BlessedScriptFields(
+                        path: request.path,
+                        checksum: request.declaration.checksum,
+                        keys: request.declaration.keys,
+                        capabilities: request.declaration.manifest.capabilities
+                    )
+                    launcherList(model.pendingBlessingLaunchers) {
+                        model.removePendingBlessingLauncher($0)
+                    }
+                    Button {
+                        model.addAppToPendingBlessing()
+                    } label: {
+                        Label("Add Calling App…", systemImage: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    if request.declaration.manifest.capabilities.values.contains(.fullIncludingSecretDumps) {
+                        InfoBlock(
+                            title: "Full Access",
+                            text: "This script requests access to operations that may reveal protected secret values."
+                        )
+                    }
+                    if let interpreter = request.declaration.snapshotIncompatibleInterpreter {
+                        InfoBlock(
+                            title: "Verified Snapshot Unavailable",
+                            text: "\(interpreter) cannot execute Automic Vault’s verified script snapshot. If you continue, Automic Vault will verify the script, then run its canonical path. Another process can change the file before \(interpreter) opens it. Automic Vault will warn on every run."
+                        )
+                    }
+                    if let error = model.errorMessage {
+                        InfoBlock(title: "Error", text: error)
+                    }
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            BlessedScriptFields(
-                path: request.path,
-                checksum: request.declaration.checksum,
-                keys: request.declaration.keys,
-                capabilities: request.declaration.manifest.capabilities
-            )
-            launcherList(model.pendingBlessingLaunchers) {
-                model.removePendingBlessingLauncher($0)
-            }
-            if request.declaration.manifest.capabilities.values.contains(.fullIncludingSecretDumps) {
-                InfoBlock(
-                    title: "Full Access",
-                    text: "This script requests access to operations that may reveal protected secret values."
-                )
-            }
-            if let interpreter = request.declaration.snapshotIncompatibleInterpreter {
-                InfoBlock(
-                    title: "Verified Snapshot Unavailable",
-                    text: "\(interpreter) cannot execute Automic Vault’s verified script snapshot. If you continue, Automic Vault will verify the script, then run its canonical path. Another process can change the file before \(interpreter) opens it. Automic Vault will warn on every run."
-                )
-            }
+            Divider()
             HStack {
                 Button("Cancel", role: .cancel) { model.cancelPendingBlessing() }
+                    .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(request.declaration.snapshotIncompatibleInterpreter == nil ? "Bless Script" : "Bless Anyway") {
                     model.approvePendingBlessing()
                 }
-                    .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
             }
-            if let error = model.errorMessage {
-                InfoBlock(title: "Error", text: error)
+            .padding(16)
+        }
+        .frame(width: 720, height: request.previousContents == nil ? 520 : 680)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct BlessedScriptDiffView: View {
+    let rows: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Changes since this script was blessed", systemImage: "plusminus")
+                .font(.headline)
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        Text(row.isEmpty ? " " : row)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(diffColor(row))
+                            .textSelection(.enabled)
+                            .fixedSize()
+                    }
+                }
+                .padding(12)
+            }
+            .frame(height: 280)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Changes from the previously blessed script to the current file")
+    }
+
+    private func diffColor(_ row: String) -> Color {
+        if row.hasPrefix("+ ") { return .green }
+        if row.hasPrefix("- ") { return .red }
+        return .primary
     }
 }
 
@@ -3178,8 +3345,21 @@ private struct BlessedScriptDetailView: View {
                 model.removeLauncher($0, from: script)
             }
             HStack {
+                if status == "Changed" {
+                    Button("Review Changes…") { model.reviewChanges(to: script) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(script.verifiedReviewedContents == nil)
+                        .help(script.verifiedReviewedContents == nil
+                            ? "The original reviewed contents are unavailable for this legacy Blessing."
+                            : "Show the diff and review a replacement Blessing.")
+                }
                 Spacer()
                 Button("Revoke Blessing", role: .destructive) { model.revoke(script) }
+            }
+            if status == "Changed", script.verifiedReviewedContents == nil {
+                Text("The original reviewed contents are unavailable for this legacy Blessing. Run `av bless` once to establish a diff baseline.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             if let error = model.errorMessage {
                 InfoBlock(title: "Error", text: error)
@@ -3188,12 +3368,7 @@ private struct BlessedScriptDetailView: View {
     }
 
     private var status: String {
-        guard let data = try? readBlessedScript(path: script.path),
-              let checksum = try? blessedScriptDeclaration(data: data).checksum
-        else {
-            return "Changed"
-        }
-        return checksum == script.checksum ? "Blessed" : "Changed"
+        blessedScriptStatus(script)
     }
 }
 
