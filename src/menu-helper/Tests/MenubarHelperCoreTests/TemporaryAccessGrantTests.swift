@@ -153,6 +153,39 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     #expect(afterSuccess.lastUsedAt == start.addingTimeInterval(10))
 }
 
+@Test func requestQueuedBeforeGrantIsEligibleWhenAuthorizationDecisionRuns() throws {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let attempt = { (wallNow: Date, monotonicNow: TimeInterval) in
+        controller.withActiveLease(
+            authorizationGateID: "aws",
+            launcherDesignatedRequirement: "identifier com.example.launcher",
+            launcherRuntimeProtection: .hardened,
+            agentTaskContext: AgentTaskContext(provider: .codex, id: codexID),
+            classification: .mutating,
+            wallNow: wallNow,
+            monotonicNow: monotonicNow
+        ) { _ in true }
+    }
+
+    #expect(attempt(start, 10) == nil)
+    controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start.addingTimeInterval(5),
+        monotonicNow: 15
+    )
+    #expect(attempt(start.addingTimeInterval(6), 16) == true)
+
+    let grant = try #require(controller.snapshots(
+        wallNow: start.addingTimeInterval(6),
+        monotonicNow: 16
+    ).first)
+    #expect(grant.useCount == 2)
+    #expect(grant.lastUsedAt == start.addingTimeInterval(6))
+}
+
 @Test func exactScopeAndWriteClassificationAreRequired() {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)

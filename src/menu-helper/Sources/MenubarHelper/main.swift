@@ -3526,6 +3526,34 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
+            var currentLaunchers = launcherIdentities(for: identity)
+            if currentLaunchers.isEmpty,
+               let currentLauncher = launcherIdentity(pid: pid, identity: identity)
+            {
+                currentLaunchers.append(currentLauncher)
+            }
+            if let configuredGate,
+               let classification,
+               let currentAgentTaskContext = agentTaskContext(pid: pid),
+               self.handleTemporaryAccessGrant(
+                   request: request,
+                   gate: configuredGate,
+                   classification: classification,
+                   agentTaskContext: currentAgentTaskContext,
+                   launchers: currentLaunchers,
+                   callerPath: callerPath,
+                   awsRegistration: awsRegistration,
+                   scriptApproval: scriptApproval,
+                   authorizationGate: authorizationGate,
+                   processChains: retainedProcessChains(for: identity),
+                   pid: pid,
+                   identity: identity,
+                   peer: peer,
+                   message: message
+               )
+            {
+                return
+            }
             let cachedDecision = self.transientApprovals.decision(
                 for: transientApproval,
                 allowingApprovalReuse: !requiresFreshHumanApproval

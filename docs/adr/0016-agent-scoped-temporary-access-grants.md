@@ -37,12 +37,16 @@ and persists the required Authorization Record before starting the grant and
 replying. Failure denies release and creates no grant. The decision does not
 enter the transient Approval cache.
 
-Future requests first complete ordinary Gate Client, Target, request, Secret,
-gate, Launcher, and runtime verification. A valid Blessing continues to
-authorize first. A grant may exceed a narrower Blessing only when the gate,
-designated requirement, runtime posture, provider, task UUID, protection, and
-operation all match exactly. Elevated Secret Application, Secret Disclosure,
-Unknown operations, the Direct Secret Gate, Secret mutation operations, and
+Requests first complete ordinary Gate Client, Target, request, Secret, gate,
+Launcher, and runtime verification. Before presenting a queued Approval, the
+service checks the current grants again using the still-live Gate Client,
+current Agent Task Context, and freshly verified Launcher and runtime posture.
+A request received before a grant began may therefore use it when its
+Authorization Decision is made. A valid Blessing continues to authorize first.
+A grant may exceed a narrower Blessing only when the gate, designated
+requirement, runtime posture, provider, task UUID, protection, and operation all
+match exactly. Elevated Secret Application, Secret Disclosure, Unknown
+operations, the Direct Secret Gate, Secret mutation operations, and
 unverifiable Launchers are excluded.
 
 The grant controller uses wall-clock and monotonic deadlines. Duplicate scopes
