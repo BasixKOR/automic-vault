@@ -2167,7 +2167,7 @@ private func approvalEvent(
     humanApprovalAvailable && cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
-private final class ApprovalCancellation: @unchecked Sendable {
+final class ApprovalCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var canceled = false
     private var observer: (@MainActor @Sendable () -> Void)?
@@ -4254,6 +4254,7 @@ private final class ApprovalServer: @unchecked Sendable {
             ancestorFallbackPath: ancestorFallbackPath
         )
         let targetProtection = executableSigningInfo(path: request.target)?.runtimeProtection
+        let targetCodeIdentity = proxyExecutableCodeIdentity(path: request.target)
         let warning = targetProtection?.allowsSecretGateAccess == true ? nil :
             "The target does not meet Automic Vault’s Hardened Runtime requirements. Code injected into it may steal this Proxy Session’s references and credential, then reuse destinations you allow for the session."
 
@@ -4317,6 +4318,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 target: request.target,
                 arguments: request.args,
                 cwd: request.cwd,
+                targetCodeIdentity: targetCodeIdentity,
                 identity: ProxyTargetIdentity(
                     pid: identity.pid,
                     pidVersion: identity.pidversion,
@@ -4329,7 +4331,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 do {
                     let material = try await SecretProxyCoordinator.shared.start(
                         launch: launch,
-                        approveDestination: { destination in
+                        approveDestination: { destination, cancellation in
                             let destinationRequest = ApprovalRequest(
                                 op: "proxy-destination",
                                 keys: destination.secretNames,
@@ -4357,7 +4359,8 @@ private final class ApprovalServer: @unchecked Sendable {
                                 launcherFallbackPath: ancestorFallbackPath ?? callerPath,
                                 automaticApprovalExplanation: warning,
                                 allowsPersistentApproval: true,
-                                persistentApprovalLabel: "Allow for Session"
+                                persistentApprovalLabel: "Allow for Session",
+                                cancellation: cancellation
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession

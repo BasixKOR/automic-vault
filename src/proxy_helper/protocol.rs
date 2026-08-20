@@ -54,6 +54,10 @@ enum HelperMessage<'a> {
         query_names: &'a [String],
         secret_names: &'a [String],
     },
+    Cancel {
+        request_id: u64,
+        session_id: &'a str,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,13 +83,30 @@ impl Drop for AuthorizationResult {
 }
 
 struct AuthorizationCall {
+    request_id: u64,
     metadata: AuthorizationMetadata,
     response: oneshot::Sender<Result<AuthorizationResult, String>>,
+}
+
+struct AuthorizationCancellation {
+    request_id: u64,
+    cancellations: mpsc::UnboundedSender<u64>,
+    armed: bool,
+}
+
+impl Drop for AuthorizationCancellation {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = self.cancellations.send(self.request_id);
+        }
+    }
 }
 
 #[derive(Clone)]
 pub(crate) struct SecretBroker {
     calls: mpsc::Sender<AuthorizationCall>,
+    cancellations: mpsc::UnboundedSender<u64>,
+    next_id: Arc<AtomicU64>,
 }
 
 impl SecretBroker {
@@ -93,14 +114,26 @@ impl SecretBroker {
         &self,
         metadata: AuthorizationMetadata,
     ) -> Result<AuthorizationResult, String> {
+        let request_id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (response, receiver) = oneshot::channel();
         self.calls
-            .send(AuthorizationCall { metadata, response })
+            .send(AuthorizationCall {
+                request_id,
+                metadata,
+                response,
+            })
             .await
             .map_err(|_| "Automic Vault control channel is closed".to_string())?;
-        receiver
+        let mut cancellation = AuthorizationCancellation {
+            request_id,
+            cancellations: self.cancellations.clone(),
+            armed: true,
+        };
+        let result = receiver
             .await
-            .map_err(|_| "Automic Vault control channel is closed".to_string())?
+            .map_err(|_| "Automic Vault control channel is closed".to_string());
+        cancellation.armed = false;
+        result?
     }
 }
 
@@ -141,8 +174,20 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
 {
     let (calls, receiver) = mpsc::channel(32);
-    tokio::spawn(run_broker(session_id, reader, writer, receiver, shutdown));
-    SecretBroker { calls }
+    let (cancellations, cancellation_receiver) = mpsc::unbounded_channel();
+    tokio::spawn(run_broker(
+        session_id,
+        reader,
+        writer,
+        receiver,
+        cancellation_receiver,
+        shutdown,
+    ));
+    SecretBroker {
+        calls,
+        cancellations,
+        next_id: Arc::new(AtomicU64::new(1)),
+    }
 }
 
 async fn run_broker<R, W>(
@@ -150,21 +195,20 @@ async fn run_broker<R, W>(
     mut reader: R,
     mut writer: W,
     mut calls: mpsc::Receiver<AuthorizationCall>,
+    mut cancellations: mpsc::UnboundedReceiver<u64>,
     shutdown: watch::Sender<bool>,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let next_id = Arc::new(AtomicU64::new(1));
     let mut pending = BTreeMap::<u64, oneshot::Sender<Result<AuthorizationResult, String>>>::new();
     loop {
         tokio::select! {
             call = calls.recv() => {
                 let Some(call) = call else { break };
-                let request_id = next_id.fetch_add(1, Ordering::Relaxed);
                 let metadata = &call.metadata;
                 let message = HelperMessage::Authorize {
-                    request_id,
+                    request_id: call.request_id,
                     session_id: &session_id,
                     method: &metadata.method,
                     origin: &metadata.origin,
@@ -176,7 +220,23 @@ async fn run_broker<R, W>(
                     let _ = call.response.send(Err(error));
                     break;
                 }
-                pending.insert(request_id, call.response);
+                pending.insert(call.request_id, call.response);
+            }
+            cancellation = cancellations.recv() => {
+                let Some(request_id) = cancellation else { break };
+                if pending.remove(&request_id).is_some()
+                    && write_frame(
+                        &mut writer,
+                        &HelperMessage::Cancel {
+                            request_id,
+                            session_id: &session_id,
+                        },
+                    )
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
             }
             message = read_frame::<_, AppMessage>(&mut reader) => {
                 match message {
@@ -338,6 +398,37 @@ mod tests {
         assert_eq!(json["type"], "ready");
         assert_eq!(json["port"], 1234);
         write.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn canceling_authorization_notifies_the_app() {
+        let (helper, mut app) = tokio::io::duplex(4096);
+        let (reader, writer) = tokio::io::split(helper);
+        let (shutdown, _) = watch::channel(false);
+        let broker = spawn_broker("session_0123456789".into(), reader, writer, shutdown);
+        let request = tokio::spawn(async move {
+            broker
+                .authorize(AuthorizationMetadata {
+                    method: "GET".into(),
+                    origin: "https://example.com".into(),
+                    path: "/".into(),
+                    query_names: vec![],
+                    secret_names: vec!["API_TOKEN".into()],
+                })
+                .await
+        });
+
+        let authorize: serde_json::Value = read_frame(&mut app).await.unwrap();
+        assert_eq!(authorize["type"], "authorize");
+        request.abort();
+        assert!(matches!(request.await, Err(error) if error.is_cancelled()));
+        let cancel: serde_json::Value =
+            tokio::time::timeout(std::time::Duration::from_secs(1), read_frame(&mut app))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(cancel["type"], "cancel");
+        assert_eq!(cancel["request_id"], authorize["request_id"]);
     }
 
     #[test]

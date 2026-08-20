@@ -17,6 +17,7 @@ struct ProxySessionLaunch: Sendable {
     let target: String
     let arguments: [String]
     let cwd: String
+    let targetCodeIdentity: Data?
     let identity: ProxyTargetIdentity
 }
 
@@ -72,11 +73,19 @@ final class ProxySessionViewModel: ObservableObject {
 actor SecretProxyCoordinator {
     static let shared = SecretProxyCoordinator()
 
-    typealias DestinationApproval = @MainActor @Sendable (ProxyDestinationRequest) -> ProxyDestinationDecision
+    typealias DestinationApproval = @MainActor @Sendable (
+        ProxyDestinationRequest,
+        ApprovalCancellation
+    ) -> ProxyDestinationDecision
 
     private struct DestinationRule: Hashable {
         let origin: String
         let secretNames: [String]
+    }
+
+    private struct PendingAuthorizationID: Hashable {
+        let sessionID: UUID
+        let requestID: UInt64
     }
 
     private struct Session {
@@ -98,6 +107,7 @@ actor SecretProxyCoordinator {
     }
 
     private var sessions: [UUID: Session] = [:]
+    private var pendingAuthorizations: [PendingAuthorizationID: ApprovalCancellation] = [:]
     private var destinationPromptActive = false
     private var destinationPromptWaiters: [CheckedContinuation<Void, Never>] = []
     private let maximumControlFrame = 4 * 1024 * 1024
@@ -106,7 +116,9 @@ actor SecretProxyCoordinator {
         launch: ProxySessionLaunch,
         approveDestination: @escaping DestinationApproval
     ) async throws -> ProxySessionMaterial {
-        guard targetIsLive(launch.identity) else {
+        guard targetIsLive(launch.identity),
+              proxyExecutableCodeIdentity(path: launch.target) == launch.targetCodeIdentity
+        else {
             throw SecretProxyError("Target identity changed before the Proxy Session started")
         }
         let helper = try verifiedHelperURL()
@@ -203,6 +215,9 @@ actor SecretProxyCoordinator {
 
     func terminate(id: UUID) {
         guard let session = sessions.removeValue(forKey: id) else { return }
+        let pendingIDs = pendingAuthorizations.keys.filter { $0.sessionID == id }
+        let cancellations = pendingIDs.compactMap { pendingAuthorizations.removeValue(forKey: $0) }
+        cancellations.forEach { $0.cancel() }
         try? writeFrame(["type": "shutdown"], to: session.input)
         session.input.closeFile()
         session.output.closeFile()
@@ -253,7 +268,8 @@ actor SecretProxyCoordinator {
         }
         guard session.awaitsTargetExec,
               current.pidversion > 0,
-              processPath(current) == session.launch.target
+              processPath(current) == session.launch.target,
+              liveCodeIdentity(pid: current.pid) == session.launch.targetCodeIdentity
         else { return false }
         session.identity = ProxyTargetIdentity(
             pid: current.pid,
@@ -268,34 +284,50 @@ actor SecretProxyCoordinator {
         return true
     }
 
-    private func receive(_ payload: Data, sessionID: UUID) async {
+    private func receive(_ payload: Data, sessionID: UUID) {
         guard let frame = try? decodeFrame(payload) else {
             terminate(id: sessionID)
             return
         }
-        guard frame["type"] as? String == "authorize",
+        guard let type = frame["type"] as? String,
               let wireSessionID = frame["session_id"] as? String,
               wireSessionID == sessionID.uuidString.lowercased(),
               let requestID = frame["request_id"] as? UInt64 ?? (frame["request_id"] as? NSNumber)?.uint64Value,
-              requestID > 0,
-              let method = frame["method"] as? String,
-              let origin = frame["origin"] as? String,
-              let path = frame["path"] as? String,
-              let queryNames = frame["query_names"] as? [String],
-              let secretNames = frame["secret_names"] as? [String]
+              requestID > 0
         else {
             terminate(id: sessionID)
             return
         }
-        await authorize(
-            sessionID: sessionID,
-            requestID: requestID,
-            method: method,
-            origin: origin,
-            path: path,
-            queryNames: queryNames,
-            secretNames: secretNames
-        )
+        let pendingID = PendingAuthorizationID(sessionID: sessionID, requestID: requestID)
+        if type == "cancel" {
+            pendingAuthorizations.removeValue(forKey: pendingID)?.cancel()
+            return
+        }
+        guard type == "authorize",
+              let method = frame["method"] as? String,
+              let origin = frame["origin"] as? String,
+              let path = frame["path"] as? String,
+              let queryNames = frame["query_names"] as? [String],
+              let secretNames = frame["secret_names"] as? [String],
+              pendingAuthorizations[pendingID] == nil
+        else {
+            terminate(id: sessionID)
+            return
+        }
+        let cancellation = ApprovalCancellation()
+        pendingAuthorizations[pendingID] = cancellation
+        Task {
+            await authorize(
+                sessionID: sessionID,
+                requestID: requestID,
+                method: method,
+                origin: origin,
+                path: path,
+                queryNames: queryNames,
+                secretNames: secretNames,
+                cancellation: cancellation
+            )
+        }
     }
 
     private func authorize(
@@ -305,8 +337,16 @@ actor SecretProxyCoordinator {
         origin: String,
         path: String,
         queryNames: [String],
-        secretNames: [String]
+        secretNames: [String],
+        cancellation: ApprovalCancellation
     ) async {
+        let pendingID = PendingAuthorizationID(sessionID: sessionID, requestID: requestID)
+        defer {
+            if pendingAuthorizations[pendingID] === cancellation {
+                pendingAuthorizations.removeValue(forKey: pendingID)
+            }
+        }
+        guard !cancellation.isCanceled else { return }
         guard refreshTargetIdentity(id: sessionID),
               var session = sessions[sessionID],
               validOrigin(origin),
@@ -330,31 +370,36 @@ actor SecretProxyCoordinator {
             approvalSource = "Session"
         } else {
             await acquireDestinationPrompt()
-            if refreshTargetIdentity(id: sessionID),
+            defer { releaseDestinationPrompt() }
+            if !cancellation.isCanceled,
+               refreshTargetIdentity(id: sessionID),
                let current = sessions[sessionID] {
                 session = current
                 if current.rules.contains(rule) {
                     decision = .allowForSession
                     approvalSource = "Session"
                 } else {
-                    decision = await current.approveDestination(ProxyDestinationRequest(
-                        sessionID: sessionID,
-                        target: current.launch.target,
-                        cwd: current.launch.cwd,
-                        method: method,
-                        origin: origin,
-                        path: path,
-                        queryNames: queryNames,
-                        secretNames: sortedNames
-                    ))
+                    decision = await current.approveDestination(
+                        ProxyDestinationRequest(
+                            sessionID: sessionID,
+                            target: current.launch.target,
+                            cwd: current.launch.cwd,
+                            method: method,
+                            origin: origin,
+                            path: path,
+                            queryNames: queryNames,
+                            secretNames: sortedNames
+                        ),
+                        cancellation
+                    )
                     approvalSource = "Manual"
                 }
             } else {
                 decision = .deny
                 approvalSource = "Expired"
             }
-            releaseDestinationPrompt()
         }
+        guard !cancellation.isCanceled else { return }
         guard decision != .deny else {
             _ = appendAccessRequestRecord(proxyRecord(
                 session: session,
@@ -371,7 +416,8 @@ actor SecretProxyCoordinator {
             return
         }
         guard refreshTargetIdentity(id: sessionID),
-              let current = sessions[sessionID]
+              let current = sessions[sessionID],
+              !cancellation.isCanceled
         else {
             deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired during approval")
             return
@@ -393,6 +439,7 @@ actor SecretProxyCoordinator {
             deny(sessionID: sessionID, requestID: requestID, reason: "authorization audit log is unavailable")
             return
         }
+        guard !cancellation.isCanceled else { return }
         var secrets: [String: String] = [:]
         for name in sortedNames {
             guard let value = loadStoredSecret(account: name), !value.isEmpty else {
@@ -402,7 +449,8 @@ actor SecretProxyCoordinator {
             secrets[name] = value
         }
         guard refreshTargetIdentity(id: sessionID),
-              var liveSession = sessions[sessionID]
+              var liveSession = sessions[sessionID],
+              !cancellation.isCanceled
         else {
             deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired before release")
             return
@@ -744,6 +792,19 @@ actor SecretProxyCoordinator {
         }
         return data
     }
+}
+
+func proxyExecutableCodeIdentity(path: String) -> Data? {
+    var code: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code) == errSecSuccess,
+          let code,
+          SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess
+    else { return nil }
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(code, [], &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any]
+    else { return nil }
+    return dictionary[kSecCodeInfoUnique] as? Data
 }
 
 private struct SecretProxyError: LocalizedError {
