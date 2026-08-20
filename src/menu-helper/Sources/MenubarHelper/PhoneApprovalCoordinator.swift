@@ -155,6 +155,7 @@ private actor PhoneApprovalRelayWorker {
         guard self.generation == generation else { return }
         canceled.insert(requestID)
         guard pending.removeValue(forKey: requestID) != nil else { return }
+        canceled.remove(requestID)
         if let relay { try? await relay.send(.cancel(requestID)) }
         published.remove(requestID)
         await disconnectIfIdle()
@@ -285,6 +286,7 @@ private actor PhoneApprovalRelayWorker {
             guard let request = pending[response.requestID] else { return }
             try response.validate(for: request)
             pending.removeValue(forKey: response.requestID)
+            published.remove(response.requestID)
             let result: PhoneApprovalResult = switch response.outcome {
             case .approved: .approved
             case .denied: .denied
