@@ -18,6 +18,14 @@ import Testing
     #expect(launcherBundleCommandName(from: "herdr cli") == nil)
 }
 
+@Test func launcherBundleSigningKindDecodesLegacyDeveloperID() throws {
+    let kind = try JSONDecoder().decode(
+        LauncherBundleSigningKind.self,
+        from: Data(#""developerID""#.utf8)
+    )
+    #expect(kind == .developerID)
+}
+
 @Test func launcherBundleTreeDigestIsDeterministicAndRejectsLinks() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

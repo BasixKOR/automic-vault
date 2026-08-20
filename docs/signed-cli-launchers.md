@@ -34,9 +34,10 @@ it eligible.
 
 For one unsigned Mach-O CLI executable, open **Launcher Bundles** in Automic
 Vault and choose **Create Launcher Bundle**. Choose the executable, name the
-bundle, and keep the default Automic Vault ad-hoc signing unless you have a
-Developer ID Application identity you want to use. Enable a compatibility
-exception only when the CLI requires it.
+bundle, and enable a compatibility exception only when the CLI requires it.
+Automic Vault ad-hoc signs every new Launcher Bundle, so creating one does not
+require an Apple Developer account or certificate. Older Developer ID-signed
+Launcher Bundles remain supported until replaced.
 
 Automic Vault snapshots the selected executable, signs the payload and generated
 app with Hardened Runtime, and then shows the source and final signed-payload

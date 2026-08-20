@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-14
+- Amended: 2026-08-20
 
 ## Context
 
@@ -27,15 +28,14 @@ forwards its arguments and result, and executes only the payload sealed inside
 its bundle, never a command resolved through `PATH`. It remains the parent for
 ordinary payloads; a payload may deliberately daemonize and outlive it.
 
-Automic Vault signs nested code inside-out and enables Hardened Runtime. It uses
-either an Automic-created ad-hoc signature or a Developer ID Application
-identity selected by the user. Enrollment occurs only through an attended
-Automic Vault flow.
+Automic Vault signs nested code inside-out with an Automic-created ad-hoc
+signature and enables Hardened Runtime. Enrollment occurs only through an
+attended Automic Vault flow.
 
 Creation and enrollment are one attended transaction in the **Launcher
 Bundles** sidebar. Automic Vault builds and verifies a candidate in private
-temporary storage, shows the selected payload digest, signing identity, and
-effective entitlements, then installs it under
+temporary storage, shows the source and final payload digests and effective
+entitlements, then installs it under
 `/Applications/Automic Vault/` and enrolls it after the user confirms. The
 attended install uses administrator authorization so the directory, bundle, and
 command link are root-owned and protected from group or world writes. The
@@ -136,10 +136,13 @@ move the old file does not restore its enrollment or authority.
   or corrupt.
 - The ad-hoc signature supplies a code seal and Hardened Runtime posture, not a
   durable publisher identity. Re-signing changed code changes its exact signed
-  code identifier and invalidates enrollment. Developer ID-signed generations
-  are pinned the same way.
-- A user-selected Developer ID identity does not identify the CLI publisher and
-  never replaces payload pinning.
+  code identifier and invalidates enrollment.
+- A user-selected Developer ID identity would identify the user as the signer,
+  not the CLI publisher, and would not strengthen exact enrollment. New
+  generations therefore do not use the user's signing identities.
+- Developer ID-signed generations created by earlier releases retain their
+  persisted signing metadata and strict verification until replaced. Their
+  replacements use ad-hoc signing and follow the normal generation change.
 - The original unbundled executable remains a different, unverified Launcher
   and cannot match the Launcher Bundle's enrollment or Launcher-specific rules.
 - The root-owned command link preserves ordinary CLI invocation. The original

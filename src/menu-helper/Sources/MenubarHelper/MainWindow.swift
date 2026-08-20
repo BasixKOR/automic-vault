@@ -2070,12 +2070,9 @@ private struct CreateLauncherBundleView: View {
     @State private var sourceURL: URL?
     @State private var displayName = ""
     @State private var commandName = ""
-    @State private var signingKind = LauncherBundleSigningKind.adHoc
-    @State private var signingIdentity: String?
     @State private var allowJIT = false
     @State private var allowUnsignedExecutableMemory = false
     @State private var disableLibraryValidation = false
-    private let developerIDs = developerIDApplicationIdentities()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -2108,8 +2105,6 @@ private struct CreateLauncherBundleView: View {
                             sourceURL: sourceURL,
                             displayName: displayName,
                             commandName: commandName,
-                            signingKind: signingKind,
-                            signingIdentity: signingIdentity,
                             allowJIT: allowJIT,
                             allowUnsignedExecutableMemory: allowUnsignedExecutableMemory,
                             disableLibraryValidation: disableLibraryValidation
@@ -2152,23 +2147,6 @@ private struct CreateLauncherBundleView: View {
                 Text("Runs as \(launcherBundleCommandURL(named: command).path). Installation requests administrator approval.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Picker("Signing", selection: $signingKind) {
-                Text("Automic Vault (Ad Hoc)").tag(LauncherBundleSigningKind.adHoc)
-                Text("Developer ID").tag(LauncherBundleSigningKind.developerID)
-            }
-            .pickerStyle(.segmented)
-            if signingKind == .developerID {
-                Picker("Identity", selection: $signingIdentity) {
-                    Text("Choose an identity").tag(String?.none)
-                    ForEach(developerIDs, id: \.self) { Text($0).tag(Optional($0)) }
-                }
-                if developerIDs.isEmpty {
-                    Text("No Developer ID Application identities were found.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
 
             DisclosureGroup("Compatibility exceptions") {
@@ -2223,7 +2201,6 @@ private struct CreateLauncherBundleView: View {
         sourceURL != nil
             && launcherBundleDisplayName(from: displayName) != nil
             && launcherBundleCommandName(from: commandName) != nil
-            && (signingKind == .adHoc || signingIdentity != nil)
     }
 
     private func chooseSource() {

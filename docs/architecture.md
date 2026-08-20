@@ -121,10 +121,11 @@ available in Automic Vault 3.9.0; either side rejects an incompatible version.
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a
 Verified Launcher without treating its original path as identity. The attended
 app flow snapshots the selected file, applies Hardened Runtime, signs the
-payload and generated app inside-out, and displays both the source and final
-signed-payload SHA-256 values before enrollment. An attended privileged
-transaction installs the completed app under `/Applications/Automic Vault/`
-and its root-owned command link under `/usr/local/bin/`.
+payload and generated app inside-out with ad-hoc signatures, and displays both
+the source and final signed-payload SHA-256 values before enrollment. An attended
+privileged transaction installs the completed app under
+`/Applications/Automic Vault/` and its root-owned command link under
+`/usr/local/bin/`.
 
 The reviewed candidate is bound to that privileged transaction by a
 deterministic SHA-256 over every relative path and file byte in the completed
@@ -150,6 +151,10 @@ Identity or depend on Retained Launcher Provenance. Reserved Launcher Bundle
 identities that are moved, changed, re-signed, unenrolled, or unverifiable are
 denied before ordinary Launcher admission or Approval. See
 [ADR 0013](adr/0013-launcher-bundles.md).
+
+Developer ID-signed generations created by earlier releases retain their
+persisted signing metadata and the same strict enrollment checks. Replacing one
+creates a new ad-hoc-signed generation and revokes the old generation normally.
 
 ### Reviewed Automation
 
