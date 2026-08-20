@@ -406,8 +406,9 @@ mod tests {
         let (reader, writer) = tokio::io::split(helper);
         let (shutdown, _) = watch::channel(false);
         let broker = spawn_broker("session_0123456789".into(), reader, writer, shutdown);
+        let request_broker = broker.clone();
         let request = tokio::spawn(async move {
-            broker
+            request_broker
                 .authorize(AuthorizationMetadata {
                     method: "GET".into(),
                     origin: "https://example.com".into(),
