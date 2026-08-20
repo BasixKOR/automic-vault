@@ -2220,11 +2220,16 @@ private struct TransientApprovalCache {
 
     private var expirations: [Key: Date] = [:]
 
-    mutating func decision(for key: TransientApprovalKey, now: Date = Date()) -> ApprovalDecision? {
+    mutating func decision(
+        for key: TransientApprovalKey,
+        allowingApprovalReuse: Bool = true,
+        now: Date = Date()
+    ) -> ApprovalDecision? {
         prune(now: now)
         if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
             return .denied
         }
+        guard allowingApprovalReuse else { return nil }
         return expirations[.approval(key)] == nil ? nil : .approved
     }
 
@@ -3496,9 +3501,10 @@ private final class ApprovalServer: @unchecked Sendable {
             MainActor.assumeIsolated {
                 guard !cancellation.isCanceled,
                       let event = approvalEvent(
-                          for: requiresFreshHumanApproval
-                              ? nil
-                              : self.transientApprovals.decision(for: transientApproval),
+                          for: self.transientApprovals.decision(
+                              for: transientApproval,
+                              allowingApprovalReuse: !requiresFreshHumanApproval
+                          ),
                           humanApprovalAvailable: self.canRequestHumanApproval()
                       )
                 else { return }
@@ -3512,9 +3518,10 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            let cachedDecision = requiresFreshHumanApproval
-                ? nil
-                : self.transientApprovals.decision(for: transientApproval)
+            let cachedDecision = self.transientApprovals.decision(
+                for: transientApproval,
+                allowingApprovalReuse: !requiresFreshHumanApproval
+            )
             if let decision = cachedDecision {
                 if decision == .denied {
                     _ = self.onAccessRequest(accessRequestRecord(
@@ -3614,9 +3621,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             guard decision != .denied else {
-                if !requiresFreshHumanApproval {
-                    self.transientApprovals.remember(.denied, for: transientApproval)
-                }
+                self.transientApprovals.remember(.denied, for: transientApproval)
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
@@ -7945,7 +7950,7 @@ private struct ApprovalPromptView: View {
             if usesTouchIDApproval {
                 HStack(spacing: 12) {
                     Button(usesIPhoneApproval ? "Cancel Request" : "Deny", role: .cancel) {
-                        decide(usesIPhoneApproval ? .canceled : .denied)
+                        decide(.denied)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -7967,7 +7972,7 @@ private struct ApprovalPromptView: View {
                     .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                 }
             } else if usesIPhoneApproval {
-                Button("Cancel Request", role: .cancel) { decide(.canceled) }
+                Button("Cancel Request", role: .cancel) { decide(.denied) }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .keyboardShortcut(.cancelAction)
@@ -10082,6 +10087,11 @@ private func runTransientApprovalSelfCheck() -> Int32 {
     var cache = TransientApprovalCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
     guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
+          cache.decision(
+              for: approval,
+              allowingApprovalReuse: false,
+              now: Date(timeIntervalSince1970: 200)
+          ) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 200)) == nil,
           cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil
     else {
@@ -10096,6 +10106,11 @@ private func runTransientApprovalSelfCheck() -> Int32 {
     cache.remember(.interrupted, for: interrupted, now: Date(timeIntervalSince1970: 200))
     guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
+          cache.decision(
+              for: fallbackAfterDenial,
+              allowingApprovalReuse: false,
+              now: Date(timeIntervalSince1970: 300)
+          ) == .denied,
           cache.decision(for: temporaryGrant, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: interrupted, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
