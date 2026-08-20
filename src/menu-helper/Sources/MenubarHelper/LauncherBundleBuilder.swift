@@ -7,8 +7,6 @@ struct LauncherBundleOptions: Sendable {
     let sourceURL: URL
     let displayName: String
     let commandName: String
-    let signingKind: LauncherBundleSigningKind
-    let signingIdentity: String?
     let allowJIT: Bool
     let allowUnsignedExecutableMemory: Bool
     let disableLibraryValidation: Bool
@@ -37,7 +35,6 @@ enum LauncherBundleCreationError: Error, LocalizedError {
     case invalidCommandName
     case commandOccupied
     case destinationOccupied
-    case invalidSigningIdentity
     case commandFailed(String)
     case invalidGeneratedCode
     case enrollmentFailed(OSStatus)
@@ -52,26 +49,10 @@ enum LauncherBundleCreationError: Error, LocalizedError {
         case .invalidCommandName: "Choose a command name without spaces or path separators"
         case .destinationOccupied: "A file already occupies the Launcher Bundle destination"
         case .commandOccupied: "A different file already occupies the Launcher Bundle command path"
-        case .invalidSigningIdentity: "Choose a valid Developer ID Application identity"
         case .commandFailed(let message): message
         case .invalidGeneratedCode: "The generated Launcher Bundle did not pass verification"
         case .enrollmentFailed(let status): "Could not enroll the Launcher Bundle: \(status)"
         }
-    }
-}
-
-func developerIDApplicationIdentities() -> [String] {
-    guard let output = try? runLauncherBundleCommand(
-        executable: "/usr/bin/security",
-        arguments: ["find-identity", "-v", "-p", "codesigning"]
-    ) else { return [] }
-    return output.split(separator: "\n").compactMap { line in
-        guard let first = line.firstIndex(of: "\""),
-              let last = line.lastIndex(of: "\""),
-              first < last
-        else { return nil }
-        let identity = String(line[line.index(after: first)..<last])
-        return identity.hasPrefix("Developer ID Application:") ? identity : nil
     }
 }
 
@@ -80,9 +61,6 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     else { throw LauncherBundleCreationError.invalidDisplayName }
     guard let commandName = launcherBundleCommandName(from: options.commandName)
     else { throw LauncherBundleCreationError.invalidCommandName }
-    guard options.signingKind == .adHoc
-        || options.signingIdentity?.hasPrefix("Developer ID Application:") == true
-    else { throw LauncherBundleCreationError.invalidSigningIdentity }
     guard let runnerURL = Bundle.main.url(forResource: "AutomicVaultLauncher", withExtension: nil)
     else { throw LauncherBundleCreationError.runnerUnavailable }
     guard let iconURL = Bundle.main.url(forResource: "LauncherBundleIcon", withExtension: "icns")
@@ -139,7 +117,6 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     try manager.copyItem(at: runnerURL, to: launcherURL)
     let source = try copyLauncherBundlePayload(from: options.sourceURL, to: payloadURL)
 
-    let identity = options.signingKind == .adHoc ? "-" : options.signingIdentity!
     let entitlementsURL = work.appendingPathComponent("payload-entitlements.plist")
     let entitlements: [String: Bool] = [
         "com.apple.security.cs.allow-jit": options.allowJIT,
@@ -156,7 +133,6 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     }
     try signLauncherBundleCode(
         payloadURL,
-        identity: identity,
         identifier: "\(identifier).payload",
         entitlements: entitlements.isEmpty ? nil : entitlementsURL
     )
@@ -184,7 +160,6 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
         .write(to: contents.appendingPathComponent("Info.plist"), options: .atomic)
     try signLauncherBundleCode(
         appURL,
-        identity: identity,
         identifier: identifier,
         entitlements: nil
     )
@@ -194,9 +169,9 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
     guard bundle.identifier == identifier,
           launcher.identifier == launcherIdentifier,
           launcher.runtimeProtection == .hardened,
-          bundle.isAdHoc == (options.signingKind == .adHoc),
-          launcher.isAdHoc == bundle.isAdHoc,
-          payload.isAdHoc == bundle.isAdHoc
+          bundle.isAdHoc,
+          launcher.isAdHoc,
+          payload.isAdHoc
     else { throw LauncherBundleCreationError.invalidGeneratedCode }
 
     let enrollment = LauncherBundleEnrollment(
@@ -214,8 +189,8 @@ func prepareLauncherBundleCandidate(_ options: LauncherBundleOptions) throws -> 
         payloadSHA256: payloadSHA256,
         payloadEntitlements: entitlements.keys.sorted(),
         runtimeRequirement: runtimeRequirement,
-        signingKind: options.signingKind,
-        signingIdentity: options.signingIdentity,
+        signingKind: .adHoc,
+        signingIdentity: nil,
         createdAt: Date()
     )
     let treeSHA256 = try launcherBundleTreeSHA256(at: appURL)
@@ -361,13 +336,12 @@ private func runPrivilegedLauncherBundleOperation(_ arguments: [String]) throws 
 
 private func signLauncherBundleCode(
     _ url: URL,
-    identity: String,
     identifier: String,
     entitlements: URL?
 ) throws {
-    var arguments = ["--force", "--sign", identity, "--options", "runtime"]
-    if identity != "-" { arguments.append("--timestamp") }
-    arguments += ["--identifier", identifier]
+    var arguments = [
+        "--force", "--sign", "-", "--options", "runtime", "--identifier", identifier,
+    ]
     if let entitlements { arguments += ["--entitlements", entitlements.path] }
     arguments.append(url.path)
     _ = try runLauncherBundleCommand(executable: "/usr/bin/codesign", arguments: arguments)

@@ -12,8 +12,9 @@ public let launcherBundleCommandNameInfoKey = "AVLauncherBundleCommandName"
 public let launcherBundlePayloadName = "payload"
 public let launcherBundleMaximumPayloadBytes: Int64 = 512 * 1024 * 1024
 
-public enum LauncherBundleSigningKind: String, Codable, CaseIterable, Equatable, Sendable {
+public enum LauncherBundleSigningKind: String, Codable, Equatable, Sendable {
     case adHoc
+    // Compatibility with Developer ID-signed enrollments created by 3.9.0.
     case developerID
 
     public var title: String {
