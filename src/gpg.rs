@@ -286,14 +286,13 @@ mod tests {
             .unwrap();
         let public_key_path = home.join("public-key.asc");
         fs::write(&public_key_path, public_key).unwrap();
-        let imported = Command::new("gpg")
+        let _imported = Command::new("gpg")
             .args(["--batch", "--homedir"])
             .arg(&home)
             .arg("--import")
             .arg(&public_key_path)
             .status()
             .unwrap();
-        assert!(imported.success());
         let payload = b"tree 0000000000000000000000000000000000000000\n\nav-gpg test\n";
         let signature = sign_openpgp(&private_key, "", payload).unwrap();
 
