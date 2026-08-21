@@ -2570,7 +2570,7 @@ private struct AWSRegistrationCandidate {
     let useLongLivedCredentials: Bool
 }
 
-private struct AWSRegistration {
+private struct AWSRegistration: Sendable {
     let generation: AWSRuntimeGeneration
     let chain: AWSProfileChain
     let args: [String]
@@ -2601,9 +2601,14 @@ private struct StoredDockerCredential {
     let secret: String
 }
 
-private struct ApprovedPayload {
+private struct ApprovedPayload: Sendable {
     let secrets: [String: String]
     let value: String?
+}
+
+private struct ApprovedFulfillmentMaterial: Sendable {
+    let payload: ApprovedPayload
+    let awsRegistration: AWSRegistration?
 }
 
 private final class ApprovalServer: @unchecked Sendable {
@@ -3146,9 +3151,6 @@ private final class ApprovalServer: @unchecked Sendable {
            let (script, matchedLauncher) = effectiveBlessingMatch
         {
             do {
-                let payload = try approvedPayload(
-                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-                )
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
                     id: accessRequestID,
@@ -3159,33 +3161,46 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: "Blessed script \(script.path)",
                     launcher: matchedLauncher
                 )
-                guard onAccessRequest(record) else {
+                guard try fulfillApprovedRequest(
+                    request: request,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    record: record,
+                    launcher: matchedLauncher,
+                    activateAfterRecording: {
+                        registerBlessedExecution(script, pid: pid, identity: identity)
+                        rememberRetainedProvenance(
+                            at: blessingGate,
+                            launcher: matchedLauncher,
+                            chains: processChains,
+                            retainedMatch: currentBlessingMatch == nil
+                                ? retainedBlessingProvenance
+                                : nil
+                        )
+                        Task { @MainActor in
+                            self.onAutoApproval(autoApprovalRecord(
+                                accessRequestID: accessRequestID,
+                                request: request,
+                                script: scriptApproval,
+                                launcher: matchedLauncher
+                            ))
+                        }
+                    },
+                    release: { payload in
+                        reply(
+                            peer,
+                            to: message,
+                            ok: true,
+                            error: nil,
+                            secrets: payload.secrets,
+                            value: payload.value
+                        )
+                    }
+                ) else {
                     reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                     return
                 }
-                registerBlessedExecution(script, pid: pid, identity: identity)
-                rememberRetainedProvenance(
-                    at: blessingGate,
-                    launcher: matchedLauncher,
-                    chains: processChains,
-                    retainedMatch: currentBlessingMatch == nil ? retainedBlessingProvenance : nil
-                )
-                Task { @MainActor in
-                    self.onAutoApproval(autoApprovalRecord(
-                        accessRequestID: accessRequestID,
-                        request: request,
-                        script: scriptApproval,
-                        launcher: matchedLauncher
-                    ))
-                }
-                recordLiveSecretUse(
-                    request: request,
-                    payload: payload,
-                    launcher: matchedLauncher,
-                    pid: pid,
-                    identity: identity
-                )
-                reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
                     request: request,
@@ -3323,9 +3338,6 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if activeBlessing == nil, let directAccessLauncher {
             do {
-                let payload = try approvedPayload(
-                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-                )
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
                     id: accessRequestID,
@@ -3336,41 +3348,46 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: "Direct Access from \(shortAppName(directAccessLauncher.identifier))",
                     launcher: directAccessLauncher
                 )
-                guard onAccessRequest(record) else {
+                guard try fulfillApprovedRequest(
+                    request: request,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    record: record,
+                    launcher: directAccessLauncher,
+                    activateAfterRecording: {
+                        rememberRetainedProvenance(
+                            at: authorizationGate,
+                            launcher: directAccessLauncher,
+                            chains: processChains,
+                            retainedMatch: launchers.contains(where: {
+                                $0.designatedRequirement
+                                    == directAccessLauncher.designatedRequirement
+                            }) ? nil : retainedGateProvenance
+                        )
+                        Task { @MainActor in
+                            self.onAutoApproval(autoApprovalRecord(
+                                accessRequestID: accessRequestID,
+                                request: request,
+                                script: scriptApproval,
+                                launcher: directAccessLauncher
+                            ))
+                        }
+                    },
+                    release: { payload in
+                        reply(
+                            peer,
+                            to: message,
+                            ok: true,
+                            error: nil,
+                            secrets: payload.secrets,
+                            value: payload.value
+                        )
+                    }
+                ) else {
                     reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                     return
                 }
-                rememberRetainedProvenance(
-                    at: authorizationGate,
-                    launcher: directAccessLauncher,
-                    chains: processChains,
-                    retainedMatch: launchers.contains(where: {
-                        $0.designatedRequirement == directAccessLauncher.designatedRequirement
-                    }) ? nil : retainedGateProvenance
-                )
-                Task { @MainActor in
-                    self.onAutoApproval(autoApprovalRecord(
-                        accessRequestID: accessRequestID,
-                        request: request,
-                        script: scriptApproval,
-                        launcher: directAccessLauncher
-                    ))
-                }
-                recordLiveSecretUse(
-                    request: request,
-                    payload: payload,
-                    launcher: directAccessLauncher,
-                    pid: pid,
-                    identity: identity
-                )
-                reply(
-                    peer,
-                    to: message,
-                    ok: true,
-                    error: nil,
-                    secrets: payload.secrets,
-                    value: payload.value
-                )
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
                     request: request,
@@ -3395,9 +3412,6 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             let authorizingLauncher = resolvedPolicy.launcher ?? policyLauncher
             do {
-                let payload = try approvedPayload(
-                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-                )
                 let reason = "\(configuredGate.protectionTitle(resolvedPolicy.protection)) from \(resolvedPolicy.source)"
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
@@ -3409,36 +3423,48 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: reason,
                     launcher: authorizingLauncher
                 )
-                guard onAccessRequest(record) else {
+                guard try fulfillApprovedRequest(
+                    request: request,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    record: record,
+                    launcher: authorizingLauncher,
+                    activateAfterRecording: {
+                        if let authorizingLauncher {
+                            rememberRetainedProvenance(
+                                at: authorizationGate,
+                                launcher: authorizingLauncher,
+                                chains: processChains,
+                                retainedMatch: launchers.contains(where: {
+                                    $0.designatedRequirement
+                                        == authorizingLauncher.designatedRequirement
+                                }) ? nil : retainedGateProvenance
+                            )
+                            Task { @MainActor in
+                                self.onAutoApproval(autoApprovalRecord(
+                                    accessRequestID: accessRequestID,
+                                    request: request,
+                                    script: scriptApproval,
+                                    launcher: authorizingLauncher
+                                ))
+                            }
+                        }
+                    },
+                    release: { payload in
+                        reply(
+                            peer,
+                            to: message,
+                            ok: true,
+                            error: nil,
+                            secrets: payload.secrets,
+                            value: payload.value
+                        )
+                    }
+                ) else {
                     reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                     return
                 }
-                if let authorizingLauncher {
-                    rememberRetainedProvenance(
-                        at: authorizationGate,
-                        launcher: authorizingLauncher,
-                        chains: processChains,
-                        retainedMatch: launchers.contains(where: {
-                            $0.designatedRequirement == authorizingLauncher.designatedRequirement
-                        }) ? nil : retainedGateProvenance
-                    )
-                    Task { @MainActor in
-                        self.onAutoApproval(autoApprovalRecord(
-                            accessRequestID: accessRequestID,
-                            request: request,
-                            script: scriptApproval,
-                            launcher: authorizingLauncher
-                        ))
-                    }
-                }
-                recordLiveSecretUse(
-                    request: request,
-                    payload: payload,
-                    launcher: authorizingLauncher,
-                    pid: pid,
-                    identity: identity
-                )
-                reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
             } catch {
                 _ = onAccessRequest(accessRequestRecord(
                     request: request,
@@ -3563,9 +3589,6 @@ private final class ApprovalServer: @unchecked Sendable {
                     return
                 }
                 do {
-                    let payload = try self.approvedPayload(
-                        for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-                    )
                     let record = accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
@@ -3574,18 +3597,27 @@ private final class ApprovalServer: @unchecked Sendable {
                         reason: "Reused recent approval",
                         launcher: promptLauncher
                     )
-                    guard self.onAccessRequest(record) else {
+                    guard try self.fulfillApprovedRequest(
+                        request: request,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity,
+                        record: record,
+                        launcher: promptLauncher,
+                        release: { payload in
+                            self.reply(
+                                peer,
+                                to: message,
+                                ok: true,
+                                error: nil,
+                                secrets: payload.secrets,
+                                value: payload.value
+                            )
+                        }
+                    ) else {
                         self.reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                         return
                     }
-                    self.recordLiveSecretUse(
-                        request: request,
-                        payload: payload,
-                        launcher: promptLauncher,
-                        pid: pid,
-                        identity: identity
-                    )
-                    self.reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -3700,20 +3732,40 @@ private final class ApprovalServer: @unchecked Sendable {
                     return
                 }
                 do {
-                    let payload = try self.approvedPayload(
-                        for: request,
-                        awsRegistration: awsRegistration,
-                        pid: pid,
-                        identity: identity
-                    )
-                    guard self.onAccessRequest(accessRequestRecord(
+                    let record = accessRequestRecord(
                         request: request,
                         callerPath: callerPath,
                         decision: "Approved",
                         approvalSource: "Manual",
                         reason: "Temporary Access Grant — Write Access",
                         launcher: refreshedCandidate.launcher
-                    )) else {
+                    )
+                    guard try self.fulfillApprovedRequest(
+                        request: request,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity,
+                        record: record,
+                        launcher: refreshedCandidate.launcher,
+                        release: { payload in
+                            self.temporaryAccessGrants.startWithLease(
+                                scope: refreshedCandidate.scope,
+                                launcherName: refreshedCandidate.launcherName,
+                                authorizationGateName: refreshedCandidate.authorizationGateName
+                            ) { _ in
+                                self.reply(
+                                    peer,
+                                    to: message,
+                                    ok: true,
+                                    error: nil,
+                                    secrets: payload.secrets,
+                                    value: payload.value,
+                                    humanApprovalDecision: "approved"
+                                )
+                            }
+                            self.onTemporaryAccessGrantsChanged()
+                        }
+                    ) else {
                         self.reply(
                             peer,
                             to: message,
@@ -3723,29 +3775,6 @@ private final class ApprovalServer: @unchecked Sendable {
                         )
                         return
                     }
-                    self.recordLiveSecretUse(
-                        request: request,
-                        payload: payload,
-                        launcher: refreshedCandidate.launcher,
-                        pid: pid,
-                        identity: identity
-                    )
-                    self.temporaryAccessGrants.startWithLease(
-                        scope: refreshedCandidate.scope,
-                        launcherName: refreshedCandidate.launcherName,
-                        authorizationGateName: refreshedCandidate.authorizationGateName
-                    ) { _ in
-                        self.reply(
-                            peer,
-                            to: message,
-                            ok: true,
-                            error: nil,
-                            secrets: payload.secrets,
-                            value: payload.value,
-                            humanApprovalDecision: "approved"
-                        )
-                    }
-                    self.onTemporaryAccessGrantsChanged()
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -3766,9 +3795,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             do {
-                let payload = try self.approvedPayload(
-                    for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-                )
                 let record = accessRequestRecord(
                     request: request,
                     callerPath: callerPath,
@@ -3777,7 +3803,40 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: "Approved in prompt",
                     launcher: promptLauncher
                 )
-                guard self.onAccessRequest(record) else {
+                guard try self.fulfillApprovedRequest(
+                    request: request,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    record: record,
+                    launcher: promptLauncher,
+                    activateAfterRecording: {
+                        if let scriptApproval,
+                           let script = self.matchingBlessedScript(
+                               request: request,
+                               approval: scriptApproval,
+                               launcher: nil
+                           )
+                        {
+                            self.registerBlessedExecution(script, pid: pid, identity: identity)
+                        }
+                        self.transientApprovals.remember(
+                            decision.reuseOutcome,
+                            for: transientApproval
+                        )
+                    },
+                    release: { payload in
+                        self.reply(
+                            peer,
+                            to: message,
+                            ok: true,
+                            error: nil,
+                            secrets: payload.secrets,
+                            value: payload.value,
+                            humanApprovalDecision: "approved"
+                        )
+                    }
+                ) else {
                     self.reply(
                         peer,
                         to: message,
@@ -3787,32 +3846,6 @@ private final class ApprovalServer: @unchecked Sendable {
                     )
                     return
                 }
-                if let scriptApproval,
-                   let script = self.matchingBlessedScript(
-                       request: request,
-                       approval: scriptApproval,
-                       launcher: nil
-                   )
-                {
-                    self.registerBlessedExecution(script, pid: pid, identity: identity)
-                }
-                self.transientApprovals.remember(decision.reuseOutcome, for: transientApproval)
-                self.recordLiveSecretUse(
-                    request: request,
-                    payload: payload,
-                    launcher: promptLauncher,
-                    pid: pid,
-                    identity: identity
-                )
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: true,
-                    error: nil,
-                    secrets: payload.secrets,
-                    value: payload.value,
-                    humanApprovalDecision: "approved"
-                )
             } catch {
                 _ = self.onAccessRequest(accessRequestRecord(
                     request: request,
@@ -3858,14 +3891,8 @@ private final class ApprovalServer: @unchecked Sendable {
                     agentTaskContext: agentTaskContext,
                     classification: classification
                 ) { _ in
-                    let payload = try approvedPayload(
-                        for: request,
-                        awsRegistration: awsRegistration,
-                        pid: pid,
-                        identity: identity
-                    )
                     let accessRequestID = UUID()
-                    guard onAccessRequest(accessRequestRecord(
+                    let record = accessRequestRecord(
                         id: accessRequestID,
                         request: request,
                         callerPath: callerPath,
@@ -3873,39 +3900,45 @@ private final class ApprovalServer: @unchecked Sendable {
                         approvalSource: "Auto",
                         reason: "Temporary Access Grant — Write Access",
                         launcher: launcher
-                    )) else {
-                        reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
-                        return false
-                    }
-                    rememberRetainedProvenance(
-                        at: authorizationGate,
-                        launcher: launcher,
-                        chains: processChains,
-                        retainedMatch: nil
                     )
-                    Task { @MainActor in
-                        self.onAutoApproval(autoApprovalRecord(
-                            accessRequestID: accessRequestID,
-                            request: request,
-                            script: scriptApproval,
-                            launcher: launcher
-                        ))
-                    }
-                    recordLiveSecretUse(
+                    let committed = try fulfillApprovedRequest(
                         request: request,
-                        payload: payload,
-                        launcher: launcher,
+                        awsRegistration: awsRegistration,
                         pid: pid,
-                        identity: identity
+                        identity: identity,
+                        record: record,
+                        launcher: launcher,
+                        activateAfterRecording: {
+                            rememberRetainedProvenance(
+                                at: authorizationGate,
+                                launcher: launcher,
+                                chains: processChains,
+                                retainedMatch: nil
+                            )
+                            Task { @MainActor in
+                                self.onAutoApproval(autoApprovalRecord(
+                                    accessRequestID: accessRequestID,
+                                    request: request,
+                                    script: scriptApproval,
+                                    launcher: launcher
+                                ))
+                            }
+                        },
+                        release: { payload in
+                            reply(
+                                peer,
+                                to: message,
+                                ok: true,
+                                error: nil,
+                                secrets: payload.secrets,
+                                value: payload.value
+                            )
+                        }
                     )
-                    reply(
-                        peer,
-                        to: message,
-                        ok: true,
-                        error: nil,
-                        secrets: payload.secrets,
-                        value: payload.value
-                    )
+                    if !committed {
+                        reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
+                        return true
+                    }
                     return true
                 }
                 if handled == true { return true }
@@ -4111,31 +4144,41 @@ private final class ApprovalServer: @unchecked Sendable {
                     else {
                         throw AppError("Automic Vault returned an incomplete Secret set")
                     }
-                    guard self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Approved",
-                        approvalSource: "Manual",
-                        reason: "Approved in prompt",
-                        launcher: launcher
-                    )) else {
+                    let transaction = AuthorizationFulfillmentTransaction(material: secrets)
+                    guard transaction.commit(
+                        record: {
+                            self.onAccessRequest(accessRequestRecord(
+                                request: request,
+                                callerPath: callerPath,
+                                decision: "Approved",
+                                approvalSource: "Manual",
+                                reason: "Approved in prompt",
+                                launcher: launcher
+                            ))
+                        },
+                        activate: { _ in },
+                        observe: { secrets in
+                            self.recordLiveSecretUse(
+                                request: request,
+                                secretNames: Set(secrets.keys),
+                                launcher: launcher,
+                                execution: applicationExecution
+                            )
+                        },
+                        release: { secrets in
+                            self.reply(
+                                peer,
+                                to: message,
+                                ok: true,
+                                error: nil,
+                                secrets: secrets,
+                                protocolVersion: varlockProtocolVersion,
+                                humanApprovalDecision: "approved"
+                            )
+                        }
+                    ) else {
                         throw AppError("approval audit log is unavailable")
                     }
-                    self.recordLiveSecretUse(
-                        request: request,
-                        secretNames: Set(secrets.keys),
-                        launcher: launcher,
-                        execution: applicationExecution
-                    )
-                    self.reply(
-                        peer,
-                        to: message,
-                        ok: true,
-                        error: nil,
-                        secrets: secrets,
-                        protocolVersion: varlockProtocolVersion,
-                        humanApprovalDecision: "approved"
-                    )
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -4467,11 +4510,8 @@ private final class ApprovalServer: @unchecked Sendable {
         ) else { return false }
 
         do {
-            let payload = try approvedPayload(
-                for: request, awsRegistration: awsRegistration, pid: pid, identity: identity
-            )
             let accessRequestID = UUID()
-            guard onAccessRequest(accessRequestRecord(
+            let record = accessRequestRecord(
                 id: accessRequestID,
                 request: request,
                 callerPath: callerPath,
@@ -4479,28 +4519,43 @@ private final class ApprovalServer: @unchecked Sendable {
                 approvalSource: "Auto",
                 reason: "Blessed script \(script.path)",
                 launcher: launcher
-            )) else {
+            )
+            guard try fulfillApprovedRequest(
+                request: request,
+                awsRegistration: awsRegistration,
+                pid: pid,
+                identity: identity,
+                record: record,
+                launcher: launcher,
+                activateAfterRecording: {
+                    if let launcher {
+                        Task { @MainActor in
+                            self.onAutoApproval(autoApprovalRecord(
+                                accessRequestID: accessRequestID,
+                                request: request,
+                                script: ScriptApproval(
+                                    path: script.path,
+                                    checksum: script.checksum
+                                ),
+                                launcher: launcher
+                            ))
+                        }
+                    }
+                },
+                release: { payload in
+                    reply(
+                        peer,
+                        to: message,
+                        ok: true,
+                        error: nil,
+                        secrets: payload.secrets,
+                        value: payload.value
+                    )
+                }
+            ) else {
                 reply(peer, to: message, ok: false, error: "approval audit log is unavailable")
                 return true
             }
-            if let launcher {
-                Task { @MainActor in
-                    self.onAutoApproval(autoApprovalRecord(
-                        accessRequestID: accessRequestID,
-                        request: request,
-                        script: ScriptApproval(path: script.path, checksum: script.checksum),
-                        launcher: launcher
-                    ))
-                }
-            }
-            recordLiveSecretUse(
-                request: request,
-                payload: payload,
-                launcher: launcher,
-                pid: pid,
-                identity: identity
-            )
-            reply(peer, to: message, ok: true, error: nil, secrets: payload.secrets, value: payload.value)
         } catch {
             _ = onAccessRequest(accessRequestRecord(
                 request: request,
@@ -5126,12 +5181,10 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
-    private func approvedPayload(
+    private func prepareApprovedFulfillment(
         for request: ApprovalRequest,
-        awsRegistration: AWSRegistrationCandidate?,
-        pid: pid_t,
-        identity: AVProcessIdentity
-    ) throws -> ApprovedPayload {
+        awsRegistration: AWSRegistrationCandidate?
+    ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let dockerParent: DockerCredentialParent?
         if request.op == "docker-get" {
             guard let serverURL = request.dockerServerURL,
@@ -5155,14 +5208,13 @@ private final class ApprovalServer: @unchecked Sendable {
                   credential.serverURL == serverURL
             else { throw AppError("Docker credential changed before Secret Application") }
         }
-        guard let awsRegistration else { return ApprovedPayload(secrets: secrets, value: nil) }
-        let key = BlessedExecutionKey(pid: pid, startUsec: identity.start_usec)
-        awsRegistrationsLock.lock()
-        awsRegistrations = awsRegistrations.filter { key, _ in
-            var current = AVProcessIdentity()
-            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
+        guard let awsRegistration else {
+            return AuthorizationFulfillmentTransaction(material: ApprovedFulfillmentMaterial(
+                payload: ApprovedPayload(secrets: secrets, value: nil),
+                awsRegistration: nil
+            ))
         }
-        awsRegistrations[key] = AWSRegistration(
+        let registration = AWSRegistration(
             generation: awsRegistration.generation,
             chain: awsRegistration.chain,
             args: awsRegistration.args,
@@ -5172,7 +5224,6 @@ private final class ApprovalServer: @unchecked Sendable {
             secretValues: request.selectedSecretValues,
             credentials: nil
         )
-        awsRegistrationsLock.unlock()
         let section = awsRegistration.chain.selected.name == "default"
             ? "default"
             : "profile \(awsRegistration.chain.selected.name)"
@@ -5182,7 +5233,60 @@ private final class ApprovalServer: @unchecked Sendable {
         region = \(awsRegistration.chain.region)
 
         """
-        return ApprovedPayload(secrets: [:], value: config)
+        return AuthorizationFulfillmentTransaction(material: ApprovedFulfillmentMaterial(
+            payload: ApprovedPayload(secrets: [:], value: config),
+            awsRegistration: registration
+        ))
+    }
+
+    private func fulfillApprovedRequest(
+        request: ApprovalRequest,
+        awsRegistration: AWSRegistrationCandidate?,
+        pid: pid_t,
+        identity: AVProcessIdentity,
+        record: AccessRequestRecord,
+        launcher: LauncherIdentity?,
+        activateAfterRecording: () -> Void = {},
+        release: (ApprovedPayload) -> Void
+    ) throws -> Bool {
+        let transaction = try prepareApprovedFulfillment(
+            for: request,
+            awsRegistration: awsRegistration
+        )
+        return transaction.commit(
+            record: { onAccessRequest(record) },
+            activate: { material in
+                if let registration = material.awsRegistration {
+                    installAWSRegistration(registration, pid: pid, identity: identity)
+                }
+                activateAfterRecording()
+            },
+            observe: { material in
+                recordLiveSecretUse(
+                    request: request,
+                    payload: material.payload,
+                    launcher: launcher,
+                    pid: pid,
+                    identity: identity
+                )
+            },
+            release: { material in release(material.payload) }
+        )
+    }
+
+    private func installAWSRegistration(
+        _ registration: AWSRegistration,
+        pid: pid_t,
+        identity: AVProcessIdentity
+    ) {
+        let key = BlessedExecutionKey(pid: pid, startUsec: identity.start_usec)
+        awsRegistrationsLock.lock()
+        defer { awsRegistrationsLock.unlock() }
+        awsRegistrations = awsRegistrations.filter { key, _ in
+            var current = AVProcessIdentity()
+            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
+        }
+        awsRegistrations[key] = registration
     }
 
     private func recordLiveSecretUse(
