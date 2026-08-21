@@ -13,7 +13,7 @@ panic = "abort"
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
-bpb = { git = "https://github.com/automic-vault/bpb.git", rev = "5dec130" }
+bpb = { git = "https://github.com/automic-vault/bpb.git", rev = "2b8bcf0" }
 futures-util = "0.3"
 http-body-util = "0.1"
 http-mitm-proxy = { version = "=0.18.0", default-features = false }
