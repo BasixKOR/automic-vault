@@ -77,6 +77,21 @@ private struct InMemorySecretValueCustodyAdapter: SecretValueCustodyAdapter {
     }
 }
 
+@Test func secretValueCustodyRejectsEmptySelectedValue() throws {
+    let cwd = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
+    let global = storedValue(source: .global, account: "global")
+    let adapter = InMemorySecretValueCustodyAdapter(
+        secrets: [StoredSecret(account: "API_TOKEN", values: [global])],
+        loadedValues: ["global": .success("")]
+    )
+    let custody = SecretValueCustody(adapter: adapter)
+    let selected = try custody.bind(names: ["API_TOKEN"], cwd: cwd)
+
+    #expect(throws: SecretValueCustodyError.selectedValueEmpty("API_TOKEN")) {
+        try custody.load(selected, names: ["API_TOKEN"])
+    }
+}
+
 @Test func secretValueCustodyFailsClosedBeforeBindingWhenRepairFails() throws {
     let cwd = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
     let adapter = InMemorySecretValueCustodyAdapter(

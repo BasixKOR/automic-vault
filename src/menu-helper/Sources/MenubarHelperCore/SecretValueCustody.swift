@@ -8,6 +8,7 @@ public enum SecretValueCustodyError: Error, Equatable, LocalizedError, Sendable 
     case selectedValueMissing(String)
     case selectedValueUnavailable(String, OSStatus)
     case selectedValueInvalidUTF8(String)
+    case selectedValueEmpty(String)
 
     public var errorDescription: String? {
         switch self {
@@ -23,6 +24,8 @@ public enum SecretValueCustodyError: Error, Equatable, LocalizedError, Sendable 
             "failed to load selected value for \(name): \(status)"
         case .selectedValueInvalidUTF8(let name):
             "selected value for \(name) is not valid UTF-8"
+        case .selectedValueEmpty(let name):
+            "selected value for \(name) is empty"
         }
     }
 }
@@ -142,6 +145,9 @@ public struct SecretValueCustody: Sendable {
             }
             switch adapter.load(value) {
             case .success(let secret):
+                guard !secret.isEmpty else {
+                    throw SecretValueCustodyError.selectedValueEmpty(name)
+                }
                 loaded[name] = secret
             case .notFound:
                 throw SecretValueCustodyError.selectedValueMissing(name)
