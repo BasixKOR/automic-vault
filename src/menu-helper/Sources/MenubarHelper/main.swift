@@ -3509,19 +3509,14 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             promptBlessing = nil
         }
-        let requiresFreshApproval = awsRequestMayUseLongLivedCredentials(request)
-        let usesIPhoneApproval = phoneApprovalIsEnabled()
-        let usesTouchIDApproval = touchIDApprovalIsEnabled()
-        let requiresFreshHumanApproval = requiresFreshApproval
-            || usesIPhoneApproval
-            || usesTouchIDApproval
+        let requiresFreshOperationApproval = awsRequestMayUseLongLivedCredentials(request)
         RunLoop.main.perform(inModes: [.modalPanel, .default]) {
             MainActor.assumeIsolated {
                 guard !cancellation.isCanceled,
                       let event = approvalEvent(
                           for: self.transientApprovals.decision(
                               for: transientApproval,
-                              allowingApprovalReuse: !requiresFreshHumanApproval
+                              allowingApprovalReuse: !requiresFreshOperationApproval
                           ),
                           humanApprovalAvailable: self.canRequestHumanApproval()
                       )
@@ -3581,7 +3576,7 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             let cachedDecision = self.transientApprovals.decision(
                 for: transientApproval,
-                allowingApprovalReuse: !requiresFreshHumanApproval
+                allowingApprovalReuse: !requiresFreshOperationApproval
             )
             if let decision = cachedDecision {
                 if decision == .denied {
@@ -3830,7 +3825,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 {
                     self.registerBlessedExecution(script, pid: pid, identity: identity)
                 }
-                if !requiresFreshHumanApproval {
+                if !requiresFreshOperationApproval {
                     self.transientApprovals.remember(.approved, for: transientApproval)
                 }
                 self.recordLiveSecretUse(
