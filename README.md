@@ -73,6 +73,8 @@ Hardened Runtime, and live process identity. Its features include:
 - Authorization Policies scoped to each Verified Launcher;
 - Project Values selected by physical working directory under stable Secret
   Names;
+- Proxy Sessions that keep Secret Values out of the Target and apply them only
+  to approved outbound HTTP/S requests;
 - Blessed Scripts bound to reviewed contents and declared capabilities;
 - in-memory Temporary Access Grants for eligible agent tasks;
 - optional iPhone Approval for carrying every human Approval away from an
@@ -186,16 +188,52 @@ its project-selected key to that operation.
 
 ## Secret Proxy
 
-```sh
-av proxy +API_TOKEN -- node app.js
+For an application that reads a credential from its environment:
+
+```js
+const response = await fetch('https://api.example.com/me', {
+  headers: { Authorization: `Bearer ${process.env.API_TOKEN}` },
+});
 ```
 
-The Target receives a random Secret Reference instead of the Secret Value. The
-signed, sandboxed proxy requests the Secret on demand only for an approved
-HTTP/S destination, then records the use. Approval is required for the Proxy
-Session and each new destination. Compatibility depends on the Target respecting
-proxy and scoped CA environment variables; see [Secret Proxy](docs/secret-proxy.md)
-for limits and its exact security boundary.
+store the Secret, then launch the application through the proxy:
+
+```sh
+av save API_TOKEN
+av proxy +API_TOKEN -- node --use-env-proxy app.js
+```
+
+`API_TOKEN` is a random, session-specific Secret Reference inside the launched
+Target. When that exact reference appears in an outbound request, the signed,
+sandboxed proxy asks whether to apply the Secret to that destination. Approval
+is required for the Proxy Session and each new destination; **Allow for
+Session** remembers only that origin and Secret Name until the Target exits.
+
+Node's built-in `fetch` needs Node 24 or newer and `--use-env-proxy`. Other
+clients must respect the supplied proxy and scoped CA environment variables.
+See [Secret Proxy](docs/secret-proxy.md) for compatibility and the exact
+security boundary.
+
+### Keep Secrets out of `.env`
+
+Leave non-secret project configuration in `.env`, but omit the Secret:
+
+```dotenv
+API_ORIGIN=https://api.example.com
+# API_TOKEN comes from Automic Vault
+```
+
+Store a Project Value, then load the rest of `.env` normally:
+
+```sh
+av save --project-directory=. API_TOKEN
+av proxy +API_TOKEN -- node --use-env-proxy --env-file=.env app.js
+```
+
+The working directory selects the Project Value. The loader must preserve an
+existing `API_TOKEN`; an override option would replace the Secret Reference and
+the proxy could not apply the Secret. Never write the reference into `.env`—it
+is random and valid only for one Proxy Session.
 
 ## Varlock
 
@@ -237,6 +275,34 @@ released.
 > Requires Automic Vault 3.9.0 or newer. Varlock currently requires one Approval
 > on every run for the complete active Secret set. Automic Authorization and
 > Blessings are not supported for the Varlock plugin yet.
+
+### Keep the Application on Varlock Placeholders
+
+Varlock also has its own credential proxy. It composes with the Automic Vault
+resolver, so `.env.schema` can own the destination rule while Automic Vault
+keeps custody of the Secret:
+
+```dotenv
+# @plugin(@automic-vault/varlock-plugin)
+# @disableProcessEnvInjection
+# ---
+# @sensitive @required
+# @proxy(domain="api.example.com")
+API_TOKEN=av()
+```
+
+```sh
+varlock proxy rules
+varlock proxy run -- node app.js
+```
+
+Automic Vault approves the complete active Secret set and releases it to the
+live Varlock resolution process. Varlock gives the application a placeholder
+and applies the real value only to requests matching the schema rule. This is a
+[Varlock credential proxy](https://varlock.dev/guides/proxy/) session, not an
+Automic Vault Proxy Session; don't nest it inside `av proxy` because both need
+to own the process proxy and CA environment. Varlock's proxy is currently a
+preview, so read its limitations before relying on its boundary.
 
 ## Scripts and Agent Tasks
 
