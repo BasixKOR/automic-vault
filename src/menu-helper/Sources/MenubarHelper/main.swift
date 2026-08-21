@@ -1529,7 +1529,7 @@ private func accessRequestRecord(
         cwd: request.cwd,
         keys: request.keys.sorted(),
         detail: request.detail,
-        secretValueSources: request.selectedValues.mapValues { $0.source.displayName }
+        secretValueSources: request.selectedSecretValues.sourceDisplayNames
     )
 }
 
@@ -1540,7 +1540,7 @@ private func automaticTargetRuntimeProtection(
 ) -> String? {
     guard decision == "Approved",
           approvalSource.caseInsensitiveCompare("Auto") == .orderedSame,
-          !request.selectedValues.isEmpty
+          !request.selectedSecretValues.isEmpty
     else { return nil }
 
     let protection: LauncherRuntimeProtection?
@@ -1741,7 +1741,7 @@ private struct ApprovalRequest {
     let detail: String?
     let dockerServerURL: String?
     let dockerParent: DockerCredentialParent?
-    let selectedValues: [String: StoredSecretValue]
+    let selectedSecretValues: SelectedSecretValues
 
     init(
         op: String,
@@ -1760,7 +1760,7 @@ private struct ApprovalRequest {
         detail: String?,
         dockerServerURL: String? = nil,
         dockerParent: DockerCredentialParent? = nil,
-        selectedValues: [String: StoredSecretValue] = [:]
+        selectedSecretValues: SelectedSecretValues = SelectedSecretValues(values: [:])
     ) {
         self.op = op
         self.keys = keys
@@ -1778,10 +1778,10 @@ private struct ApprovalRequest {
         self.detail = detail
         self.dockerServerURL = dockerServerURL
         self.dockerParent = dockerParent
-        self.selectedValues = selectedValues
+        self.selectedSecretValues = selectedSecretValues
     }
 
-    func selecting(_ values: [String: StoredSecretValue]) -> ApprovalRequest {
+    func selecting(_ values: SelectedSecretValues) -> ApprovalRequest {
         ApprovalRequest(
             op: op,
             keys: keys,
@@ -1799,7 +1799,7 @@ private struct ApprovalRequest {
             detail: detail,
             dockerServerURL: dockerServerURL,
             dockerParent: dockerParent,
-            selectedValues: values
+            selectedSecretValues: values
         )
     }
 }
@@ -1895,11 +1895,11 @@ enum SecretMutation {
         default: URL(fileURLWithPath: callerPath).lastPathComponent
         }
         let cwd: String
-        let selectedValues: [String: StoredSecretValue]
+        let selectedSecretValues: SelectedSecretValues
         switch self {
         case .saveProject(let account, _, let directory, let accessibility, _):
             cwd = directory
-            selectedValues = [account: StoredSecretValue(
+            selectedSecretValues = SelectedSecretValues(values: [account: StoredSecretValue(
                 source: .projectDirectory(directory),
                 keychainAccount: storedSecretKeychainAccount(
                     secretName: account,
@@ -1907,10 +1907,10 @@ enum SecretMutation {
                 ),
                 accessibility: accessibility,
                 keychainProperties: []
-            )]
+            )])
         default:
             cwd = ""
-            selectedValues = [:]
+            selectedSecretValues = SelectedSecretValues(values: [:])
         }
         return ApprovalRequest(
             op: properties.op,
@@ -1926,7 +1926,7 @@ enum SecretMutation {
             tool: tool,
             title: properties.title,
             detail: properties.detail,
-            selectedValues: selectedValues
+            selectedSecretValues: selectedSecretValues
         )
     }
 
@@ -2216,7 +2216,7 @@ private func missingRequiredSecret(
     let conflicts = Set(request.envConflicts)
     return request.keys.first {
         (request.replaceExistingEnv || !conflicts.contains($0))
-            && !(exists?($0) ?? (request.selectedValues[$0] != nil))
+            && !(exists?($0) ?? request.selectedSecretValues.contains($0))
     }
 }
 
@@ -2562,7 +2562,7 @@ private struct AWSRegistration {
     let target: String
     let interpreter: String
     let useLongLivedCredentials: Bool
-    let secretValues: [String: StoredSecretValue]
+    let secretValues: SelectedSecretValues
     var credentials: AWSCredentials?
 }
 
@@ -2607,6 +2607,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let canRequestHumanApproval: @MainActor () -> Bool
     private let temporaryAccessGrants: TemporaryAccessGrantController
     private let liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>
+    private let secretValueCustody: SecretValueCustody
     private let canRequestMacInput: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
@@ -2622,6 +2623,7 @@ private final class ApprovalServer: @unchecked Sendable {
         serviceName: String,
         temporaryAccessGrants: TemporaryAccessGrantController,
         liveSecretUses: LiveSecretUseController<LiveSecretUseProcess>,
+        secretValueCustody: SecretValueCustody = SecretValueCustody(),
         onAutoApproval: @escaping @MainActor (AutoApprovalRecord) -> Void = { _ in },
         onAccessRequest: @escaping @Sendable (AccessRequestRecord) -> Bool = { appendAccessRequestRecord($0) },
         onBlessRequest: @escaping @MainActor (
@@ -2640,6 +2642,7 @@ private final class ApprovalServer: @unchecked Sendable {
         self.serviceName = serviceName
         self.temporaryAccessGrants = temporaryAccessGrants
         self.liveSecretUses = liveSecretUses
+        self.secretValueCustody = secretValueCustody
         self.teamIdentifier = teamIdentifier
         self.secretGateDescriptors = try loadSecretGateDescriptors(
             avExecutableURL: avExecutableURL()
@@ -3053,37 +3056,10 @@ private final class ApprovalServer: @unchecked Sendable {
             let selectionNames = dockerRequest.keys.filter {
                 dockerRequest.replaceExistingEnv || !conflicts.contains($0)
             }
-            if !selectionNames.isEmpty {
-                let repairStatus = resumePendingSecretMutation()
-                if repairStatus != errSecSuccess {
-                    let names = pendingSecretMutationNames()
-                    if names.map({ !Set(selectionNames).isDisjoint(with: $0) }) ?? true {
-                        reply(
-                            peer,
-                            to: message,
-                            ok: false,
-                            error: "secret repair must complete before this request: \(repairStatus)"
-                        )
-                        return
-                    }
-                }
-            }
-            let selected: [String: StoredSecretValue]
-            if selectionNames.isEmpty {
-                selected = [:]
-            } else {
-                let storedSecrets: [StoredSecret]
-                switch loadStoredSecretsResult() {
-                case .success(let loaded): storedSecrets = loaded
-                case .failure(let status):
-                    throw AppError("failed to inspect stored Secrets: \(status)")
-                }
-                selected = try resolveStoredSecretValues(
-                    names: selectionNames,
-                    cwd: dockerRequest.cwd,
-                    secrets: storedSecrets
-                )
-            }
+            let selected = try secretValueCustody.bind(
+                names: selectionNames,
+                cwd: dockerRequest.cwd
+            )
             request = approvalRequestWithCredentialContext(dockerRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
@@ -3484,9 +3460,7 @@ private final class ApprovalServer: @unchecked Sendable {
             envConflicts: request.envConflicts.sorted(),
             shebangScript: request.shebangScript,
             tool: request.tool,
-            selectedValueSources: request.selectedValues
-                .map { "\($0.key)=\($0.value.source.displayName)" }
-                .sorted()
+            selectedValueSources: request.selectedSecretValues.identityComponents()
         )
         let promptBlessing: BlessedScriptPromptContext?
         if let activeBlessing {
@@ -4032,23 +4006,14 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "Verified Launcher process is unavailable")
             return
         }
-        let selected: [String: StoredSecretValue]
+        let selected: SelectedSecretValues
         do {
-            let repairStatus = resumePendingSecretMutation()
-            guard repairStatus == errSecSuccess else {
-                throw AppError("secret repair must complete before this request: \(repairStatus)")
-            }
-            let storedSecrets: [StoredSecret]
-            switch loadStoredSecretsResult() {
-            case .success(let loaded): storedSecrets = loaded
-            case .failure(let status): throw AppError("failed to inspect stored Secrets: \(status)")
-            }
-            selected = try resolveStoredSecretValues(names: keys, cwd: cwd, secrets: storedSecrets)
+            selected = try secretValueCustody.bind(names: keys, cwd: cwd)
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
         }
-        guard let missingKey = keys.first(where: { selected[$0] == nil }) else {
+        guard let missingKey = keys.first(where: { !selected.contains($0) }) else {
             let title = keys.count == 1
                 ? "Allow the Varlock plugin to receive \(keys[0])?"
                 : "Allow the Varlock plugin to receive \(keys.count) Secrets?"
@@ -4066,7 +4031,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 tool: "Varlock plugin",
                 title: title,
                 detail: "This Secret Disclosure returns the selected Secret Values to Varlock for one application process. Schema SHA-256: \(schemaDigest).",
-                selectedValues: selected
+                selectedSecretValues: selected
             )
             RunLoop.main.perform(inModes: [.modalPanel, .default]) {
                 MainActor.assumeIsolated {
@@ -4226,6 +4191,25 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid Proxy Session request")
             return
         }
+        let selectedSecretValues: SelectedSecretValues
+        do {
+            selectedSecretValues = try secretValueCustody.bind(
+                names: parsed.keys,
+                cwd: parsed.cwd
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+            return
+        }
+        if let missingName = parsed.keys.first(where: { !selectedSecretValues.contains($0) }) {
+            reply(
+                peer,
+                to: message,
+                ok: false,
+                error: "failed to load secret \(missingName): \(errSecItemNotFound)"
+            )
+            return
+        }
         let request = ApprovalRequest(
             op: parsed.op,
             keys: parsed.keys.sorted(),
@@ -4239,7 +4223,8 @@ private final class ApprovalServer: @unchecked Sendable {
             scriptData: nil,
             tool: "Secret Proxy",
             title: "Start this Proxy Session?",
-            detail: "The target receives random Secret References. Automic Vault will ask before releasing secrets to each new destination."
+            detail: "The target receives random Secret References. Automic Vault will ask before releasing secrets to each new destination.",
+            selectedSecretValues: selectedSecretValues
         )
         let launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
@@ -4313,6 +4298,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 target: request.target,
                 arguments: request.args,
                 cwd: request.cwd,
+                selectedSecretValues: request.selectedSecretValues,
                 targetCodeIdentity: targetCodeIdentity,
                 identity: ProxyTargetIdentity(
                     pid: identity.pid,
@@ -4342,7 +4328,8 @@ private final class ApprovalServer: @unchecked Sendable {
                                 title: "Allow secrets for \(destination.origin)?",
                                 detail: destination.queryNames.isEmpty
                                     ? "The proxy will request these secrets on demand for this URL."
-                                    : "The proxy will request these secrets on demand. Query values remain hidden; names: \(destination.queryNames.sorted().joined(separator: ", "))."
+                                    : "The proxy will request these secrets on demand. Query values remain hidden; names: \(destination.queryNames.sorted().joined(separator: ", ")).",
+                                selectedSecretValues: destination.selectedSecretValues
                             )
                             return switch showApprovalAlert(
                                 request: destinationRequest,
@@ -4918,7 +4905,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 detail: request.detail,
                 dockerServerURL: request.dockerServerURL,
                 dockerParent: request.dockerParent,
-                selectedValues: request.selectedValues
+                selectedSecretValues: request.selectedSecretValues
             )
         }
         DispatchQueue.main.async {
@@ -4979,24 +4966,14 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func approvedSecrets(for request: ApprovalRequest) throws -> [String: String] {
         let conflicts = Set(request.envConflicts)
-        var secrets: [String: String] = [:]
-        for key in request.keys where request.replaceExistingEnv || !conflicts.contains(key) {
-            guard let selected = request.selectedValues[key] else {
-                if request.allowMissingKeys { continue }
-                throw AppError("failed to load secret \(key): \(errSecItemNotFound)")
-            }
-            switch loadStoredSecretValue(selected) {
-            case .success(let value):
-                secrets[key] = value
-            case .notFound:
-                throw AppError("selected value for \(key) no longer exists")
-            case .failure(let status):
-                throw AppError("failed to load selected value for \(key): \(status)")
-            case .invalidUTF8:
-                throw AppError("selected value for \(key) is not valid UTF-8")
-            }
+        let names = request.keys.filter {
+            request.replaceExistingEnv || !conflicts.contains($0)
         }
-        return secrets
+        return try secretValueCustody.load(
+            request.selectedSecretValues,
+            names: names,
+            allowMissing: request.allowMissingKeys
+        )
     }
 
     private func awsRegistrationCandidate(
@@ -5196,7 +5173,7 @@ private final class ApprovalServer: @unchecked Sendable {
             target: awsRegistration.target,
             interpreter: awsRegistration.interpreter,
             useLongLivedCredentials: awsRegistration.useLongLivedCredentials,
-            secretValues: request.selectedValues,
+            secretValues: request.selectedSecretValues,
             credentials: nil
         )
         awsRegistrationsLock.unlock()
@@ -5221,7 +5198,7 @@ private final class ApprovalServer: @unchecked Sendable {
     ) {
         var secretNames = Set(payload.secrets.keys)
         if request.tool == "aws", payload.value != nil {
-            secretNames.formUnion(request.selectedValues.keys)
+            secretNames.formUnion(request.selectedSecretValues.names)
         }
         guard !secretNames.isEmpty else { return }
 
@@ -5359,10 +5336,17 @@ private final class ApprovalServer: @unchecked Sendable {
         _ registration: AWSRegistration,
         parentPID: pid_t
     ) async throws -> AWSCredentials {
-        guard let accessKeyValue = registration.secretValues["AWS_ACCESS_KEY_ID"],
-              let secretKeyValue = registration.secretValues["AWS_SECRET_ACCESS_KEY"],
-              case .success(let accessKey) = loadStoredSecretValue(accessKeyValue),
-              case .success(let secretKey) = loadStoredSecretValue(secretKeyValue)
+        let selectedKeys: [String: String]
+        do {
+            selectedKeys = try secretValueCustody.load(
+                registration.secretValues,
+                names: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+            )
+        } catch {
+            throw AppError("selected AWS access keys are unavailable: \(error.localizedDescription)")
+        }
+        guard let accessKey = selectedKeys["AWS_ACCESS_KEY_ID"],
+              let secretKey = selectedKeys["AWS_SECRET_ACCESS_KEY"]
         else { throw AppError("selected AWS access keys are unavailable") }
         var credentials = AWSCredentials(accessKeyID: accessKey, secretAccessKey: secretKey)
         if registration.useLongLivedCredentials { return credentials }
@@ -5976,7 +5960,7 @@ private func approvalRequestWithCredentialContext(_ request: ApprovalRequest) ->
         tool: request.tool,
         title: "Use long-lived AWS credentials?",
         detail: "AWS does not allow non-MFA GetSessionToken credentials to call this operation. Unless the selected profile uses MFA or assumes a role, Automic Vault will provide your original AWS access keys directly to AWS CLI; they retain every IAM permission assigned to those keys.",
-        selectedValues: request.selectedValues
+        selectedSecretValues: request.selectedSecretValues
     )
 }
 
@@ -7757,7 +7741,7 @@ private func approvalPromptSections(
             "Secret Values",
             "key.horizontal",
             request.keys.sorted().map { key in
-                let source = request.selectedValues[key]?.source
+                let source = request.selectedSecretValues.source(for: key)
                 let display = switch source {
                 case .global: "Global Value"
                 case .projectDirectory(let path): escapedSecurityPath(path)
@@ -8975,14 +8959,14 @@ private func runApprovalSelfCheck() -> Int32 {
         tool: nil,
         title: nil,
         detail: nil,
-        selectedValues: [
+        selectedSecretValues: SelectedSecretValues(values: [
             "TEST_SECRET": StoredSecretValue(
                 source: .global,
                 keychainAccount: "TEST_SECRET",
                 accessibility: .whenUnlocked,
                 keychainProperties: []
             ),
-        ]
+        ])
     )
     guard processEnvironmentValueSelfCheck() else {
         print("bounded peer environment self-check failed")

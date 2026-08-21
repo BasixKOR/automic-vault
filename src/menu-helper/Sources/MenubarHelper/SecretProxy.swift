@@ -17,6 +17,7 @@ struct ProxySessionLaunch: Sendable {
     let target: String
     let arguments: [String]
     let cwd: String
+    let selectedSecretValues: SelectedSecretValues
     let targetCodeIdentity: Data?
     let identity: ProxyTargetIdentity
 }
@@ -37,6 +38,7 @@ struct ProxyDestinationRequest: Sendable {
     let path: String
     let queryNames: [String]
     let secretNames: [String]
+    let selectedSecretValues: SelectedSecretValues
 }
 
 enum ProxyDestinationDecision: Sendable {
@@ -110,6 +112,7 @@ actor SecretProxyCoordinator {
     private var pendingAuthorizations: [PendingAuthorizationID: ApprovalCancellation] = [:]
     private var destinationPromptActive = false
     private var destinationPromptWaiters: [CheckedContinuation<Void, Never>] = []
+    private let secretValueCustody = SecretValueCustody()
     private let maximumControlFrame = 4 * 1024 * 1024
 
     func start(
@@ -356,7 +359,10 @@ actor SecretProxyCoordinator {
               queryNames.allSatisfy({ !$0.isEmpty && $0.count <= 256 }),
               !secretNames.isEmpty,
               Set(secretNames).count == secretNames.count,
-              secretNames.allSatisfy({ session.references[$0] != nil })
+              secretNames.allSatisfy({
+                  session.references[$0] != nil
+                      && session.launch.selectedSecretValues.contains($0)
+              })
         else {
             deny(sessionID: sessionID, requestID: requestID, reason: "invalid or expired Proxy Session request")
             return
@@ -388,7 +394,10 @@ actor SecretProxyCoordinator {
                             origin: origin,
                             path: path,
                             queryNames: queryNames,
-                            secretNames: sortedNames
+                            secretNames: sortedNames,
+                            selectedSecretValues: current.launch.selectedSecretValues.selecting(
+                                names: sortedNames
+                            )
                         ),
                         cancellation
                     )
@@ -423,9 +432,37 @@ actor SecretProxyCoordinator {
             return
         }
         session = current
-        if decision == .allowForSession { session.rules.insert(rule) }
+        guard !cancellation.isCanceled else { return }
+        let secrets: [String: String]
+        do {
+            secrets = try secretValueCustody.load(
+                session.launch.selectedSecretValues,
+                names: sortedNames
+            )
+        } catch {
+            _ = appendAccessRequestRecord(proxyRecord(
+                session: session,
+                method: method,
+                origin: origin,
+                path: path,
+                queryNames: queryNames,
+                secretNames: sortedNames,
+                decision: "Failed",
+                approvalSource: approvalSource,
+                reason: error.localizedDescription
+            ))
+            deny(sessionID: sessionID, requestID: requestID, reason: error.localizedDescription)
+            return
+        }
+        guard refreshTargetIdentity(id: sessionID),
+              var liveSession = sessions[sessionID],
+              !cancellation.isCanceled
+        else {
+            deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired before release")
+            return
+        }
         let record = proxyRecord(
-            session: session,
+            session: liveSession,
             method: method,
             origin: origin,
             path: path,
@@ -440,21 +477,6 @@ actor SecretProxyCoordinator {
             return
         }
         guard !cancellation.isCanceled else { return }
-        var secrets: [String: String] = [:]
-        for name in sortedNames {
-            guard let value = loadStoredSecret(account: name), !value.isEmpty else {
-                deny(sessionID: sessionID, requestID: requestID, reason: "secret is unavailable")
-                return
-            }
-            secrets[name] = value
-        }
-        guard refreshTargetIdentity(id: sessionID),
-              var liveSession = sessions[sessionID],
-              !cancellation.isCanceled
-        else {
-            deny(sessionID: sessionID, requestID: requestID, reason: "Proxy Session expired before release")
-            return
-        }
         if decision == .allowForSession { liveSession.rules.insert(rule) }
         liveSession.authorizedRequestCount += 1
         liveSession.authorizedOrigins.insert(origin)
@@ -529,7 +551,10 @@ actor SecretProxyCoordinator {
             target: origin,
             cwd: session.launch.cwd,
             keys: secretNames,
-            detail: "Proxy Session \(session.id.uuidString.lowercased())"
+            detail: "Proxy Session \(session.id.uuidString.lowercased())",
+            secretValueSources: session.launch.selectedSecretValues
+                .selecting(names: secretNames)
+                .sourceDisplayNames
         )
     }
 
