@@ -2835,7 +2835,17 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
-        case .inject, .keys, .authorize, .dockerGet, .gpgSign:
+        case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleInject(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
+        case .inject, .keys, .authorize, .dockerGet:
             handleInject(
                 message,
                 on: peer,
