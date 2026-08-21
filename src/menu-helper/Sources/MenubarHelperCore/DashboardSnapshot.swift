@@ -1480,7 +1480,7 @@ public func loadStoredSecrets(
     return secrets
 }
 
-public enum StoredSecretsLoad {
+public enum StoredSecretsLoad: Sendable {
     case success([StoredSecret])
     case failure(OSStatus)
 }
@@ -2099,7 +2099,7 @@ public func loadStoredSecret(
     return String(data: data, encoding: .utf8)
 }
 
-public enum StoredSecretValueLoad: Equatable {
+public enum StoredSecretValueLoad: Equatable, Sendable {
     case success(String)
     case notFound
     case failure(OSStatus)
