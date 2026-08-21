@@ -707,7 +707,7 @@ actor SecretProxyCoordinator {
         )
         let directory = URL(fileURLWithPath: directoryPath, isDirectory: true)
         let certificate = directory.appendingPathComponent("ca.pem", isDirectory: false)
-        try Data(pem.utf8).write(to: certificate, options: [.atomic, .withoutOverwriting])
+        try Data(pem.utf8).write(to: certificate, options: .withoutOverwriting)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: certificate.path)
         return (directory, certificate)
     }

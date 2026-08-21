@@ -7,6 +7,8 @@ const INSTALL_SCRIPT: &str = include_str!("../scripts/dist/install.sh");
 const SCANNER_SCRIPT: &str = include_str!("../scripts/dist/scanner.sh");
 const PROXY_HELPER_ENTITLEMENTS: &str =
     include_str!("../src/menu-helper/Resources/ProxyHelper.entitlements");
+const SECRET_PROXY: &str =
+    include_str!("../src/menu-helper/Sources/MenubarHelper/SecretProxy.swift");
 
 #[test]
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
@@ -180,6 +182,12 @@ fn proxy_helper_is_sandboxed_signed_inside_out_and_has_no_keychain_authority() {
     assert!(!PROXY_HELPER_ENTITLEMENTS.contains("keychain-access-groups"));
     assert!(!PROXY_HELPER_ENTITLEMENTS.contains("get-task-allow"));
     assert_eq!(PROXY_HELPER_ENTITLEMENTS.matches("<true/>").count(), 3);
+}
+
+#[test]
+fn proxy_session_certificate_write_uses_supported_options() {
+    assert!(!SECRET_PROXY.contains("options: [.atomic, .withoutOverwriting]"));
+    assert!(SECRET_PROXY.contains("options: .withoutOverwriting"));
 }
 
 #[test]
