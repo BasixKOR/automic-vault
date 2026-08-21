@@ -2089,7 +2089,7 @@ private struct EmptyListView: View {
         case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
         case .launcherBundles: "Create a Verified Launcher from one unsigned Mach-O command-line tool"
         case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
-        case .proxySessions: "Active Proxy Sessions appear here while their target process is running"
+        case .proxySessions: "Active `av proxy` sessions appear here while their target process is running"
         case .secretUsage: "Authorization History records requests and their authorization decisions"
         case .settings: "Settings control how Automic Vault behaves"
         }
