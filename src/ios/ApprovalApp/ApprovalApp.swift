@@ -10,6 +10,7 @@ struct AutomicVaultApprovalApp: App {
     var body: some Scene {
         WindowGroup {
             ApprovalRootView(model: .shared, subscription: .shared)
+                .tint(.purple)
                 .task {
                     await ApprovalSubscription.shared.start()
                     await ApprovalModel.shared.start()
