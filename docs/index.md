@@ -11,6 +11,7 @@
 ## Using Automic Vault
 
 - [Direct Secret Access](direct-secret-access.md) — broad per-Secret Launcher access and safer alternatives
+- [Secret Proxy](secret-proxy.md) — destination-gated HTTP/S Secret Application with bearer references
 - [Signed CLI Launchers](signed-cli-launchers.md) — signature requirements and verification
 - [Securing Git](securing-git.md) — protected Git credentials
 

@@ -525,7 +525,7 @@ fn load_test_project_secret(
     Ok(None)
 }
 
-fn resolve_target(target: &OsString) -> Result<PathBuf, String> {
+pub(super) fn resolve_target(target: &OsString) -> Result<PathBuf, String> {
     let path = Path::new(target);
     if path.components().count() > 1 {
         if !path.is_absolute() {

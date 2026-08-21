@@ -116,6 +116,13 @@ transient reuse, durable policy, Blessings, and Retained Launcher Provenance do
 not apply. The plugin and signed bridge use exact XPC protocol version 1, first
 available in Automic Vault 3.9.0; either side rejects an incompatible version.
 
+The Secret Proxy Gate handles `av proxy`. It gives the launched Target random
+Secret References rather than raw Secret values, and a separately signed proxy
+helper requests each Secret only when a reference appears in an outbound public
+HTTP request. Proxy Sessions and Destination Rules are memory-only. They never
+create Direct Access Rules, Launcher-specific policy, Blessings, or Launcher
+Endorsements.
+
 ### Launcher Packaging
 
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a
@@ -274,6 +281,12 @@ application source, dependencies, plug-ins, or native extensions that can
 observe a Secret after Application. These findings inform Approval; they do not
 create authority, replace Target verification, or imply that a Target will keep
 a Secret confidential.
+
+For `av proxy`, the CLI remains the Gate Client and the signed proxy helper is
+the immediate Secret Target. The launched executable is bound as the Proxy
+Session Target and receives bearer Secret References. Its PID version, start
+time, and available live code identity constrain session lifetime. They do not prove the
+origin of an individual loopback TCP connection.
 
 ## Policy model
 
@@ -472,6 +485,18 @@ forgeable task label.
 Wrappers and PATH stubs mediate the command path they occupy. They do not intercept every `exec`. A process can invoke an underlying executable by absolute path. Vault-managed Secrets should remain unavailable to that direct process, but ambient credential providers may still authorize it. Doctor can report resolution and integrity problems; it cannot turn PATH mediation into system-wide execution containment.
 
 After Secret Application, the Target controls its own memory, plugins, helpers, child processes, and output. Authorization limits which Target receives a Secret. It does not prove that Target will keep it confidential.
+
+The Secret Proxy adds a narrower but still bearer-based boundary. The launched
+Target does not receive raw Secret bytes from Automic Vault, but it controls its
+Secret References, Proxy Credential, requests, dependencies, children, and
+responses. Same-user code that can inspect or modify an unhardened Target may
+use those bearer values. Even with per-flow PID attribution, injected code would
+act from the approved process. The UI therefore reports Target Hardened Runtime
+posture without making it a condition for manual Approval.
+
+The proxy helper is separately signed, enables Hardened Runtime without
+exceptions, has no Keychain authority, and receives only the Secrets needed for
+one authorized request. Network parsing is outside the Keychain-owning app.
 
 ## Secure defaults
 

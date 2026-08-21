@@ -10,6 +10,7 @@ mod inject;
 mod launcher_bundle;
 mod list;
 mod open;
+mod proxy;
 mod save;
 mod scan;
 mod shell_secrets;
@@ -28,6 +29,7 @@ commands:
   $ av bless [--endorse-launcher] <path>  # review a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
+  $ av proxy +KEY... [--] <command>       # proxy secret references for a command
   $ av list                               # list saved secret names
   $ av save [--project-directory=DIR] KEY # store a global or Project Value
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
@@ -383,6 +385,7 @@ where
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
+        Some("proxy") => proxy::run(rest, stdout, stderr),
         Some("aws") => aws::run(rest, stderr),
         Some("aws-official") => aws::run_official(rest, stderr),
         Some("aws-credentials") if rest.is_empty() => aws::credentials(None, stdout, stderr),
