@@ -64,6 +64,18 @@ Target's environment. The gate has no durable Authorization Policy in its
 initial form: starting every Proxy Session requires Approval, and destination
 authority lasts at most for that session.
 
+### GPG Signing Gate
+
+The built-in Tool-specific Secret Gate for Git commit and tag signatures made
+through the bundled `bpb` Command. Its Target is the signed `av` executable,
+which receives one selected GPG Signing Credential only after the complete
+signing request is authorized and recorded. Git and `bpb` receive the detached
+signature, never the private key or passphrase.
+
+GPG signing is a Local Write operation. The gate therefore defaults to Read
+Only, which requires Approval until the user grants a Verified Launcher an
+Access Level that permits Local Write.
+
 ### Proxy Session
 
 A live, memory-only Secret Proxy Gate context bound to one complete command and
@@ -257,6 +269,22 @@ path makes that Project Value selectable again.
 ### Credential
 
 One or more Secrets interpreted by a Tool or service. An AWS credential, for example, may contain an access key identifier and a secret access key.
+
+### GPG Signing Credential
+
+A Credential containing one OpenPGP private-key Secret and its passphrase
+Secret. The user may configure a default credential and an alternate
+credential. A Launcher Signing Credential Rule selects the alternate credential
+for an exact Verified Launcher; absence of the alternate credential fails
+closed and never falls back to the default.
+
+### Launcher Signing Credential Rule
+
+A durable, Keychain-protected rule binding one Verified Launcher designated
+requirement to the alternate GPG Signing Credential. It changes Secret
+selection, not Launcher Identity or the GPG Signing Gate's Authorization
+Policy. Adding or removing a rule is an authority change that requires
+Approval.
 
 ### Secret Use
 

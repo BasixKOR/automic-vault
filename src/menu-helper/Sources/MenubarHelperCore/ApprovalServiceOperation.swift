@@ -5,6 +5,7 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case varlock
     case keys
     case authorize
+    case gpgSign = "gpg-sign"
     case proxyStart = "proxy-start"
     case awsCredentials = "aws-credentials"
     case dockerGet = "docker-get"

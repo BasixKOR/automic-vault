@@ -1714,7 +1714,7 @@ private func scanAlertLevel(_ severities: [String]) -> ScanAlertLevel {
         ? .medium : .high
 }
 
-private func avExecutableURL() -> URL {
+func avExecutableURL() -> URL {
     if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("av"),
        FileManager.default.isExecutableFile(atPath: bundled.path)
     {
@@ -1799,6 +1799,28 @@ private struct ApprovalRequest {
             dockerServerURL: dockerServerURL,
             dockerParent: dockerParent,
             selectedSecretValues: values
+        )
+    }
+
+    func requesting(keys: [String], title: String, detail: String) -> ApprovalRequest {
+        ApprovalRequest(
+            op: op,
+            keys: keys,
+            target: target,
+            args: args,
+            cwd: cwd,
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            envConflicts: envConflicts,
+            shebangScript: shebangScript,
+            scriptData: scriptData,
+            snapshotIncompatibleInterpreter: snapshotIncompatibleInterpreter,
+            tool: tool,
+            title: title,
+            detail: detail,
+            dockerServerURL: dockerServerURL,
+            dockerParent: dockerParent,
+            selectedSecretValues: selectedSecretValues
         )
     }
 
@@ -2813,7 +2835,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
-        case .inject, .keys, .authorize, .dockerGet:
+        case .inject, .keys, .authorize, .dockerGet, .gpgSign:
             handleInject(
                 message,
                 on: peer,
@@ -3059,9 +3081,23 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
-        guard let parsedRequest = approvalRequest(from: message) else {
+        guard var parsedRequest = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
+        }
+        if parsedRequest.op == "gpg-sign" {
+            let launchers = launcherIdentities(for: identity)
+            let names = gpgSigningSecretNames(
+                configuration: loadGPGSigningConfiguration(),
+                launcherRequirements: launchers.map(\.designatedRequirement)
+            )
+            parsedRequest = parsedRequest.requesting(
+                keys: names,
+                title: "Sign this Git operation?",
+                detail: names.first == gpgAlternatePrivateKeySecretName
+                    ? "The Verified Launcher matches your alternate signing-key list. Automic Vault will use the alternate GPG credential."
+                    : "Automic Vault will use your default GPG signing credential."
+            )
         }
         let request: ApprovalRequest
         do {
@@ -5574,7 +5610,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return nil
         }
         let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize"
+        guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
             || op == "docker-get" || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -5964,6 +6000,8 @@ private func classifySecretGateRequest(
     request: ApprovalRequest
 ) -> SecretGateRequestClassification {
     switch gateID {
+    case "gpg-signing":
+        return .localWrite
     case "gh":
         return ghRequestClassification(request.args)
     case "docker":

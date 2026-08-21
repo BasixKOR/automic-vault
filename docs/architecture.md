@@ -123,6 +123,18 @@ HTTP request. Proxy Sessions and Destination Rules are memory-only. They never
 create Direct Access Rules, Launcher-specific policy, Blessings, or Launcher
 Endorsements.
 
+The GPG Signing Gate receives Git's immutable signing payload through the
+bundled `bpb` Command. `bpb` invokes the adjacent signed `av` Target without
+receiving credential bytes. `av` binds a SHA-256 digest of the bounded payload
+into the Authorization Request. The menu app verifies the live Launcher,
+selects the default or alternate GPG Signing Credential from Keychain-protected
+Launcher Signing Credential Rules, authorizes and records the complete Local
+Write request, and releases exactly that credential to `av`. The Target creates
+the detached signature in memory and zeroizes its transient input buffers.
+Missing alternate material, invalid OpenPGP material, recording failure, or an
+unrecognized route fails closed without falling back to the default credential.
+See [ADR 0019](adr/0019-gpg-signing-gate.md).
+
 ### Launcher Packaging
 
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a

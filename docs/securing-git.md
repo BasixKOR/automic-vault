@@ -35,6 +35,25 @@ the `gh` Secret Gate evaluates the request before applying the token.
 
 Use SSH.
 
+## Gate GPG Commit Signing
+
+Automic Vault can also gate use of the private key that signs Git commits and
+tags. Open **Settings → GPG Signing**, export the private key from GnuPG as
+instructed there, and select **Configure Git**. Git then invokes the `bpb`
+Command inside the signed app bundle. `bpb` forwards the payload to the GPG
+Signing Gate; it never receives the private key.
+
+The settings also support an alternate GPG Signing Credential for an exact
+list of Verified Launchers. This is useful for agents: agent-authored commits
+can use a visibly different key from human-authored commits. The list is bound
+to designated requirements rather than app names or paths, and changing it
+requires Approval.
+
+The signing Target necessarily handles the private key in memory while it
+creates the signature. Automic Vault controls its application and zeroizes
+transient input buffers; it does not claim that a compromised Target cannot
+inspect its own memory.
+
 ## Check What Git Can Read
 
 Start with the boring check:

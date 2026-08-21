@@ -135,6 +135,7 @@ fn release_build_asserts_secret_custody_entitlements() {
             .contains("APPROVAL_KEYCHAIN_ACCESS_GROUP=\"ZU76A67LGU.com.automicvault.approval\"")
     );
     assert!(BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$ROOT/target/release/av\""));
+    assert!(BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$ROOT/target/release/bpb\""));
     assert!(
         BUILD_SCRIPT
             .contains("assert_no_embedded_entitlements \"$ROOT/target/release/av-brew-stub\"")
@@ -167,6 +168,16 @@ fn macos_app_uses_its_violet_accent() {
     assert!(ACCENT_COLOR.contains("\"value\" : \"dark\""));
     assert!(BUILD_SCRIPT.contains("\"$MENU_HELPER/Resources/Assets.xcassets\""));
     assert!(BUILD_SCRIPT.contains("--accent-color AccentColor"));
+}
+
+#[test]
+fn bpb_is_hardened_and_bundled_without_a_privileged_install() {
+    assert!(
+        BUILD_SCRIPT.contains("--identifier com.automicvault.bpb \"$ROOT/target/release/bpb\"")
+    );
+    assert!(BUILD_SCRIPT.contains("cp \"$ROOT/target/release/bpb\" \"$MACOS/bpb\""));
+    assert!(BUILD_SCRIPT.contains("codesign --verify --strict \"$MACOS/bpb\""));
+    assert!(!INSTALL_SCRIPT.contains("Contents/MacOS/bpb"));
 }
 
 #[test]

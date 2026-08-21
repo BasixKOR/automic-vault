@@ -42,6 +42,9 @@ Automic Vault decides whether a complete operation may use it.
   Verified Launcher, Tool-specific Authorization Gate, and agent task. A
   persistent strip shows the grant and provides an End action.
 - Existing developer commands continue to work above the security boundary.
+- Git can keep its ordinary commit workflow while the GPG Signing Gate
+  authorizes private-key use and may select an alternate credential for exact
+  Verified Launchers.
 
 ## Claim boundaries
 

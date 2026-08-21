@@ -324,6 +324,12 @@ final class DashboardModel: ObservableObject {
                     detail: "Allow an exact live process execution to retain gate-specific Launcher attribution after its parent chain exits."
                 ),
                 DashboardItem(
+                    id: "gpg-signing",
+                    title: "GPG Signing",
+                    subtitle: "Authorize Git commit signing",
+                    detail: "Store GPG signing credentials, configure Git, and select Verified Launchers that use an alternate key."
+                ),
+                DashboardItem(
                     id: "secret-name-access",
                     title: "Secret Name Access",
                     subtitle: "Apps allowed to run av list",
@@ -1552,6 +1558,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         "iphone-approval",
         "automatic-approval-feedback",
         "detached-process-access",
+        "gpg-signing",
         "secret-name-access",
         "about",
     ],
@@ -1928,6 +1935,12 @@ private struct DashboardDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.selectedItem?.id == "detached-process-access" {
                     DetachedProcessAccessSettingsView()
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
+                        .padding(.bottom, 28)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if model.selectedItem?.id == "gpg-signing" {
+                    GPGSigningSettingsView()
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -3763,6 +3776,200 @@ private struct DetachedProcessAccessSettingsView: View {
             Link("Learn about Launcher Bundles", destination: launcherBundleDocumentationURL)
                 .font(.caption)
         }
+    }
+}
+
+private struct GPGSigningSettingsView: View {
+    @State private var defaultPrivateKey = ""
+    @State private var defaultPassphrase = ""
+    @State private var alternatePrivateKey = ""
+    @State private var alternatePassphrase = ""
+    @State private var configuration = loadGPGSigningConfiguration()
+    @State private var status = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("GPG Signing")
+                    .font(.system(size: 24, weight: .semibold))
+                Text("Git commit signing becomes a Local Write operation at the GPG Signing Authorization Gate.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            InfoBlock(
+                title: "Export from GnuPG",
+                text: "Run `gpg --list-secret-keys --keyid-format=long`, copy the signing key ID, then run `gpg --armor --export-secret-keys KEY_ID`. Paste the complete PGP PRIVATE KEY BLOCK below. If the exported key is protected, enter its GnuPG passphrase too."
+            )
+
+            credentialEditor(
+                title: "Default signing credential",
+                configured: hasGPGSigningCredential(alternate: false),
+                privateKey: $defaultPrivateKey,
+                passphrase: $defaultPassphrase,
+                alternate: false
+            )
+
+            Divider()
+
+            credentialEditor(
+                title: "Alternate signing credential",
+                configured: hasGPGSigningCredential(alternate: true),
+                privateKey: $alternatePrivateKey,
+                passphrase: $alternatePassphrase,
+                alternate: true
+            )
+
+            Text("Use the alternate key for agents or other automation so commits made through those Verified Launchers are visibly distinct from your own.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            launcherList(
+                configuration.alternateKeyLaunchers,
+                title: "Verified Launchers using the alternate key",
+                empty: "No Launchers use the alternate key."
+            ) { launcher in
+                updateLaunchers(
+                    configuration.alternateKeyLaunchers.filter {
+                        $0.requirement != launcher.requirement
+                    },
+                    action: "Remove \(launcher.bundleIdentifier) from alternate GPG signing"
+                )
+            }
+
+            Button("Add App…") {
+                chooseLauncher { launcher in
+                    guard let launcher,
+                          !configuration.alternateKeyLaunchers.contains(where: {
+                              $0.requirement == launcher.requirement
+                          })
+                    else { return }
+                    updateLaunchers(
+                        configuration.alternateKeyLaunchers + [BlessedScriptLauncher(
+                            bundleIdentifier: launcher.identifier,
+                            requirement: launcher.requirement
+                        )],
+                        action: "Use the alternate GPG key for \(launcher.identifier)"
+                    )
+                }
+            }
+
+            Divider()
+
+            Button("Configure Git") {
+                do {
+                    let bpb = Bundle.main.executableURL!
+                        .deletingLastPathComponent()
+                        .appendingPathComponent("bpb")
+                    try configureGitForGPGSigning(bpbURL: bpb)
+                    status = "Configured Git to sign commits with \(bpb.path)."
+                } catch {
+                    status = error.localizedDescription
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            Text("Sets global `gpg.program`, `gpg.format=openpgp`, and `commit.gpgSign=true`. The executable stays inside the signed app bundle.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !status.isEmpty {
+                InfoBlock(title: "Status", text: status)
+            }
+        }
+    }
+
+    private func credentialEditor(
+        title: String,
+        configured: Bool,
+        privateKey: Binding<String>,
+        passphrase: Binding<String>,
+        alternate: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Label(configured ? "Configured" : "Not configured", systemImage: configured ? "checkmark.circle.fill" : "circle")
+                    .font(.caption)
+                    .foregroundStyle(configured ? .green : .secondary)
+            }
+            TextEditor(text: privateKey)
+                .font(.system(.caption, design: .monospaced))
+                .frame(minHeight: 110)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                .accessibilityLabel("\(title) private key")
+            SecureField("GnuPG passphrase (leave empty if none)", text: passphrase)
+            Button(configured ? "Replace Credential" : "Save Credential") {
+                saveCredential(privateKey: privateKey.wrappedValue, passphrase: passphrase.wrappedValue, alternate: alternate)
+            }
+            .disabled(privateKey.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private func saveCredential(privateKey: String, passphrase: String, alternate: Bool) {
+        do {
+            try validateGPGPrivateKey(privateKey)
+            let result = saveGPGSigningCredential(
+                privateKey: privateKey,
+                passphrase: passphrase,
+                alternate: alternate
+            )
+            guard result == errSecSuccess else {
+                status = "Could not save the GPG credential: \(result)"
+                return
+            }
+            if alternate {
+                alternatePrivateKey = ""
+                alternatePassphrase = ""
+            } else {
+                defaultPrivateKey = ""
+                defaultPassphrase = ""
+            }
+            status = "Saved the \(alternate ? "alternate" : "default") GPG signing credential in the Data Protection Keychain."
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func updateLaunchers(_ launchers: [BlessedScriptLauncher], action: String) {
+        requestAuthorityChangeApproval(
+            title: action,
+            detail: "This changes which protected signing credential a Verified Launcher may use."
+        ) { approved in
+            guard approved else { return }
+            let next = GPGSigningConfiguration(alternateKeyLaunchers: launchers)
+            let result = saveGPGSigningConfiguration(next)
+            guard result == errSecSuccess else {
+                status = "Could not save the alternate-key Launcher list: \(result)"
+                return
+            }
+            configuration = next
+        }
+    }
+}
+
+private func validateGPGPrivateKey(_ privateKey: String) throws {
+    let process = Process()
+    process.executableURL = avExecutableURL()
+    process.arguments = ["__gpg-public-key"]
+    let input = Pipe()
+    let output = Pipe()
+    let errors = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    process.standardError = errors
+    try process.run()
+    input.fileHandleForWriting.write(Data(privateKey.utf8))
+    try input.fileHandleForWriting.close()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        let detail = String(
+            decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        throw GPGSigningConfigurationError.gitFailed(detail)
     }
 }
 

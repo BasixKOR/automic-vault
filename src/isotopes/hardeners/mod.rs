@@ -248,6 +248,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
 
 pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
     let mut gates = vec![
+        gpg_signing_gate(),
         aws_cli::secret_gate(),
         docker::secret_gate(),
         homebrew::secret_gate(),
@@ -257,6 +258,28 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
     ];
     gates.extend(env_wrapper::secret_gates());
     gates
+}
+
+fn gpg_signing_gate() -> SecretGateDescriptor {
+    let keys = vec!["AUTOMIC_GPG_*".to_string()];
+    let target_path = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .unwrap_or_else(|_| "/Applications/Automic Vault.app/Contents/MacOS/av".into())
+        .to_string_lossy()
+        .into_owned();
+    SecretGateDescriptor {
+        id: "gpg-signing",
+        key_patterns: keys.clone(),
+        routes: vec![SecretGateRoute {
+            operation: "gpg-sign",
+            script_path: None,
+            target_path,
+            caller_identifiers: vec!["com.automicvault.av"],
+            key_patterns: keys,
+            replace_existing_env: false,
+            allow_missing_keys: false,
+        }],
+    }
 }
 
 #[cfg(test)]

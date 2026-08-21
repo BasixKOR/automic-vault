@@ -6,6 +6,7 @@ mod aws;
 mod bless;
 pub(crate) mod docker_credential;
 pub(crate) mod doctor;
+mod gpg_sign;
 mod inject;
 mod launcher_bundle;
 mod list;
@@ -294,6 +295,8 @@ where
         Some("detectors") if rest == [OsString::from("--json")] => scan::run_detectors_json(stdout),
         Some("hardeners") if rest == [OsString::from("--json")] => scan::run_hardeners_json(stdout),
         Some("__secret-gates-json") if rest.is_empty() => scan::run_secret_gates_json(stdout),
+        Some("__gpg-sign") => gpg_sign::run(rest, stdout, stderr),
+        Some("__gpg-public-key") if rest.is_empty() => gpg_sign::validate(stdout, stderr),
         Some("doctor") => {
             let Some((selector, json)) = parse_doctor_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");
