@@ -1738,7 +1738,6 @@ struct DashboardRootView: View {
                     .help("Refresh")
                 }
         }
-        .tint(.purple)
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
         .sheet(isPresented: $model.isCreatingLauncherBundle) {
             CreateLauncherBundleView(model: model)

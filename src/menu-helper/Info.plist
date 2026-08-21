@@ -39,5 +39,7 @@
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSAccentColorName</key>
+  <string>AccentColor</string>
 </dict>
 </plist>

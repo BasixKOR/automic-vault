@@ -7,6 +7,9 @@ const INSTALL_SCRIPT: &str = include_str!("../scripts/dist/install.sh");
 const SCANNER_SCRIPT: &str = include_str!("../scripts/dist/scanner.sh");
 const PROXY_HELPER_ENTITLEMENTS: &str =
     include_str!("../src/menu-helper/Resources/ProxyHelper.entitlements");
+const MENU_HELPER_INFO_PLIST: &str = include_str!("../src/menu-helper/Info.plist");
+const ACCENT_COLOR: &str =
+    include_str!("../src/menu-helper/Resources/Assets.xcassets/AccentColor.colorset/Contents.json");
 const SECRET_PROXY: &str =
     include_str!("../src/menu-helper/Sources/MenubarHelper/SecretProxy.swift");
 
@@ -144,6 +147,15 @@ fn release_build_asserts_secret_custody_entitlements() {
         BUILD_SCRIPT
             .contains("menu bar app must have exactly its Secret and Approval Keychain groups")
     );
+}
+
+#[test]
+fn macos_app_uses_the_approval_purple_accent() {
+    assert!(MENU_HELPER_INFO_PLIST.contains("<key>NSAccentColorName</key>"));
+    assert!(MENU_HELPER_INFO_PLIST.contains("<string>AccentColor</string>"));
+    assert!(ACCENT_COLOR.contains("\"reference\" : \"systemPurpleColor\""));
+    assert!(BUILD_SCRIPT.contains("\"$MENU_HELPER/Resources/Assets.xcassets\""));
+    assert!(BUILD_SCRIPT.contains("--accent-color AccentColor"));
 }
 
 #[test]

@@ -191,11 +191,13 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$LAUNCHER_ICONSET" -o "$RESOURCES/LauncherBundleIcon.icns"
 xcrun actool "$MENU_HELPER/Resources/AppIcon.icon" \
+  "$MENU_HELPER/Resources/Assets.xcassets" \
   --compile "$ICON_BUILD" \
   --platform macosx \
   --target-device mac \
   --minimum-deployment-target "$MACOSX_DEPLOYMENT_TARGET" \
   --app-icon AppIcon \
+  --accent-color AccentColor \
   --include-all-app-icons \
   --enable-on-demand-resources NO \
   --output-partial-info-plist "$ICON_BUILD/IconInfo.plist" >/dev/null
