@@ -343,11 +343,20 @@ unverified subscription state fails closed but does not prevent denial. A
 subscription is product eligibility, not Authorization Policy or authority to
 release a Secret.
 
+iPhone Approval changes where the human decision occurs, not whether an exact
+Authorization Decision may receive memory-only transient reuse. Reuse is bound
+to the same live process and complete Authorization Request identity and does
+not reuse the phone response itself.
+
 ### Touch ID Approval
 
 An optional Mac-local Approval surface that requires a fresh Touch ID result for
 one exact Authorization Request. It has no password, passcode, Apple Watch, or
 pointer-driven allow fallback and does not reuse a prior biometric result.
+
+Transient reuse of the resulting exact Authorization Decision is not biometric
+result reuse. A later request may avoid another Approval only while the same
+live process and complete Authorization Request identity still match.
 
 Touch ID Approval is an explicit per-Mac choice stored in the macOS Data
 Protection Keychain. Enabling it requires the current human Approval surface and

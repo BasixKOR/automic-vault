@@ -198,7 +198,13 @@ flowchart LR
     R --> T["Run Target or apply Secret"]
 ```
 
-The Authorization Request is immutable across this flow. A cached decision may be reused only for the same live process and complete request identity. Reuse still requires an Authorization Record before Secret Application.
+The Authorization Request is immutable across this flow. A cached decision may
+be reused only for the same live process and complete request identity. This is
+independent of whether the original Approval was carried on Mac, by iPhone, or
+with Touch ID: the Authorization Decision is reused, not the human-presence or
+biometric result. Reuse still requires an Authorization Record before Secret
+Application. Operations that may receive long-lived AWS credentials remain
+excluded and require fresh Approval.
 
 An active Blessing is evaluated before a Temporary Access Grant. A matching
 grant may authorize a recognized operation beyond a narrower Blessing only
@@ -455,7 +461,9 @@ reuse, and requests biometrics only. A password, passcode, Apple Watch, or
 pointer-driven allow action cannot satisfy it. When iPhone Approval is also
 enabled, either a valid phone response or a successful Touch ID evaluation may
 carry the Approval; the first result wins and the other pending transport is
-canceled. Relay state never toggles this choice.
+canceled. Relay state never toggles this choice. Memory-only reuse of the exact
+Authorization Decision under the ordinary live-process and complete-request
+constraints does not reuse the Local Authentication result.
 
 ## Recording before release
 

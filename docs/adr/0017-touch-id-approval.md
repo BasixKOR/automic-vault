@@ -1,6 +1,6 @@
 # ADR 0017: Permit explicit Touch ID Approval on Mac
 
-Status: accepted
+Status: accepted; transient reuse clarified by ADR 0018
 
 ## Context
 
