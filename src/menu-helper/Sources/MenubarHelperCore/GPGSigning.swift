@@ -90,13 +90,13 @@ public func hasGPGSigningCredential(alternate: Bool) -> Bool {
 
 public func configureGitForGPGSigning(
     gitURL: URL = URL(fileURLWithPath: "/usr/bin/git"),
-    bpbURL: URL,
+    programURL: URL,
     environment: [String: String]? = nil
 ) throws {
-    guard bpbURL.path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: bpbURL.path)
-    else { throw GPGSigningConfigurationError.bpbUnavailable(bpbURL.path) }
+    guard programURL.path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: programURL.path)
+    else { throw GPGSigningConfigurationError.programUnavailable(programURL.path) }
     for arguments in [
-        ["config", "--global", "gpg.program", bpbURL.path],
+        ["config", "--global", "gpg.program", programURL.path],
         ["config", "--global", "commit.gpgSign", "true"],
         ["config", "--global", "gpg.format", "openpgp"],
     ] {
@@ -119,12 +119,12 @@ public func configureGitForGPGSigning(
 }
 
 public enum GPGSigningConfigurationError: LocalizedError {
-    case bpbUnavailable(String)
+    case programUnavailable(String)
     case gitFailed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .bpbUnavailable(let path): "The bundled bpb executable is unavailable at \(path)."
+        case .programUnavailable(let path): "The bundled Git signing adapter is unavailable at \(path)."
         case .gitFailed(let detail): "Git configuration failed\(detail.isEmpty ? "." : ": \(detail)")"
         }
     }

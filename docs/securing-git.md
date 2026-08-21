@@ -39,9 +39,9 @@ Use SSH.
 
 Automic Vault can also gate use of the private key that signs Git commits and
 tags. Open **Settings → GPG Signing**, export the private key from GnuPG as
-instructed there, and select **Configure Git**. Git then invokes the `bpb`
-Command inside the signed app bundle. `bpb` forwards the payload to the GPG
-Signing Gate; it never receives the private key.
+instructed there, and select **Configure Git**. Git then invokes the `av-gpg`
+Command inside the signed app bundle. `av-gpg` forwards the payload to
+`av gpg-sign` at the GPG Signing Gate; it never receives the private key.
 
 The settings also support an alternate GPG Signing Credential for an exact
 list of Verified Launchers. This is useful for agents: agent-authored commits

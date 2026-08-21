@@ -67,10 +67,11 @@ authority lasts at most for that session.
 ### GPG Signing Gate
 
 The built-in Tool-specific Secret Gate for Git commit and tag signatures made
-through the bundled `bpb` Command. Its Target is the signed `av` executable,
-which receives one selected GPG Signing Credential only after the complete
-signing request is authorized and recorded. Git and `bpb` receive the detached
-signature, never the private key or passphrase.
+through the bundled `av-gpg` Command. `av-gpg` adapts Git's GPG-compatible
+interface to the signed `av gpg-sign` Target, which receives one selected GPG
+Signing Credential only after the complete signing request is authorized and
+recorded. Git and `av-gpg` receive the detached signature, never the private key
+or passphrase.
 
 GPG signing is a Local Write operation. The gate therefore defaults to Read
 Only, which requires Approval until the user grants a Verified Launcher an

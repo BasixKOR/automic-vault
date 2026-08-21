@@ -13,7 +13,6 @@ panic = "abort"
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
-bpb = { git = "https://github.com/automic-vault/bpb.git", rev = "2b8bcf0" }
 futures-util = "0.3"
 http-body-util = "0.1"
 http-mitm-proxy = { version = "=0.18.0", default-features = false }
@@ -24,6 +23,8 @@ libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls"] }
 ring = "0.17"
 percent-encoding = "2.3"
+pgp = { version = "0.20", default-features = false }
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 subtle = "2.6"
@@ -40,8 +41,8 @@ name = "av"
 path = "src/cli/main.rs"
 
 [[bin]]
-name = "bpb"
-path = "src/bpb/main.rs"
+name = "av-gpg"
+path = "src/av_gpg/main.rs"
 
 [[bin]]
 name = "av-brew-stub"

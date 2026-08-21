@@ -170,7 +170,6 @@ version = "3.15.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
- "bpb",
  "futures-util",
  "http-body-util",
  "http-mitm-proxy",
@@ -179,6 +178,8 @@ dependencies = [
  "hyper-util",
  "libc",
  "percent-encoding",
+ "pgp",
+ "rand 0.8.7",
  "reqwest",
  "ring",
  "serde",
@@ -384,16 +385,6 @@ checksum = "e412e2cd0f2b2d93e02543ceae7917b3c70331573df19ee046bcbc35e45e87d7"
 dependencies = [
  "byteorder",
  "cipher",
-]
-
-[[package]]
-name = "bpb"
-version = "2.0.0"
-source = "git+https://github.com/automic-vault/bpb.git?rev=2b8bcf0#2b8bcf0ec9fcab388f806f4921b1c2cabf36c52f"
-dependencies = [
- "pgp",
- "rand 0.8.7",
- "zeroize",
 ]
 
 [[package]]

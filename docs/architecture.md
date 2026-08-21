@@ -124,9 +124,10 @@ create Direct Access Rules, Launcher-specific policy, Blessings, or Launcher
 Endorsements.
 
 The GPG Signing Gate receives Git's immutable signing payload through the
-bundled `bpb` Command. `bpb` invokes the adjacent signed `av` Target without
-receiving credential bytes. `av` binds a SHA-256 digest of the bounded payload
-into the Authorization Request. The menu app verifies the live Launcher,
+bundled `av-gpg` Command. `av-gpg` invokes the adjacent signed `av gpg-sign`
+Target without receiving credential bytes and delegates verification to GnuPG.
+`av` binds a SHA-256 digest of the bounded payload into the Authorization
+Request. The menu app verifies the live Launcher,
 selects the default or alternate GPG Signing Credential from Keychain-protected
 Launcher Signing Credential Rules, authorizes and records the complete Local
 Write request, and releases exactly that credential to `av`. The Target creates

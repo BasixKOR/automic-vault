@@ -41,7 +41,7 @@ pub(crate) fn validate(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         let _ = writeln!(stderr, "av gpg-public-key: private key exceeds 16 MiB");
         return 1;
     }
-    match bpb::public_key_from_private(&private_key) {
+    match crate::gpg::public_key_from_private(&private_key) {
         Ok(public_key) => {
             if stdout.write_all(public_key.as_bytes()).is_ok() {
                 0
@@ -127,7 +127,7 @@ fn sign_with_approval(
             .ok_or_else(|| "Automic Vault returned no private signing key".to_string())?,
     );
     let passphrase = Zeroizing::new(secrets.remove(passphrase_name).unwrap_or_default());
-    bpb::sign_openpgp(&private_key, &passphrase, &payload)
+    crate::gpg::sign_openpgp(&private_key, &passphrase, &payload)
 }
 
 #[cfg(test)]

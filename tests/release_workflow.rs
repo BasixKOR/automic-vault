@@ -135,7 +135,9 @@ fn release_build_asserts_secret_custody_entitlements() {
             .contains("APPROVAL_KEYCHAIN_ACCESS_GROUP=\"ZU76A67LGU.com.automicvault.approval\"")
     );
     assert!(BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$ROOT/target/release/av\""));
-    assert!(BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$ROOT/target/release/bpb\""));
+    assert!(
+        BUILD_SCRIPT.contains("assert_no_embedded_entitlements \"$ROOT/target/release/av-gpg\"")
+    );
     assert!(
         BUILD_SCRIPT
             .contains("assert_no_embedded_entitlements \"$ROOT/target/release/av-brew-stub\"")
@@ -171,13 +173,14 @@ fn macos_app_uses_its_violet_accent() {
 }
 
 #[test]
-fn bpb_is_hardened_and_bundled_without_a_privileged_install() {
+fn git_signing_adapter_is_hardened_and_bundled_without_a_privileged_install() {
     assert!(
-        BUILD_SCRIPT.contains("--identifier com.automicvault.bpb \"$ROOT/target/release/bpb\"")
+        BUILD_SCRIPT
+            .contains("--identifier com.automicvault.av-gpg \"$ROOT/target/release/av-gpg\"")
     );
-    assert!(BUILD_SCRIPT.contains("cp \"$ROOT/target/release/bpb\" \"$MACOS/bpb\""));
-    assert!(BUILD_SCRIPT.contains("codesign --verify --strict \"$MACOS/bpb\""));
-    assert!(!INSTALL_SCRIPT.contains("Contents/MacOS/bpb"));
+    assert!(BUILD_SCRIPT.contains("cp \"$ROOT/target/release/av-gpg\" \"$MACOS/av-gpg\""));
+    assert!(BUILD_SCRIPT.contains("codesign --verify --strict \"$MACOS/av-gpg\""));
+    assert!(!INSTALL_SCRIPT.contains("Contents/MacOS/av-gpg"));
 }
 
 #[test]

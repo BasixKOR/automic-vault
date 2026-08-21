@@ -3859,11 +3859,11 @@ private struct GPGSigningSettingsView: View {
 
             Button("Configure Git") {
                 do {
-                    let bpb = Bundle.main.executableURL!
+                    let program = Bundle.main.executableURL!
                         .deletingLastPathComponent()
-                        .appendingPathComponent("bpb")
-                    try configureGitForGPGSigning(bpbURL: bpb)
-                    status = "Configured Git to sign commits with \(bpb.path)."
+                        .appendingPathComponent("av-gpg")
+                    try configureGitForGPGSigning(programURL: program)
+                    status = "Configured Git to sign commits with \(program.path)."
                 } catch {
                     status = error.localizedDescription
                 }
