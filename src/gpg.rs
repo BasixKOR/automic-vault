@@ -204,6 +204,7 @@ mod tests {
     use super::*;
     use pgp::composed::{EncryptionCaps, KeyType, SecretKeyParamsBuilder, SubkeyParamsBuilder};
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -268,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn signs_a_gnupg_export_that_gnupg_can_verify() {
+    fn creates_a_signature_that_gnupg_can_verify() {
         if Command::new("gpg").arg("--version").output().is_err() {
             eprintln!("skipping GnuPG interoperability test: gpg is unavailable");
             return;
@@ -276,42 +277,25 @@ mod tests {
 
         let home = temp_dir("gnupg");
         fs::create_dir_all(&home).unwrap();
-        let status = Command::new("gpg")
-            .args([
-                "--batch",
-                "--homedir",
-                home.to_str().unwrap(),
-                "--passphrase",
-                "test-passphrase",
-                "--quick-generate-key",
-                "av-gpg test <av-gpg@example.invalid>",
-                "rsa2048",
-                "sign",
-                "0",
-            ])
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700)).unwrap();
+        let key = signing_key();
+        let private_key = key.to_armored_string(ArmorOptions::default()).unwrap();
+        let public_key = key
+            .to_public_key()
+            .to_armored_string(ArmorOptions::default())
+            .unwrap();
+        let public_key_path = home.join("public-key.asc");
+        fs::write(&public_key_path, public_key).unwrap();
+        let imported = Command::new("gpg")
+            .args(["--batch", "--homedir"])
+            .arg(&home)
+            .arg("--import")
+            .arg(&public_key_path)
             .status()
             .unwrap();
-        assert!(status.success());
-
-        let exported = Command::new("gpg")
-            .args([
-                "--batch",
-                "--homedir",
-                home.to_str().unwrap(),
-                "--pinentry-mode",
-                "loopback",
-                "--passphrase",
-                "test-passphrase",
-                "--armor",
-                "--export-secret-keys",
-                "av-gpg@example.invalid",
-            ])
-            .output()
-            .unwrap();
-        assert!(exported.status.success());
-        let private_key = String::from_utf8(exported.stdout).unwrap();
+        assert!(imported.success());
         let payload = b"tree 0000000000000000000000000000000000000000\n\nav-gpg test\n";
-        let signature = sign_openpgp(&private_key, "test-passphrase", payload).unwrap();
+        let signature = sign_openpgp(&private_key, "", payload).unwrap();
 
         let payload_path = home.join("payload");
         let signature_path = home.join("payload.asc");
