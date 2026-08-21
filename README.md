@@ -349,6 +349,35 @@ forgeable label that narrows the grant. Temporary Access Grants exclude the
 Direct Secret Gate, Secret mutations, Elevated Secret Application, Secret
 Disclosure, and unknown operations.
 
+## Prefer Vendor-Signed Tools
+
+On macOS, install core Tools from the vendor's code-signed distribution when
+one exists. The official [Node.js macOS installer] is the obvious example: its
+package is notarized by Apple, and its `node` executable carries the Node.js
+Foundation Developer ID signature and Hardened Runtime.
+
+macOS can detect changes to the executable, and Automic Vault can revalidate
+the vendor identity and runtime posture when the executable is a Launcher or
+Target. The signature does not authenticate JavaScript, dependencies,
+plug-ins, or native extensions loaded by Node. Code signing proves identity and
+integrity, not intent.
+
+Other vendors ship signed macOS binaries too. Prefer, in order:
+
+1. the official vendor-signed distribution;
+2. a package-manager install that preserves the vendor's signature;
+3. a package-manager-signed build when no suitable vendor-signed artifact
+   exists.
+
+When a package manager builds or re-signs a Tool, the signature identifies that
+package manager's artifact rather than the vendor's release. For the related
+security boundaries, see [Tool Hardening], [Verified upstream Tool releases],
+and [Signed CLI Launchers].
+
+[Node.js macOS installer]: https://nodejs.org/en/download
+[Tool Hardening]: docs/architecture.md#tool-hardening
+[Verified upstream Tool releases]: docs/adr/0012-verified-upstream-tool-releases.md
+
 ## Verified Launchers for Unsigned CLIs
 
 Automic Vault rejects unsigned and arbitrary ad-hoc-signed executables as
