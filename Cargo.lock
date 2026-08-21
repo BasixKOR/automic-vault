@@ -389,7 +389,7 @@ dependencies = [
 [[package]]
 name = "bpb"
 version = "2.0.0"
-source = "git+https://github.com/automic-vault/bpb.git?rev=6f871d2#6f871d21f27ab027ec45738ec3e589ca7e9b1a90"
+source = "git+https://github.com/automic-vault/bpb.git?rev=5dec130#5dec1300f95835bdb7167e11480620f40887d188"
 dependencies = [
  "pgp",
  "rand 0.8.7",

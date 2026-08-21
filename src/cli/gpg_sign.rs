@@ -57,6 +57,19 @@ pub(crate) fn validate(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 }
 
 fn sign(args: Vec<OsString>) -> Result<String, String> {
+    sign_with_approval(args, &mut std::io::stdin(), inject::approve_gpg_signing)
+}
+
+fn sign_with_approval(
+    args: Vec<OsString>,
+    input: &mut dyn Read,
+    approve: impl FnOnce(
+        String,
+        Vec<String>,
+        String,
+        &[String],
+    ) -> Result<std::collections::BTreeMap<String, String>, String>,
+) -> Result<String, String> {
     let mut args = args
         .into_iter()
         .map(|arg| {
@@ -65,7 +78,7 @@ fn sign(args: Vec<OsString>) -> Result<String, String> {
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut payload = Vec::new();
-    std::io::stdin()
+    input
         .take(MAX_SIGNING_PAYLOAD_BYTES + 1)
         .read_to_end(&mut payload)
         .map_err(|error| format!("failed to read Git signing payload: {error}"))?;
@@ -92,7 +105,7 @@ fn sign(args: Vec<OsString>) -> Result<String, String> {
         ALTERNATE_PASSPHRASE,
     ]
     .map(String::from);
-    let mut secrets = inject::approve_gpg_signing(
+    let mut secrets = approve(
         target.to_string_lossy().into_owned(),
         args,
         cwd.to_string_lossy().into_owned(),
@@ -115,4 +128,54 @@ fn sign(args: Vec<OsString>) -> Result<String, String> {
     );
     let passphrase = Zeroizing::new(secrets.remove(passphrase_name).unwrap_or_default());
     bpb::sign_openpgp(&private_key, &passphrase, &payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authorization_binds_the_exact_payload_digest_before_key_selection() {
+        let payload = b"tree 0000000000000000000000000000000000000000\n\nmessage\n";
+        let mut input = payload.as_slice();
+        let error = sign_with_approval(
+            vec![OsString::from("-bsau"), OsString::from("ignored-key-id")],
+            &mut input,
+            |_target, args, _cwd, response_names| {
+                assert!(args.contains(&"-bsau".to_string()));
+                assert!(args.contains(&format!(
+                    "payload-sha256={}",
+                    ring::digest::digest(&ring::digest::SHA256, payload)
+                        .as_ref()
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect::<String>()
+                )));
+                assert_eq!(
+                    response_names,
+                    [
+                        DEFAULT_PRIVATE_KEY,
+                        DEFAULT_PASSPHRASE,
+                        ALTERNATE_PRIVATE_KEY,
+                        ALTERNATE_PASSPHRASE,
+                    ]
+                );
+                Ok(std::collections::BTreeMap::new())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "Automic Vault returned no private signing key");
+    }
+
+    #[test]
+    fn oversized_payload_is_rejected_before_authorization() {
+        let mut input = std::io::repeat(0).take(MAX_SIGNING_PAYLOAD_BYTES + 1);
+        let error = sign_with_approval(vec![], &mut input, |_, _, _, _| {
+            panic!("oversized payload must not reach authorization")
+        })
+        .unwrap_err();
+
+        assert_eq!(error, "Git signing payload exceeds 16 MiB");
+    }
 }
