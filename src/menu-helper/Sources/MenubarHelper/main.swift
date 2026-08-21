@@ -18,7 +18,6 @@ private let pendingMainWindowKey = "pendingMainWindow"
 private let pendingSecretGateKey = "pendingSecretGate"
 private let varlockProtocolVersion: UInt64 = 1
 let secCodeSignatureAdHoc: UInt32 = 0x2
-private let transientApprovalTTL: TimeInterval = 5 * 60
 private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
 private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
@@ -1802,6 +1801,53 @@ private struct ApprovalRequest {
             selectedSecretValues: values
         )
     }
+
+    func decisionReuseRequest(
+        clientIdentity: AVProcessIdentity,
+        callerPath: String,
+        signing: SigningInfo
+    ) -> AuthorizationDecisionReuseRequest {
+        AuthorizationDecisionReuseRequest(
+            client: AuthorizationClientExecution(
+                pid: clientIdentity.pid,
+                pidVersion: clientIdentity.pidversion,
+                startUsec: clientIdentity.start_usec,
+                effectiveUserID: clientIdentity.euid,
+                auditSessionID: clientIdentity.audit_session_id
+            ),
+            callerPath: callerPath,
+            signingIdentifier: signing.identifier,
+            signingTeamIdentifier: signing.teamIdentifier,
+            operation: op,
+            secretNames: keys,
+            target: target,
+            arguments: args,
+            workingDirectory: cwd,
+            replaceExistingEnvironment: replaceExistingEnv,
+            allowMissingSecrets: allowMissingKeys,
+            environmentConflicts: envConflicts,
+            shebangScript: shebangScript,
+            scriptData: scriptData,
+            snapshotIncompatibleInterpreter: snapshotIncompatibleInterpreter,
+            tool: tool,
+            title: title,
+            detail: detail,
+            dockerServerURL: dockerServerURL,
+            dockerParent: dockerParent.map {
+                AuthorizationDockerParent(
+                    pid: $0.pid,
+                    startUsec: $0.startUsec,
+                    effectiveUserID: $0.euid,
+                    target: $0.target,
+                    arguments: $0.arguments
+                )
+            },
+            selectedSecretValues: selectedSecretValues,
+            policy: awsRequestMayUseLongLivedCredentials(self)
+                ? .freshApprovalRequired
+                : .reusable
+        )
+    }
 }
 
 enum SecretMutation {
@@ -1986,25 +2032,6 @@ enum SecretMutation {
     }
 }
 
-private struct TransientApprovalKey: Hashable {
-    let pid: Int32
-    let startUsec: UInt64
-    let callerPath: String
-    let signingIdentifier: String
-    let signingTeamIdentifier: String
-    let op: String
-    let keys: [String]
-    let target: String
-    let args: [String]
-    let cwd: String
-    let replaceExistingEnv: Bool
-    let allowMissingKeys: Bool
-    let envConflicts: [String]
-    let shebangScript: String?
-    let tool: String?
-    let selectedValueSources: [String]
-}
-
 private enum ApprovalDecision: Equatable {
     case canceled
     case interrupted
@@ -2012,6 +2039,19 @@ private enum ApprovalDecision: Equatable {
     case approved
     case alwaysApproved
     case temporaryWriteAccess
+}
+
+private extension ApprovalDecision {
+    var reuseOutcome: AuthorizationDecisionReuseOutcome {
+        switch self {
+        case .canceled: .canceled
+        case .interrupted: .interrupted
+        case .denied: .denied
+        case .approved: .approved
+        case .alwaysApproved: .alwaysApproved
+        case .temporaryWriteAccess: .temporaryAccessGrant
+        }
+    }
 }
 
 private func terminalApprovalDecision(
@@ -2167,6 +2207,18 @@ private func approvalEvent(
     humanApprovalAvailable && cachedDecision == nil ? humanApprovalRequiredEvent : nil
 }
 
+private func approvalDecision(
+    for reusedOutcome: AuthorizationDecisionReuseOutcome?
+) -> ApprovalDecision? {
+    switch reusedOutcome {
+    case .denied: .denied
+    case .approved, .alwaysApproved: .approved
+    case nil: nil
+    case .canceled, .interrupted, .temporaryAccessGrant:
+        preconditionFailure("the decision reuse cache returned a non-reusable outcome")
+    }
+}
+
 final class ApprovalCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var canceled = false
@@ -2217,43 +2269,6 @@ private func missingRequiredSecret(
     return request.keys.first {
         (request.replaceExistingEnv || !conflicts.contains($0))
             && !(exists?($0) ?? request.selectedSecretValues.contains($0))
-    }
-}
-
-private struct TransientApprovalCache {
-    private enum Key: Hashable {
-        case approval(TransientApprovalKey)
-        case denial(pid: Int32, startUsec: UInt64)
-    }
-
-    private var expirations: [Key: Date] = [:]
-
-    mutating func decision(
-        for key: TransientApprovalKey,
-        allowingApprovalReuse: Bool = true,
-        now: Date = Date()
-    ) -> ApprovalDecision? {
-        prune(now: now)
-        if expirations[.denial(pid: key.pid, startUsec: key.startUsec)] != nil {
-            return .denied
-        }
-        guard allowingApprovalReuse else { return nil }
-        return expirations[.approval(key)] == nil ? nil : .approved
-    }
-
-    mutating func remember(_ decision: ApprovalDecision, for key: TransientApprovalKey, now: Date = Date()) {
-        prune(now: now)
-        let cacheKey: Key
-        switch decision {
-        case .canceled, .interrupted, .temporaryWriteAccess: return
-        case .denied: cacheKey = .denial(pid: key.pid, startUsec: key.startUsec)
-        case .approved, .alwaysApproved: cacheKey = .approval(key)
-        }
-        expirations[cacheKey] = now.addingTimeInterval(transientApprovalTTL)
-    }
-
-    private mutating func prune(now: Date) {
-        expirations = expirations.filter { $0.value > now }
     }
 }
 
@@ -2611,7 +2626,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private let canRequestMacInput: @MainActor () -> Bool
     private var listener: xpc_connection_t?
     // ponytail: helper-lifetime caches; persistent policy remains the cross-restart trust boundary.
-    private var transientApprovals = TransientApprovalCache()
+    private var transientApprovals = AuthorizationDecisionReuseCache()
     private let retainedProcessProvenanceLock = NSLock()
     private var retainedProcessProvenance = RetainedProcessProvenanceStore()
     private let blessedExecutionsLock = NSLock()
@@ -3444,23 +3459,10 @@ private final class ApprovalServer: @unchecked Sendable {
             launcher: launcher,
             agentTaskContext: currentAgentTaskContext
         )
-        let transientApproval = TransientApprovalKey(
-            pid: pid,
-            startUsec: identity.start_usec,
+        let transientApproval = request.decisionReuseRequest(
+            clientIdentity: identity,
             callerPath: callerPath,
-            signingIdentifier: signing.identifier,
-            signingTeamIdentifier: signing.teamIdentifier,
-            op: request.op,
-            keys: request.keys.sorted(),
-            target: request.target,
-            args: request.args,
-            cwd: request.cwd,
-            replaceExistingEnv: request.replaceExistingEnv,
-            allowMissingKeys: request.allowMissingKeys,
-            envConflicts: request.envConflicts.sorted(),
-            shebangScript: request.shebangScript,
-            tool: request.tool,
-            selectedValueSources: request.selectedSecretValues.identityComponents()
+            signing: signing
         )
         let promptBlessing: BlessedScriptPromptContext?
         if let activeBlessing {
@@ -3483,14 +3485,12 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             promptBlessing = nil
         }
-        let requiresFreshOperationApproval = awsRequestMayUseLongLivedCredentials(request)
         RunLoop.main.perform(inModes: [.modalPanel, .default]) {
             MainActor.assumeIsolated {
                 guard !cancellation.isCanceled,
                       let event = approvalEvent(
-                          for: self.transientApprovals.decision(
-                              for: transientApproval,
-                              allowingApprovalReuse: !requiresFreshOperationApproval
+                          for: approvalDecision(
+                              for: self.transientApprovals.decision(for: transientApproval)
                           ),
                           humanApprovalAvailable: self.canRequestHumanApproval()
                       )
@@ -3548,10 +3548,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     return
                 }
             }
-            let cachedDecision = self.transientApprovals.decision(
-                for: transientApproval,
-                allowingApprovalReuse: !requiresFreshOperationApproval
-            )
+            let cachedDecision = self.transientApprovals.decision(for: transientApproval)
             if let decision = cachedDecision {
                 if decision == .denied {
                     _ = self.onAccessRequest(accessRequestRecord(
@@ -3799,9 +3796,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 {
                     self.registerBlessedExecution(script, pid: pid, identity: identity)
                 }
-                if !requiresFreshOperationApproval {
-                    self.transientApprovals.remember(.approved, for: transientApproval)
-                }
+                self.transientApprovals.remember(decision.reuseOutcome, for: transientApproval)
                 self.recordLiveSecretUse(
                     request: request,
                     payload: payload,
@@ -4312,6 +4307,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 do {
                     let material = try await SecretProxyCoordinator.shared.start(
                         launch: launch,
+                        secretValueCustody: self.secretValueCustody,
                         approveDestination: { destination, cancellation in
                             let destinationRequest = ApprovalRequest(
                                 op: "proxy-destination",
@@ -10399,68 +10395,74 @@ private func runBrewReadOnlySelfCheck() -> Int32 {
 }
 
 private func runTransientApprovalSelfCheck() -> Int32 {
-    func key(
+    func request(
         startUsec: UInt64 = 456,
         args: [String] = ["repo", "view"],
-        keys: [String] = ["GH_TOKEN_GITHUB_COM"]
-    ) -> TransientApprovalKey {
-        TransientApprovalKey(
-            pid: 123,
-            startUsec: startUsec,
+        keys: [String] = ["GH_TOKEN_GITHUB_COM"],
+        policy: AuthorizationDecisionReusePolicy = .reusable
+    ) -> AuthorizationDecisionReuseRequest {
+        AuthorizationDecisionReuseRequest(
+            client: AuthorizationClientExecution(
+                pid: 123,
+                pidVersion: 7,
+                startUsec: startUsec,
+                effectiveUserID: 501,
+                auditSessionID: 42
+            ),
             callerPath: "/opt/homebrew/bin/gh",
             signingIdentifier: "gh",
             signingTeamIdentifier: "TEAM",
-            op: "keys",
-            keys: keys,
+            operation: "keys",
+            secretNames: keys,
             target: "/opt/homebrew/Cellar/gh-cli/2.94.0/bin/gh",
-            args: args,
-            cwd: "/tmp",
-            replaceExistingEnv: true,
-            allowMissingKeys: false,
-            envConflicts: [],
+            arguments: args,
+            workingDirectory: "/tmp",
+            replaceExistingEnvironment: true,
+            allowMissingSecrets: false,
+            environmentConflicts: [],
             shebangScript: nil,
+            scriptData: nil,
+            snapshotIncompatibleInterpreter: nil,
             tool: "gh",
-            selectedValueSources: []
+            title: nil,
+            detail: nil,
+            dockerServerURL: nil,
+            dockerParent: nil,
+            selectedSecretValues: SelectedSecretValues(values: [:]),
+            policy: policy
         )
     }
-    let approval = key()
-    let denial = key(
+    let approval = request()
+    let denial = request(
         args: ["auth", "token"],
         keys: ["GH_TOKEN_GITHUB_COM_MXCL"]
     )
-    let temporaryGrant = key(startUsec: 987, args: ["repo", "create"])
-    let interrupted = key(startUsec: 988, args: ["repo", "delete"])
-    let fallbackAfterDenial = key(args: ["auth", "token"])
-    var cache = TransientApprovalCache()
+    let temporaryGrant = request(startUsec: 987, args: ["repo", "create"])
+    let interrupted = request(startUsec: 988, args: ["repo", "delete"])
+    let fallbackAfterDenial = request(args: ["auth", "token"])
+    let freshApproval = request(startUsec: 989, policy: .freshApprovalRequired)
+    var cache = AuthorizationDecisionReuseCache()
     cache.remember(.approved, for: approval, now: Date(timeIntervalSince1970: 100))
+    cache.remember(.approved, for: freshApproval, now: Date(timeIntervalSince1970: 100))
     guard cache.decision(for: approval, now: Date(timeIntervalSince1970: 200)) == .approved,
-          cache.decision(
-              for: approval,
-              allowingApprovalReuse: false,
-              now: Date(timeIntervalSince1970: 200)
-          ) == nil,
+          cache.decision(for: freshApproval, now: Date(timeIntervalSince1970: 200)) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 200)) == nil,
-          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil
+          cache.decision(for: request(startUsec: 789), now: Date(timeIntervalSince1970: 200)) == nil
     else {
         return 1
     }
     cache.remember(.denied, for: denial, now: Date(timeIntervalSince1970: 200))
     cache.remember(
-        .temporaryWriteAccess,
+        .temporaryAccessGrant,
         for: temporaryGrant,
         now: Date(timeIntervalSince1970: 200)
     )
     cache.remember(.interrupted, for: interrupted, now: Date(timeIntervalSince1970: 200))
     guard cache.decision(for: denial, now: Date(timeIntervalSince1970: 300)) == .denied,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 300)) == .denied,
-          cache.decision(
-              for: fallbackAfterDenial,
-              allowingApprovalReuse: false,
-              now: Date(timeIntervalSince1970: 300)
-          ) == .denied,
           cache.decision(for: temporaryGrant, now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: interrupted, now: Date(timeIntervalSince1970: 300)) == nil,
-          cache.decision(for: key(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
+          cache.decision(for: request(startUsec: 789), now: Date(timeIntervalSince1970: 300)) == nil,
           cache.decision(for: fallbackAfterDenial, now: Date(timeIntervalSince1970: 501)) == nil
     else {
         return 1

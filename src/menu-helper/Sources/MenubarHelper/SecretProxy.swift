@@ -99,6 +99,7 @@ actor SecretProxyCoordinator {
         let process: Process
         let input: FileHandle
         let output: FileHandle
+        let secretValueCustody: SecretValueCustody
         let approveDestination: DestinationApproval
         var identity: ProxyTargetIdentity
         var codeIdentity: Data?
@@ -112,11 +113,11 @@ actor SecretProxyCoordinator {
     private var pendingAuthorizations: [PendingAuthorizationID: ApprovalCancellation] = [:]
     private var destinationPromptActive = false
     private var destinationPromptWaiters: [CheckedContinuation<Void, Never>] = []
-    private let secretValueCustody = SecretValueCustody()
     private let maximumControlFrame = 4 * 1024 * 1024
 
     func start(
         launch: ProxySessionLaunch,
+        secretValueCustody: SecretValueCustody,
         approveDestination: @escaping DestinationApproval
     ) async throws -> ProxySessionMaterial {
         guard targetIsLive(launch.identity),
@@ -191,6 +192,7 @@ actor SecretProxyCoordinator {
                 process: process,
                 input: inputPipe.fileHandleForWriting,
                 output: outputPipe.fileHandleForReading,
+                secretValueCustody: secretValueCustody,
                 approveDestination: approveDestination,
                 identity: launch.identity,
                 codeIdentity: liveCodeIdentity(pid: launch.identity.pid),
@@ -435,7 +437,7 @@ actor SecretProxyCoordinator {
         guard !cancellation.isCanceled else { return }
         let secrets: [String: String]
         do {
-            secrets = try secretValueCustody.load(
+            secrets = try session.secretValueCustody.load(
                 session.launch.selectedSecretValues,
                 names: sortedNames
             )

@@ -30,7 +30,7 @@ public enum SecretValueCustodyError: Error, Equatable, LocalizedError, Sendable 
 public struct SelectedSecretValues: Equatable, Sendable {
     private let values: [String: StoredSecretValue]
 
-    public init(values: [String: StoredSecretValue]) {
+    package init(values: [String: StoredSecretValue]) {
         self.values = values
     }
 
@@ -53,13 +53,23 @@ public struct SelectedSecretValues: Equatable, Sendable {
         values[name]?.source
     }
 
-    public func identityComponents() -> [String] {
-        values.map { "\($0.key)=\($0.value.source.displayName)" }.sorted()
+    func authorizationIdentity() -> [SelectedSecretValueSourceIdentity] {
+        values.map {
+            SelectedSecretValueSourceIdentity(name: $0.key, source: $0.value.source)
+        }.sorted { lhs, rhs in
+            if lhs.name != rhs.name { return lhs.name < rhs.name }
+            return String(describing: lhs.source) < String(describing: rhs.source)
+        }
     }
 
     func value(for name: String) -> StoredSecretValue? {
         values[name]
     }
+}
+
+struct SelectedSecretValueSourceIdentity: Hashable, Sendable {
+    let name: String
+    let source: StoredSecretValueSource
 }
 
 protocol SecretValueCustodyAdapter: Sendable {
