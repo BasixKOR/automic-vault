@@ -285,6 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
         _ = migrateBackgroundKeychainItems()
+        _ = migrateLegacyGPGSigningSecrets()
         _ = backfillBlessedScriptReviewedContents()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
@@ -1714,7 +1715,7 @@ private func scanAlertLevel(_ severities: [String]) -> ScanAlertLevel {
         ? .medium : .high
 }
 
-private func avExecutableURL() -> URL {
+func avExecutableURL() -> URL {
     if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("av"),
        FileManager.default.isExecutableFile(atPath: bundled.path)
     {
@@ -1799,6 +1800,28 @@ private struct ApprovalRequest {
             dockerServerURL: dockerServerURL,
             dockerParent: dockerParent,
             selectedSecretValues: values
+        )
+    }
+
+    func requesting(keys: [String], title: String, detail: String) -> ApprovalRequest {
+        ApprovalRequest(
+            op: op,
+            keys: keys,
+            target: target,
+            args: args,
+            cwd: cwd,
+            replaceExistingEnv: replaceExistingEnv,
+            allowMissingKeys: allowMissingKeys,
+            envConflicts: envConflicts,
+            shebangScript: shebangScript,
+            scriptData: scriptData,
+            snapshotIncompatibleInterpreter: snapshotIncompatibleInterpreter,
+            tool: tool,
+            title: title,
+            detail: detail,
+            dockerServerURL: dockerServerURL,
+            dockerParent: dockerParent,
+            selectedSecretValues: selectedSecretValues
         )
     }
 
@@ -2813,6 +2836,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleInject(
+                message,
+                on: peer,
+                cancellation: cancellation,
+                pid: pid,
+                identity: identity,
+                callerPath: callerPath,
+                signing: signing
+            )
         case .inject, .keys, .authorize, .dockerGet:
             handleInject(
                 message,
@@ -3059,9 +3092,50 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
-        guard let parsedRequest = approvalRequest(from: message) else {
+        guard var parsedRequest = approvalRequest(from: message) else {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
+        }
+        var launchers = launcherIdentities(for: identity)
+        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(launcher)
+        }
+        if parsedRequest.op == "gpg-sign" {
+            let migrationStatus = migrateLegacyGPGSigningSecrets()
+            guard migrationStatus == errSecSuccess else {
+                reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: "failed to repair the GPG signing credential: \(migrationStatus)"
+                )
+                return
+            }
+            let storedSecretNames: Set<String>
+            switch loadStoredSecretsResult() {
+            case .success(let secrets):
+                storedSecretNames = Set(secrets.map(\.account))
+            case .failure(let status):
+                reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: SecretValueCustodyError.inventoryUnavailable(status).localizedDescription
+                )
+                return
+            }
+            let names = gpgSigningSecretNames(
+                configuration: loadGPGSigningConfiguration(),
+                launcherRequirements: launchers.map(\.designatedRequirement),
+                storedSecretNames: storedSecretNames
+            )
+            parsedRequest = parsedRequest.requesting(
+                keys: names,
+                title: "Sign this Git operation?",
+                detail: names.first == gpgAlternatePrivateKeySecretName
+                    ? "The Verified Launcher matches your alternate signing-key list. Automic Vault will use the alternate GPG credential."
+                    : "Automic Vault will use your default GPG signing credential."
+            )
         }
         let request: ApprovalRequest
         do {
@@ -3097,12 +3171,8 @@ private final class ApprovalServer: @unchecked Sendable {
         let keepsDetachedProcessAccess = UserDefaults.standard.bool(
             forKey: keepLauncherAccessForDetachedProcessesDefaultsKey
         )
-        var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         let launcherFallbackPath = ancestorFallbackPath ?? callerPath
-        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
-            launchers.append(launcher)
-        }
         let launcher = executionOrigin(
             among: launchers,
             callerPID: pid,
@@ -5574,7 +5644,7 @@ private final class ApprovalServer: @unchecked Sendable {
             return nil
         }
         let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize"
+        guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
             || op == "docker-get" || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -5964,6 +6034,8 @@ private func classifySecretGateRequest(
     request: ApprovalRequest
 ) -> SecretGateRequestClassification {
     switch gateID {
+    case "gpg-signing":
+        return .localWrite
     case "gh":
         return ghRequestClassification(request.args)
     case "docker":
@@ -6682,7 +6754,7 @@ private func signingInfo(path: String) -> SigningInfo {
     )
 }
 
-private func selfTeamIdentifier() -> String? {
+func selfTeamIdentifier() -> String? {
     var code: SecCode?
     var staticCode: SecStaticCode?
     guard SecCodeCopySelf([], &code) == errSecSuccess,
@@ -7145,16 +7217,25 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
-    var seen = Set<String>()
-    let appURLs = (
+    var seenContainingApps = Set<String>()
+    let containingAppURLs = (
         appBundleURLs(containing: path)
         + appBundleURLs(containing: signing.mainExecutable)
+    ).filter { seenContainingApps.insert($0.path).inserted }
+    var seenApps = Set<String>()
+    let appURLs = (
+        containingAppURLs.filter {
+            appBundleMatchesMainExecutable(
+                $0,
+                executablePaths: [path, signing.mainExecutable]
+            )
+        }
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
-    ).filter { seen.insert($0.path).inserted }
+    ).filter { seenApps.insert($0.path).inserted }
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
-        || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+        || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
     if claimsLauncherBundleIdentity {
-        guard let appURL = appURLs.first(where: {
+        guard let appURL = containingAppURLs.first(where: {
             launcherBundleAppURL(containing: $0.path) == $0
         }),
             let liveCodeIdentifier = liveCodeIdentity(pid: pid),
@@ -7426,8 +7507,15 @@ private func launcherAppVerificationFailure(
             guard av_process_identity(pid, &ancestor) else { break }
             let path = pathString(ancestor)
             if let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) {
-                let appURLs = appBundleURLs(containing: path)
+                let appURLs = (
+                    appBundleURLs(containing: path)
                     + appBundleURLs(containing: signing.mainExecutable)
+                ).filter {
+                    appBundleMatchesMainExecutable(
+                        $0,
+                        executablePaths: [path, signing.mainExecutable]
+                    )
+                }
                     + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
                 for appURL in appURLs where checkedApps.insert(appURL.path).inserted {
                     if let failure = appBundleVerificationFailure(appURL) { return failure }
@@ -7509,6 +7597,19 @@ private func appBundleURLs(containing path: String) -> [URL] {
         url.deleteLastPathComponent()
     }
     return apps
+}
+
+private func appBundleMatchesMainExecutable(
+    _ appURL: URL,
+    executablePaths: [String],
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL }
+) -> Bool {
+    guard let bundleExecutableURL = bundleExecutableURL(appURL) else { return false }
+    let bundleExecutablePath = bundleExecutableURL.standardizedFileURL.resolvingSymlinksInPath().path
+    return executablePaths.contains {
+        URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path
+            == bundleExecutablePath
+    }
 }
 
 private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> URL? {
@@ -10007,6 +10108,20 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
           ]) == "example → zsh → gh",
+          !appBundleMatchesMainExecutable(
+              URL(fileURLWithPath: "/Applications/Xcode.app"),
+              executablePaths: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"],
+              bundleExecutableURL: { _ in
+                  URL(fileURLWithPath: "/Applications/Xcode.app/Contents/MacOS/Xcode")
+              }
+          ),
+          appBundleMatchesMainExecutable(
+              URL(fileURLWithPath: "/Applications/Xcode.app"),
+              executablePaths: ["/Applications/Xcode.app/Contents/MacOS/Xcode"],
+              bundleExecutableURL: { _ in
+                  URL(fileURLWithPath: "/Applications/Xcode.app/Contents/MacOS/Xcode")
+              }
+          ),
           appBundleURL(containing: "/Applications/Example.app/Contents/MacOS/../Resources/payload")?.path
               == "/Applications/Example.app"
     else { return 1 }

@@ -574,6 +574,51 @@ fn approve_injection(_request: &ApprovalRequest) -> Result<SecretValues, String>
 
 #[cfg(target_os = "macos")]
 fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, String> {
+    xpc_approve_request(request, &request.keys)
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn approve_gpg_signing(
+    target: String,
+    args: Vec<String>,
+    cwd: String,
+    response_keys: &[String],
+) -> Result<SecretValues, String> {
+    xpc_approve_request(
+        &ApprovalRequest {
+            op: "gpg-sign",
+            keys: Vec::new(),
+            target,
+            args,
+            cwd,
+            replace_existing_env: false,
+            allow_missing_keys: false,
+            env_conflicts: Vec::new(),
+            shebang_script: None,
+            script_data: None,
+            snapshot_incompatible_interpreter: None,
+            tool: Some("gpg-signing"),
+            docker_server_url: None,
+        },
+        response_keys,
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn approve_gpg_signing(
+    _target: String,
+    _args: Vec<String>,
+    _cwd: String,
+    _response_keys: &[String],
+) -> Result<SecretValues, String> {
+    Err("GPG signing approval is only available on macOS".into())
+}
+
+#[cfg(target_os = "macos")]
+fn xpc_approve_request(
+    request: &ApprovalRequest,
+    response_keys: &[String],
+) -> Result<SecretValues, String> {
     use std::os::raw::{c_char, c_int, c_void};
 
     type XpcObject = *mut c_void;
@@ -757,7 +802,7 @@ fn xpc_approve_injection(request: &ApprovalRequest) -> Result<SecretValues, Stri
                 let mut secrets = SecretValues::new();
                 let values = xpc_dictionary_get_dictionary(reply, b"secrets\0".as_ptr().cast());
                 if !values.is_null() {
-                    for key in &request.keys {
+                    for key in response_keys {
                         let key_cstr = CString::new(key.as_str())
                             .map_err(|_| format!("invalid key returned by approval: {key:?}"))?;
                         let value = xpc_dictionary_get_string(values, key_cstr.as_ptr());

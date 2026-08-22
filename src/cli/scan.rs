@@ -592,7 +592,15 @@ mod tests {
             .iter()
             .map(|gate| gate["id"].as_str().unwrap())
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(catalog_gate_ids, hardener_gate_ids);
+        let standalone_gate_ids = std::collections::BTreeSet::from(["gpg-signing"]);
+        assert_eq!(
+            catalog_gate_ids
+                .difference(&hardener_gate_ids)
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            standalone_gate_ids
+        );
+        assert!(hardener_gate_ids.is_subset(&catalog_gate_ids));
         let gate = |name: &str| {
             &hardeners
                 .iter()
@@ -625,7 +633,25 @@ mod tests {
         assert_eq!(ids.len(), gates.len());
         assert!(ids.contains("aws"));
         assert!(ids.contains("docker"));
+        assert!(ids.contains("gpg-signing"));
         assert!(ids.contains("jfrog-cli"));
+        let gpg = gates
+            .iter()
+            .find(|gate| gate["id"] == "gpg-signing")
+            .unwrap();
+        assert_eq!(gpg["key_patterns"], serde_json::json!(["AV_GPG_*"]));
+        assert_eq!(gpg["routes"][0]["operation"], "gpg-sign");
+        assert_eq!(
+            gpg["routes"][0]["caller_identifiers"][0],
+            "com.automicvault.av"
+        );
+        assert_eq!(
+            gpg["routes"][0]["target_path"],
+            std::fs::canonicalize(std::env::current_exe().unwrap())
+                .unwrap()
+                .to_string_lossy()
+                .as_ref()
+        );
         assert_eq!(
             gates.iter().find(|gate| gate["id"] == "docker").unwrap()["routes"]
                 .as_array()

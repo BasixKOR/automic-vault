@@ -288,6 +288,48 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
     #expect(loadSecretGates(descriptors: [descriptor], service: service).map(\.id) == ["gh"])
 }
 
+@Test func dashboardIncludesStandaloneAuthorizationGates() throws {
+    let inactiveHardener = testGateMetadata(hardened: false)
+    let gpg = SecretGateDescriptor(
+        id: "gpg-signing",
+        keyPatterns: ["AV_GPG_PRIVATE_KEY"],
+        routes: [SecretGateRoute(
+            operation: "gpg-sign",
+            scriptPath: nil,
+            targetPath: "/Applications/Automic Vault.app/Contents/MacOS/av",
+            callerIdentifiers: ["com.automicvault.av"],
+            keyPatterns: ["AV_GPG_PRIVATE_KEY"],
+            replaceExistingEnv: false,
+            allowMissingKeys: false
+        )]
+    )
+    let descriptors = dashboardSecretGateDescriptors(
+        hardeners: [inactiveHardener],
+        catalog: [try #require(inactiveHardener.secretGate), gpg]
+    )
+    let gate = try #require(loadSecretGates(
+        descriptors: descriptors,
+        service: "com.automicvault.tests.\(UUID().uuidString)"
+    ).first)
+
+    #expect(descriptors.map(\.id) == ["gpg-signing"])
+    #expect(gate.availableProtections == [.noAccess, .readOnlyAndLocalWrites])
+    #expect(gate.initialProtection == .noAccess)
+    #expect(gate.normalizedProtection(.noAccess) == .noAccess)
+    #expect(gate.normalizedProtection(.readOnly) == .noAccess)
+    #expect(gate.normalizedProtection(.readOnlyAndUpdates) == .noAccess)
+    #expect(gate.normalizedProtection(.readOnlyAndLocalWrites) == .readOnlyAndLocalWrites)
+    #expect(gate.normalizedProtection(.fullExceptSecretDumps) == .readOnlyAndLocalWrites)
+    #expect(gate.normalizedProtection(.fullIncludingSecretDumps) == .readOnlyAndLocalWrites)
+    #expect(gate.protectionTitle(.noAccess) == "Approval Required")
+    #expect(gate.protectionTitle(.readOnlyAndLocalWrites) == "Allow Signing")
+    #expect(gate.protectionSubtitle(.noAccess) == "Every GPG signing request requires approval")
+    #expect(
+        gate.protectionSubtitle(.readOnlyAndLocalWrites)
+            == "Recognized GPG signing requests are automically authorized"
+    )
+}
+
 
 private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     HardenerMetadata(

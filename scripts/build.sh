@@ -237,16 +237,20 @@ if [[ "$identity" != "-" ]]; then
 fi
 
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$ROOT/target/release/av"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av-gpg "$ROOT/target/release/av-gpg"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$ROOT/target/release/av-brew-stub"
 codesign "${codesign_args[@]}" --identifier com.automicvault.launcher-bundle-runner "$RESOURCES/AutomicVaultLauncher"
 codesign "${codesign_args[@]}" --identifier com.automicvault.varlock-plugin-helper "$RESOURCES/AutomicVaultVarlockPlugin"
 assert_no_embedded_entitlements "$ROOT/target/release/av"
+assert_no_embedded_entitlements "$ROOT/target/release/av-gpg"
 assert_no_embedded_entitlements "$ROOT/target/release/av-brew-stub"
 assert_no_embedded_entitlements "$RESOURCES/AutomicVaultVarlockPlugin"
 cp "$ROOT/target/release/av" "$MACOS/av"
+cp "$ROOT/target/release/av-gpg" "$MACOS/av-gpg"
 cp "$ROOT/target/release/av-brew-stub" "$MACOS/av-brew-stub"
 cp "$ROOT/target/release/av-proxy-helper" "$MACOS/av-proxy-helper"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av "$MACOS/av"
+codesign "${codesign_args[@]}" --identifier com.automicvault.av-gpg "$MACOS/av-gpg"
 codesign "${codesign_args[@]}" --identifier com.automicvault.av-brew-stub "$MACOS/av-brew-stub"
 codesign "${codesign_args[@]}" \
   --entitlements "$PROXY_HELPER_ENTITLEMENTS" \
@@ -261,6 +265,7 @@ if [[ "$proxy_helper_status" -ne 1 ]]; then
   exit 1
 fi
 assert_no_embedded_entitlements "$MACOS/av"
+assert_no_embedded_entitlements "$MACOS/av-gpg"
 assert_no_embedded_entitlements "$MACOS/av-brew-stub"
 "$MACOS/av" __version >/dev/null
 app_codesign_args=("${codesign_args[@]}")
@@ -275,6 +280,7 @@ if [[ -f "$MENU_HELPER_PROFILE" && "$identity" != "-" ]]; then
 fi
 codesign "${app_codesign_args[@]}" "$APP"
 codesign --verify --strict "$MACOS/av"
+codesign --verify --strict "$MACOS/av-gpg"
 codesign --verify --strict "$MACOS/av-brew-stub"
 codesign --verify --strict "$MACOS/av-proxy-helper"
 codesign --verify --strict "$APP"

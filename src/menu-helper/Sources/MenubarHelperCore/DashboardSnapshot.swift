@@ -85,7 +85,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
     ) -> DashboardSnapshot {
         _ = resumePendingSecretMutation()
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
-        _ = initializeSecretGatePolicies(hardeners: hardenerMetadata, service: policyService)
+        let gateDescriptors = dashboardSecretGateDescriptors(
+            hardeners: hardenerMetadata,
+            catalog: (try? loadSecretGateDescriptors(avExecutableURL: avExecutableURL)) ?? []
+        )
+        _ = initializeSecretGatePolicies(descriptors: gateDescriptors, service: policyService)
         let hardenedTools = loadHardenedTools(
             in: stubDirectory,
             ghCLIURL: ghCLIURL,
@@ -97,7 +101,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             detectorFindings: [],
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
-            secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
+            secretGates: loadSecretGates(descriptors: gateDescriptors, service: policyService),
             blessedScripts: loadBlessedScripts(),
             secretNameAccessApps: loadSecretNameAccessApps(),
             secrets: secrets,
@@ -599,6 +603,9 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
 
     public var availableProtections: [SecretGateProtection] {
+        if id == "gpg-signing" {
+            return [.noAccess, .readOnlyAndLocalWrites]
+        }
         if id == "brew" {
             return [.noAccess, .readOnlyAndUpdates, .fullExceptSecretDumps]
         }
@@ -618,15 +625,21 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 
     public var initialProtection: SecretGateProtection {
-        id == "brew" ? .readOnlyAndUpdates : .readOnly
+        if id == "gpg-signing" { return .noAccess }
+        return id == "brew" ? .readOnlyAndUpdates : .readOnly
     }
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
+        if id == "gpg-signing" {
+            return protection.allows(.localWrite) ? .readOnlyAndLocalWrites : .noAccess
+        }
         var protection = protection
         if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps {
             protection = .fullExceptSecretDumps
         }
-        if id != "gh" && id != "docker", protection == .readOnlyAndLocalWrites {
+        if id != "gh" && id != "docker" && id != "gpg-signing",
+           protection == .readOnlyAndLocalWrites
+        {
             protection = .readOnly
         }
         if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates {
@@ -637,11 +650,19 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public func protectionTitle(_ protection: SecretGateProtection) -> String {
         let protection = normalizedProtection(protection)
+        if id == "gpg-signing" {
+            return protection == .readOnlyAndLocalWrites ? "Allow Signing" : "Approval Required"
+        }
         return keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
     }
 
     public func protectionSubtitle(_ protection: SecretGateProtection) -> String {
         let protection = normalizedProtection(protection)
+        if id == "gpg-signing" {
+            return protection == .readOnlyAndLocalWrites
+                ? "Recognized GPG signing requests are automically authorized"
+                : "Every GPG signing request requires approval"
+        }
         return keyPatterns.isEmpty && protection == .fullExceptSecretDumps
             ? "Every recognized operation is automically authorized; unknown operations require approval"
             : protection.subtitle
@@ -973,7 +994,19 @@ public func loadSecretGates(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
-    let descriptors = hardeners.compactMap { hardener -> SecretGateDescriptor? in
+    loadSecretGates(
+        descriptors: dashboardSecretGateDescriptors(hardeners: hardeners, catalog: []),
+        service: service,
+        account: account
+    )
+}
+
+public func dashboardSecretGateDescriptors(
+    hardeners: [HardenerMetadata],
+    catalog: [SecretGateDescriptor]
+) -> [SecretGateDescriptor] {
+    let hardenerGateIDs = Set(hardeners.compactMap { $0.secretGate?.id })
+    let activeHardenerGates = hardeners.compactMap { hardener -> SecretGateDescriptor? in
         guard let descriptor = hardener.secretGate,
               hardener.hardened || descriptor.routes
                 .compactMap(\.scriptPath)
@@ -981,7 +1014,7 @@ public func loadSecretGates(
         else { return nil }
         return descriptor
     }
-    return loadSecretGates(descriptors: descriptors, service: service, account: account)
+    return activeHardenerGates + catalog.filter { !hardenerGateIDs.contains($0.id) }
 }
 
 public func loadSecretGates(
@@ -1214,12 +1247,25 @@ public func initializeSecretGatePolicies(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
+    initializeSecretGatePolicies(
+        descriptors: dashboardSecretGateDescriptors(hardeners: hardeners, catalog: []),
+        service: service,
+        account: account
+    )
+}
+
+@discardableResult
+public func initializeSecretGatePolicies(
+    descriptors: [SecretGateDescriptor],
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
     var records: [SecretGatePolicyRecord]
     switch loadSecretGatePolicyRecords(service: service, account: account) {
     case .success(let loaded): records = loaded
     case .failure(let status): return status
     }
-    let gates = loadSecretGates(hardeners: hardeners, service: service, account: account)
+    let gates = loadSecretGates(descriptors: descriptors, service: service, account: account)
     for gate in gates where !records.contains(where: { $0.gateID == gate.id && $0.requirement == nil }) {
         records.append(SecretGatePolicyRecord(
             gateID: gate.id,

@@ -2,11 +2,13 @@
 
 pub mod brew_cask_policy;
 mod cli;
+mod gpg;
 mod isotopes;
 mod path_security;
 mod secrets;
 
 pub use cli::{run, run_scanner_terminal, run_terminal};
+pub use gpg::run_git_program;
 
 pub const MENU_HELPER_CODE_SIGNING_REQUIREMENT: &str = r#"anchor apple generic and certificate leaf[subject.OU] = ZU76A67LGU and identifier "com.automicvault""#;
 
