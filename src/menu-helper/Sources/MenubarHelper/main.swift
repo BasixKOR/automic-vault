@@ -3097,9 +3097,33 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         if parsedRequest.op == "gpg-sign" {
             let launchers = launcherIdentities(for: identity)
+            let migrationStatus = migrateEmptyGPGSigningPassphrases()
+            guard migrationStatus == errSecSuccess else {
+                reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: "failed to repair the GPG signing credential: \(migrationStatus)"
+                )
+                return
+            }
+            let storedSecretNames: Set<String>
+            switch loadStoredSecretsResult() {
+            case .success(let secrets):
+                storedSecretNames = Set(secrets.map(\.account))
+            case .failure(let status):
+                reply(
+                    peer,
+                    to: message,
+                    ok: false,
+                    error: SecretValueCustodyError.inventoryUnavailable(status).localizedDescription
+                )
+                return
+            }
             let names = gpgSigningSecretNames(
                 configuration: loadGPGSigningConfiguration(),
-                launcherRequirements: launchers.map(\.designatedRequirement)
+                launcherRequirements: launchers.map(\.designatedRequirement),
+                storedSecretNames: storedSecretNames
             )
             parsedRequest = parsedRequest.requesting(
                 keys: names,

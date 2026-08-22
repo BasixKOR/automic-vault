@@ -273,11 +273,11 @@ One or more Secrets interpreted by a Tool or service. An AWS credential, for exa
 
 ### GPG Signing Credential
 
-A Credential containing one OpenPGP private-key Secret and its passphrase
-Secret. The user may configure a default credential and an alternate
-credential. A Launcher Signing Credential Rule selects the alternate credential
-for an exact Verified Launcher; absence of the alternate credential fails
-closed and never falls back to the default.
+A Credential containing one OpenPGP private-key Secret and, when the key is
+encrypted, its passphrase Secret. The user may configure a default credential
+and an alternate credential. A Launcher Signing Credential Rule selects the
+alternate credential for an exact Verified Launcher; absence of the alternate
+credential fails closed and never falls back to the default.
 
 ### Launcher Signing Credential Rule
 

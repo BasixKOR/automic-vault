@@ -29,8 +29,8 @@ unrelated GPG operations continue to delegate to the user's `gpg` command.
 The menu app treats each request as Local Write at the GPG Signing Gate. It
 verifies `av` as Gate Client and Target, resolves the live Verified Launcher,
 and selects one GPG Signing Credential before authorization. The default and
-alternate credentials each contain a private-key Secret and passphrase Secret
-in the Data Protection Keychain.
+alternate credentials each contain a private-key Secret and, when the key is
+encrypted, a passphrase Secret in the Data Protection Keychain.
 
 Launcher Signing Credential Rules are stored in the Data Protection Keychain
 and bind exact designated requirements to the alternate credential. The menu

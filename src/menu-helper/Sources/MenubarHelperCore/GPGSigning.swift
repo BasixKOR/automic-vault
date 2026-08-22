@@ -59,14 +59,16 @@ func saveGPGSigningConfiguration(
 
 public func gpgSigningSecretNames(
     configuration: GPGSigningConfiguration,
-    launcherRequirements: [String]
+    launcherRequirements: [String],
+    storedSecretNames: Set<String>
 ) -> [String] {
     let useAlternate = configuration.alternateKeyLaunchers.contains { launcher in
         launcherRequirements.contains(launcher.requirement)
     }
-    return useAlternate
+    let names = useAlternate
         ? [gpgAlternatePrivateKeySecretName, gpgAlternatePassphraseSecretName]
         : [gpgDefaultPrivateKeySecretName, gpgDefaultPassphraseSecretName]
+    return [names[0]] + names.dropFirst().filter(storedSecretNames.contains)
 }
 
 @discardableResult
@@ -79,20 +81,13 @@ public func saveGPGSigningCredential(
         privateKey: privateKey,
         passphrase: passphrase,
         alternate: alternate,
-        load: { account in
-            switch loadKeychainDataResult(service: automicVaultKeychainService, account: account) {
-            case .success(let data):
-                guard let value = String(data: data, encoding: .utf8) else {
-                    return .failure(errSecDecode)
-                }
-                return .value(value)
-            case .notFound: return .missing
-            case .failure(let status): return .failure(status)
-            }
-        },
+        load: loadGPGStoredValue,
         save: { account, value in saveStoredSecret(account: account, value: value) },
         delete: { account in
-            let status = deleteStoredSecretValue(secretName: account, source: .global)
+            let status = deleteStoredSecretValueRevokingDirectAccessIfLast(
+                secretName: account,
+                source: .global
+            )
             return status == errSecItemNotFound ? errSecSuccess : status
         }
     )
@@ -102,6 +97,49 @@ enum GPGStoredValueLoad {
     case value(String)
     case missing
     case failure(OSStatus)
+}
+
+private func loadGPGStoredValue(_ account: String) -> GPGStoredValueLoad {
+    switch loadKeychainDataResult(service: automicVaultKeychainService, account: account) {
+    case .success(let data):
+        guard let value = String(data: data, encoding: .utf8) else {
+            return .failure(errSecDecode)
+        }
+        return .value(value)
+    case .notFound: return .missing
+    case .failure(let status): return .failure(status)
+    }
+}
+
+@discardableResult
+public func migrateEmptyGPGSigningPassphrases() -> OSStatus {
+    migrateEmptyGPGSigningPassphrases(
+        load: loadGPGStoredValue,
+        delete: { account in
+            deleteStoredSecretValueRevokingDirectAccessIfLast(
+                secretName: account,
+                source: .global
+            )
+        }
+    )
+}
+
+func migrateEmptyGPGSigningPassphrases(
+    load: (String) -> GPGStoredValueLoad,
+    delete: (String) -> OSStatus
+) -> OSStatus {
+    for name in [gpgDefaultPassphraseSecretName, gpgAlternatePassphraseSecretName] {
+        switch load(name) {
+        case .value(let value) where value.isEmpty:
+            let status = delete(name)
+            if status != errSecSuccess && status != errSecItemNotFound { return status }
+        case .failure(let status):
+            return status
+        case .value, .missing:
+            continue
+        }
+    }
+    return errSecSuccess
 }
 
 func saveGPGSigningCredential(
@@ -117,6 +155,11 @@ func saveGPGSigningCredential(
         ? gpgAlternatePassphraseSecretName : gpgDefaultPassphraseSecretName
     let previousPassphrase = load(passphraseName)
     if case .failure(let status) = previousPassphrase { return status }
+    if passphrase.isEmpty {
+        let keyStatus = save(keyName, privateKey)
+        guard keyStatus == errSecSuccess else { return keyStatus }
+        return delete(passphraseName)
+    }
     let passphraseStatus = save(passphraseName, passphrase)
     guard passphraseStatus == errSecSuccess else { return passphraseStatus }
     let keyStatus = save(keyName, privateKey)

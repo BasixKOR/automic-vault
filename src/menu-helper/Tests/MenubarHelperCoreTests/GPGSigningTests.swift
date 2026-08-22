@@ -9,12 +9,17 @@ import Testing
 
     #expect(gpgSigningSecretNames(
         configuration: configuration,
-        launcherRequirements: ["codex"]
+        launcherRequirements: ["codex"],
+        storedSecretNames: [
+            gpgAlternatePrivateKeySecretName,
+            gpgAlternatePassphraseSecretName,
+        ]
     ) == [gpgAlternatePrivateKeySecretName, gpgAlternatePassphraseSecretName])
     #expect(gpgSigningSecretNames(
         configuration: configuration,
-        launcherRequirements: ["terminal"]
-    ) == [gpgDefaultPrivateKeySecretName, gpgDefaultPassphraseSecretName])
+        launcherRequirements: ["terminal"],
+        storedSecretNames: [gpgDefaultPrivateKeySecretName]
+    ) == [gpgDefaultPrivateKeySecretName])
 }
 
 @Test func gitConfigurationPreservesAnAppPathContainingSpaces() throws {
@@ -55,6 +60,46 @@ import Testing
     try Data().write(to: bundledAV)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bundledAV.path)
     #expect(try bundledExecutableURL(named: "av", beside: mainExecutable) == bundledAV)
+}
+
+@Test func emptyPassphraseIsNotStored() {
+    var values: [String: String] = [:]
+    let status = saveGPGSigningCredential(
+        privateKey: "private",
+        passphrase: "",
+        alternate: false,
+        load: { values[$0].map(GPGStoredValueLoad.value) ?? .missing },
+        save: { account, value in
+            values[account] = value
+            return errSecSuccess
+        },
+        delete: { account in
+            values.removeValue(forKey: account)
+            return errSecSuccess
+        }
+    )
+
+    #expect(status == errSecSuccess)
+    #expect(values[gpgDefaultPrivateKeySecretName] == "private")
+    #expect(values[gpgDefaultPassphraseSecretName] == nil)
+}
+
+@Test func emptyStoredPassphraseIsMigratedWithoutTouchingNonemptyPassphrases() {
+    var values = [
+        gpgDefaultPassphraseSecretName: "",
+        gpgAlternatePassphraseSecretName: "alternate-passphrase",
+    ]
+    let status = migrateEmptyGPGSigningPassphrases(
+        load: { values[$0].map(GPGStoredValueLoad.value) ?? .missing },
+        delete: { account in
+            values.removeValue(forKey: account)
+            return errSecSuccess
+        }
+    )
+
+    #expect(status == errSecSuccess)
+    #expect(values[gpgDefaultPassphraseSecretName] == nil)
+    #expect(values[gpgAlternatePassphraseSecretName] == "alternate-passphrase")
 }
 
 @Test func failedPrivateKeySaveRemovesANewPassphrase() {
@@ -99,5 +144,30 @@ import Testing
     )
 
     #expect(status == errSecAuthFailed)
+    #expect(values[gpgDefaultPassphraseSecretName] == "old-passphrase")
+}
+
+@Test func failedPrivateKeyReplacementDoesNotRemoveThePreviousPassphrase() {
+    var values = [gpgDefaultPassphraseSecretName: "old-passphrase"]
+    var deleted = false
+    let status = saveGPGSigningCredential(
+        privateKey: "replacement",
+        passphrase: "",
+        alternate: false,
+        load: { values[$0].map(GPGStoredValueLoad.value) ?? .missing },
+        save: { account, value in
+            if account == gpgDefaultPrivateKeySecretName { return errSecAuthFailed }
+            values[account] = value
+            return errSecSuccess
+        },
+        delete: { account in
+            deleted = true
+            values.removeValue(forKey: account)
+            return errSecSuccess
+        }
+    )
+
+    #expect(status == errSecAuthFailed)
+    #expect(!deleted)
     #expect(values[gpgDefaultPassphraseSecretName] == "old-passphrase")
 }
