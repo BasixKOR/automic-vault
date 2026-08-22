@@ -154,12 +154,17 @@ fn macos_app_uses_its_violet_accent() {
     assert!(MENU_HELPER_INFO_PLIST.contains("<key>NSAccentColorName</key>"));
     assert!(MENU_HELPER_INFO_PLIST.contains("<string>AccentColor</string>"));
     for component in [
-        "\"blue\" : \"0.902\"",
-        "\"green\" : \"0.235\"",
-        "\"red\" : \"0.608\"",
+        "\"blue\" : \"0.915\"",
+        "\"green\" : \"0.253\"",
+        "\"red\" : \"0.609\"",
+        "\"blue\" : \"0.972\"",
+        "\"green\" : \"0.331\"",
+        "\"red\" : \"0.665\"",
     ] {
         assert!(ACCENT_COLOR.contains(component));
     }
+    assert!(ACCENT_COLOR.contains("\"appearance\" : \"luminosity\""));
+    assert!(ACCENT_COLOR.contains("\"value\" : \"dark\""));
     assert!(BUILD_SCRIPT.contains("\"$MENU_HELPER/Resources/Assets.xcassets\""));
     assert!(BUILD_SCRIPT.contains("--accent-color AccentColor"));
 }
