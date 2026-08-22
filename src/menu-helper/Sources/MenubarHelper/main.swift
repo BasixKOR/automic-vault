@@ -3097,6 +3097,9 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         var launchers = launcherIdentities(for: identity)
+        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
+            launchers.append(launcher)
+        }
         if parsedRequest.op == "gpg-sign" {
             let migrationStatus = migrateLegacyGPGSigningSecrets()
             guard migrationStatus == errSecSuccess else {
@@ -3170,9 +3173,6 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         let launcherFallbackPath = ancestorFallbackPath ?? callerPath
-        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
-            launchers.append(launcher)
-        }
         let launcher = executionOrigin(
             among: launchers,
             callerPID: pid,

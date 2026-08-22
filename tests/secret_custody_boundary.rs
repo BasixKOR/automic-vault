@@ -19,3 +19,19 @@ fn argocd_migration_does_not_retrieve_legacy_vault_secrets() {
     assert!(!ARGOCD_MIGRATION.contains("load_secret"));
     assert!(!ARGOCD_MIGRATION.contains("isotope_copy_generic_password_json"));
 }
+
+#[test]
+fn gpg_credential_selection_includes_the_fallback_launcher() {
+    let handle_inject = APPROVAL_SERVICE
+        .split_once("private func handleInject(")
+        .unwrap()
+        .1;
+    let fallback = handle_inject
+        .find("if launchers.isEmpty, let launcher = launcherIdentity")
+        .unwrap();
+    let selection = handle_inject
+        .find("if parsedRequest.op == \"gpg-sign\"")
+        .unwrap();
+
+    assert!(fallback < selection);
+}
