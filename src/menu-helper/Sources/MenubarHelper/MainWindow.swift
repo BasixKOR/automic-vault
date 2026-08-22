@@ -2835,11 +2835,10 @@ private struct DetectorCountPill: View {
     var body: some View {
         Text(count.formatted())
             .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(.primary)
             .monospacedDigit()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(color, in: Capsule())
+            .outlinedPill(color)
             .padding(.trailing, -SidebarCountMetrics.pillHorizontalPadding)
     }
 }
