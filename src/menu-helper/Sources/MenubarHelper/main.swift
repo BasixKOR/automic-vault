@@ -7217,16 +7217,25 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
-    var seen = Set<String>()
-    let appURLs = (
+    var seenContainingApps = Set<String>()
+    let containingAppURLs = (
         appBundleURLs(containing: path)
         + appBundleURLs(containing: signing.mainExecutable)
+    ).filter { seenContainingApps.insert($0.path).inserted }
+    var seenApps = Set<String>()
+    let appURLs = (
+        containingAppURLs.filter {
+            appBundleMatchesMainExecutable(
+                $0,
+                executablePaths: [path, signing.mainExecutable]
+            )
+        }
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
-    ).filter { seen.insert($0.path).inserted }
+    ).filter { seenApps.insert($0.path).inserted }
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
-        || appURLs.contains(where: launcherBundleClaimsReservedIdentity)
+        || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
     if claimsLauncherBundleIdentity {
-        guard let appURL = appURLs.first(where: {
+        guard let appURL = containingAppURLs.first(where: {
             launcherBundleAppURL(containing: $0.path) == $0
         }),
             let liveCodeIdentifier = liveCodeIdentity(pid: pid),
@@ -7498,8 +7507,15 @@ private func launcherAppVerificationFailure(
             guard av_process_identity(pid, &ancestor) else { break }
             let path = pathString(ancestor)
             if let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) {
-                let appURLs = appBundleURLs(containing: path)
+                let appURLs = (
+                    appBundleURLs(containing: path)
                     + appBundleURLs(containing: signing.mainExecutable)
+                ).filter {
+                    appBundleMatchesMainExecutable(
+                        $0,
+                        executablePaths: [path, signing.mainExecutable]
+                    )
+                }
                     + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
                 for appURL in appURLs where checkedApps.insert(appURL.path).inserted {
                     if let failure = appBundleVerificationFailure(appURL) { return failure }
@@ -7581,6 +7597,19 @@ private func appBundleURLs(containing path: String) -> [URL] {
         url.deleteLastPathComponent()
     }
     return apps
+}
+
+private func appBundleMatchesMainExecutable(
+    _ appURL: URL,
+    executablePaths: [String],
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL }
+) -> Bool {
+    guard let bundleExecutableURL = bundleExecutableURL(appURL) else { return false }
+    let bundleExecutablePath = bundleExecutableURL.standardizedFileURL.resolvingSymlinksInPath().path
+    return executablePaths.contains {
+        URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path
+            == bundleExecutablePath
+    }
 }
 
 private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> URL? {
@@ -10079,6 +10108,20 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
           ]) == "example → zsh → gh",
+          !appBundleMatchesMainExecutable(
+              URL(fileURLWithPath: "/Applications/Xcode.app"),
+              executablePaths: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"],
+              bundleExecutableURL: { _ in
+                  URL(fileURLWithPath: "/Applications/Xcode.app/Contents/MacOS/Xcode")
+              }
+          ),
+          appBundleMatchesMainExecutable(
+              URL(fileURLWithPath: "/Applications/Xcode.app"),
+              executablePaths: ["/Applications/Xcode.app/Contents/MacOS/Xcode"],
+              bundleExecutableURL: { _ in
+                  URL(fileURLWithPath: "/Applications/Xcode.app/Contents/MacOS/Xcode")
+              }
+          ),
           appBundleURL(containing: "/Applications/Example.app/Contents/MacOS/../Resources/payload")?.path
               == "/Applications/Example.app"
     else { return 1 }
