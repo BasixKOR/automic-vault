@@ -3,6 +3,7 @@
 # capabilities:
 #   gh: trusted
 #   aws: trusted
+#   gpg-signing: local-write
 # ---
 # shellcheck shell=bash disable=SC1008,SC2096
 set -euo pipefail
