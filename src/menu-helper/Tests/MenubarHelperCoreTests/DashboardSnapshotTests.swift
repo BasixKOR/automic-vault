@@ -288,6 +288,35 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
     #expect(loadSecretGates(descriptors: [descriptor], service: service).map(\.id) == ["gh"])
 }
 
+@Test func dashboardIncludesStandaloneAuthorizationGates() throws {
+    let inactiveHardener = testGateMetadata(hardened: false)
+    let gpg = SecretGateDescriptor(
+        id: "gpg-signing",
+        keyPatterns: ["AUTOMIC_GPG_SIGNING_PRIVATE_KEY"],
+        routes: [SecretGateRoute(
+            operation: "gpg-sign",
+            scriptPath: nil,
+            targetPath: "/Applications/Automic Vault.app/Contents/MacOS/av",
+            callerIdentifiers: ["com.automicvault.av"],
+            keyPatterns: ["AUTOMIC_GPG_SIGNING_PRIVATE_KEY"],
+            replaceExistingEnv: false,
+            allowMissingKeys: false
+        )]
+    )
+    let descriptors = dashboardSecretGateDescriptors(
+        hardeners: [inactiveHardener],
+        catalog: [try #require(inactiveHardener.secretGate), gpg]
+    )
+    let gate = try #require(loadSecretGates(
+        descriptors: descriptors,
+        service: "com.automicvault.tests.\(UUID().uuidString)"
+    ).first)
+
+    #expect(descriptors.map(\.id) == ["gpg-signing"])
+    #expect(gate.availableProtections.contains(.readOnlyAndLocalWrites))
+    #expect(gate.normalizedProtection(.readOnlyAndLocalWrites) == .readOnlyAndLocalWrites)
+}
+
 
 private func testGateMetadata(hardened: Bool = true) -> HardenerMetadata {
     HardenerMetadata(

@@ -3095,8 +3095,8 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
+        var launchers = launcherIdentities(for: identity)
         if parsedRequest.op == "gpg-sign" {
-            let launchers = launcherIdentities(for: identity)
             let migrationStatus = migrateEmptyGPGSigningPassphrases()
             guard migrationStatus == errSecSuccess else {
                 reply(
@@ -3167,7 +3167,6 @@ private final class ApprovalServer: @unchecked Sendable {
         let keepsDetachedProcessAccess = UserDefaults.standard.bool(
             forKey: keepLauncherAccessForDetachedProcessesDefaultsKey
         )
-        var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         let launcherFallbackPath = ancestorFallbackPath ?? callerPath
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {

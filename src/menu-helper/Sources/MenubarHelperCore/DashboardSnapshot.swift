@@ -85,7 +85,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
     ) -> DashboardSnapshot {
         _ = resumePendingSecretMutation()
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
-        _ = initializeSecretGatePolicies(hardeners: hardenerMetadata, service: policyService)
+        let gateDescriptors = dashboardSecretGateDescriptors(
+            hardeners: hardenerMetadata,
+            catalog: (try? loadSecretGateDescriptors(avExecutableURL: avExecutableURL)) ?? []
+        )
+        _ = initializeSecretGatePolicies(descriptors: gateDescriptors, service: policyService)
         let hardenedTools = loadHardenedTools(
             in: stubDirectory,
             ghCLIURL: ghCLIURL,
@@ -97,7 +101,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             detectorFindings: [],
             hardenedTools: hardenedTools,
             hardeners: hardenerMetadata,
-            secretGates: loadSecretGates(hardeners: hardenerMetadata, service: policyService),
+            secretGates: loadSecretGates(descriptors: gateDescriptors, service: policyService),
             blessedScripts: loadBlessedScripts(),
             secretNameAccessApps: loadSecretNameAccessApps(),
             secrets: secrets,
@@ -605,7 +609,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         if keyPatterns.isEmpty {
             return [.noAccess, .readOnly, .fullExceptSecretDumps]
         }
-        if id == "gh" || id == "docker" {
+        if id == "gh" || id == "docker" || id == "gpg-signing" {
             return [
                 .noAccess,
                 .readOnly,
@@ -626,7 +630,9 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps {
             protection = .fullExceptSecretDumps
         }
-        if id != "gh" && id != "docker", protection == .readOnlyAndLocalWrites {
+        if id != "gh" && id != "docker" && id != "gpg-signing",
+           protection == .readOnlyAndLocalWrites
+        {
             protection = .readOnly
         }
         if !keyPatterns.isEmpty, protection == .readOnlyAndUpdates {
@@ -973,7 +979,19 @@ public func loadSecretGates(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
-    let descriptors = hardeners.compactMap { hardener -> SecretGateDescriptor? in
+    loadSecretGates(
+        descriptors: dashboardSecretGateDescriptors(hardeners: hardeners, catalog: []),
+        service: service,
+        account: account
+    )
+}
+
+public func dashboardSecretGateDescriptors(
+    hardeners: [HardenerMetadata],
+    catalog: [SecretGateDescriptor]
+) -> [SecretGateDescriptor] {
+    let hardenerGateIDs = Set(hardeners.compactMap { $0.secretGate?.id })
+    let activeHardenerGates = hardeners.compactMap { hardener -> SecretGateDescriptor? in
         guard let descriptor = hardener.secretGate,
               hardener.hardened || descriptor.routes
                 .compactMap(\.scriptPath)
@@ -981,7 +999,7 @@ public func loadSecretGates(
         else { return nil }
         return descriptor
     }
-    return loadSecretGates(descriptors: descriptors, service: service, account: account)
+    return activeHardenerGates + catalog.filter { !hardenerGateIDs.contains($0.id) }
 }
 
 public func loadSecretGates(
@@ -1214,12 +1232,25 @@ public func initializeSecretGatePolicies(
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
+    initializeSecretGatePolicies(
+        descriptors: dashboardSecretGateDescriptors(hardeners: hardeners, catalog: []),
+        service: service,
+        account: account
+    )
+}
+
+@discardableResult
+public func initializeSecretGatePolicies(
+    descriptors: [SecretGateDescriptor],
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
     var records: [SecretGatePolicyRecord]
     switch loadSecretGatePolicyRecords(service: service, account: account) {
     case .success(let loaded): records = loaded
     case .failure(let status): return status
     }
-    let gates = loadSecretGates(hardeners: hardeners, service: service, account: account)
+    let gates = loadSecretGates(descriptors: descriptors, service: service, account: account)
     for gate in gates where !records.contains(where: { $0.gateID == gate.id && $0.requirement == nil }) {
         records.append(SecretGatePolicyRecord(
             gateID: gate.id,
