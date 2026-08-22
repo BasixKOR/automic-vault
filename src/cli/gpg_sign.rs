@@ -10,6 +10,13 @@ pub(crate) const DEFAULT_PASSPHRASE: &str = "AV_GPG_PASSPHRASE";
 pub(crate) const ALTERNATE_PRIVATE_KEY: &str = "AV_GPG_AGENT_PRIVATE_KEY";
 pub(crate) const ALTERNATE_PASSPHRASE: &str = "AV_GPG_AGENT_PASSPHRASE";
 const MAX_SIGNING_PAYLOAD_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_KEY_GENERATION_REQUEST_BYTES: u64 = 4 * 1024;
+
+#[derive(serde::Deserialize)]
+struct KeyGenerationRequest {
+    name: String,
+    email: String,
+}
 
 pub(crate) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     match sign(args) {
@@ -51,6 +58,42 @@ pub(crate) fn validate(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
         }
         Err(error) => {
             let _ = writeln!(stderr, "av gpg-public-key: {error}");
+            1
+        }
+    }
+}
+
+pub(crate) fn generate(stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let mut request = String::new();
+    if let Err(error) = std::io::stdin()
+        .take(MAX_KEY_GENERATION_REQUEST_BYTES + 1)
+        .read_to_string(&mut request)
+    {
+        let _ = writeln!(stderr, "av gpg-generate-key: {error}");
+        return 1;
+    }
+    if request.len() as u64 > MAX_KEY_GENERATION_REQUEST_BYTES {
+        let _ = writeln!(stderr, "av gpg-generate-key: request exceeds 4 KiB");
+        return 1;
+    }
+    let request: KeyGenerationRequest = match serde_json::from_str(&request) {
+        Ok(request) => request,
+        Err(error) => {
+            let _ = writeln!(stderr, "av gpg-generate-key: invalid request: {error}");
+            return 1;
+        }
+    };
+    match crate::gpg::generate_signing_key(&request.name, &request.email) {
+        Ok(private_key) => {
+            let private_key = Zeroizing::new(private_key);
+            if stdout.write_all(private_key.as_bytes()).is_ok() {
+                0
+            } else {
+                1
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "av gpg-generate-key: {error}");
             1
         }
     }

@@ -258,12 +258,14 @@ public func configureGitForGPGSigning(
 public enum GPGSigningConfigurationError: LocalizedError {
     case programUnavailable(String)
     case bundledExecutableUnavailable(String)
+    case credentialFailed(String)
     case gitFailed(String)
 
     public var errorDescription: String? {
         switch self {
         case .programUnavailable(let path): "The bundled Git signing adapter is unavailable at \(path)."
         case .bundledExecutableUnavailable(let path): "The bundled Automic Vault executable is unavailable or invalid at \(path)."
+        case .credentialFailed(let detail): "Could not process the GPG credential\(detail.isEmpty ? "." : ": \(detail)")"
         case .gitFailed(let detail): "Git configuration failed\(detail.isEmpty ? "." : ": \(detail)")"
         }
     }

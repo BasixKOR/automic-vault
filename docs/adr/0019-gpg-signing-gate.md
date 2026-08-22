@@ -45,6 +45,14 @@ the OpenPGP transfer key, creates an ASCII-armored detached signature in memory,
 and zeroizes its transient input buffers. Payloads and keys are bounded to 16
 MiB. Git and `av-gpg` never receive credential bytes.
 
+Settings accepts imported private-key material in a temporary editor and never
+displays a stored private key. It invokes the adjacent signed `av` executable to
+derive the corresponding public key for display and copying. For the alternate
+credential, `av` may instead generate an EdDSA certification key and signing
+subkey from a user-supplied name and email. Generated private-key material stays
+between the signed `av` process and the Keychain-owning menu app, which stores it
+after deriving and displaying only its public key.
+
 ## Consequences
 
 Using a signing key now requires an Authorization Decision over the Verified

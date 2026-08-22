@@ -3780,10 +3780,12 @@ private struct DetachedProcessAccessSettingsView: View {
 }
 
 private struct GPGSigningSettingsView: View {
-    @State private var defaultPrivateKey = ""
-    @State private var defaultPassphrase = ""
-    @State private var alternatePrivateKey = ""
-    @State private var alternatePassphrase = ""
+    @State private var defaultConfigured = hasGPGSigningCredential(alternate: false)
+    @State private var alternateConfigured = hasGPGSigningCredential(alternate: true)
+    @State private var defaultPublicKey: String?
+    @State private var alternatePublicKey: String?
+    @State private var loadingPublicKeys = false
+    @State private var credentialSheet: GPGCredentialSheet?
     @State private var configuration = loadGPGSigningConfiguration()
     @State private var status = ""
 
@@ -3799,14 +3801,13 @@ private struct GPGSigningSettingsView: View {
 
             InfoBlock(
                 title: "Export from GnuPG",
-                text: "Run `gpg --list-secret-keys --keyid-format=long`, copy the signing key ID, then run `gpg --armor --export-secret-keys KEY_ID`. Paste the complete PGP PRIVATE KEY BLOCK below. If the exported key is protected, enter its GnuPG passphrase too."
+                text: "Run `gpg --list-secret-keys --keyid-format=long`, copy the signing key ID, then run `gpg --armor --export-secret-keys KEY_ID`. Add the complete PGP PRIVATE KEY BLOCK in the credential sheet. Automic Vault never displays a stored private key."
             )
 
             credentialEditor(
                 title: "Default signing credential",
-                configured: hasGPGSigningCredential(alternate: false),
-                privateKey: $defaultPrivateKey,
-                passphrase: $defaultPassphrase,
+                configured: defaultConfigured,
+                publicKey: defaultPublicKey,
                 alternate: false
             )
 
@@ -3814,9 +3815,8 @@ private struct GPGSigningSettingsView: View {
 
             credentialEditor(
                 title: "Alternate signing credential",
-                configured: hasGPGSigningCredential(alternate: true),
-                privateKey: $alternatePrivateKey,
-                passphrase: $alternatePassphrase,
+                configured: alternateConfigured,
+                publicKey: alternatePublicKey,
                 alternate: true
             )
 
@@ -3878,13 +3878,30 @@ private struct GPGSigningSettingsView: View {
                 InfoBlock(title: "Status", text: status)
             }
         }
+        .task {
+            await refreshPublicKeys()
+        }
+        .sheet(item: $credentialSheet) { sheet in
+            GPGCredentialSheetView(
+                sheet: sheet,
+                replacing: sheet.alternate ? alternateConfigured : defaultConfigured
+            ) { publicKey in
+                if sheet.alternate {
+                    alternateConfigured = true
+                    alternatePublicKey = publicKey
+                } else {
+                    defaultConfigured = true
+                    defaultPublicKey = publicKey
+                }
+                status = "Saved the \(sheet.alternate ? "alternate" : "default") GPG signing credential in the Data Protection Keychain."
+            }
+        }
     }
 
     private func credentialEditor(
         title: String,
         configured: Bool,
-        privateKey: Binding<String>,
-        passphrase: Binding<String>,
+        publicKey: String?,
         alternate: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -3895,41 +3912,74 @@ private struct GPGSigningSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(configured ? .green : .secondary)
             }
-            TextEditor(text: privateKey)
-                .font(.system(.caption, design: .monospaced))
-                .frame(minHeight: 110)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                .accessibilityLabel("\(title) private key")
-            SecureField("GnuPG passphrase (leave empty if none)", text: passphrase)
-            Button(configured ? "Replace Credential" : "Save Credential") {
-                saveCredential(privateKey: privateKey.wrappedValue, passphrase: passphrase.wrappedValue, alternate: alternate)
+            if configured {
+                if let publicKey {
+                    publicKeyView(publicKey, title: title)
+                } else if loadingPublicKeys {
+                    ProgressView("Loading public key…")
+                        .controlSize(.small)
+                } else {
+                    Text("Public key unavailable.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .disabled(privateKey.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            HStack {
+                Button(configured ? "Replace Credential…" : "Add Credential…") {
+                    credentialSheet = alternate ? .importAlternate : .importDefault
+                }
+                if alternate {
+                    Button("Generate Key…") {
+                        credentialSheet = .generateAlternate
+                    }
+                }
+            }
         }
     }
 
-    private func saveCredential(privateKey: String, passphrase: String, alternate: Bool) {
-        do {
-            try validateGPGPrivateKey(privateKey)
-            let result = saveGPGSigningCredential(
-                privateKey: privateKey,
-                passphrase: passphrase,
-                alternate: alternate
-            )
-            guard result == errSecSuccess else {
-                status = "Could not save the GPG credential: \(result)"
-                return
+    private func publicKeyView(_ publicKey: String, title: String) -> some View {
+        GroupBox("Public key") {
+            VStack(alignment: .leading, spacing: 8) {
+                ScrollView([.horizontal, .vertical]) {
+                    Text(publicKey)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 100)
+                Button("Copy Public Key") {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(publicKey, forType: .string)
+                    status = "Copied the \(title.lowercased()) public key."
+                }
             }
-            if alternate {
-                alternatePrivateKey = ""
-                alternatePassphrase = ""
-            } else {
-                defaultPrivateKey = ""
-                defaultPassphrase = ""
+        }
+    }
+
+    private func refreshPublicKeys() async {
+        loadingPublicKeys = true
+        defer { loadingPublicKeys = false }
+        let mainExecutableURL = Bundle.main.executableURL
+        if defaultConfigured {
+            do {
+                defaultPublicKey = try await storedGPGPublicKey(
+                    alternate: false,
+                    mainExecutableURL: mainExecutableURL
+                )
+            } catch {
+                status = error.localizedDescription
             }
-            status = "Saved the \(alternate ? "alternate" : "default") GPG signing credential in the Data Protection Keychain."
-        } catch {
-            status = error.localizedDescription
+        }
+        if alternateConfigured {
+            do {
+                alternatePublicKey = try await storedGPGPublicKey(
+                    alternate: true,
+                    mainExecutableURL: mainExecutableURL
+                )
+            } catch {
+                status = error.localizedDescription
+            }
         }
     }
 
@@ -3950,11 +4000,213 @@ private struct GPGSigningSettingsView: View {
     }
 }
 
-private func validateGPGPrivateKey(_ privateKey: String) throws {
+private enum GPGCredentialSheet: String, Identifiable {
+    case importDefault
+    case importAlternate
+    case generateAlternate
+
+    var id: String { rawValue }
+    var alternate: Bool { self != .importDefault }
+    var generatesKey: Bool { self == .generateAlternate }
+}
+
+private struct GPGCredentialSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var privateKey = ""
+    @State private var passphrase = ""
+    @State private var name = ""
+    @State private var email = ""
+    @State private var errorMessage = ""
+    @State private var isSaving = false
+
+    let sheet: GPGCredentialSheet
+    let replacing: Bool
+    let onSaved: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if sheet.generatesKey {
+                    TextField("Name", text: $name)
+                    TextField("Verified Git email", text: $email)
+                    Text("The email must match the commit email and a verified email on the Git host. The generated EdDSA private key is stored only in the Data Protection Keychain.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if replacing {
+                        Text("Generating a key replaces the existing alternate signing credential. The previous private key cannot be recovered from Automic Vault.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                } else {
+                    Text("Armored private key")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $privateKey)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(minHeight: 110)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        .accessibilityLabel(sheet.alternate ? "Alternate private key" : "Default private key")
+                    Text("Paste the complete PGP PRIVATE KEY BLOCK. It is visible only in this sheet and is never shown again after saving.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    SecureField("GnuPG passphrase (leave empty if none)", text: $passphrase)
+                }
+                if !errorMessage.isEmpty {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(navigationTitle)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(confirmationTitle) {
+                        submit()
+                    }
+                    .disabled(!isValid || isSaving)
+                }
+            }
+        }
+        .frame(width: 560, height: sheet.generatesKey ? 240 : 390)
+        .interactiveDismissDisabled(isSaving)
+    }
+
+    private var navigationTitle: String {
+        if sheet.generatesKey {
+            return replacing ? "Replace Alternate Signing Key" : "Generate Alternate Signing Key"
+        }
+        return replacing ? "Replace GPG Signing Credential" : "Add GPG Signing Credential"
+    }
+
+    private var confirmationTitle: String {
+        if sheet.generatesKey { return replacing ? "Generate and Replace" : "Generate and Save" }
+        return replacing ? "Replace" : "Save"
+    }
+
+    private var isValid: Bool {
+        if sheet.generatesKey {
+            return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return !privateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        isSaving = true
+        errorMessage = ""
+        let mainExecutableURL = Bundle.main.executableURL
+        Task {
+            do {
+                let publicKey = if sheet.generatesKey {
+                    try await generateAndSaveAlternateGPGCredential(
+                        name: name,
+                        email: email,
+                        mainExecutableURL: mainExecutableURL
+                    )
+                } else {
+                    try await importAndSaveGPGCredential(
+                        privateKey: privateKey,
+                        passphrase: passphrase,
+                        alternate: sheet.alternate,
+                        mainExecutableURL: mainExecutableURL
+                    )
+                }
+                privateKey = ""
+                passphrase = ""
+                onSaved(publicKey)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                isSaving = false
+            }
+        }
+    }
+}
+
+@concurrent
+private func storedGPGPublicKey(
+    alternate: Bool,
+    mainExecutableURL: URL?
+) async throws -> String? {
+    let name = alternate ? gpgAlternatePrivateKeySecretName : gpgDefaultPrivateKeySecretName
+    guard let privateKey = loadStoredSecret(account: name) else { return nil }
+    return try deriveGPGPublicKey(privateKey: privateKey, mainExecutableURL: mainExecutableURL)
+}
+
+@concurrent
+private func importAndSaveGPGCredential(
+    privateKey: String,
+    passphrase: String,
+    alternate: Bool,
+    mainExecutableURL: URL?
+) async throws -> String {
+    let publicKey = try deriveGPGPublicKey(
+        privateKey: privateKey,
+        mainExecutableURL: mainExecutableURL
+    )
+    let status = saveGPGSigningCredential(
+        privateKey: privateKey,
+        passphrase: passphrase,
+        alternate: alternate
+    )
+    guard status == errSecSuccess else {
+        throw GPGSigningConfigurationError.credentialFailed("Data Protection Keychain error \(status)")
+    }
+    return publicKey
+}
+
+@concurrent
+private func generateAndSaveAlternateGPGCredential(
+    name: String,
+    email: String,
+    mainExecutableURL: URL?
+) async throws -> String {
+    let request = try JSONEncoder().encode(["name": name, "email": email])
+    let privateKeyData = try runBundledGPGCommand(
+        arguments: ["__gpg-generate-key"],
+        input: request,
+        mainExecutableURL: mainExecutableURL
+    )
+    guard let privateKey = String(data: privateKeyData, encoding: .utf8) else {
+        throw GPGSigningConfigurationError.credentialFailed("Generated private key is not valid UTF-8")
+    }
+    return try await importAndSaveGPGCredential(
+        privateKey: privateKey,
+        passphrase: "",
+        alternate: true,
+        mainExecutableURL: mainExecutableURL
+    )
+}
+
+private func deriveGPGPublicKey(
+    privateKey: String,
+    mainExecutableURL: URL?
+) throws -> String {
+    let output = try runBundledGPGCommand(
+        arguments: ["__gpg-public-key"],
+        input: Data(privateKey.utf8),
+        mainExecutableURL: mainExecutableURL
+    )
+    guard let publicKey = String(data: output, encoding: .utf8) else {
+        throw GPGSigningConfigurationError.credentialFailed("Public key is not valid UTF-8")
+    }
+    return publicKey
+}
+
+private func runBundledGPGCommand(
+    arguments: [String],
+    input inputData: Data,
+    mainExecutableURL: URL?
+) throws -> Data {
     let process = Process()
     let executable = try bundledExecutableURL(
         named: "av",
-        beside: Bundle.main.executableURL
+        beside: mainExecutableURL
     )
     var staticCode: SecStaticCode?
     var signingInformation: CFDictionary?
@@ -3976,15 +4228,17 @@ private func validateGPGPrivateKey(_ privateKey: String) throws {
           signing[kSecCodeInfoTeamIdentifier] as? String == teamIdentifier
     else { throw GPGSigningConfigurationError.bundledExecutableUnavailable(executable.path) }
     process.executableURL = executable
-    process.arguments = ["__gpg-public-key"]
-    let input = Pipe()
+    process.arguments = arguments
+    let inputPipe = Pipe()
+    let output = Pipe()
     let errors = Pipe()
-    process.standardInput = input
-    process.standardOutput = FileHandle.nullDevice
+    process.standardInput = inputPipe
+    process.standardOutput = output
     process.standardError = errors
     try process.run()
-    input.fileHandleForWriting.write(Data(privateKey.utf8))
-    try input.fileHandleForWriting.close()
+    inputPipe.fileHandleForWriting.write(inputData)
+    try inputPipe.fileHandleForWriting.close()
+    let outputData = output.fileHandleForReading.readDataToEndOfFile()
     let errorData = errors.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
@@ -3992,8 +4246,9 @@ private func validateGPGPrivateKey(_ privateKey: String) throws {
             decoding: errorData,
             as: UTF8.self
         ).trimmingCharacters(in: .whitespacesAndNewlines)
-        throw GPGSigningConfigurationError.gitFailed(detail)
+        throw GPGSigningConfigurationError.credentialFailed(detail)
     }
+    return outputData
 }
 
 private struct AboutSettingsView: View {

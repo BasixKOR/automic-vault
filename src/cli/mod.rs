@@ -298,6 +298,7 @@ where
         Some("__secret-gates-json") if rest.is_empty() => scan::run_secret_gates_json(stdout),
         Some("gpg-sign") => gpg_sign::run(rest, stdout, stderr),
         Some("__gpg-public-key") if rest.is_empty() => gpg_sign::validate(stdout, stderr),
+        Some("__gpg-generate-key") if rest.is_empty() => gpg_sign::generate(stdout, stderr),
         Some("doctor") => {
             let Some((selector, json)) = parse_doctor_args(&rest) else {
                 let _ = writeln!(stderr, "{USAGE}");

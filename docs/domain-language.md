@@ -73,9 +73,10 @@ Signing Credential only after the complete signing request is authorized and
 recorded. Git and `av-gpg` receive the detached signature, never the private key
 or passphrase.
 
-GPG signing is a Local Write operation. The gate therefore defaults to Read
-Only, which requires Approval until the user grants a Verified Launcher an
-Access Level that permits Local Write.
+GPG signing is a Local Write operation. Because every recognized operation at
+this gate is signing, it exposes only **Approval Required** and **Allow
+Signing**. Allow Signing is the GPG-specific presentation of Local Write. The
+gate defaults to Approval Required.
 
 ### Proxy Session
 

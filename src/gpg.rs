@@ -3,7 +3,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-use pgp::composed::{ArmorOptions, Deserializable, DetachedSignature, SignedSecretKey};
+use pgp::composed::{
+    ArmorOptions, Deserializable, DetachedSignature, EncryptionCaps, KeyType,
+    SecretKeyParamsBuilder, SignedSecretKey, SubkeyParamsBuilder,
+};
 use pgp::crypto::hash::HashAlgorithm;
 use pgp::packet::{Signature, SignatureType};
 use pgp::types::{KeyDetails, Password};
@@ -210,10 +213,57 @@ pub(crate) fn public_key_from_private(armored_private_key: &str) -> Result<Strin
         .map_err(|error| format!("failed to encode OpenPGP public key: {error}"))
 }
 
+pub(crate) fn generate_signing_key(name: &str, email: &str) -> Result<String, String> {
+    let name = name.trim();
+    let email = email.trim();
+    if name.is_empty()
+        || name.len() > 200
+        || name
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '<' | '>'))
+    {
+        return Err("GPG key name is invalid".into());
+    }
+    let email_parts = email.split_once('@');
+    if email.is_empty()
+        || email.len() > 254
+        || email.matches('@').count() != 1
+        || email_parts.is_none_or(|(local, domain)| local.is_empty() || domain.is_empty())
+        || email
+            .chars()
+            .any(|character| character.is_whitespace() || matches!(character, '<' | '>'))
+    {
+        return Err("GPG key email is invalid".into());
+    }
+
+    let mut signing_subkey = SubkeyParamsBuilder::default();
+    signing_subkey
+        .key_type(KeyType::Ed25519Legacy)
+        .can_sign(true)
+        .can_encrypt(EncryptionCaps::None)
+        .can_authenticate(false);
+    let mut parameters = SecretKeyParamsBuilder::default();
+    parameters
+        .key_type(KeyType::Ed25519Legacy)
+        .can_certify(true)
+        .can_sign(false)
+        .can_encrypt(EncryptionCaps::None)
+        .primary_user_id(format!("{name} <{email}>").into())
+        .subkeys(vec![signing_subkey.build().map_err(|error| {
+            format!("failed to configure GPG signing key: {error}")
+        })?]);
+    parameters
+        .build()
+        .map_err(|error| format!("failed to configure GPG signing key: {error}"))?
+        .generate(rand::thread_rng())
+        .map_err(|error| format!("failed to generate GPG signing key: {error}"))?
+        .to_armored_string(ArmorOptions::default())
+        .map_err(|error| format!("failed to encode GPG signing key: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pgp::composed::{EncryptionCaps, KeyType, SecretKeyParamsBuilder, SubkeyParamsBuilder};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::process::Command;
@@ -291,6 +341,26 @@ mod tests {
         signature
             .verify(&key.secret_subkeys[0].key.public_key(), payload)
             .unwrap();
+    }
+
+    #[test]
+    fn generates_a_github_compatible_signing_key() {
+        let private_key = generate_signing_key("Automic Vault Agent", "agent@example.com").unwrap();
+        let public_key = public_key_from_private(&private_key).unwrap();
+        let payload = b"generated signing key";
+
+        assert!(private_key.contains("BEGIN PGP PRIVATE KEY BLOCK"));
+        assert!(public_key.contains("BEGIN PGP PUBLIC KEY BLOCK"));
+        assert!(!public_key.contains("PRIVATE KEY"));
+        assert!(sign_openpgp(&private_key, "", payload).is_ok());
+    }
+
+    #[test]
+    fn rejects_unsafe_generated_key_user_ids() {
+        assert!(generate_signing_key("Name\nInjected", "agent@example.com").is_err());
+        assert!(generate_signing_key("Agent", "not-an-email").is_err());
+        assert!(generate_signing_key("Agent", "@example.com").is_err());
+        assert!(generate_signing_key("Agent", "agent@").is_err());
     }
 
     #[test]

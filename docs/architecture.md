@@ -134,6 +134,12 @@ Write request, and releases exactly that credential to `av`. The Target creates
 the detached signature in memory and zeroizes its transient input buffers.
 Missing alternate material, invalid OpenPGP material, recording failure, or an
 unrecognized route fails closed without falling back to the default credential.
+Settings accepts imported private-key material only in a temporary editor and
+never displays a stored private key. The adjacent signed `av` executable derives
+the corresponding public key for display and can generate an EdDSA alternate
+signing key for a user-supplied name and email. Generated private-key material is
+confined to the adjacent signed `av` process and the Keychain-owning menu app,
+which stores it after deriving its public key.
 See [ADR 0019](adr/0019-gpg-signing-gate.md).
 
 ### Launcher Packaging
@@ -336,6 +342,11 @@ The shipped policy store encodes one legacy classification per request and persi
 - `fullExceptSecretDumps` becomes Write Access.
 - `fullIncludingSecretDumps` remains Full Access.
 
+At the GPG Signing Gate, persisted values that permit Local Write normalize to
+Allow Signing; all others normalize to Approval Required. This preserves each
+stored rule's effective signing authority while omitting policy presets that
+cannot describe a distinct GPG operation.
+
 The Homebrew migration intentionally broadens persisted `readOnly` rules to allow explicit `brew update`. Homebrew could already update itself and its package metadata as a secondary effect of an authorized inspection command, so the old distinction did not enforce strict read-only execution. The legacy `update` classification covers only `brew update`, a Homebrew Update. The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
 
 ## Secret custody and availability
@@ -521,7 +532,13 @@ one authorized request. Network parsing is outside the Keychain-owning app.
 
 ## Secure defaults
 
-New Secret Gates start at Read Only. The Homebrew Execution Gate starts at Read & Update, which adds `brew update` without authorizing installation, upgrade, reinstall, removal, or other writes. Unknown operations and unverifiable Launchers require a human decision or denial according to the failed check. Every default and Launcher-specific rule is explicit and persisted.
+New Secret Gates start at Read Only. The GPG Signing Gate starts at Approval
+Required and exposes Allow Signing as its only automic level. The Homebrew
+Execution Gate starts at Read & Update, which adds `brew update` without
+authorizing installation, upgrade, reinstall, removal, or other writes. Unknown
+operations and unverifiable Launchers require a human decision or denial
+according to the failed check. Every default and Launcher-specific rule is
+explicit and persisted.
 
 The Direct Secret Gate starts at Approval Required and has no broad default.
 Adding each Direct Access Rule requires an explicit warning and acknowledgement.
