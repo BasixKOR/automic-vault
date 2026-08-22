@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::{Read, Write};
 
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::inject;
 
@@ -111,10 +111,20 @@ fn sign_with_approval(
         cwd.to_string_lossy().into_owned(),
         &names,
     )?;
-    let key_name = if secrets.contains_key(ALTERNATE_PRIVATE_KEY) {
-        ALTERNATE_PRIVATE_KEY
-    } else {
-        DEFAULT_PRIVATE_KEY
+    let key_name = match (
+        secrets.contains_key(DEFAULT_PRIVATE_KEY),
+        secrets.contains_key(ALTERNATE_PRIVATE_KEY),
+    ) {
+        (true, false) => DEFAULT_PRIVATE_KEY,
+        (false, true) => ALTERNATE_PRIVATE_KEY,
+        (true, true) => {
+            secrets.values_mut().for_each(Zeroize::zeroize);
+            return Err("Automic Vault returned multiple private signing keys".into());
+        }
+        (false, false) => {
+            secrets.values_mut().for_each(Zeroize::zeroize);
+            return Err("Automic Vault returned no private signing key".into());
+        }
     };
     let passphrase_name = if key_name == ALTERNATE_PRIVATE_KEY {
         ALTERNATE_PASSPHRASE
@@ -127,6 +137,7 @@ fn sign_with_approval(
             .ok_or_else(|| "Automic Vault returned no private signing key".to_string())?,
     );
     let passphrase = Zeroizing::new(secrets.remove(passphrase_name).unwrap_or_default());
+    secrets.values_mut().for_each(Zeroize::zeroize);
     crate::gpg::sign_openpgp(&private_key, &passphrase, &payload)
 }
 
@@ -177,5 +188,24 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, "Git signing payload exceeds 16 MiB");
+    }
+
+    #[test]
+    fn rejects_an_authorization_response_with_both_private_keys() {
+        let mut input = b"payload".as_slice();
+        let error = sign_with_approval(vec![], &mut input, |_, _, _, _| {
+            Ok([
+                (DEFAULT_PRIVATE_KEY.to_string(), "default".to_string()),
+                (ALTERNATE_PRIVATE_KEY.to_string(), "alternate".to_string()),
+            ]
+            .into_iter()
+            .collect())
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Automic Vault returned multiple private signing keys"
+        );
     }
 }

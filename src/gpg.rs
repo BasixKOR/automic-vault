@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -79,6 +80,16 @@ fn validate_av_path(path: PathBuf) -> Result<PathBuf, String> {
     if !path.is_absolute() || !path.is_file() {
         return Err(format!(
             "Automic Vault signing command is missing at {}",
+            path.display()
+        ));
+    }
+    let permissions = path
+        .metadata()
+        .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?
+        .permissions();
+    if permissions.mode() & 0o111 == 0 {
+        return Err(format!(
+            "Automic Vault signing command is not executable at {}",
             path.display()
         ));
     }
@@ -253,6 +264,20 @@ mod tests {
     #[test]
     fn refuses_a_relative_av_path() {
         assert!(validate_av_path(PathBuf::from("av")).is_err());
+    }
+
+    #[test]
+    fn refuses_a_non_executable_av_path() {
+        let directory = temp_dir("non-executable");
+        fs::create_dir_all(&directory).unwrap();
+        let av = directory.join("av");
+        fs::write(&av, b"not executable").unwrap();
+        fs::set_permissions(&av, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let error = validate_av_path(av).unwrap_err();
+
+        assert!(error.contains("not executable"));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

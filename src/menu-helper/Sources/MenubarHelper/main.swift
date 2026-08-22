@@ -6730,7 +6730,7 @@ private func signingInfo(path: String) -> SigningInfo {
     )
 }
 
-private func selfTeamIdentifier() -> String? {
+func selfTeamIdentifier() -> String? {
     var code: SecCode?
     var staticCode: SecStaticCode?
     guard SecCodeCopySelf([], &code) == errSecSuccess,

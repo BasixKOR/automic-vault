@@ -75,12 +75,58 @@ public func saveGPGSigningCredential(
     passphrase: String,
     alternate: Bool
 ) -> OSStatus {
+    saveGPGSigningCredential(
+        privateKey: privateKey,
+        passphrase: passphrase,
+        alternate: alternate,
+        load: { account in
+            switch loadKeychainDataResult(service: automicVaultKeychainService, account: account) {
+            case .success(let data):
+                guard let value = String(data: data, encoding: .utf8) else {
+                    return .failure(errSecDecode)
+                }
+                return .value(value)
+            case .notFound: return .missing
+            case .failure(let status): return .failure(status)
+            }
+        },
+        save: { account, value in saveStoredSecret(account: account, value: value) },
+        delete: { account in
+            let status = deleteStoredSecretValue(secretName: account, source: .global)
+            return status == errSecItemNotFound ? errSecSuccess : status
+        }
+    )
+}
+
+enum GPGStoredValueLoad {
+    case value(String)
+    case missing
+    case failure(OSStatus)
+}
+
+func saveGPGSigningCredential(
+    privateKey: String,
+    passphrase: String,
+    alternate: Bool,
+    load: (String) -> GPGStoredValueLoad,
+    save: (String, String) -> OSStatus,
+    delete: (String) -> OSStatus
+) -> OSStatus {
     let keyName = alternate ? gpgAlternatePrivateKeySecretName : gpgDefaultPrivateKeySecretName
     let passphraseName = alternate
         ? gpgAlternatePassphraseSecretName : gpgDefaultPassphraseSecretName
-    let keyStatus = saveStoredSecret(account: keyName, value: privateKey)
-    guard keyStatus == errSecSuccess else { return keyStatus }
-    return saveStoredSecret(account: passphraseName, value: passphrase)
+    let previousPassphrase = load(passphraseName)
+    if case .failure(let status) = previousPassphrase { return status }
+    let passphraseStatus = save(passphraseName, passphrase)
+    guard passphraseStatus == errSecSuccess else { return passphraseStatus }
+    let keyStatus = save(keyName, privateKey)
+    guard keyStatus != errSecSuccess else { return errSecSuccess }
+    let rollbackStatus = switch previousPassphrase {
+    case .value(let previous): save(passphraseName, previous)
+    case .missing: delete(passphraseName)
+    case .failure: errSecInternalError
+    }
+    return rollbackStatus == errSecSuccess ? keyStatus : rollbackStatus
 }
 
 public func hasGPGSigningCredential(alternate: Bool) -> Bool {
@@ -120,12 +166,33 @@ public func configureGitForGPGSigning(
 
 public enum GPGSigningConfigurationError: LocalizedError {
     case programUnavailable(String)
+    case bundledExecutableUnavailable(String)
     case gitFailed(String)
 
     public var errorDescription: String? {
         switch self {
         case .programUnavailable(let path): "The bundled Git signing adapter is unavailable at \(path)."
+        case .bundledExecutableUnavailable(let path): "The bundled Automic Vault executable is unavailable or invalid at \(path)."
         case .gitFailed(let detail): "Git configuration failed\(detail.isEmpty ? "." : ": \(detail)")"
         }
     }
+}
+
+public func bundledExecutableURL(
+    named name: String,
+    beside mainExecutableURL: URL?,
+    fileManager: FileManager = .default
+) throws -> URL {
+    guard let mainExecutableURL,
+          mainExecutableURL.isFileURL,
+          mainExecutableURL.path.hasPrefix("/"),
+          !name.isEmpty,
+          name == URL(fileURLWithPath: name).lastPathComponent
+    else { throw GPGSigningConfigurationError.bundledExecutableUnavailable(name) }
+    let candidate = mainExecutableURL.deletingLastPathComponent().appendingPathComponent(name)
+    let attributes = try? fileManager.attributesOfItem(atPath: candidate.path)
+    guard attributes?[.type] as? FileAttributeType == .typeRegular,
+          fileManager.isExecutableFile(atPath: candidate.path)
+    else { throw GPGSigningConfigurationError.bundledExecutableUnavailable(candidate.path) }
+    return candidate
 }

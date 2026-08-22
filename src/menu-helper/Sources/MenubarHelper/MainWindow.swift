@@ -3952,21 +3952,44 @@ private struct GPGSigningSettingsView: View {
 
 private func validateGPGPrivateKey(_ privateKey: String) throws {
     let process = Process()
-    process.executableURL = avExecutableURL()
+    let executable = try bundledExecutableURL(
+        named: "av",
+        beside: Bundle.main.executableURL
+    )
+    var staticCode: SecStaticCode?
+    var signingInformation: CFDictionary?
+    guard SecStaticCodeCreateWithPath(executable as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          SecStaticCodeCheckValidity(
+              staticCode,
+              SecCSFlags(rawValue: kSecCSStrictValidate),
+              nil
+          ) == errSecSuccess,
+          SecCodeCopySigningInformation(
+              staticCode,
+              SecCSFlags(rawValue: kSecCSSigningInformation),
+              &signingInformation
+          ) == errSecSuccess,
+          let signing = signingInformation as? [CFString: Any],
+          signing[kSecCodeInfoIdentifier] as? String == "com.automicvault.av",
+          let teamIdentifier = selfTeamIdentifier(),
+          signing[kSecCodeInfoTeamIdentifier] as? String == teamIdentifier
+    else { throw GPGSigningConfigurationError.bundledExecutableUnavailable(executable.path) }
+    process.executableURL = executable
     process.arguments = ["__gpg-public-key"]
     let input = Pipe()
-    let output = Pipe()
     let errors = Pipe()
     process.standardInput = input
-    process.standardOutput = output
+    process.standardOutput = FileHandle.nullDevice
     process.standardError = errors
     try process.run()
     input.fileHandleForWriting.write(Data(privateKey.utf8))
     try input.fileHandleForWriting.close()
+    let errorData = errors.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
         let detail = String(
-            decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+            decoding: errorData,
             as: UTF8.self
         ).trimmingCharacters(in: .whitespacesAndNewlines)
         throw GPGSigningConfigurationError.gitFailed(detail)
