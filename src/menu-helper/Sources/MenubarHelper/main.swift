@@ -11165,6 +11165,47 @@ private func runScanSchedulingSelfCheck() -> Int32 {
     return 0
 }
 
+@MainActor
+private final class PasteProbeTextView: NSTextView {
+    private(set) var didPaste = false
+
+    override func paste(_ sender: Any?) {
+        didPaste = true
+    }
+}
+
+@MainActor
+private func runTextPasteSelfCheck() -> Int32 {
+    _ = NSApplication.shared
+    let window = AutomicVaultWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+        styleMask: .titled,
+        backing: .buffered,
+        defer: false
+    )
+    let textView = PasteProbeTextView(frame: window.contentView?.bounds ?? .zero)
+    window.contentView?.addSubview(textView)
+
+    guard window.makeFirstResponder(textView),
+          let event = NSEvent.keyEvent(
+              with: .keyDown,
+              location: .zero,
+              modifierFlags: .command,
+              timestamp: 0,
+              windowNumber: window.windowNumber,
+              context: nil,
+              characters: "v",
+              charactersIgnoringModifiers: "v",
+              isARepeat: false,
+              keyCode: 9
+          ),
+          window.performKeyEquivalent(with: event),
+          textView.didPaste
+    else { return 1 }
+
+    return 0
+}
+
 private final class UpdatePreflightURLProtocol: URLProtocol, @unchecked Sendable {
     private static let input = try? UpdatePreflightInput(arguments: CommandLine.arguments)
     private let lock = NSLock()
@@ -11308,6 +11349,10 @@ if CommandLine.arguments.contains("--self-check-menu-status") {
 
 if CommandLine.arguments.contains("--self-check-scan-scheduling") {
     exit(runScanSchedulingSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-text-paste") {
+    exit(MainActor.assumeIsolated { runTextPasteSelfCheck() })
 }
 
 if CommandLine.arguments.contains("--verify-update") {
