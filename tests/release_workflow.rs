@@ -150,10 +150,16 @@ fn release_build_asserts_secret_custody_entitlements() {
 }
 
 #[test]
-fn macos_app_uses_the_approval_purple_accent() {
+fn macos_app_uses_its_violet_accent() {
     assert!(MENU_HELPER_INFO_PLIST.contains("<key>NSAccentColorName</key>"));
     assert!(MENU_HELPER_INFO_PLIST.contains("<string>AccentColor</string>"));
-    assert!(ACCENT_COLOR.contains("\"reference\" : \"systemPurpleColor\""));
+    for component in [
+        "\"blue\" : \"0.918\"",
+        "\"green\" : \"0.200\"",
+        "\"red\" : \"0.576\"",
+    ] {
+        assert!(ACCENT_COLOR.contains(component));
+    }
     assert!(BUILD_SCRIPT.contains("\"$MENU_HELPER/Resources/Assets.xcassets\""));
     assert!(BUILD_SCRIPT.contains("--accent-color AccentColor"));
 }
