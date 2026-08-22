@@ -70,6 +70,8 @@ Hardened Runtime, and live process identity. Its features include:
   Keychain items, and ambient credential-helper commands;
 - Tool-specific Authorization Gates that understand recognized read, write,
   disclosure, elevated, and unknown operations;
+- gated Git commit and tag signing that keeps the private-key Secret away from
+  Git and can select a separate credential for exact Verified Launchers;
 - Authorization Policies scoped to each Verified Launcher;
 - Project Values selected by physical working directory under stable Secret
   Names;
@@ -113,6 +115,36 @@ setting.
 Code signing proves identity and integrity, not intent. You decide which
 Verified Launchers receive authority. A failed identity or runtime check blocks
 automic authorization.
+
+## Sign Git Commits Without Giving Git the Private Key
+
+Open **Settings → GPG Signing**:
+
+1. Add the default GPG Signing Credential by importing its armored private key.
+2. Copy the public key Automic Vault displays and add it to your Git host.
+3. Select **Configure Git**.
+
+Automic Vault sets Git's global `gpg.program`, `gpg.format=openpgp`, and
+`commit.gpgSign=true`. Your normal workflow now produces signed commits:
+
+```sh
+git commit -m 'document gated signing'
+git tag --sign v1.2.3
+```
+
+Git calls the bundled `av-gpg` Command. The GPG Signing Gate authorizes the
+complete signing request and the signed `av gpg-sign` Target creates the
+detached signature. Git and `av-gpg` never receive the private key or
+passphrase.
+
+The gate offers **Approval Required** and **Allow Signing**. To give agents a
+distinct signing identity, import or generate an alternate credential, upload
+its displayed public key, then add the exact Verified Launchers that should use
+it. Missing alternate credential material fails closed instead of falling back
+to the default credential.
+
+See [Securing Git on macOS](docs/securing-git.md) for the full setup and security
+boundary.
 
 ## Move Every Human Approval to iPhone
 
