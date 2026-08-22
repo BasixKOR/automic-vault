@@ -3,6 +3,13 @@ name = "av"
 version = "3.15.1"
 edition = "2024"
 
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
