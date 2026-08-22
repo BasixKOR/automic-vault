@@ -603,13 +603,16 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
 
     public var availableProtections: [SecretGateProtection] {
+        if id == "gpg-signing" {
+            return [.noAccess, .readOnlyAndLocalWrites]
+        }
         if id == "brew" {
             return [.noAccess, .readOnlyAndUpdates, .fullExceptSecretDumps]
         }
         if keyPatterns.isEmpty {
             return [.noAccess, .readOnly, .fullExceptSecretDumps]
         }
-        if id == "gh" || id == "docker" || id == "gpg-signing" {
+        if id == "gh" || id == "docker" {
             return [
                 .noAccess,
                 .readOnly,
@@ -622,10 +625,14 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 
     public var initialProtection: SecretGateProtection {
-        id == "brew" ? .readOnlyAndUpdates : .readOnly
+        if id == "gpg-signing" { return .noAccess }
+        return id == "brew" ? .readOnlyAndUpdates : .readOnly
     }
 
     public func normalizedProtection(_ protection: SecretGateProtection) -> SecretGateProtection {
+        if id == "gpg-signing" {
+            return protection.allows(.localWrite) ? .readOnlyAndLocalWrites : .noAccess
+        }
         var protection = protection
         if keyPatterns.isEmpty, protection == .fullIncludingSecretDumps {
             protection = .fullExceptSecretDumps
@@ -643,11 +650,19 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
 
     public func protectionTitle(_ protection: SecretGateProtection) -> String {
         let protection = normalizedProtection(protection)
+        if id == "gpg-signing" {
+            return protection == .readOnlyAndLocalWrites ? "Allow Signing" : "Approval Required"
+        }
         return keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
     }
 
     public func protectionSubtitle(_ protection: SecretGateProtection) -> String {
         let protection = normalizedProtection(protection)
+        if id == "gpg-signing" {
+            return protection == .readOnlyAndLocalWrites
+                ? "Recognized GPG signing requests are automically authorized"
+                : "Every GPG signing request requires approval"
+        }
         return keyPatterns.isEmpty && protection == .fullExceptSecretDumps
             ? "Every recognized operation is automically authorized; unknown operations require approval"
             : protection.subtitle

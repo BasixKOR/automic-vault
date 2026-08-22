@@ -313,8 +313,21 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
     ).first)
 
     #expect(descriptors.map(\.id) == ["gpg-signing"])
-    #expect(gate.availableProtections.contains(.readOnlyAndLocalWrites))
+    #expect(gate.availableProtections == [.noAccess, .readOnlyAndLocalWrites])
+    #expect(gate.initialProtection == .noAccess)
+    #expect(gate.normalizedProtection(.noAccess) == .noAccess)
+    #expect(gate.normalizedProtection(.readOnly) == .noAccess)
+    #expect(gate.normalizedProtection(.readOnlyAndUpdates) == .noAccess)
     #expect(gate.normalizedProtection(.readOnlyAndLocalWrites) == .readOnlyAndLocalWrites)
+    #expect(gate.normalizedProtection(.fullExceptSecretDumps) == .readOnlyAndLocalWrites)
+    #expect(gate.normalizedProtection(.fullIncludingSecretDumps) == .readOnlyAndLocalWrites)
+    #expect(gate.protectionTitle(.noAccess) == "Approval Required")
+    #expect(gate.protectionTitle(.readOnlyAndLocalWrites) == "Allow Signing")
+    #expect(gate.protectionSubtitle(.noAccess) == "Every GPG signing request requires approval")
+    #expect(
+        gate.protectionSubtitle(.readOnlyAndLocalWrites)
+            == "Recognized GPG signing requests are automically authorized"
+    )
 }
 
 

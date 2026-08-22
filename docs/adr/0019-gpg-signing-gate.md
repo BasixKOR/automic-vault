@@ -49,8 +49,9 @@ MiB. Git and `av-gpg` never receive credential bytes.
 
 Using a signing key now requires an Authorization Decision over the Verified
 Launcher, Gate Client, Target, arguments, working directory, selected Secret
-Names, and process execution. The gate defaults to Read Only, so Local Write
-signing requires Approval until policy explicitly grants it.
+Names, and process execution. The gate defaults to Approval Required. Its policy
+exposes only Approval Required and Allow Signing because every recognized
+operation at this gate is GPG signing classified as Local Write.
 
 The signed `av` Target necessarily handles usable private-key material in its
 memory. Hardened Runtime and code-signature verification reduce injection risk
