@@ -1,10 +1,17 @@
 import Foundation
 import Security
 
-public let gpgDefaultPrivateKeySecretName = "AUTOMIC_GPG_SIGNING_PRIVATE_KEY"
-public let gpgDefaultPassphraseSecretName = "AUTOMIC_GPG_SIGNING_PASSPHRASE"
-public let gpgAlternatePrivateKeySecretName = "AUTOMIC_GPG_AGENT_SIGNING_PRIVATE_KEY"
-public let gpgAlternatePassphraseSecretName = "AUTOMIC_GPG_AGENT_SIGNING_PASSPHRASE"
+public let gpgDefaultPrivateKeySecretName = "AV_GPG_PRIVATE_KEY"
+public let gpgDefaultPassphraseSecretName = "AV_GPG_PASSPHRASE"
+public let gpgAlternatePrivateKeySecretName = "AV_GPG_AGENT_PRIVATE_KEY"
+public let gpgAlternatePassphraseSecretName = "AV_GPG_AGENT_PASSPHRASE"
+
+private let legacyGPGSecretNames = [
+    ("AUTOMIC_GPG_SIGNING_PRIVATE_KEY", gpgDefaultPrivateKeySecretName),
+    ("AUTOMIC_GPG_SIGNING_PASSPHRASE", gpgDefaultPassphraseSecretName),
+    ("AUTOMIC_GPG_AGENT_SIGNING_PRIVATE_KEY", gpgAlternatePrivateKeySecretName),
+    ("AUTOMIC_GPG_AGENT_SIGNING_PASSPHRASE", gpgAlternatePassphraseSecretName),
+]
 
 private let gpgSigningConfigurationService = "com.automicvault.gpg-signing-configuration"
 private let gpgSigningConfigurationAccount = "configuration"
@@ -109,6 +116,47 @@ private func loadGPGStoredValue(_ account: String) -> GPGStoredValueLoad {
     case .notFound: return .missing
     case .failure(let status): return .failure(status)
     }
+}
+
+@discardableResult
+public func migrateLegacyGPGSigningSecrets() -> OSStatus {
+    migrateLegacyGPGSigningSecrets(
+        load: loadGPGStoredValue,
+        saveIfAbsentOrEqual: { account, value in
+            saveStoredSecretIfAbsentOrEqual(account: account, value: value)
+        },
+        delete: { account in
+            deleteStoredSecretValueRevokingDirectAccessIfLast(
+                secretName: account,
+                source: .global
+            )
+        }
+    )
+}
+
+func migrateLegacyGPGSigningSecrets(
+    load: (String) -> GPGStoredValueLoad,
+    saveIfAbsentOrEqual: (String, String) -> OSStatus,
+    delete: (String) -> OSStatus
+) -> OSStatus {
+    for (legacyName, currentName) in legacyGPGSecretNames {
+        switch load(legacyName) {
+        case .value(let value):
+            if !value.isEmpty {
+                let saveStatus = saveIfAbsentOrEqual(currentName, value)
+                guard saveStatus == errSecSuccess else { return saveStatus }
+            }
+            let deleteStatus = delete(legacyName)
+            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+                return deleteStatus
+            }
+        case .failure(let status):
+            return status
+        case .missing:
+            continue
+        }
+    }
+    return migrateEmptyGPGSigningPassphrases(load: load, delete: delete)
 }
 
 @discardableResult

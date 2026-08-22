@@ -292,13 +292,13 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
     let inactiveHardener = testGateMetadata(hardened: false)
     let gpg = SecretGateDescriptor(
         id: "gpg-signing",
-        keyPatterns: ["AUTOMIC_GPG_SIGNING_PRIVATE_KEY"],
+        keyPatterns: ["AV_GPG_PRIVATE_KEY"],
         routes: [SecretGateRoute(
             operation: "gpg-sign",
             scriptPath: nil,
             targetPath: "/Applications/Automic Vault.app/Contents/MacOS/av",
             callerIdentifiers: ["com.automicvault.av"],
-            keyPatterns: ["AUTOMIC_GPG_SIGNING_PRIVATE_KEY"],
+            keyPatterns: ["AV_GPG_PRIVATE_KEY"],
             replaceExistingEnv: false,
             allowMissingKeys: false
         )]

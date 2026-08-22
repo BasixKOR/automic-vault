@@ -261,7 +261,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
 }
 
 fn gpg_signing_gate() -> SecretGateDescriptor {
-    let keys = vec!["AUTOMIC_GPG_*".to_string()];
+    let keys = vec!["AV_GPG_*".to_string()];
     let target_path = std::env::current_exe()
         .and_then(std::fs::canonicalize)
         .unwrap_or_else(|_| "/Applications/Automic Vault.app/Contents/MacOS/av".into())

@@ -639,6 +639,7 @@ mod tests {
             .iter()
             .find(|gate| gate["id"] == "gpg-signing")
             .unwrap();
+        assert_eq!(gpg["key_patterns"], serde_json::json!(["AV_GPG_*"]));
         assert_eq!(gpg["routes"][0]["operation"], "gpg-sign");
         assert_eq!(
             gpg["routes"][0]["caller_identifiers"][0],

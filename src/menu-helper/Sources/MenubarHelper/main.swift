@@ -285,6 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 1
         _ = migrateBackgroundKeychainItems()
+        _ = migrateLegacyGPGSigningSecrets()
         _ = backfillBlessedScriptReviewedContents()
         autoApprovals = loadAccessRequestRecords().compactMap(autoApprovalRecord)
         refreshAutoApprovalMenuItems()
@@ -3097,7 +3098,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         var launchers = launcherIdentities(for: identity)
         if parsedRequest.op == "gpg-sign" {
-            let migrationStatus = migrateEmptyGPGSigningPassphrases()
+            let migrationStatus = migrateLegacyGPGSigningSecrets()
             guard migrationStatus == errSecSuccess else {
                 reply(
                     peer,

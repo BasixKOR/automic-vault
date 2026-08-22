@@ -5,10 +5,10 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::inject;
 
-pub(crate) const DEFAULT_PRIVATE_KEY: &str = "AUTOMIC_GPG_SIGNING_PRIVATE_KEY";
-pub(crate) const DEFAULT_PASSPHRASE: &str = "AUTOMIC_GPG_SIGNING_PASSPHRASE";
-pub(crate) const ALTERNATE_PRIVATE_KEY: &str = "AUTOMIC_GPG_AGENT_SIGNING_PRIVATE_KEY";
-pub(crate) const ALTERNATE_PASSPHRASE: &str = "AUTOMIC_GPG_AGENT_SIGNING_PASSPHRASE";
+pub(crate) const DEFAULT_PRIVATE_KEY: &str = "AV_GPG_PRIVATE_KEY";
+pub(crate) const DEFAULT_PASSPHRASE: &str = "AV_GPG_PASSPHRASE";
+pub(crate) const ALTERNATE_PRIVATE_KEY: &str = "AV_GPG_AGENT_PRIVATE_KEY";
+pub(crate) const ALTERNATE_PASSPHRASE: &str = "AV_GPG_AGENT_PASSPHRASE";
 const MAX_SIGNING_PAYLOAD_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(crate) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
@@ -144,6 +144,14 @@ fn sign_with_approval(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpg_secret_names_use_av_prefix() {
+        assert_eq!(DEFAULT_PRIVATE_KEY, "AV_GPG_PRIVATE_KEY");
+        assert_eq!(DEFAULT_PASSPHRASE, "AV_GPG_PASSPHRASE");
+        assert_eq!(ALTERNATE_PRIVATE_KEY, "AV_GPG_AGENT_PRIVATE_KEY");
+        assert_eq!(ALTERNATE_PASSPHRASE, "AV_GPG_AGENT_PASSPHRASE");
+    }
 
     #[test]
     fn authorization_binds_the_exact_payload_digest_before_key_selection() {

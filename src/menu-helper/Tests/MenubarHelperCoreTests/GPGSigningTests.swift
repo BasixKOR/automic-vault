@@ -3,6 +3,13 @@ import Security
 import Testing
 @testable import MenubarHelperCore
 
+@Test func gpgSecretNamesUseAVPrefix() {
+    #expect(gpgDefaultPrivateKeySecretName == "AV_GPG_PRIVATE_KEY")
+    #expect(gpgDefaultPassphraseSecretName == "AV_GPG_PASSPHRASE")
+    #expect(gpgAlternatePrivateKeySecretName == "AV_GPG_AGENT_PRIVATE_KEY")
+    #expect(gpgAlternatePassphraseSecretName == "AV_GPG_AGENT_PASSPHRASE")
+}
+
 @Test func launcherListSelectsTheAlternateSigningCredential() {
     let launcher = BlessedScriptLauncher(bundleIdentifier: "com.openai.codex", requirement: "codex")
     let configuration = GPGSigningConfiguration(alternateKeyLaunchers: [launcher])
@@ -100,6 +107,61 @@ import Testing
     #expect(status == errSecSuccess)
     #expect(values[gpgDefaultPassphraseSecretName] == nil)
     #expect(values[gpgAlternatePassphraseSecretName] == "alternate-passphrase")
+}
+
+@Test func legacyGPGSecretNamesAreMigratedWithoutLosingCredentials() {
+    var values = [
+        "AUTOMIC_GPG_SIGNING_PRIVATE_KEY": "private",
+        "AUTOMIC_GPG_SIGNING_PASSPHRASE": "",
+        "AUTOMIC_GPG_AGENT_SIGNING_PRIVATE_KEY": "alternate-private",
+        "AUTOMIC_GPG_AGENT_SIGNING_PASSPHRASE": "alternate-passphrase",
+    ]
+    let status = migrateLegacyGPGSigningSecrets(
+        load: { values[$0].map(GPGStoredValueLoad.value) ?? .missing },
+        saveIfAbsentOrEqual: { account, value in
+            if let existing = values[account] {
+                return existing == value ? errSecSuccess : errSecDuplicateItem
+            }
+            values[account] = value
+            return errSecSuccess
+        },
+        delete: { account in
+            values.removeValue(forKey: account)
+            return errSecSuccess
+        }
+    )
+
+    #expect(status == errSecSuccess)
+    #expect(values[gpgDefaultPrivateKeySecretName] == "private")
+    #expect(values[gpgDefaultPassphraseSecretName] == nil)
+    #expect(values[gpgAlternatePrivateKeySecretName] == "alternate-private")
+    #expect(values[gpgAlternatePassphraseSecretName] == "alternate-passphrase")
+    #expect(values.keys.allSatisfy { !$0.hasPrefix("AUTOMIC_GPG_") })
+}
+
+@Test func conflictingGPGSecretNameMigrationFailsClosed() {
+    var values = [
+        "AUTOMIC_GPG_SIGNING_PRIVATE_KEY": "legacy-private",
+        "AV_GPG_PRIVATE_KEY": "current-private",
+    ]
+    let status = migrateLegacyGPGSigningSecrets(
+        load: { values[$0].map(GPGStoredValueLoad.value) ?? .missing },
+        saveIfAbsentOrEqual: { account, value in
+            if let existing = values[account] {
+                return existing == value ? errSecSuccess : errSecDuplicateItem
+            }
+            values[account] = value
+            return errSecSuccess
+        },
+        delete: { account in
+            values.removeValue(forKey: account)
+            return errSecSuccess
+        }
+    )
+
+    #expect(status == errSecDuplicateItem)
+    #expect(values["AUTOMIC_GPG_SIGNING_PRIVATE_KEY"] == "legacy-private")
+    #expect(values[gpgDefaultPrivateKeySecretName] == "current-private")
 }
 
 @Test func failedPrivateKeySaveRemovesANewPassphrase() {
