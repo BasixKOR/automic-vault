@@ -15,6 +15,7 @@ mod proxy;
 mod save;
 mod scan;
 mod shell_secrets;
+pub(crate) mod terraform_credential;
 
 use crate::isotopes::hardeners;
 
@@ -243,6 +244,16 @@ where
                 }
             }
         }
+        Some("__install-terraform-release") if rest.len() == 2 => {
+            let Some(sha256) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid Terraform release digest");
+                return 2;
+            };
+            privileged_result(
+                hardeners::terraform::install_terraform_release(sha256, &PathBuf::from(&rest[1])),
+                stderr,
+            )
+        }
         Some("__install-docker-helper") if rest.is_empty() => {
             match hardeners::docker::install_privileged() {
                 Ok(()) => 0,
@@ -348,6 +359,16 @@ where
                 let result = hardeners::docker::run(stdout, yes);
                 return finish_hardening(result, "docker", stdout, stderr);
             }
+            if target == "terraform" || target == "terraform-core" {
+                let result =
+                    hardeners::terraform::run(hardeners::terraform::Tool::Terraform, stdout, yes);
+                return finish_hardening(result, "terraform", stdout, stderr);
+            }
+            if target == "opentofu" || target == "tofu" {
+                let result =
+                    hardeners::terraform::run(hardeners::terraform::Tool::OpenTofu, stdout, yes);
+                return finish_hardening(result, "opentofu", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -398,6 +419,7 @@ where
             aws::credentials(Some("official-v2"), stdout, stderr)
         }
         Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
+        Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {
@@ -907,6 +929,29 @@ mod tests {
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            "av: test path overrides are forbidden during privileged installation\n"
+        );
+    }
+
+    #[test]
+    fn private_terraform_installer_rejects_test_path_overrides() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_TERRAFORM_INSTALL_DIR", "/tmp/terraform");
+        }
+
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-terraform-release",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "/tmp/terraform.zip",
+        ]);
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_TERRAFORM_INSTALL_DIR") };
         assert_eq!(code, 1);
         assert_eq!(stdout, "");
         assert_eq!(

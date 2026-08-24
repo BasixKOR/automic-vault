@@ -894,6 +894,9 @@ fn manual_stub_repair(hardener: &str, command: &HardenerCommand, stub: &str) -> 
 
 fn path_issue(command: &HardenerCommand, path: &OsStr) -> Option<DoctorIssue> {
     let stub = command.stub_path.as_deref()?;
+    if Path::new(stub).file_name().and_then(|name| name.to_str()) != Some(command.name.as_str()) {
+        return None;
+    }
     if same_path(Path::new(stub), Path::new(&command.target_path)) {
         return None;
     }
@@ -1341,6 +1344,22 @@ mod tests {
         )
         .unwrap();
         assert!(healthy[0].issues.is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn credential_helpers_are_not_expected_on_the_cli_path() {
+        let dir = temp_dir("credential-helper-path");
+        let helper = executable_file(&dir.join("terraform-credentials-av"));
+        let terraform = executable_file(&dir.join("terraform"));
+        let command = command(
+            "terraform",
+            true,
+            helper.to_str().unwrap(),
+            terraform.to_str().unwrap(),
+        );
+
+        assert!(path_issue(&command, dir.as_os_str()).is_none());
         let _ = fs::remove_dir_all(dir);
     }
 
