@@ -101,7 +101,8 @@ Agent Task Context: same-user software can forge it, so the live Verified
 Launcher remains the identity boundary.
 
 An eligible live write-request Approval can create a Temporary Access Grant
-with ten minutes of active countdown time through an explicit prompt action.
+with an initial ten minutes of active countdown time through an explicit prompt
+action.
 The grant is limited to Write Access at the exact Tool-specific gate, Launcher
 designated requirement, accepted runtime posture, provider, and task UUID. The
 Direct Secret Gate, Secret mutations, Elevated Secret Application, Secret
@@ -255,8 +256,10 @@ cannot revoke Secret Values already released.
 Grants are memory-only and running countdowns use both wall-clock and monotonic
 deadlines. Suspending freezes the lesser remaining duration from those clocks
 and makes the grant ineligible to authorize requests. Resuming creates new
-paired deadlines from that frozen remainder. An exact duplicate scope is
-replaced by a newly confirmed, running ten-minute generation. The service
+paired deadlines from that frozen remainder. An explicit extension adds ten
+minutes to both running deadlines or to the frozen remainder; it cannot revive
+an expired grant. An exact duplicate scope is replaced by a newly confirmed,
+running ten-minute generation. The service
 revokes every grant on user session inactivity, display sleep, update
 installation, service stop, or app termination. Individual expiry, suspension,
 resumption, and explicit End actions require no authentication.
@@ -570,10 +573,10 @@ Launcher Provenance and does not require this setting.
 While any Temporary Access Grant exists, a non-activating strip remains visible
 directly below the menu-bar item with every scoped grant, second-accurate
 remaining active time, suspension state, successful-use count, last-use time,
-and End and countdown-toggle actions. The menu mirrors End actions and the shield
-turns orange. Automatic-request notifications stack below the strip. This
-continuous presentation is part of the temporary escalation's safety model, not
-a source of authority.
+and Add 10 Minutes, End, and countdown-toggle actions. The menu mirrors these
+actions and the shield turns orange. Automatic-request notifications stack
+below the strip. This continuous presentation is part of the temporary
+escalation's safety model, not a source of authority.
 
 ## Source of truth
 

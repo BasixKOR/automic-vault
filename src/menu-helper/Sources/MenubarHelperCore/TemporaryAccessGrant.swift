@@ -263,6 +263,28 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         return grant.snapshot
     }
 
+    @discardableResult
+    public func addTenMinutes(
+        id: UUID,
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil
+    ) -> TemporaryAccessGrantSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        let wallNow = wallNow ?? Date()
+        let monotonicNow = monotonicNow ?? ProcessInfo.processInfo.systemUptime
+        removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
+        guard var grant = grants[id] else { return nil }
+        if let remaining = grant.suspendedRemaining {
+            grant.suspendedRemaining = remaining + Self.duration
+        } else {
+            grant.expiresAt.addTimeInterval(Self.duration)
+            grant.monotonicDeadline += Self.duration
+        }
+        grants[id] = grant
+        return grant.snapshot
+    }
+
     public func withActiveLease(
         authorizationGateID: String,
         launcherDesignatedRequirement: String,

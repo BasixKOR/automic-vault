@@ -16,10 +16,11 @@ recording, lease, and lifecycle-revocation decisions remain unchanged.
 
 ## Decision
 
-Each Temporary Access Grant has ten minutes of active countdown time. The user
-may suspend or resume its countdown from the persistent strip. A suspended grant
-remains visible and memory-only but is ineligible to authorize any request.
-Resuming restores eligibility with exactly the frozen remaining duration.
+Each Temporary Access Grant starts with ten minutes of active countdown time.
+The user may explicitly add ten minutes or suspend or resume its countdown from
+the persistent strip. A suspended grant remains visible and memory-only but is
+ineligible to authorize any request. Resuming restores eligibility with exactly
+the frozen remaining duration.
 
 Suspension freezes the lesser remaining duration from the wall-clock and
 monotonic deadlines while holding the grant controller's existing lease lock.
@@ -28,11 +29,15 @@ and resumption therefore cannot race an in-progress release. An expired grant
 cannot be suspended or resumed, and a newly confirmed duplicate scope replaces
 any prior generation with a running ten-minute grant.
 
+Adding time holds the same lease lock and adds ten minutes to both running
+deadlines or to a suspended grant's frozen remainder. It does not restore Write
+Access to a suspended grant and cannot revive an expired grant.
+
 Session inactivity, display sleep, update installation, service stop, app
 termination, and End continue to revoke suspended and running grants alike.
-Suspension and resumption require an explicit user action but no new Approval:
-suspension removes authority, while resumption restores only the unused portion
-of the already confirmed scope and active-time budget.
+Suspension, resumption, and extension require an explicit user action but no new
+Approval. Suspension removes authority, resumption restores only the remaining
+confirmed scope, and extension changes only that same grant's active-time budget.
 
 The strip shows the frozen remaining time and an explicit suspended state. The
 countdown toggle is adjacent to End so immediate revocation remains continuously
@@ -41,9 +46,9 @@ available.
 ## Consequences
 
 Pausing work no longer consumes the grant's active-time budget. The wall-clock
-period during which a grant can be resumed may exceed ten minutes, but its total
-authorizing time cannot. Existing scope, runtime, task-context, operation,
-recording, and release checks still apply to every use after resumption.
+period and total authorizing time may exceed ten minutes only through explicit
+user actions. Existing scope, runtime, task-context, operation, recording, and
+release checks still apply to every use after resumption or extension.
 
 Stopping only the visible clock while retaining active Write Access was rejected
 because it would create unbounded authority behind temporary-access messaging.

@@ -38,10 +38,11 @@ Automic Vault decides whether a complete operation may use it.
   require Approval.
 - Optional iPhone Approval and Touch ID Approval move allow actions away from
   agent-controlled pointer and keyboard input.
-- An eligible agent write Approval can grant ten active minutes of Write Access
-  to one Verified Launcher, Tool-specific Authorization Gate, and agent task. A
-  persistent strip shows the grant and lets the user suspend its countdown or
-  end it; suspension also suspends its authority.
+- An eligible agent write Approval can grant an initial ten active minutes of
+  Write Access to one Verified Launcher, Tool-specific Authorization Gate, and
+  agent task. A persistent strip shows the grant and lets the user add ten
+  minutes, suspend its countdown, or end it; suspension also suspends its
+  authority.
 - Existing developer commands continue to work above the security boundary.
 - Git can keep its ordinary commit workflow while the GPG Signing Gate
   authorizes private-key use and may select an alternate credential for exact

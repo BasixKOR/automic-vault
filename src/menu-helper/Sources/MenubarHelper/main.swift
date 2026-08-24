@@ -1114,10 +1114,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 accessibilityDescription: "Temporary access warning"
             )
             let submenu = NSMenu()
+            let addTenMinutes = NSMenuItem(
+                title: "Add 10 Minutes",
+                action: #selector(addTenMinutesToTemporaryAccessGrant(_:)),
+                keyEquivalent: ""
+            )
+            addTenMinutes.target = self
+            addTenMinutes.representedObject = grant.id.uuidString
+            submenu.addItem(addTenMinutes)
+            submenu.addItem(.separator())
             let toggle = NSMenuItem(
                 title: grant.isCountdownSuspended
-                    ? "Resume countdown and Write Access"
-                    : "Suspend countdown and Write Access",
+                    ? "Resume Write Access"
+                    : "Pause Write Access",
                 action: #selector(toggleTemporaryAccessGrantCountdown(_:)),
                 keyEquivalent: ""
             )
@@ -1151,6 +1160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let id = UUID(uuidString: rawID)
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
+        refreshTemporaryAccessGrants()
+    }
+
+    @objc private func addTenMinutesToTemporaryAccessGrant(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID)
+        else { return }
+        _ = temporaryAccessGrants.addTenMinutes(id: id)
         refreshTemporaryAccessGrants()
     }
 
@@ -1269,6 +1286,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             grants: temporaryAccessGrantSnapshots,
             wallNow: wallNow,
             monotonicNow: monotonicNow,
+            addTenMinutes: { [weak self] id in
+                guard let self else { return }
+                _ = self.temporaryAccessGrants.addTenMinutes(id: id)
+                self.refreshTemporaryAccessGrants()
+            },
             end: { [weak self] id in
                 guard let self else { return }
                 _ = self.temporaryAccessGrants.cancel(id: id)
@@ -8875,6 +8897,7 @@ private struct TemporaryAccessGrantStripView: View {
     let grants: [TemporaryAccessGrantSnapshot]
     let wallNow: Date
     let monotonicNow: TimeInterval
+    let addTenMinutes: (UUID) -> Void
     let end: (UUID) -> Void
     let setCountdownSuspended: (UUID, Bool) -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -8897,6 +8920,7 @@ private struct TemporaryAccessGrantStripView: View {
                 TemporaryAccessGrantRow(
                     grant: grant,
                     remaining: grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow),
+                    addTenMinutes: { addTenMinutes(grant.id) },
                     end: { end(grant.id) },
                     setCountdownSuspended: { setCountdownSuspended(grant.id, $0) }
                 )
@@ -8923,6 +8947,7 @@ private struct TemporaryAccessGrantStripView: View {
 private struct TemporaryAccessGrantRow: View {
     let grant: TemporaryAccessGrantSnapshot
     let remaining: TimeInterval
+    let addTenMinutes: () -> Void
     let end: () -> Void
     let setCountdownSuspended: (Bool) -> Void
 
@@ -8963,9 +8988,11 @@ private struct TemporaryAccessGrantRow: View {
                         "End temporary Write Access for \(grant.launcherName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID)"
                     )
                 Menu {
+                    Button("Add 10 Minutes", action: addTenMinutes)
+                    Divider()
                     Button(grant.isCountdownSuspended
-                        ? "Resume countdown and Write Access"
-                        : "Suspend countdown and Write Access"
+                        ? "Resume Write Access"
+                        : "Pause Write Access"
                     ) {
                         setCountdownSuspended(!grant.isCountdownSuspended)
                     }
@@ -8973,7 +9000,8 @@ private struct TemporaryAccessGrantRow: View {
                     Label("Temporary Write Access options", systemImage: "chevron.down")
                         .labelStyle(.iconOnly)
                 }
-                .accessibilityHint("Opens an option to suspend or resume the countdown and Write Access")
+                .menuIndicator(.hidden)
+                .accessibilityHint("Opens options to add time or pause Write Access")
             }
             .controlSize(.small)
         }
@@ -11166,6 +11194,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         grants: grantSnapshots,
         wallNow: grantWallNow,
         monotonicNow: grantMonotonicNow,
+        addTenMinutes: { _ in },
         end: { _ in },
         setCountdownSuspended: { _, _ in }
     ))

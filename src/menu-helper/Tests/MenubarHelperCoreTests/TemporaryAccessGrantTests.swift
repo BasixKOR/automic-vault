@@ -191,6 +191,55 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     ) == nil)
 }
 
+@Test func tenMinuteExtensionsPreserveCountdownStateAndCannotReviveExpiry() throws {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let grant = controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+
+    let extended = try #require(controller.addTenMinutes(
+        id: grant.id,
+        wallNow: start.addingTimeInterval(100),
+        monotonicNow: 150
+    ))
+    #expect(extended.expiresAt == start.addingTimeInterval(1_200))
+    #expect(extended.monotonicDeadline == 1_250)
+    #expect(extended.remaining(wallNow: start.addingTimeInterval(100), monotonicNow: 150) == 1_100)
+
+    _ = controller.setCountdownSuspended(
+        id: grant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(200),
+        monotonicNow: 250
+    )
+    let suspendedExtension = try #require(controller.addTenMinutes(
+        id: grant.id,
+        wallNow: start.addingTimeInterval(10_000),
+        monotonicNow: 10_050
+    ))
+    #expect(suspendedExtension.isCountdownSuspended)
+    #expect(suspendedExtension.suspendedRemaining == 1_600)
+
+    let expiredController = TemporaryAccessGrantController()
+    let expired = expiredController.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    #expect(expiredController.addTenMinutes(
+        id: expired.id,
+        wallNow: start.addingTimeInterval(600),
+        monotonicNow: 650
+    ) == nil)
+}
+
 @Test func multipleScopesCoexistAndDuplicateScopeRefreshesInPlace() throws {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)
