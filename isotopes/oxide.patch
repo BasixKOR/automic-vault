@@ -15,12 +15,13 @@ diff --git a/cli/src/cmd_auth.rs b/cli/src/cmd_auth.rs
 index 4a7171d..480078b 100644
 --- a/cli/src/cmd_auth.rs
 +++ b/cli/src/cmd_auth.rs
-@@ -344,7 +344,8 @@ impl CmdAuthLogin {
+@@ -344,7 +344,9 @@ impl CmdAuthLogin {
              });
 
          profile.insert("host", toml_edit::value(self.host.as_host().to_string()));
 -        profile.insert("token", toml_edit::value(token));
-+        oxide::store_av_credential(&profile_name, host, &token)?;
++        let host = self.host.as_host().to_string();
++        oxide::store_av_credential(&profile_name, &host, &token)?;
 +        profile.insert("token", toml_edit::value(oxide::AV_CREDENTIAL_MARKER));
          if let Some(token_id) = token_id {
              profile.insert("token_id", toml_edit::value(token_id));

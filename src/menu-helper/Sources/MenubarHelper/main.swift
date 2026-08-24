@@ -5649,6 +5649,7 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection == .hardened
+            && liveProcessHasNoEntitlements(pid: pid)
     }
 
     private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
@@ -6527,6 +6528,14 @@ private func oxideRequestClassification(_ args: [String]) -> SecretGateRequestCl
         default: return .unknown
         }
     }
+    let topLevelCommands = [
+        "alert", "api", "audit-log", "auth-settings", "bundle", "certificate", "completion",
+        "current-user", "der", "disk", "docs", "experimental", "external-subnet", "floating-ip",
+        "group", "image", "instance", "internet-gateway", "ip-pool", "pem", "ping", "policy",
+        "project", "scim", "silo", "snapshot", "subnet-pool", "system", "user", "utilization",
+        "vpc",
+    ]
+    guard topLevelCommands.contains(command) else { return .unknown }
     guard let action = words.dropFirst().first else { return .unknown }
     if ["list", "view", "get"].contains(action) { return .readOnly }
     if ["create", "delete", "edit", "update", "start", "stop", "reboot"].contains(action) {
@@ -8022,6 +8031,25 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
             SecCodeCheckValidity(code, [], $0)
         }
     )
+}
+
+private func liveProcessHasNoEntitlements(pid: pid_t) -> Bool {
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+          let code,
+          SecCodeCheckValidity(code, [], nil) == errSecSuccess
+    else { return false }
+    var info: CFDictionary?
+    let inspectableCode = unsafeBitCast(code, to: SecStaticCode.self)
+    guard SecCodeCopySigningInformation(
+        inspectableCode,
+        SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSDynamicInformation),
+        &info
+    ) == errSecSuccess,
+        let dictionary = info as? [CFString: Any]
+    else { return false }
+    return (dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]).isEmpty
 }
 
 private func liveCodeIdentity(pid: pid_t) -> Data? {
@@ -11126,6 +11154,7 @@ private func runOxideCredentialSelfCheck() -> Int32 {
           oxideRequestClassification(["project", "list"]) == .readOnly,
           oxideRequestClassification(["project", "create"]) == .mutating,
           oxideRequestClassification(["future-command"]) == .unknown,
+          oxideRequestClassification(["future-command", "list"]) == .unknown,
           normalizeOxideHost("https://OXIDE.example/") == "https://oxide.example",
           normalizeOxideHost("https://oxide.example:443/") == "https://oxide.example",
           normalizeOxideHost("https://oxide.example/path") == nil,
