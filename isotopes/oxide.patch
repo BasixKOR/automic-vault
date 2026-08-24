@@ -15,12 +15,13 @@ diff --git a/cli/src/cmd_auth.rs b/cli/src/cmd_auth.rs
 index 4a7171d..480078b 100644
 --- a/cli/src/cmd_auth.rs
 +++ b/cli/src/cmd_auth.rs
-@@ -344,7 +344,8 @@ impl CmdAuthLogin {
+@@ -344,7 +344,9 @@ impl CmdAuthLogin {
              });
 
          profile.insert("host", toml_edit::value(self.host.as_host().to_string()));
 -        profile.insert("token", toml_edit::value(token));
-+        oxide::store_av_credential(&profile_name, host, &token)?;
++        let host = self.host.as_host().to_string();
++        oxide::store_av_credential(&profile_name, &host, &token)?;
 +        profile.insert("token", toml_edit::value(oxide::AV_CREDENTIAL_MARKER));
          if let Some(token_id) = token_id {
              profile.insert("token_id", toml_edit::value(token_id));
@@ -36,7 +37,7 @@ index 4a7171d..480078b 100644
          } else {
              let profile = ctx
                  .client_config()
-@@ -447,6 +446,11 @@ impl CmdAuthLogout {
+@@ -447,25 +446,39 @@ impl CmdAuthLogout {
              let mut credentials = credentials_contents
                  .parse::<toml_edit::DocumentMut>()
                  .unwrap();
@@ -44,10 +45,38 @@ index 4a7171d..480078b 100644
 +                ctx.cred_file().profile.get(profile_name).ok_or_else(|| {
 +                    anyhow!("profile {profile_name:?} has no credential metadata")
 +                })?;
-+            oxide::delete_av_credential(profile_name, &profile_info.host)?;
              if let Some(profiles) = credentials.get_mut("profile") {
                  let profiles = profiles.as_table_mut().unwrap();
                  profiles.remove(profile_name);
+             }
+             std::fs::create_dir_all(config_dir).unwrap_or_else(|_| {
+                 panic!(
+                     "unable to create config directory '{}'",
+                     config_dir.to_string_lossy()
+                 )
+             });
+
+             let mut credentials_file =
+                 create_private_file(&credentials_path).expect("unable to create credentials.toml");
+             credentials_file
+                 .write_all(credentials.to_string().as_bytes())
+                 .expect("unable to write credentials.toml");
++            if let Err(error) = oxide::delete_av_credential(profile_name, &profile_info.host) {
++                let rollback = create_private_file(&credentials_path).and_then(|mut file| {
++                    file.write_all(credentials_contents.as_bytes())
++                        .map_err(Into::into)
++                });
++                if let Err(rollback) = rollback {
++                    bail!("failed to delete Automic Vault credential ({error}); failed to restore Oxide profile: {rollback}");
++                }
++                return Err(error.into());
++            }
+
+             writeln!(
+                 io::stdout(),
+                 "Removed authentication information for profile \"{}\"",
+                 profile_name,
+             )?;
 @@ -522,9 +526,7 @@ impl CmdAuthStatus {
          } else {
              for (profile_name, profile_info) in &ctx.cred_file().profile {
