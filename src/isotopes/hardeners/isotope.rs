@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::io::{self, Read, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use ring::digest::{Context, SHA256};
 
 use super::{HardenerDetection, executable};
 
@@ -13,6 +15,8 @@ const SUDO_PATH: &str = "/usr/bin/sudo";
 const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
 const TAP_FORMULA_ROOT: &str =
     "https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula";
+const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
+const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const GH: Spec = Spec {
     hardener: "gh",
@@ -37,6 +41,14 @@ pub(crate) const SUPABASE: Spec = Spec {
     primary: "supabase",
     binaries: &["supabase-go", "supabase"],
     test_path: "AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH",
+};
+const OPENTOFU: Spec = Spec {
+    hardener: "opentofu",
+    formula: "opentofu",
+    repository: "automic-vault",
+    primary: "tofu",
+    binaries: &["tofu"],
+    test_path: "AUTOMIC_VAULT_TEST_OPENTOFU_TARGET",
 };
 
 #[derive(Clone, Copy)]
@@ -247,6 +259,9 @@ pub(crate) fn install_privileged(
                 source.display()
             ));
         }
+        if spec.hardener == OPENTOFU.hardener {
+            super::terraform::verify_target(super::terraform::Tool::OpenTofu, &stage)?;
+        }
         staged.push((stage, bin_dir.join(binary)));
     }
     for (stage, destination) in &staged {
@@ -267,6 +282,11 @@ pub(crate) fn install_privileged(
     fs::rename(&staged_receipt, &receipt)
         .map_err(|err| format!("failed to install {}: {err}", receipt.display()))?;
     Ok(())
+}
+
+pub(crate) fn install_opentofu() -> Result<(), String> {
+    let manifest = opentofu_manifest()?;
+    install_direct(OPENTOFU, &manifest)
 }
 
 fn install_with_homebrew(
@@ -472,13 +492,18 @@ fn fetch(url: &str, timeout: u32) -> Result<String, String> {
 }
 
 fn download(url: &str, destination: &Path) -> Result<(), String> {
-    let mut body = get(url, 120)?.into_reader();
+    let mut body = get(url, 120)?.into_reader().take(MAX_ARCHIVE_BYTES + 1);
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(destination)
         .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
-    io::copy(&mut body, &mut output).map_err(|err| format!("failed to download {url}: {err}"))?;
+    let size = io::copy(&mut body, &mut output)
+        .map_err(|err| format!("failed to download {url}: {err}"))?;
+    if size > MAX_ARCHIVE_BYTES {
+        return Err("refusing an isotope archive larger than 128 MiB".into());
+    }
     output
         .sync_all()
         .map_err(|err| format!("failed to sync {}: {err}", destination.display()))
@@ -498,29 +523,38 @@ fn get(url: &str, timeout_secs: u32) -> Result<ureq::Body, String> {
         .map_err(|err| format!("failed to fetch {url}: {err}"))
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
-    let output = Command::new("/usr/bin/shasum")
-        .args(["-a", "256"])
-        .arg(path)
-        .output()
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
         .map_err(|err| format!("failed to hash {}: {err}", path.display()))?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to hash {}: {}",
-            path.display(),
-            output.status
-        ));
+    if !file
+        .metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_file())
+    {
+        return Err(format!("refusing to hash non-regular file {}", path.display()));
     }
-    let hash = String::from_utf8_lossy(&output.stdout)
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    validate_sha256(&hash)?;
-    Ok(hash)
+    let mut context = Context::new(&SHA256);
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|err| format!("failed to hash {}: {err}", path.display()))?;
+        if count == 0 {
+            break;
+        }
+        context.update(&buffer[..count]);
+    }
+    Ok(context
+        .finish()
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
 }
 
-fn validate_sha256(value: &str) -> Result<(), String> {
+pub(crate) fn validate_sha256(value: &str) -> Result<(), String> {
     if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(())
     } else {
@@ -600,12 +634,42 @@ fn formula_url(spec: Spec) -> String {
 }
 
 fn spec(hardener: &str) -> Option<Spec> {
-    [GH, STRIPE, SUPABASE]
+    [GH, STRIPE, SUPABASE, OPENTOFU]
         .into_iter()
         .find(|spec| spec.hardener == hardener)
 }
 
-fn prepare_install_directory(path: &Path) -> Result<(), String> {
+fn opentofu_manifest() -> Result<Manifest, String> {
+    if let Some(formula) = crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA") {
+        return parse_formula(&formula, None);
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    let base =
+        format!("https://github.com/automic-vault/automic-vault/releases/download/{version}");
+    let sums_url = format!("{base}/SHA256SUMS");
+    let sums = fetch(&sums_url, 15)?;
+    let matches = sums
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let digest = fields.next()?;
+            let name = fields.next()?.trim_start_matches('*');
+            (name == OPENTOFU_ASSET && fields.next().is_none()).then_some(digest)
+        })
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Err(format!(
+            "{sums_url} must contain exactly one {OPENTOFU_ASSET} digest"
+        ));
+    }
+    validate_sha256(matches[0])?;
+    Ok(Manifest {
+        url: format!("{base}/{OPENTOFU_ASSET}"),
+        sha256: matches[0].to_string(),
+    })
+}
+
+pub(crate) fn prepare_install_directory(path: &Path) -> Result<(), String> {
     if crate::test_env_var("AUTOMIC_VAULT_TEST_ISOTOPE_DIRECT_DIR").is_some() {
         fs::create_dir_all(path)
             .map_err(|err| format!("failed to create {}: {err}", path.display()))?;
@@ -635,12 +699,22 @@ fn prepare_install_directory(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_new(source: &Path, destination: &Path) -> Result<(), String> {
-    let mut input = fs::File::open(source)
+pub(crate) fn copy_new(source: &Path, destination: &Path) -> Result<(), String> {
+    let mut input = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(source)
         .map_err(|err| format!("failed to open {}: {err}", source.display()))?;
+    if !input
+        .metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_file())
+    {
+        return Err(format!("refusing non-regular source {}", source.display()));
+    }
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(destination)
         .map_err(|err| format!("failed to create {}: {err}", destination.display()))?;
     std::io::copy(&mut input, &mut output)
@@ -679,7 +753,7 @@ impl Drop for TemporaryDirectory {
     }
 }
 
-fn now_nanos() -> u128 {
+pub(crate) fn now_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos())

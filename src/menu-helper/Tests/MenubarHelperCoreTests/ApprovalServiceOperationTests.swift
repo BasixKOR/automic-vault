@@ -13,6 +13,10 @@ import Testing
     #expect(ApprovalServiceOperation.varlock.rawValue == "varlock")
 }
 
+@Test func terraformCredentialGetHasADedicatedWireOperation() {
+    #expect(ApprovalServiceOperation.terraformGet.rawValue == "terraform-get")
+}
+
 @Test func approvalServiceOperationValuesAreUnique() {
     let values = ApprovalServiceOperation.allCases.map(\.rawValue)
     #expect(Set(values).count == values.count)

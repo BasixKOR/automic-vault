@@ -11,6 +11,7 @@ pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 pub(crate) mod terraform;
+pub(crate) mod terraform_release;
 
 unsafe extern "C" {
     fn geteuid() -> u32;

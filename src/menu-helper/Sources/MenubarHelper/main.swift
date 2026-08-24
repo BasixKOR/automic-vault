@@ -2884,7 +2884,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet:
+        case .inject, .keys, .authorize, .dockerGet, .terraformGet:
             handleInject(
                 message,
                 on: peer,
@@ -5470,8 +5470,8 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
         let expected: (identifier: String, team: String)? = switch path {
-        case "/opt/av/terraform/current/terraform": ("terraform", "D38WU7D763")
-        case "/opt/av/opentofu/current/tofu": ("tofu", "ZU76A67LGU")
+        case "/usr/local/bin/terraform": ("terraform", "D38WU7D763")
+        case "/usr/local/bin/tofu": ("tofu", "ZU76A67LGU")
         default: nil
         }
         guard let expected,

@@ -10,6 +10,7 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case proxyStart = "proxy-start"
     case awsCredentials = "aws-credentials"
     case dockerGet = "docker-get"
+    case terraformGet = "terraform-get"
     case dockerSave = "docker-save"
     case dockerDelete = "docker-delete"
     case terraformSave = "terraform-save"

@@ -244,6 +244,16 @@ where
                 }
             }
         }
+        Some("__install-terraform-release") if rest.len() == 2 => {
+            let Some(sha256) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid Terraform release digest");
+                return 2;
+            };
+            privileged_result(
+                hardeners::terraform::install_terraform_release(sha256, &PathBuf::from(&rest[1])),
+                stderr,
+            )
+        }
         Some("__install-docker-helper") if rest.is_empty() => {
             match hardeners::docker::install_privileged() {
                 Ok(()) => 0,
@@ -919,6 +929,29 @@ mod tests {
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            "av: test path overrides are forbidden during privileged installation\n"
+        );
+    }
+
+    #[test]
+    fn private_terraform_installer_rejects_test_path_overrides() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_TERRAFORM_INSTALL_DIR", "/tmp/terraform");
+        }
+
+        let (code, stdout, stderr) = run_args(&[
+            "av",
+            "__install-terraform-release",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "/tmp/terraform.zip",
+        ]);
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_TERRAFORM_INSTALL_DIR") };
         assert_eq!(code, 1);
         assert_eq!(stdout, "");
         assert_eq!(
