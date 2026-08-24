@@ -32,8 +32,30 @@ fn read_to_string(path: &Path) -> Result<String, String> {
 }
 
 fn config_contains_token(contents: &str) -> bool {
-    contains_non_empty_json_string(contents, "access_token")
-        || contains_non_empty_json_string(contents, "refresh_token")
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return contains_non_empty_json_string(contents, "access_token")
+            || contains_non_empty_json_string(contents, "refresh_token");
+    };
+    value
+        .get("Targets")
+        .and_then(serde_json::Value::as_object)
+        .into_iter()
+        .flat_map(|targets| targets.values())
+        .filter_map(|target| {
+            target
+                .get("Contexts")
+                .and_then(serde_json::Value::as_object)
+        })
+        .flat_map(|contexts| contexts.values())
+        .filter_map(|context| context.get("Token").and_then(serde_json::Value::as_object))
+        .any(|token| {
+            ["access_token", "refresh_token"].iter().any(|key| {
+                token
+                    .get(*key)
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|value| !value.is_empty() && value != "@av")
+            })
+        })
 }
 
 fn contains_non_empty_json_string(contents: &str, key: &str) -> bool {
@@ -45,7 +67,7 @@ fn contains_non_empty_json_string(contents: &str, key: &str) -> bool {
         let Some(after_key) = line[start + needle.len()..].split_once(':') else {
             return false;
         };
-        json_string_value(after_key.1).is_some_and(|value| !value.is_empty())
+        json_string_value(after_key.1).is_some_and(|value| !value.is_empty() && value != "@av")
     })
 }
 
@@ -77,7 +99,7 @@ mod tests {
             r#"{"Targets":{"url:https://uaa.example":{"Contexts":{"ctx":{"Token":{"access_token":"fake-access"}}}}}}"#
         ));
         assert!(config_contains_token(
-            r#"{"Token":{"refresh_token":"fake-refresh"}}"#
+            r#"{"Targets":{"url:https://uaa.example":{"Contexts":{"ctx":{"Token":{"refresh_token":"fake-refresh"}}}}}}"#
         ));
     }
 
@@ -85,6 +107,9 @@ mod tests {
     fn ignores_empty_or_absent_tokens() {
         assert!(!config_contains_token(r#"{"Token":{"access_token":""}}"#));
         assert!(!config_contains_token(r#"{"Token":{"expires_in":3600}}"#));
+        assert!(!config_contains_token(
+            r#"{"Targets":{"url:https://uaa.example":{"Contexts":{"ctx":{"Token":{"access_token":"@av","refresh_token":"@av"}}}}}}"#
+        ));
     }
 
     #[test]

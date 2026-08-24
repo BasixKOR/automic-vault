@@ -7,6 +7,7 @@ const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
 const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
+const UAA_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
     value: Option<String>,
@@ -443,6 +444,63 @@ pub(crate) fn delete_ordercli_credential(scope: &str, account: &str) -> Result<(
     xpc_request(
         "ordercli-delete",
         Some((b"ordercli_scope\0", scope)),
+        None,
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn ensure_uaa_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "uaa-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", UAA_HELPER_PROTOCOL_VERSION)),
+    )?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported UAA helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no UAA helper version".into()),
+    }
+}
+
+pub(crate) fn store_uaa_credential(scope: &str, value: &str) -> Result<(), String> {
+    crate::cli::uaa_credential::parse_scope(scope)?;
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(crate::cli::uaa_credential::SECRET_NAME, value);
+    }
+    xpc_request(
+        "uaa-save",
+        Some((b"uaa_scope\0", scope)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_uaa_credential(scope: &str, account: &str) -> Result<(), String> {
+    crate::cli::uaa_credential::parse_scope(scope)?;
+    if account != crate::cli::uaa_credential::SECRET_NAME {
+        return Err("invalid UAA Secret Name".into());
+    }
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(dir.join(account)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("failed to delete test UAA credential: {error}")),
+        };
+    }
+    xpc_request(
+        "uaa-delete",
+        Some((b"uaa_scope\0", scope)),
         None,
         None,
         None,

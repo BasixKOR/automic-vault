@@ -27,6 +27,23 @@ public func redactedAuthorizationArguments(tool: String, arguments: [String]) ->
             continue
         }
 
+        if ["uaa", "uaa-cli"].contains(tool), isUAASensitiveValueFlag(argument) {
+            result.append(argument)
+            if index + 1 < arguments.count {
+                result.append(authorizationRedaction)
+                index += 2
+            } else {
+                index += 1
+            }
+            continue
+        }
+
+        if ["uaa", "uaa-cli"].contains(tool), let redacted = redactingInlineUAAFlag(argument) {
+            result.append(redacted)
+            index += 1
+            continue
+        }
+
         if tool == "curl", ["-u", "--user"].contains(argument.lowercased()) {
             result.append(argument)
             if index + 1 < arguments.count {
@@ -77,6 +94,23 @@ public func redactedAuthorizationArguments(tool: String, arguments: [String]) ->
     }
 
     return result
+}
+
+private func isUAASensitiveValueFlag(_ argument: String) -> Bool {
+    ["-s", "-p", "--client_secret", "--old_secret", "--secret", "--password"]
+        .contains(argument.lowercased())
+}
+
+private func redactingInlineUAAFlag(_ argument: String) -> String? {
+    let lowercased = argument.lowercased()
+    for flag in ["--client_secret=", "--old_secret=", "--secret=", "--password="]
+    where lowercased.hasPrefix(flag) {
+        return "\(argument.prefix(flag.count))\(authorizationRedaction)"
+    }
+    if (lowercased.hasPrefix("-s") || lowercased.hasPrefix("-p")) && argument.count > 2 {
+        return "\(argument.prefix(2))\(authorizationRedaction)"
+    }
+    return nil
 }
 
 private let sensitiveValueFlags: Set<String> = [

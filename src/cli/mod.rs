@@ -20,6 +20,7 @@ mod save;
 mod scan;
 mod shell_secrets;
 pub(crate) mod terraform_credential;
+pub(crate) mod uaa_credential;
 
 use crate::isotopes::hardeners;
 
@@ -50,7 +51,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 34;
+pub(crate) const INSTALL_REVISION: u32 = 35;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -389,6 +390,10 @@ where
                 let result = hardeners::ordercli::run(stdout, yes);
                 return finish_hardening(result, "ordercli", stdout, stderr);
             }
+            if target == "uaa" || target == "uaa-cli" {
+                let result = hardeners::uaa_cli::run(stdout, yes);
+                return finish_hardening(result, "uaa-cli", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -443,6 +448,7 @@ where
         Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
         Some("goat-credential") => goat_credential::run(rest, stdout, stderr),
         Some("ordercli-credential") => ordercli_credential::run(rest, stdout, stderr),
+        Some("uaa-credential") => uaa_credential::run(rest, stdout, stderr),
         Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),

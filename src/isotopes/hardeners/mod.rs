@@ -16,6 +16,7 @@ pub(crate) mod sudo;
 pub(crate) mod supabase;
 pub(crate) mod terraform;
 pub(crate) mod terraform_release;
+pub(crate) mod uaa_cli;
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -244,6 +245,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(docker, "docker"),
         gated_hardener!(goat, "goat"),
         gated_hardener!(ordercli, "ordercli"),
+        gated_hardener!(uaa_cli, "uaa-cli"),
         gated_hardener!(railway, "railway"),
         gated_hardener!(oxide_cli, "oxide-cli"),
         gated_hardener!(homebrew, "brew"),
@@ -275,6 +277,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         docker::secret_gate(),
         goat::secret_gate(),
         ordercli::secret_gate(),
+        uaa_cli::secret_gate(),
         railway::secret_gate(),
         oxide_cli::secret_gate(),
         homebrew::secret_gate(),
