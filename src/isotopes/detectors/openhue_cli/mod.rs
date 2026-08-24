@@ -44,12 +44,12 @@ fn parse_key_line(line: &str) -> Option<String> {
         return None;
     }
     let (key, value) = trimmed.split_once(':')?;
-    if key.trim() != "Key" {
+    if !key.trim().eq_ignore_ascii_case("key") {
         return None;
     }
 
     let value = unquote_yaml_scalar(value.trim());
-    if value.is_empty() {
+    if value.is_empty() || value == "@av" {
         None
     } else {
         Some(value.to_string())
@@ -84,6 +84,10 @@ mod tests {
     fn ignores_comments_and_empty_keys() {
         assert_eq!(
             openhue_application_key("# Key: secret\nBridge: 192.0.2.10\nKey: \"\"\n"),
+            None
+        );
+        assert_eq!(
+            openhue_application_key("bridge: 192.0.2.10\nkey: '@av'\n"),
             None
         );
     }

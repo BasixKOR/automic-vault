@@ -41,6 +41,11 @@ import Testing
     #expect(ApprovalServiceOperation.ordercliDelete.rawValue == "ordercli-delete")
 }
 
+@Test func openhueCredentialsHaveDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.openhueGet.rawValue == "openhue-get")
+    #expect(ApprovalServiceOperation.openhueSave.rawValue == "openhue-save")
+}
+
 @Test func uaaCredentialsHaveDedicatedWireOperations() {
     #expect(ApprovalServiceOperation.uaaGet.rawValue == "uaa-get")
     #expect(ApprovalServiceOperation.uaaSave.rawValue == "uaa-save")

@@ -47,6 +47,7 @@ struct ApprovalRequest {
     oxide_scope: Option<String>,
     goat_scope: Option<String>,
     ordercli_scope: Option<String>,
+    openhue_scope: Option<String>,
     uaa_scope: Option<String>,
     railway_scope: Option<String>,
 }
@@ -340,6 +341,7 @@ fn approval_request(
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     })
@@ -365,6 +367,7 @@ pub(super) fn docker_credential(key: String, server_url: String) -> Result<Strin
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     };
@@ -397,6 +400,7 @@ pub(super) fn terraform_credential(key: String, hostname: String) -> Result<Stri
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     };
@@ -429,6 +433,7 @@ pub(super) fn oxide_credential(key: String, scope: String) -> Result<String, Str
         oxide_scope: Some(scope),
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     };
@@ -461,6 +466,7 @@ pub(super) fn goat_credential(key: String, scope: String) -> Result<String, Stri
         oxide_scope: None,
         goat_scope: Some(scope),
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     };
@@ -493,6 +499,7 @@ pub(super) fn railway_credential(key: String, scope: String) -> Result<String, S
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: Some(scope),
     };
@@ -525,6 +532,7 @@ pub(super) fn ordercli_credential(key: String, scope: String) -> Result<String, 
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: Some(scope),
+        openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
     };
@@ -557,6 +565,7 @@ pub(super) fn uaa_credential(key: String, scope: String) -> Result<String, Strin
         oxide_scope: None,
         goat_scope: None,
         ordercli_scope: None,
+        openhue_scope: None,
         uaa_scope: Some(scope),
         railway_scope: None,
     };
@@ -567,6 +576,39 @@ pub(super) fn uaa_credential(key: String, scope: String) -> Result<String, Strin
     xpc_approve_injection(&request)?
         .remove(&key)
         .ok_or_else(|| format!("Automic Vault returned no UAA credential for {key}"))
+}
+
+pub(super) fn openhue_credential(key: String, scope: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    let request = ApprovalRequest {
+        op: "openhue-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("openhue-cli"),
+        docker_server_url: None,
+        terraform_hostname: None,
+        oxide_scope: None,
+        goat_scope: None,
+        ordercli_scope: None,
+        openhue_scope: Some(scope),
+        uaa_scope: None,
+        railway_scope: None,
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no OpenHue credential for {key}"))
 }
 
 struct VerifiedScript {
@@ -813,6 +855,7 @@ pub(super) fn approve_gpg_signing(
             oxide_scope: None,
             goat_scope: None,
             ordercli_scope: None,
+            openhue_scope: None,
             uaa_scope: None,
             railway_scope: None,
         },
@@ -963,6 +1006,9 @@ fn xpc_approve_request(
         }
         if let Some(scope) = &request.ordercli_scope {
             set_string(message, b"ordercli_scope\0", scope)?;
+        }
+        if let Some(scope) = &request.openhue_scope {
+            set_string(message, b"openhue_scope\0", scope)?;
         }
         if let Some(scope) = &request.uaa_scope {
             set_string(message, b"uaa_scope\0", scope)?;

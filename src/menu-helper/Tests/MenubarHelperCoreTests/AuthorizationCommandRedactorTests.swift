@@ -58,6 +58,13 @@ import Testing
     ) == ["get-password-token", "user", "-p", "<redacted>", "--client_secret=<redacted>"])
 }
 
+@Test func redactsOpenHueApplicationKeyFlags() {
+    #expect(redactedAuthorizationArguments(
+        tool: "openhue-cli",
+        arguments: ["config", "--bridge", "192.0.2.10", "--key=application-key"]
+    ) == ["config", "--bridge", "192.0.2.10", "--key=<redacted>"])
+}
+
 @Test func redactsRecognizableCredentialFormats() {
     let stripeToken = ["sk", "live", "1234567890abcdefghijklmnop"].joined(separator: "_")
     let slackToken = ["xoxb", "1234567890", "abcdefghijklmnop"].joined(separator: "-")

@@ -44,6 +44,27 @@ public func redactedAuthorizationArguments(tool: String, arguments: [String]) ->
             continue
         }
 
+        if ["openhue", "openhue-cli"].contains(tool), ["-k", "--key"].contains(argument.lowercased()) {
+            result.append(argument)
+            if index + 1 < arguments.count {
+                result.append(authorizationRedaction)
+                index += 2
+            } else {
+                index += 1
+            }
+            continue
+        }
+
+        if ["openhue", "openhue-cli"].contains(tool),
+           (argument.lowercased().hasPrefix("--key=")
+               || argument.lowercased().hasPrefix("-k") && argument.count > 2)
+        {
+            let prefix = argument.lowercased().hasPrefix("--key=") ? "--key=" : String(argument.prefix(2))
+            result.append("\(prefix)\(authorizationRedaction)")
+            index += 1
+            continue
+        }
+
         if tool == "curl", ["-u", "--user"].contains(argument.lowercased()) {
             result.append(argument)
             if index + 1 < arguments.count {
