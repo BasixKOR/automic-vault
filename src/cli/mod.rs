@@ -14,6 +14,7 @@ mod list;
 mod open;
 pub(crate) mod oxide_credential;
 mod proxy;
+pub(crate) mod railway_credential;
 mod save;
 mod scan;
 mod shell_secrets;
@@ -48,7 +49,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 32;
+pub(crate) const INSTALL_REVISION: u32 = 33;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -379,6 +380,10 @@ where
                 let result = hardeners::goat::run(stdout, yes);
                 return finish_hardening(result, "goat", stdout, stderr);
             }
+            if target == "railway" {
+                let result = hardeners::railway::run(stdout, yes);
+                return finish_hardening(result, "railway", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -432,6 +437,7 @@ where
         Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
         Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
         Some("goat-credential") => goat_credential::run(rest, stdout, stderr),
+        Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

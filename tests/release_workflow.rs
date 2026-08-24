@@ -3,6 +3,7 @@ const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
 const OPENTOFU_ISOTOPE_SCRIPT: &str = include_str!("../scripts/build-opentofu-isotope.sh");
 const OXIDE_ISOTOPE_SCRIPT: &str = include_str!("../scripts/build-oxide-isotope.sh");
 const GOAT_ISOTOPE_SCRIPT: &str = include_str!("../scripts/build-goat-isotope.sh");
+const RAILWAY_ISOTOPE_SCRIPT: &str = include_str!("../scripts/build-railway-isotope.sh");
 const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
 const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 const BUILD_SCANNER_SCRIPT: &str = include_str!("../scripts/build-scanner.sh");
@@ -27,10 +28,11 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
-    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 5);
+    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 6);
     assert!(RELEASE_WORKFLOW.contains("OpenTofu-Isotope-darwin-arm64.tgz"));
     assert!(RELEASE_WORKFLOW.contains("Oxide-CLI-Isotope-darwin-arm64.tgz"));
     assert!(RELEASE_WORKFLOW.contains("goat-Isotope-darwin-arm64.tgz"));
+    assert!(RELEASE_WORKFLOW.contains("Railway-Isotope-darwin-arm64.tgz"));
     assert!(
         RELEASE_WORKFLOW
             .contains("sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6")
@@ -48,6 +50,11 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(GOAT_ISOTOPE_SCRIPT.contains("GOTOOLCHAIN=\"$TOOLCHAIN\""));
     assert!(GOAT_ISOTOPE_SCRIPT.contains("vcs.revision=$COMMIT"));
     assert!(GOAT_ISOTOPE_SCRIPT.contains("codesign --verify --strict"));
+    assert!(RAILWAY_ISOTOPE_SCRIPT.contains("isotopes/railway.source-sha256"));
+    assert!(RAILWAY_ISOTOPE_SCRIPT.contains("isotopes/railway.commit"));
+    assert!(RAILWAY_ISOTOPE_SCRIPT.contains("patch --batch --fuzz=0"));
+    assert!(RAILWAY_ISOTOPE_SCRIPT.contains("cargo +\"$TOOLCHAIN\" build --locked"));
+    assert!(RAILWAY_ISOTOPE_SCRIPT.contains("codesign --verify --strict"));
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
     assert!(RELEASE_WORKFLOW.contains("SHA256SUMS"));
     assert!(RELEASE_WORKFLOW.contains("RUST_TOOLCHAIN: 1.96.0"));

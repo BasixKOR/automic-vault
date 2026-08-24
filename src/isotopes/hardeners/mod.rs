@@ -9,6 +9,7 @@ pub(crate) mod homebrew;
 pub(crate) mod isotope;
 mod migrations;
 pub(crate) mod oxide_cli;
+pub(crate) mod railway;
 pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
@@ -213,6 +214,59 @@ pub(crate) fn executable(path: &Path) -> bool {
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
+pub(crate) struct ConfigRewrite<'a> {
+    pub(crate) path: &'a Path,
+    pub(crate) existed: bool,
+    pub(crate) original: &'a str,
+    pub(crate) replacement: &'a str,
+}
+
+pub(crate) fn rewrite_configs_with_rollback(
+    rewrites: &[ConfigRewrite<'_>],
+    mut write: impl FnMut(&Path, &str) -> Result<(), String>,
+    mut remove: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut attempted = Vec::new();
+    for rewrite in rewrites {
+        attempted.push(rewrite);
+        if let Err(error) = write(rewrite.path, rewrite.replacement) {
+            return match restore_config_rewrites(&attempted, &mut write, &mut remove) {
+                Ok(()) => Err(format!(
+                    "config migration failed and was rolled back: {error}"
+                )),
+                Err(rollback) => Err(format!(
+                    "config migration failed ({error}); rollback also failed: {rollback}"
+                )),
+            };
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn restore_config_rewrites(
+    rewrites: &[&ConfigRewrite<'_>],
+    mut write: impl FnMut(&Path, &str) -> Result<(), String>,
+    mut remove: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let errors = rewrites
+        .iter()
+        .rev()
+        .filter_map(|rewrite| {
+            let result = if rewrite.existed {
+                write(rewrite.path, rewrite.original)
+            } else {
+                remove(rewrite.path)
+            };
+            result.err()
+        })
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
 macro_rules! gated_hardener {
     ($module:ident, $name:literal) => {
         HardenerMetadata {
@@ -241,6 +295,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         ungated_hardener!(codex, "codex"),
         gated_hardener!(docker, "docker"),
         gated_hardener!(goat, "goat"),
+        gated_hardener!(railway, "railway"),
         gated_hardener!(oxide_cli, "oxide-cli"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
@@ -270,6 +325,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         aws_cli::secret_gate(),
         docker::secret_gate(),
         goat::secret_gate(),
+        railway::secret_gate(),
         oxide_cli::secret_gate(),
         homebrew::secret_gate(),
         gh_cli::secret_gate(),
@@ -306,6 +362,10 @@ fn gpg_signing_gate() -> SecretGateDescriptor {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
     #[test]
     fn secret_gate_notices_match_the_policy_defaults() {
         let mut aws = Vec::new();
@@ -321,5 +381,53 @@ mod tests {
             String::from_utf8(brew).unwrap(),
             "\n◇ `brew` defaults to Read & Update, adjust this in the app: `av open --secret-gate brew`\n"
         );
+    }
+
+    #[test]
+    fn config_rewrites_restore_every_attempted_path_after_failure() {
+        let first = PathBuf::from("first");
+        let second = PathBuf::from("second");
+        let files = RefCell::new(BTreeMap::from([
+            (first.clone(), "one".to_string()),
+            (second.clone(), "two".to_string()),
+        ]));
+        let writes = Cell::new(0);
+        let rewrites = [
+            super::ConfigRewrite {
+                path: &first,
+                existed: true,
+                original: "one",
+                replacement: "ONE",
+            },
+            super::ConfigRewrite {
+                path: &second,
+                existed: true,
+                original: "two",
+                replacement: "TWO",
+            },
+        ];
+        let result = super::rewrite_configs_with_rollback(
+            &rewrites,
+            |path, contents| {
+                writes.set(writes.get() + 1);
+                if writes.get() == 2 {
+                    files
+                        .borrow_mut()
+                        .insert(path.to_path_buf(), contents.into());
+                    return Err("injected failure after replacement".into());
+                }
+                files
+                    .borrow_mut()
+                    .insert(path.to_path_buf(), contents.into());
+                Ok(())
+            },
+            |path: &Path| {
+                files.borrow_mut().remove(path);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(files.borrow().get(&first).unwrap(), "one");
+        assert_eq!(files.borrow().get(&second).unwrap(), "two");
     }
 }

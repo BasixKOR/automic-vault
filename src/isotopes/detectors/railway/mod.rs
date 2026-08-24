@@ -49,15 +49,28 @@ fn read_to_string(path: &std::path::Path) -> Result<String, String> {
 }
 
 fn config_has_secrets(contents: &str) -> bool {
-    [
-        "\"token\"",
-        "\"accessToken\"",
-        "\"refreshToken\"",
-        "\"access_token\"",
-        "\"refresh_token\"",
-    ]
-    .iter()
-    .any(|needle| contents.contains(needle))
+    const KEYS: [&str; 5] = [
+        "token",
+        "accessToken",
+        "refreshToken",
+        "access_token",
+        "refresh_token",
+    ];
+    let Ok(config) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return KEYS
+            .iter()
+            .any(|key| contents.contains(&format!(r#""{key}""#)));
+    };
+    config
+        .get("user")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|user| {
+            KEYS.iter().any(|key| {
+                user.get(*key)
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|value| !value.is_empty() && value != "@av")
+            })
+        })
 }
 
 #[cfg(test)]
@@ -80,6 +93,14 @@ mod tests {
         assert!(!config_has_secrets(
             r#"{"projects":{"/tmp/app":{"project":"p","environment":"e"}},"user":{}}"#
         ));
+    }
+
+    #[test]
+    fn ignores_isotope_markers_and_metadata() {
+        assert!(!config_has_secrets(
+            r#"{"user":{"accessToken":"@av","refreshToken":"@av","tokenExpiresAt":42}}"#
+        ));
+        assert!(!config_has_secrets(r#"{"token":"project-id"}"#));
     }
 
     #[test]

@@ -1575,7 +1575,7 @@ mod tests {
                     assert!(
                         matches!(
                             hardener.name,
-                            "gh" | "goat" | "oxide-cli" | "stripe" | "supabase"
+                            "gh" | "goat" | "railway" | "oxide-cli" | "stripe" | "supabase"
                         ),
                         "{}:{} needs explicit target-only Doctor coverage review",
                         hardener.name,
