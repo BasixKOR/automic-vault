@@ -81,7 +81,7 @@ pub(crate) fn normalize_profile(profile: &str) -> Result<String, String> {
 }
 
 pub(crate) fn normalize_host(host: &str) -> Result<String, String> {
-    let url = Url::parse(host).map_err(|_| "invalid Oxide host URL".to_string())?;
+    let mut url = Url::parse(host).map_err(|_| "invalid Oxide host URL".to_string())?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -91,6 +91,13 @@ pub(crate) fn normalize_host(host: &str) -> Result<String, String> {
         || url.fragment().is_some()
     {
         return Err("Oxide host must contain only an HTTP(S) origin".into());
+    }
+    if matches!(
+        (url.scheme(), url.port()),
+        ("https", Some(443)) | ("http", Some(80))
+    ) {
+        url.set_port(None)
+            .map_err(|()| "invalid Oxide host URL".to_string())?;
     }
     Ok(url
         .as_str()
@@ -170,6 +177,18 @@ mod tests {
         assert_eq!(
             normalize_host("https://OXIDE.example/").unwrap(),
             "https://oxide.example"
+        );
+        assert_eq!(
+            normalize_host("https://oxide.example:443/").unwrap(),
+            "https://oxide.example"
+        );
+        assert_eq!(
+            normalize_host("http://oxide.example:80/").unwrap(),
+            "http://oxide.example"
+        );
+        assert_eq!(
+            normalize_host("https://oxide.example:8443/").unwrap(),
+            "https://oxide.example:8443"
         );
         assert!(normalize_host("https://oxide.example/path").is_err());
         assert_ne!(

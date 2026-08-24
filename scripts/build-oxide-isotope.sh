@@ -36,7 +36,7 @@ git -C "$WORK/source" fetch --quiet --depth 1 origin "$COMMIT"
 git -C "$WORK/source" update-ref HEAD "$COMMIT"
 git -C "$WORK/source" read-tree "$COMMIT"
 git -C "$WORK/source" diff --exit-code
-[[ -z "$(git -C "$WORK/source" ls-files --others --exclude-standard)" ]]
+[[ -z "$(git -C "$WORK/source" ls-files --others)" ]]
 patch --batch --fuzz=0 -d "$WORK/source" -p1 <"$ROOT/isotopes/oxide.patch"
 
 (cd "$WORK/source" && cargo +"$TOOLCHAIN" build --locked --release --bin oxide)
