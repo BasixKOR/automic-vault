@@ -7277,7 +7277,8 @@ private func parseGoatCredential(_ value: String) -> String? {
           Set(object.keys) == Set(["password", "access_token", "session_token"]),
           ["password", "access_token", "session_token"].allSatisfy({ key in
               guard let field = object[key] as? String else { return false }
-              return !field.isEmpty && !field.unicodeScalars.contains(where: { $0.value == 0 })
+              return !field.isEmpty && field != "@av"
+                  && !field.unicodeScalars.contains(where: { $0.value == 0 })
           })
     else { return nil }
     return value
@@ -11387,6 +11388,9 @@ private func runGoatCredentialSelfCheck() -> Int32 {
           parseGoatCredential(
               #"{"password":"pass","access_token":"access","session_token":"refresh"}"#
           ) != nil,
+          parseGoatCredential(
+              #"{"password":"@av","access_token":"access","session_token":"refresh"}"#
+          ) == nil,
           parseGoatCredential(#"{"password":"pass","access_token":"access"}"#) == nil
     else { return 1 }
     return 0

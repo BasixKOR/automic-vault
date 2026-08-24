@@ -325,7 +325,12 @@ pub(crate) fn ensure_goat_helper_ready() -> Result<(), String> {
         None,
         None,
         Some((b"requested_version\0", GOAT_HELPER_PROTOCOL_VERSION)),
-    )?;
+    )
+    .map_err(|error| {
+        format!(
+            "goat credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
     match reply.value.as_deref() {
         Some("1") => Ok(()),
         Some(version) => Err(format!(
