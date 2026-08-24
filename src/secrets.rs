@@ -4,6 +4,7 @@ const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
+const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 
@@ -409,6 +410,65 @@ pub(crate) fn ensure_railway_helper_ready() -> Result<(), String> {
     }
 }
 
+pub(crate) fn ensure_ordercli_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "ordercli-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", ORDERCLI_HELPER_PROTOCOL_VERSION)),
+    )?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported ordercli helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no ordercli helper version".into()),
+    }
+}
+
+pub(crate) fn store_ordercli_credential(scope: &str, value: &str) -> Result<(), String> {
+    crate::cli::ordercli_credential::parse_scope(scope)?;
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(crate::cli::ordercli_credential::SECRET_NAME, value);
+    }
+    xpc_request(
+        "ordercli-save",
+        Some((b"ordercli_scope\0", scope)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_ordercli_credential(scope: &str, account: &str) -> Result<(), String> {
+    crate::cli::ordercli_credential::parse_scope(scope)?;
+    if account != crate::cli::ordercli_credential::SECRET_NAME {
+        return Err("invalid ordercli Secret Name".into());
+    }
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(dir.join(account)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!(
+                "failed to delete test ordercli credential: {error}"
+            )),
+        };
+    }
+    xpc_request(
+        "ordercli-delete",
+        Some((b"ordercli_scope\0", scope)),
+        None,
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
 pub(crate) fn store_railway_credential(scope: &str, value: &str) -> Result<(), String> {
     let (environment, host) = crate::cli::railway_credential::parse_scope(scope)?;
     let account = crate::cli::railway_credential::secret_name(&environment, &host);
@@ -662,6 +722,8 @@ fn xpc_operation_requires_cwd(operation: &str) -> bool {
             | "goat-delete"
             | "oxide-save"
             | "oxide-delete"
+            | "ordercli-save"
+            | "ordercli-delete"
             | "railway-save"
             | "railway-delete"
             | "terraform-save"
@@ -697,6 +759,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("docker-delete"));
         assert!(xpc_operation_requires_cwd("goat-save"));
         assert!(xpc_operation_requires_cwd("oxide-save"));
+        assert!(xpc_operation_requires_cwd("ordercli-save"));
         assert!(xpc_operation_requires_cwd("railway-save"));
         assert!(xpc_operation_requires_cwd("terraform-save"));
         assert!(!xpc_operation_requires_cwd("bless"));

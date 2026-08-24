@@ -10,14 +10,14 @@
 - `~/Library/Application Support/foodcli/config.json`
 - `~/Library/Application Support/foodoracli/config.json`
 
-## Why This is not Yet Hardened
+## Hardener Coverage
 
-The retired `ordercli` hardener moved the detected secret to the macOS Keychain,
-then recreated `~/Library/Application Support/ordercli/config.json` inside a
-temporary directory for each run. We no longer consider a temporary plaintext
-file a sufficient security boundary, so this detector remains report-only.
+Run `sudo av harden ordercli` to install the signed ordercli Isotope and move
+the supported Foodora session bundle behind the Automic Vault XPC service. The
+config retains only provider metadata and `@av` custody markers; login, refresh,
+cookie import, MFA, and logout update custody without writing secrets to disk.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
+Deliveroo config does not contain the detected credential fields and remains
+unchanged.
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+[Learn about Hardeners](https://github.com/automic-vault/automic-vault#hardeners).
