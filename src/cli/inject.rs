@@ -611,6 +611,40 @@ pub(super) fn openhue_credential(key: String, scope: String) -> Result<String, S
         .ok_or_else(|| format!("Automic Vault returned no OpenHue credential for {key}"))
 }
 
+pub(super) fn plumber_credential(key: String, scope: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    crate::cli::plumber_credential::parse_scope(&scope)?;
+    let request = ApprovalRequest {
+        op: "plumber-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("plumber"),
+        docker_server_url: None,
+        terraform_hostname: None,
+        oxide_scope: None,
+        goat_scope: None,
+        ordercli_scope: None,
+        openhue_scope: None,
+        uaa_scope: None,
+        railway_scope: None,
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no Plumber config for {key}"))
+}
+
 struct VerifiedScript {
     file: File,
     path: PathBuf,

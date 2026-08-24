@@ -83,11 +83,14 @@ mod tests {
     }
 
     #[test]
-    fn ignores_empty_or_missing_secret_values() {
+    fn ignores_empty_non_secret_configs_and_the_marker() {
         assert!(!config_contains_secret(
             r#"{"token":"","connections":{"kafka":{"address":"localhost:9092"}}}"#
         ));
         assert!(!config_contains_secret(r#"{"connections":{}}"#));
+        assert!(!config_contains_secret(
+            r#"{"automic_vault":"plumber-config-v1"}"#
+        ));
     }
 
     #[test]

@@ -6,6 +6,7 @@ const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
 const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
 const OPENHUE_HELPER_PROTOCOL_VERSION: u64 = 1;
+const PLUMBER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 const UAA_HELPER_PROTOCOL_VERSION: u64 = 1;
@@ -564,6 +565,35 @@ pub(crate) fn store_openhue_credential(scope: &str, value: &str) -> Result<(), S
     .map(|_| ())
 }
 
+pub(crate) fn ensure_plumber_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "plumber-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", PLUMBER_HELPER_PROTOCOL_VERSION)),
+    )?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported Plumber helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no Plumber helper version".into()),
+    }
+}
+
+pub(crate) fn store_plumber_credential(scope: &str, value: &str) -> Result<(), String> {
+    crate::cli::plumber_credential::parse_scope(scope)?;
+    crate::cli::plumber_credential::parse_config(value)?;
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(crate::cli::plumber_credential::SECRET_NAME, value);
+    }
+    xpc_request("plumber-save", None, Some((b"value\0", value)), None, None).map(|_| ())
+}
+
 pub(crate) fn store_railway_credential(scope: &str, value: &str) -> Result<(), String> {
     let (environment, host) = crate::cli::railway_credential::parse_scope(scope)?;
     let account = crate::cli::railway_credential::secret_name(&environment, &host);
@@ -820,6 +850,7 @@ fn xpc_operation_requires_cwd(operation: &str) -> bool {
             | "ordercli-save"
             | "ordercli-delete"
             | "openhue-save"
+            | "plumber-save"
             | "railway-save"
             | "railway-delete"
             | "terraform-save"
@@ -859,6 +890,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("oxide-save"));
         assert!(xpc_operation_requires_cwd("ordercli-save"));
         assert!(xpc_operation_requires_cwd("openhue-save"));
+        assert!(xpc_operation_requires_cwd("plumber-save"));
         assert!(xpc_operation_requires_cwd("railway-save"));
         assert!(xpc_operation_requires_cwd("terraform-save"));
         assert!(xpc_operation_requires_cwd("uaa-save"));

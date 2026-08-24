@@ -2,20 +2,24 @@
 
 ## Trigger Conditions
 
-- Plumber config contains plaintext local credentials.
+- Plumber local config contains a non-empty plaintext credential field.
 
 ## Sensitive Files
 
 - `~/.batchsh/plumber.json`
 
-## Why This is not Yet Hardened
+## Remediation
 
-The retired `plumber` hardener moved the detected secret to the macOS Keychain,
-then recreated `~/.batchsh/plumber.json` inside a temporary directory for each
-run. We no longer consider a temporary plaintext file a sufficient security
-boundary, so this detector remains report-only.
+Run `av harden plumber`. The hardener installs the signed Plumber Isotope and
+migrates the complete local config into Automic Vault custody. If
+`~/.batchsh/plumber.json` exists, it is replaced with a fixed, non-secret marker.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
+Upstream Plumber has no credential-helper boundary: local connection and relay
+credentials share one JSON document with non-secret configuration. The Isotope
+therefore patches local config reads and writes to use authenticated XPC
+operations, and the hardener moves that complete local document into custody.
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+The Detector covers the known local token, password, secret, credential, and
+client-key fields under `~/.batchsh/plumber.json`. Cluster-mode KV storage is
+unchanged and remains outside both this Detector and hardener; backups and other
+users' configs are also residual gaps.

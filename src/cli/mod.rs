@@ -15,6 +15,7 @@ mod open;
 pub(crate) mod openhue_credential;
 pub(crate) mod ordercli_credential;
 pub(crate) mod oxide_credential;
+pub(crate) mod plumber_credential;
 mod proxy;
 pub(crate) mod railway_credential;
 mod save;
@@ -399,6 +400,10 @@ where
                 let result = hardeners::openhue_cli::run(stdout, yes);
                 return finish_hardening(result, "openhue-cli", stdout, stderr);
             }
+            if target == "plumber" {
+                let result = hardeners::plumber::run(stdout, yes);
+                return finish_hardening(result, "plumber", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -454,6 +459,7 @@ where
         Some("goat-credential") => goat_credential::run(rest, stdout, stderr),
         Some("ordercli-credential") => ordercli_credential::run(rest, stdout, stderr),
         Some("openhue-credential") => openhue_credential::run(rest, stdout, stderr),
+        Some("plumber-credential") => plumber_credential::run(rest, stdout, stderr),
         Some("uaa-credential") => uaa_credential::run(rest, stdout, stderr),
         Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
