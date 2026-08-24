@@ -8854,7 +8854,9 @@ private struct TemporaryAccessGrantStripView: View {
                 .foregroundStyle(.orange)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .accessibilityLabel("Warning: Temporary Write Access is active")
+                .accessibilityLabel(grants.allSatisfy { $0.isCountdownSuspended }
+                    ? "Temporary Write Access is suspended"
+                    : "Warning: Temporary Write Access is active")
 
             Divider()
 
