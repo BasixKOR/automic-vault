@@ -241,9 +241,8 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         defer { lock.unlock() }
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         guard var grant = grants[id] else { return nil }
-        guard grant.suspendedRemaining == nil ? suspended : !suspended else {
-            return grant.snapshot
-        }
+        let wasSuspended = grant.suspendedRemaining != nil
+        guard wasSuspended != suspended else { return grant.snapshot }
         if suspended {
             grant.suspendedRemaining = grant.remaining(
                 wallNow: wallNow,
