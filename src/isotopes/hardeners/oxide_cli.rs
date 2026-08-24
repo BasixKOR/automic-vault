@@ -102,11 +102,8 @@ pub(crate) fn detect() -> HardenerDetection {
     let config = config_path().ok();
     let config_valid = config.as_deref().is_some_and(|path| {
         read_config(path).is_ok_and(|contents| {
-            sanitize_config(&contents).is_ok_and(|(sanitized, credentials, managed)| {
-                credentials.is_empty()
-                    && sanitized == contents
-                    && crate::secrets::list_global_secret_names()
-                        .is_ok_and(|names| managed.iter().all(|name| names.contains(name)))
+            sanitize_config(&contents).is_ok_and(|(sanitized, credentials, _)| {
+                credentials.is_empty() && sanitized == contents
             })
         })
     });
@@ -545,15 +542,19 @@ time_expires = "tomorrow"
         let hardened = fs::read_to_string(&config).unwrap();
         assert!(hardened.contains("token = \"@av\""));
         assert!(!hardened.contains("secret"));
-        assert_eq!(
-            fs::read_to_string(keychain.join(crate::cli::oxide_credential::secret_name(
-                "prod",
-                "https://oxide.example"
-            )))
-            .unwrap(),
-            "secret"
-        );
+        let secret = keychain.join(crate::cli::oxide_credential::secret_name(
+            "prod",
+            "https://oxide.example",
+        ));
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "secret");
         assert!(detect().hardened);
+        fs::remove_file(secret).unwrap();
+        assert!(detect().hardened);
+        assert!(
+            run(&mut Vec::new(), true)
+                .unwrap_err()
+                .contains("credential marker has no matching Secret Value")
+        );
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_OXIDE_CONFIG");
             std::env::remove_var("AUTOMIC_VAULT_TEST_OXIDE_TARGET");
