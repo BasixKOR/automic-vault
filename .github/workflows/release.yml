@@ -232,6 +232,10 @@ jobs:
         shell: bash
         run: scripts/build-openhue-cli-isotope.sh "$ASSET_DIR"
 
+      - name: Build signed Plumber Isotope
+        shell: bash
+        run: scripts/build-plumber-isotope.sh "$ASSET_DIR"
+
       - name: Stage release inputs
         shell: bash
         run: |
@@ -267,7 +271,8 @@ jobs:
               Railway-Isotope-darwin-arm64.tgz \
               ordercli-Isotope-darwin-arm64.tgz \
               UAA-CLI-Isotope-darwin-arm64.tgz \
-              OpenHue-CLI-Isotope-darwin-arm64.tgz >SHA256SUMS
+              OpenHue-CLI-Isotope-darwin-arm64.tgz \
+              Plumber-Isotope-darwin-arm64.tgz >SHA256SUMS
           )
 
       - name: Attest build provenance
@@ -310,6 +315,11 @@ jobs:
         with:
           subject-path: ${{ env.ASSET_DIR }}/OpenHue-CLI-Isotope-darwin-arm64.tgz
 
+      - name: Attest Plumber Isotope provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: ${{ env.ASSET_DIR }}/Plumber-Isotope-darwin-arm64.tgz
+
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
@@ -332,6 +342,7 @@ jobs:
             "$ASSET_DIR/ordercli-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/UAA-CLI-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/OpenHue-CLI-Isotope-darwin-arm64.tgz" \
+            "$ASSET_DIR/Plumber-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

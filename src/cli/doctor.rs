@@ -1578,6 +1578,7 @@ mod tests {
                             "gh" | "goat"
                                 | "ordercli"
                                 | "openhue-cli"
+                                | "plumber"
                                 | "uaa-cli"
                                 | "railway"
                                 | "oxide-cli"

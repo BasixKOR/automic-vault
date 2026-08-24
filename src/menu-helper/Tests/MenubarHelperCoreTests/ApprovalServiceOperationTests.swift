@@ -46,6 +46,11 @@ import Testing
     #expect(ApprovalServiceOperation.openhueSave.rawValue == "openhue-save")
 }
 
+@Test func plumberCredentialsHaveDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.plumberGet.rawValue == "plumber-get")
+    #expect(ApprovalServiceOperation.plumberSave.rawValue == "plumber-save")
+}
+
 @Test func uaaCredentialsHaveDedicatedWireOperations() {
     #expect(ApprovalServiceOperation.uaaGet.rawValue == "uaa-get")
     #expect(ApprovalServiceOperation.uaaSave.rawValue == "uaa-save")

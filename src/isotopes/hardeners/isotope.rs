@@ -20,6 +20,7 @@ const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
 const GOAT_ASSET: &str = "goat-Isotope-darwin-arm64.tgz";
 const ORDERCLI_ASSET: &str = "ordercli-Isotope-darwin-arm64.tgz";
 const OPENHUE_ASSET: &str = "OpenHue-CLI-Isotope-darwin-arm64.tgz";
+const PLUMBER_ASSET: &str = "Plumber-Isotope-darwin-arm64.tgz";
 const UAA_ASSET: &str = "UAA-CLI-Isotope-darwin-arm64.tgz";
 const RAILWAY_ASSET: &str = "Railway-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
@@ -113,6 +114,15 @@ pub(crate) const UAA: Spec = Spec {
     binaries: &["uaa"],
     test_path: "AUTOMIC_VAULT_TEST_UAA_CLI_TARGET",
     release_asset: Some(UAA_ASSET),
+};
+pub(crate) const PLUMBER: Spec = Spec {
+    hardener: "plumber",
+    formula: "plumber",
+    repository: "automic-vault",
+    primary: "plumber",
+    binaries: &["plumber"],
+    test_path: "AUTOMIC_VAULT_TEST_PLUMBER_TARGET",
+    release_asset: Some(PLUMBER_ASSET),
 };
 
 #[derive(Clone, Copy)]
@@ -352,6 +362,9 @@ pub(crate) fn install_privileged(
         }
         if spec.hardener == UAA.hardener {
             super::uaa_cli::verify_target(&stage)?;
+        }
+        if spec.hardener == PLUMBER.hardener {
+            super::plumber::verify_target(&stage)?;
         }
         staged.push((stage, bin_dir.join(binary)));
     }
@@ -750,6 +763,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     if spec.hardener == UAA.hardener {
         return super::uaa_cli::verify_target(path).is_ok();
     }
+    if spec.hardener == PLUMBER.hardener {
+        return super::plumber::verify_target(path).is_ok();
+    }
     true
 }
 
@@ -762,7 +778,7 @@ fn formula_url(spec: Spec) -> String {
 
 fn spec(hardener: &str) -> Option<Spec> {
     [
-        GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI,
+        GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI, OPENHUE, UAA, PLUMBER,
     ]
     .into_iter()
     .find(|spec| spec.hardener == hardener)
@@ -907,6 +923,18 @@ mod tests {
     #[test]
     fn isotope_downloads_require_https() {
         assert!(get("http://example.com/isotope.tgz", 1).is_err());
+    }
+
+    #[test]
+    fn every_direct_isotope_is_registered_for_privileged_installation() {
+        for expected in [
+            OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI, OPENHUE, UAA, PLUMBER,
+        ] {
+            assert_eq!(
+                spec(expected.hardener).map(|value| value.hardener),
+                Some(expected.hardener)
+            );
+        }
     }
 
     #[test]
