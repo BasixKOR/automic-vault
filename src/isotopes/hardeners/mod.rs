@@ -215,6 +215,49 @@ pub(crate) fn executable(path: &Path) -> bool {
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
+pub(crate) struct ConfigRewrite<'a> {
+    pub(crate) path: &'a Path,
+    pub(crate) existed: bool,
+    pub(crate) original: &'a str,
+    pub(crate) replacement: &'a str,
+}
+
+pub(crate) fn rewrite_configs_with_rollback(
+    rewrites: &[ConfigRewrite<'_>],
+    mut write: impl FnMut(&Path, &str) -> Result<(), String>,
+    mut remove: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut attempted = Vec::new();
+    for rewrite in rewrites {
+        attempted.push(rewrite);
+        if let Err(error) = write(rewrite.path, rewrite.replacement) {
+            let rollback_errors = attempted
+                .into_iter()
+                .rev()
+                .filter_map(|rewrite| {
+                    let result = if rewrite.existed {
+                        write(rewrite.path, rewrite.original)
+                    } else {
+                        remove(rewrite.path)
+                    };
+                    result.err()
+                })
+                .collect::<Vec<_>>();
+            return if rollback_errors.is_empty() {
+                Err(format!(
+                    "config migration failed and was rolled back: {error}"
+                ))
+            } else {
+                Err(format!(
+                    "config migration failed ({error}); rollback also failed: {}",
+                    rollback_errors.join("; ")
+                ))
+            };
+        }
+    }
+    Ok(())
+}
+
 macro_rules! gated_hardener {
     ($module:ident, $name:literal) => {
         HardenerMetadata {
@@ -312,6 +355,10 @@ fn gpg_signing_gate() -> SecretGateDescriptor {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
     #[test]
     fn secret_gate_notices_match_the_policy_defaults() {
         let mut aws = Vec::new();
@@ -327,5 +374,53 @@ mod tests {
             String::from_utf8(brew).unwrap(),
             "\n◇ `brew` defaults to Read & Update, adjust this in the app: `av open --secret-gate brew`\n"
         );
+    }
+
+    #[test]
+    fn config_rewrites_restore_every_attempted_path_after_failure() {
+        let first = PathBuf::from("first");
+        let second = PathBuf::from("second");
+        let files = RefCell::new(BTreeMap::from([
+            (first.clone(), "one".to_string()),
+            (second.clone(), "two".to_string()),
+        ]));
+        let writes = Cell::new(0);
+        let rewrites = [
+            super::ConfigRewrite {
+                path: &first,
+                existed: true,
+                original: "one",
+                replacement: "ONE",
+            },
+            super::ConfigRewrite {
+                path: &second,
+                existed: true,
+                original: "two",
+                replacement: "TWO",
+            },
+        ];
+        let result = super::rewrite_configs_with_rollback(
+            &rewrites,
+            |path, contents| {
+                writes.set(writes.get() + 1);
+                if writes.get() == 2 {
+                    files
+                        .borrow_mut()
+                        .insert(path.to_path_buf(), contents.into());
+                    return Err("injected failure after replacement".into());
+                }
+                files
+                    .borrow_mut()
+                    .insert(path.to_path_buf(), contents.into());
+                Ok(())
+            },
+            |path: &Path| {
+                files.borrow_mut().remove(path);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(files.borrow().get(&first).unwrap(), "one");
+        assert_eq!(files.borrow().get(&second).unwrap(), "two");
     }
 }
