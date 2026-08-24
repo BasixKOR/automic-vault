@@ -26,8 +26,9 @@ Policies bind a Gate and Verified Launcher. Approval binds one complete request 
 
 Temporary Access Grants bind one Tool-specific Authorization Gate, one Verified
 Launcher and accepted runtime posture, and one Agent Task Context for a fixed
-ten-minute lifetime. Agent Task Context narrows matching but is not identity or
-a security boundary.
+ten-minute active-time budget. The user may suspend the countdown, which also
+suspends the grant's authority, and resume with the frozen remainder. Agent Task
+Context narrows matching but is not identity or a security boundary.
 
 Optional Retained Launcher Provenance binds one Authorization Gate, one Verified
 Launcher, and one exact live process execution. It preserves attribution after
@@ -99,12 +100,12 @@ provider and adds no client-controlled identity field to XPC. This label is an
 Agent Task Context: same-user software can forge it, so the live Verified
 Launcher remains the identity boundary.
 
-An eligible live write-request Approval can create a ten-minute Temporary
-Access Grant through an explicit prompt action. The grant is limited to
-Write Access at the exact Tool-specific gate, Launcher designated requirement,
-accepted runtime posture, provider, and task UUID. The Direct Secret Gate,
-Secret mutations, Elevated Secret Application, Secret Disclosure, Unknown
-operations, and unverifiable Launchers are excluded.
+An eligible live write-request Approval can create a Temporary Access Grant
+with ten minutes of active countdown time through an explicit prompt action.
+The grant is limited to Write Access at the exact Tool-specific gate, Launcher
+designated requirement, accepted runtime posture, provider, and task UUID. The
+Direct Secret Gate, Secret mutations, Elevated Secret Application, Secret
+Disclosure, Unknown operations, and unverifiable Launchers are excluded.
 
 The Varlock plugin collects every active, statically named Automic Vault
 resolver before resolution and submits one multi-Secret Authorization Request
@@ -251,11 +252,14 @@ menu shows any available Verified Launcher attribution, Target, and Secret
 Names. Process liveness changes display state only: it grants no authority and
 cannot revoke Secret Values already released.
 
-Grants are memory-only and use both wall-clock and monotonic deadlines. An exact
-duplicate scope is replaced by a newly confirmed ten-minute generation. The
-service revokes every grant on user session inactivity, display sleep, update
-installation, service stop, or app termination. Individual expiry and explicit
-End actions require no authentication.
+Grants are memory-only and running countdowns use both wall-clock and monotonic
+deadlines. Suspending freezes the lesser remaining duration from those clocks
+and makes the grant ineligible to authorize requests. Resuming creates new
+paired deadlines from that frozen remainder. An exact duplicate scope is
+replaced by a newly confirmed, running ten-minute generation. The service
+revokes every grant on user session inactivity, display sleep, update
+installation, service stop, or app termination. Individual expiry, suspension,
+resumption, and explicit End actions require no authentication.
 
 After a successful policy decision, Automic Vault may record Retained Launcher
 Provenance for signed intermediary process executions.
@@ -565,10 +569,11 @@ Launcher Provenance and does not require this setting.
 
 While any Temporary Access Grant exists, a non-activating strip remains visible
 directly below the menu-bar item with every scoped grant, second-accurate
-remaining time, successful-use count, last-use time, and an End action. The menu
-mirrors those actions and the shield turns orange. Automatic-request
-notifications stack below the strip. This continuous presentation is part of
-the temporary escalation's safety model, not a source of authority.
+remaining active time, suspension state, successful-use count, last-use time,
+and End and countdown-toggle actions. The menu mirrors End actions and the shield
+turns orange. Automatic-request notifications stack below the strip. This
+continuous presentation is part of the temporary escalation's safety model, not
+a source of authority.
 
 ## Source of truth
 
