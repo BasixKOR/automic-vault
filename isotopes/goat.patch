@@ -1,0 +1,150 @@
+diff --git i/auth.go w/auth.go
+index aa0f2df..07543eb 100644
+--- i/auth.go
++++ w/auth.go
+@@ -3,0 +4 @@ import (
++	"bytes"
+@@ -7,0 +9 @@ import (
++	"io"
+@@ -9,0 +12,2 @@ import (
++	"os/exec"
++	"path/filepath"
+@@ -20,0 +25,20 @@ var ErrNoAuthSession = errors.New("no auth session found")
++const avCredentialMarker = "@av"
++
++type authSecrets struct {
++	Password     string `json:"password"`
++	AccessToken  string `json:"access_token"`
++	RefreshToken string `json:"session_token"`
++}
++
++func decodeStrictJSON(data []byte, target any) error {
++	decoder := json.NewDecoder(bytes.NewReader(data))
++	decoder.DisallowUnknownFields()
++	if err := decoder.Decode(target); err != nil {
++		return err
++	}
++	if err := decoder.Decode(&struct{}{}); err != io.EOF {
++		return errors.New("JSON contains trailing data")
++	}
++	return nil
++}
++
+@@ -30 +53,0 @@ func persistAuthSession(sess *AuthSession) error {
+-
+@@ -36 +59,2 @@ func persistAuthSession(sess *AuthSession) error {
+-	f, err := os.OpenFile(fPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
++	secrets := authSecrets{sess.Password, sess.AccessToken, sess.RefreshToken}
++	secretBytes, err := json.Marshal(secrets)
+@@ -40 +64,7 @@ func persistAuthSession(sess *AuthSession) error {
+-	defer f.Close()
++	if err := avCredential("store", sess.DID.String(), sess.PDS, secretBytes); err != nil {
++		return err
++	}
++	metadata := *sess
++	metadata.Password = avCredentialMarker
++	metadata.AccessToken = avCredentialMarker
++	metadata.RefreshToken = avCredentialMarker
+@@ -42 +72 @@ func persistAuthSession(sess *AuthSession) error {
+-	authBytes, err := json.MarshalIndent(sess, "", "  ")
++	authBytes, err := json.MarshalIndent(&metadata, "", "  ")
+@@ -46,2 +76,22 @@ func persistAuthSession(sess *AuthSession) error {
+-	_, err = f.Write(authBytes)
+-	return err
++	temporary, err := os.CreateTemp(filepath.Dir(fPath), ".auth-session.json.av-*")
++	if err != nil {
++		return err
++	}
++	temporaryPath := temporary.Name()
++	defer os.Remove(temporaryPath)
++	if err := temporary.Chmod(0600); err != nil {
++		temporary.Close()
++		return err
++	}
++	if _, err := temporary.Write(authBytes); err != nil {
++		temporary.Close()
++		return err
++	}
++	if err := temporary.Sync(); err != nil {
++		temporary.Close()
++		return err
++	}
++	if err := temporary.Close(); err != nil {
++		return err
++	}
++	return os.Rename(temporaryPath, fPath)
+@@ -50 +100 @@ func persistAuthSession(sess *AuthSession) error {
+-func loadAuthSessionFile() (*AuthSession, error) {
++func loadAuthMetadataFile() (*AuthSession, error) {
+@@ -62,2 +112 @@ func loadAuthSessionFile() (*AuthSession, error) {
+-	err = json.Unmarshal(fBytes, &sess)
+-	if err != nil {
++	if err := decodeStrictJSON(fBytes, &sess); err != nil {
+@@ -65,0 +115,3 @@ func loadAuthSessionFile() (*AuthSession, error) {
++	if sess.Password != avCredentialMarker || sess.AccessToken != avCredentialMarker || sess.RefreshToken != avCredentialMarker {
++		return nil, errors.New("plaintext goat credentials are disabled; run `av harden goat`")
++	}
+@@ -68,0 +121,53 @@ func loadAuthSessionFile() (*AuthSession, error) {
++func loadAuthSessionFile() (*AuthSession, error) {
++	sess, err := loadAuthMetadataFile()
++	if err != nil {
++		return nil, err
++	}
++	secretBytes, err := avCredentialOutput("get", sess.DID.String(), sess.PDS, nil)
++	if err != nil {
++		return nil, err
++	}
++	var secrets authSecrets
++	if err := decodeStrictJSON(secretBytes, &secrets); err != nil {
++		return nil, err
++	}
++	if secrets.Password == "" || secrets.AccessToken == "" || secrets.RefreshToken == "" {
++		return nil, errors.New("Automic Vault returned incomplete goat credentials")
++	}
++	sess.Password = secrets.Password
++	sess.AccessToken = secrets.AccessToken
++	sess.RefreshToken = secrets.RefreshToken
++	return sess, nil
++}
++
++func avCredential(action, did, pds string, input []byte) error {
++	_, err := avCredentialOutput(action, did, pds, input)
++	return err
++}
++
++func avCredentialOutput(action, did, pds string, input []byte) ([]byte, error) {
++	cmd := exec.Command("/usr/local/bin/av", "goat-credential", action, did, pds)
++	if input != nil {
++		cmd.Stdin = bytes.NewReader(input)
++	}
++	var output bytes.Buffer
++	output.Grow(4096)
++	cmd.Stdout = &output
++	var stderr bytes.Buffer
++	cmd.Stderr = &stderr
++	if err := cmd.Run(); err != nil {
++		detail := bytes.TrimSpace(stderr.Bytes())
++		if len(detail) > 4096 {
++			detail = detail[:4096]
++		}
++		if len(detail) != 0 {
++			return nil, fmt.Errorf("Automic Vault goat credential helper failed: %w: %s", err, detail)
++		}
++		return nil, fmt.Errorf("Automic Vault goat credential helper failed: %w", err)
++	}
++	if output.Len() > 64*1024 {
++		return nil, errors.New("Automic Vault returned oversized goat credentials")
++	}
++	return bytes.TrimSuffix(output.Bytes(), []byte("\n")), nil
++}
++
+@@ -131 +226,0 @@ func wipeAuthSession() error {
+-
+@@ -136,0 +232,7 @@ func wipeAuthSession() error {
++	sess, err := loadAuthMetadataFile()
++	if err != nil {
++		return err
++	}
++	if err := avCredential("forget", sess.DID.String(), sess.PDS, nil); err != nil {
++		return err
++	}

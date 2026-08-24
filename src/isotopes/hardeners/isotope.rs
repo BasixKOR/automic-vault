@@ -17,6 +17,7 @@ const TAP_FORMULA_ROOT: &str =
     "https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula";
 const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
 const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
+const GOAT_ASSET: &str = "goat-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const GH: Spec = Spec {
@@ -63,6 +64,15 @@ pub(crate) const OXIDE: Spec = Spec {
     binaries: &["oxide"],
     test_path: "AUTOMIC_VAULT_TEST_OXIDE_TARGET",
     release_asset: Some(OXIDE_ASSET),
+};
+pub(crate) const GOAT: Spec = Spec {
+    hardener: "goat",
+    formula: "goat",
+    repository: "automic-vault",
+    primary: "goat",
+    binaries: &["goat"],
+    test_path: "AUTOMIC_VAULT_TEST_GOAT_TARGET",
+    release_asset: Some(GOAT_ASSET),
 };
 
 #[derive(Clone, Copy)]
@@ -287,6 +297,9 @@ pub(crate) fn install_privileged(
         }
         if spec.hardener == OXIDE.hardener {
             super::oxide_cli::verify_target(&stage)?;
+        }
+        if spec.hardener == GOAT.hardener {
+            super::goat::verify_target(&stage)?;
         }
         staged.push((stage, bin_dir.join(binary)));
     }
@@ -670,6 +683,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     if spec.hardener == OXIDE.hardener {
         return super::oxide_cli::verify_target(path).is_ok();
     }
+    if spec.hardener == GOAT.hardener {
+        return super::goat::verify_target(path).is_ok();
+    }
     true
 }
 
@@ -681,7 +697,7 @@ fn formula_url(spec: Spec) -> String {
 }
 
 fn spec(hardener: &str) -> Option<Spec> {
-    [GH, STRIPE, SUPABASE, OPENTOFU, OXIDE]
+    [GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT]
         .into_iter()
         .find(|spec| spec.hardener == hardener)
 }

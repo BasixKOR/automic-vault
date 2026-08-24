@@ -3,6 +3,7 @@ use std::path::PathBuf;
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
+const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
@@ -328,6 +329,65 @@ pub(crate) fn delete_oxide_credential(scope: &str, account: &str) -> Result<(), 
     .map(|_| ())
 }
 
+pub(crate) fn ensure_goat_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "goat-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", GOAT_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "goat credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported goat helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no goat helper version".into()),
+    }
+}
+
+pub(crate) fn store_goat_credential(scope: &str, value: &str) -> Result<(), String> {
+    let (did, pds) = crate::cli::goat_credential::parse_scope(scope)?;
+    let account = crate::cli::goat_credential::secret_name(&did, &pds);
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(&account, value);
+    }
+    xpc_request(
+        "goat-save",
+        Some((b"goat_scope\0", scope)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_goat_credential(scope: &str, account: &str) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(dir.join(account)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("failed to delete test goat credential: {error}")),
+        };
+    }
+    xpc_request(
+        "goat-delete",
+        Some((b"goat_scope\0", scope)),
+        None,
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
 #[cfg(target_os = "macos")]
 fn xpc_request(
     operation: &str,
@@ -543,6 +603,8 @@ fn xpc_operation_requires_cwd(operation: &str) -> bool {
             | "save-if-absent"
             | "docker-save"
             | "docker-delete"
+            | "goat-save"
+            | "goat-delete"
             | "oxide-save"
             | "oxide-delete"
             | "terraform-save"
@@ -576,6 +638,7 @@ mod tests {
     fn only_mutations_require_a_working_directory() {
         assert!(xpc_operation_requires_cwd("save"));
         assert!(xpc_operation_requires_cwd("docker-delete"));
+        assert!(xpc_operation_requires_cwd("goat-save"));
         assert!(xpc_operation_requires_cwd("oxide-save"));
         assert!(xpc_operation_requires_cwd("terraform-save"));
         assert!(!xpc_operation_requires_cwd("bless"));
