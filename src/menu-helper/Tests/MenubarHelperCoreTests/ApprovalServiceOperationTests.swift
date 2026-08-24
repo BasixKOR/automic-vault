@@ -41,6 +41,12 @@ import Testing
     #expect(ApprovalServiceOperation.ordercliDelete.rawValue == "ordercli-delete")
 }
 
+@Test func uaaCredentialsHaveDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.uaaGet.rawValue == "uaa-get")
+    #expect(ApprovalServiceOperation.uaaSave.rawValue == "uaa-save")
+    #expect(ApprovalServiceOperation.uaaDelete.rawValue == "uaa-delete")
+}
+
 @Test func approvalServiceOperationValuesAreUnique() {
     let values = ApprovalServiceOperation.allCases.map(\.rawValue)
     #expect(Set(values).count == values.count)

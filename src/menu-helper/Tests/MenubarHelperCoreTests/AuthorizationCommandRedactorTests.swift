@@ -51,6 +51,13 @@ import Testing
     ) == ["-p", "<redacted>", "ssh", "host"])
 }
 
+@Test func redactsUAACredentialFlags() {
+    #expect(redactedAuthorizationArguments(
+        tool: "/usr/local/bin/uaa",
+        arguments: ["get-password-token", "user", "-p", "password", "--client_secret=secret"]
+    ) == ["get-password-token", "user", "-p", "<redacted>", "--client_secret=<redacted>"])
+}
+
 @Test func redactsRecognizableCredentialFormats() {
     let stripeToken = ["sk", "live", "1234567890abcdefghijklmnop"].joined(separator: "_")
     let slackToken = ["xoxb", "1234567890", "abcdefghijklmnop"].joined(separator: "-")

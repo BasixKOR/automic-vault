@@ -1955,6 +1955,8 @@ enum SecretMutation {
     case goatDelete(account: String, scope: String)
     case ordercliSave(account: String, value: String, scope: String)
     case ordercliDelete(account: String, scope: String)
+    case uaaSave(account: String, value: String, scope: String)
+    case uaaDelete(account: String, scope: String)
     case railwaySave(account: String, value: String, scope: String)
     case railwayDelete(account: String, scope: String)
     case oxideSave(account: String, value: String, scope: String)
@@ -2033,6 +2035,18 @@ enum SecretMutation {
                 "Delete ordercli session?",
                 "ordercli will no longer be able to authenticate to Foodora with this session."
             )
+        case .uaaSave(let account, _, let scope):
+            properties = (
+                "uaa-save", [account], ["credential", "store", scope],
+                "Store UAA OAuth contexts?",
+                "UAA CLI will use these OAuth tokens through its Automic Vault Secret Gate."
+            )
+        case .uaaDelete(let account, let scope):
+            properties = (
+                "uaa-delete", [account], ["credential", "forget", scope],
+                "Delete UAA OAuth contexts?",
+                "UAA CLI will no longer be able to authenticate with these stored contexts."
+            )
         case .railwaySave(let account, _, let scope):
             properties = (
                 "railway-save", [account], ["credential", "store", scope],
@@ -2093,6 +2107,7 @@ enum SecretMutation {
         case .dockerSave, .dockerDelete: "docker"
         case .goatSave, .goatDelete: "goat"
         case .ordercliSave, .ordercliDelete: "ordercli"
+        case .uaaSave, .uaaDelete: "uaa-cli"
         case .railwaySave, .railwayDelete: "railway"
         case .oxideSave, .oxideDelete: "oxide-cli"
         case .terraformSave, .terraformDelete: "terraform"
@@ -2123,6 +2138,10 @@ enum SecretMutation {
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
         case .ordercliSave(_, _, let scope), .ordercliDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
+        case .uaaSave(_, _, let scope), .uaaDelete(_, let scope):
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
@@ -2212,6 +2231,10 @@ enum SecretMutation {
         case .ordercliSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .ordercliDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .uaaSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .uaaDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .railwaySave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
@@ -3033,6 +3056,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .uaaHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "UAA helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .railwayHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3064,7 +3094,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .railwayGet,
+        case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .uaaGet, .railwayGet,
              .oxideGet, .terraformGet:
             handleInject(
                 message,
@@ -3109,6 +3139,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleOrdercliSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .ordercliDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleOrdercliDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .uaaSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleUAASave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .uaaDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleUAADelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .railwaySave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleRailwaySave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .railwayDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3407,9 +3441,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let railwayRequest = try railwayCredentialRequest(
+            let uaaRequest = try uaaCredentialRequest(
                 from: message,
                 request: ordercliRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let railwayRequest = try railwayCredentialRequest(
+                from: message,
+                request: uaaRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -5388,6 +5429,56 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleUAASave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "uaa_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseUAACredentialScope(String(cString: scopePointer)),
+              let value = parseUAACredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid UAA credential store request")
+            return
+        }
+        do {
+            let parent = try uaaCredentialParent(for: caller.identity)
+            handleMutation(
+                .uaaSave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleUAADelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "uaa_scope"),
+              let scope = parseUAACredentialScope(String(cString: scopePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid UAA credential forget request")
+            return
+        }
+        do {
+            let parent = try uaaCredentialParent(for: caller.identity)
+            handleMutation(
+                .uaaDelete(account: scope.secretName, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleRailwayDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5614,6 +5705,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .dockerSave(let account, _, _, _),
                  .goatSave(let account, _, _),
                  .ordercliSave(let account, _, _),
+                 .uaaSave(let account, _, _),
                  .railwaySave(let account, _, _),
                  .oxideSave(let account, _, _),
                  .terraformSave(let account, _, _):
@@ -5630,6 +5722,7 @@ private final class ApprovalServer: @unchecked Sendable {
             case .delete(let account), .dockerDelete(let account, _),
                  .goatDelete(let account, _),
                  .ordercliDelete(let account, _),
+                 .uaaDelete(let account, _),
                  .railwayDelete(let account, _),
                  .oxideDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
@@ -5906,6 +5999,52 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func uaaCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "uaa-get" else { return request }
+        guard request.tool == "uaa-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty, request.args.isEmpty,
+              request.keys == [uaaCredentialSecretName],
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "uaa_scope"),
+              let scope = parseUAACredentialScope(String(cString: scopePointer))
+        else { throw AppError("invalid UAA credential request") }
+        let parent = try uaaCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op, keys: request.keys, target: parent.target,
+            args: Array(parent.arguments.dropFirst()), cwd: request.cwd,
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: "uaa-cli",
+            title: "Use UAA OAuth contexts?",
+            detail: "The verified UAA CLI Target will receive its stored OAuth tokens.",
+            credentialScope: scope.canonical, credentialParent: parent
+        )
+    }
+
+    private func uaaCredentialParent(for helperIdentity: AVProcessIdentity) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID), !arguments.isEmpty
+        else { throw AppError("UAA credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard uaaTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible UAA CLI Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID, startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid, target: target, arguments: arguments
+        )
+    }
+
     private func railwayCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -6096,6 +6235,7 @@ private final class ApprovalServer: @unchecked Sendable {
         case "railway": "railway"
         case "tofu": "opentofu"
         case "terraform": "terraform"
+        case "uaa": "uaa-cli"
         default: ""
         }
     }
@@ -6119,6 +6259,9 @@ private final class ApprovalServer: @unchecked Sendable {
         case "ordercli":
             return credentialHelperTool(parent) == tool
                 && ordercliTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "uaa-cli":
+            return credentialHelperTool(parent) == tool
+                && uaaTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "railway":
             return credentialHelperTool(parent) == tool
                 && railwayTargetIdentityValid(pid: parent.pid, path: parent.target)
@@ -6147,6 +6290,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "ordercli"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func uaaTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/uaa",
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "uaa"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -6195,7 +6348,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "ordercli-get", "railway-get", "oxide-get", "terraform-get"]
+        if ["docker-get", "goat-get", "ordercli-get", "uaa-get", "railway-get", "oxide-get", "terraform-get"]
             .contains(request.op)
         {
             guard let scope = request.credentialScope,
@@ -6214,6 +6367,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
                 expected = goat.secretName
             case "ordercli-get": expected = ordercliCredentialSecretName
+            case "uaa-get": expected = uaaCredentialSecretName
             case "railway-get":
                 guard let railway = parseRailwayCredentialScope(scope) else {
                     throw AppError("Railway credential scope changed before Secret Application")
@@ -6255,6 +6409,11 @@ private final class ApprovalServer: @unchecked Sendable {
                       let value = secrets[ordercliCredentialSecretName],
                       parseOrdercliCredential(value) != nil
                 else { throw AppError("ordercli credential changed before Secret Application") }
+            } else if request.op == "uaa-get" {
+                guard parseUAACredentialScope(scope) != nil,
+                      let value = secrets[uaaCredentialSecretName],
+                      parseUAACredential(value) != nil
+                else { throw AppError("UAA credential changed before Secret Application") }
             } else if request.op == "railway-get" {
                 guard let scope = parseRailwayCredentialScope(scope),
                       let value = secrets[scope.secretName], parseRailwayCredential(value) != nil
@@ -6640,7 +6799,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "railway-get"
+            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "uaa-get" || op == "railway-get"
             || op == "oxide-get" || op == "terraform-get"
             || op == "proxy-start"
         else { return nil }
@@ -7041,6 +7200,8 @@ private func classifySecretGateRequest(
         return goatRequestClassification(request.args)
     case "ordercli":
         return ordercliRequestClassification(request.args)
+    case "uaa-cli":
+        return uaaRequestClassification(request.args)
     case "railway":
         return railwayRequestClassification(request.args)
     case "oxide-cli":
@@ -7118,6 +7279,29 @@ private func ordercliRequestClassification(_ args: [String]) -> SecretGateReques
     }
     if provider == "foodora",
        ["login", "logout", "session", "cookies", "reorder"].contains(command)
+    {
+        return .mutating
+    }
+    return .unknown
+}
+
+private func uaaRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    guard let command = words.first(where: { $0 != "--verbose" && $0 != "-v" }) else {
+        return .unknown
+    }
+    if ["--version", "version", "help", "targets", "contexts", "info", "get-token-key",
+        "get-token-keys", "get-client", "get-user", "get-group", "list-clients", "list-users",
+        "list-groups", "list-group-mappings", "userinfo"].contains(command)
+    {
+        return .readOnly
+    }
+    if ["context", "decode-token"].contains(command) { return .secretDump }
+    if ["target", "use-context", "use-target"].contains(command) { return .localWrite }
+    if command == "curl" { return .unknown }
+    if command.contains("token")
+        || ["create", "update", "delete", "add", "remove", "map", "unmap", "activate",
+            "deactivate", "unlock", "change", "set"].contains(where: { command.hasPrefix($0) })
     {
         return .mutating
     }
@@ -7774,6 +7958,49 @@ private func parseOrdercliCredential(_ value: String) -> String? {
           stringKeys.contains(where: { (object[$0] as? String)?.isEmpty == false })
               || !cookies.isEmpty
     else { return nil }
+    return value
+}
+
+private let uaaCredentialSecretName = "UAA_OAUTH_TOKENS"
+
+private struct StoredUAACredentialScope {
+    let canonical: String
+    let secretName = uaaCredentialSecretName
+}
+
+private func parseUAACredentialScope(_ value: String) -> StoredUAACredentialScope? {
+    guard value == #"{"store":"contexts"}"# else { return nil }
+    return StoredUAACredentialScope(canonical: value)
+}
+
+private func parseUAACredential(_ value: String) -> String? {
+    guard value.utf8.count <= 1024 * 1024,
+          let data = value.data(using: .utf8),
+          let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(root.keys) == Set(["targets"]),
+          let targets = root["targets"] as? [String: Any],
+          !targets.isEmpty, targets.count <= 128
+    else { return nil }
+    let validKey: (String) -> Bool = { key in
+        !key.isEmpty && key.utf8.count <= 4096
+            && !key.unicodeScalars.contains(where: { $0.value == 0 })
+    }
+    guard targets.allSatisfy({ target, rawContexts in
+        guard validKey(target), let contexts = rawContexts as? [String: Any],
+              !contexts.isEmpty, contexts.count <= 256
+        else { return false }
+        return contexts.allSatisfy({ context, rawToken in
+            guard validKey(context), let token = rawToken as? [String: Any],
+                  !token.isEmpty,
+                  Set(token.keys).isSubset(of: Set(["access_token", "refresh_token"]))
+            else { return false }
+            return token.values.allSatisfy({ rawValue in
+                guard let secret = rawValue as? String else { return false }
+                return !secret.isEmpty && secret != "@av" && secret.utf8.count <= 512 * 1024
+                    && !secret.unicodeScalars.contains(where: { $0.value == 0 })
+            })
+        })
+    }) else { return nil }
     return value
 }
 
@@ -8728,7 +8955,7 @@ private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
         case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
-             .ordercliHelperVersion, .railwayHelperVersion, .oxideHelperVersion,
+             .ordercliHelperVersion, .uaaHelperVersion, .railwayHelperVersion, .oxideHelperVersion,
              .terraformHelperVersion: false
         default: true
         }
@@ -12058,6 +12285,20 @@ private func runOrdercliCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runUAACredentialSelfCheck() -> Int32 {
+    let scope = #"{"store":"contexts"}"#
+    let credential = #"{"targets":{"url:https://uaa.example":{"context":{"access_token":"access","refresh_token":"refresh"}}}}"#
+    guard uaaRequestClassification(["targets"]) == .readOnly,
+          uaaRequestClassification(["context"]) == .secretDump,
+          uaaRequestClassification(["create-client"]) == .mutating,
+          uaaRequestClassification(["curl", "/Users"]) == .unknown,
+          parseUAACredentialScope(scope)?.secretName == uaaCredentialSecretName,
+          parseUAACredential(credential) == credential,
+          parseUAACredential(#"{"targets":{"target":{"context":{"access_token":"@av"}}}}"#) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -13023,6 +13264,10 @@ if CommandLine.arguments.contains("--self-check-railway-credentials") {
 
 if CommandLine.arguments.contains("--self-check-ordercli-credentials") {
     exit(runOrdercliCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-uaa-credentials") {
+    exit(runUAACredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {

@@ -19,6 +19,7 @@ const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
 const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
 const GOAT_ASSET: &str = "goat-Isotope-darwin-arm64.tgz";
 const ORDERCLI_ASSET: &str = "ordercli-Isotope-darwin-arm64.tgz";
+const UAA_ASSET: &str = "UAA-CLI-Isotope-darwin-arm64.tgz";
 const RAILWAY_ASSET: &str = "Railway-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
@@ -93,6 +94,15 @@ pub(crate) const ORDERCLI: Spec = Spec {
     binaries: &["ordercli"],
     test_path: "AUTOMIC_VAULT_TEST_ORDERCLI_TARGET",
     release_asset: Some(ORDERCLI_ASSET),
+};
+pub(crate) const UAA: Spec = Spec {
+    hardener: "uaa-cli",
+    formula: "uaa-cli",
+    repository: "automic-vault",
+    primary: "uaa",
+    binaries: &["uaa"],
+    test_path: "AUTOMIC_VAULT_TEST_UAA_CLI_TARGET",
+    release_asset: Some(UAA_ASSET),
 };
 
 #[derive(Clone, Copy)]
@@ -326,6 +336,9 @@ pub(crate) fn install_privileged(
         }
         if spec.hardener == ORDERCLI.hardener {
             super::ordercli::verify_target(&stage)?;
+        }
+        if spec.hardener == UAA.hardener {
+            super::uaa_cli::verify_target(&stage)?;
         }
         staged.push((stage, bin_dir.join(binary)));
     }
@@ -717,6 +730,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     }
     if spec.hardener == ORDERCLI.hardener {
         return super::ordercli::verify_target(path).is_ok();
+    }
+    if spec.hardener == UAA.hardener {
+        return super::uaa_cli::verify_target(path).is_ok();
     }
     true
 }

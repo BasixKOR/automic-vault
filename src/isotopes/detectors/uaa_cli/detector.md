@@ -8,14 +8,17 @@
 
 - `~/.uaa/config.json`
 
-## Why This is not Yet Hardened
+## Remediation
 
-The retired `uaa-cli` hardener moved the detected secret to the macOS Keychain,
-then recreated `~/.uaa/config.json` inside a temporary directory for each run.
-We no longer consider a temporary plaintext file a sufficient security boundary,
-so this detector remains report-only.
+Run `av harden uaa-cli`. The hardener installs the signed UAA CLI Isotope and
+migrates saved OAuth tokens into Automic Vault custody while leaving only
+non-secret context metadata and `@av` markers on disk.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
+Upstream UAA CLI has no credential-helper boundary: OAuth tokens are fields in
+the same JSON document as target and context metadata. The Isotope therefore
+patches config reads and writes to use authenticated XPC operations while the
+Detector covers every non-empty access or refresh token in the active
+`~/.uaa/config.json` or `UAA_HOME/config.json`.
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+The residual gap is other users' configs, backups, and inactive alternate
+config roots that are not selected by the current `HOME` or `UAA_HOME`.
