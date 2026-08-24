@@ -41,6 +41,7 @@ jobs:
       SBOM_NAME: Automic-Vault-${{ inputs.version }}.spdx.json
       IMMUTABLE_RELEASES_ENABLED: ${{ vars.IMMUTABLE_RELEASES_ENABLED }}
       RUST_TOOLCHAIN: 1.96.0
+      OXIDE_RUST_TOOLCHAIN: 1.97.1
       GH_TOKEN: ${{ github.token }}
       RELEASE_NOTES: ${{ inputs.notes }}
 
@@ -130,6 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$OXIDE_RUST_TOOLCHAIN" --profile minimal
           rustup override set "$RUST_TOOLCHAIN"
 
           create_dmg_archive="$RUNNER_TEMP/create-dmg-1.3.0.tar.gz"
@@ -205,6 +207,10 @@ jobs:
         shell: bash
         run: scripts/build-opentofu-isotope.sh "$ASSET_DIR"
 
+      - name: Build signed Oxide CLI Isotope
+        shell: bash
+        run: scripts/build-oxide-isotope.sh "$ASSET_DIR"
+
       - name: Stage release inputs
         shell: bash
         run: |
@@ -233,7 +239,9 @@ jobs:
           set -euo pipefail
           (
             cd "$ASSET_DIR"
-            shasum -a 256 "$DMG_NAME" "$SBOM_NAME" OpenTofu-Isotope-darwin-arm64.tgz >SHA256SUMS
+            shasum -a 256 "$DMG_NAME" "$SBOM_NAME" \
+              OpenTofu-Isotope-darwin-arm64.tgz \
+              Oxide-CLI-Isotope-darwin-arm64.tgz >SHA256SUMS
           )
 
       - name: Attest build provenance
@@ -245,6 +253,11 @@ jobs:
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: ${{ env.ASSET_DIR }}/OpenTofu-Isotope-darwin-arm64.tgz
+
+      - name: Attest Oxide CLI Isotope provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: ${{ env.ASSET_DIR }}/Oxide-CLI-Isotope-darwin-arm64.tgz
 
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
@@ -262,6 +275,7 @@ jobs:
             "$ASSET_DIR/$DMG_NAME" \
             "$ASSET_DIR/$SBOM_NAME" \
             "$ASSET_DIR/OpenTofu-Isotope-darwin-arm64.tgz" \
+            "$ASSET_DIR/Oxide-CLI-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
