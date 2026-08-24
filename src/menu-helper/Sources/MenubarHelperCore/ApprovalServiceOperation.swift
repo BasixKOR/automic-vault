@@ -1,6 +1,7 @@
 public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case awsHelperVersion = "aws-helper-version"
     case dockerHelperVersion = "docker-helper-version"
+    case terraformHelperVersion = "terraform-helper-version"
     case inject
     case varlock
     case keys
@@ -11,6 +12,8 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case dockerGet = "docker-get"
     case dockerSave = "docker-save"
     case dockerDelete = "docker-delete"
+    case terraformSave = "terraform-save"
+    case terraformDelete = "terraform-delete"
     case list
     case save
     case saveIfAbsentOrEqual = "save-if-absent"

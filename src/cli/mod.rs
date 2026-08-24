@@ -15,6 +15,7 @@ mod proxy;
 mod save;
 mod scan;
 mod shell_secrets;
+pub(crate) mod terraform_credential;
 
 use crate::isotopes::hardeners;
 
@@ -45,7 +46,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 29;
+pub(crate) const INSTALL_REVISION: u32 = 30;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -348,6 +349,16 @@ where
                 let result = hardeners::docker::run(stdout, yes);
                 return finish_hardening(result, "docker", stdout, stderr);
             }
+            if target == "terraform" || target == "terraform-core" {
+                let result =
+                    hardeners::terraform::run(hardeners::terraform::Tool::Terraform, stdout, yes);
+                return finish_hardening(result, "terraform", stdout, stderr);
+            }
+            if target == "opentofu" || target == "tofu" {
+                let result =
+                    hardeners::terraform::run(hardeners::terraform::Tool::OpenTofu, stdout, yes);
+                return finish_hardening(result, "opentofu", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -398,6 +409,7 @@ where
             aws::credentials(Some("official-v2"), stdout, stderr)
         }
         Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
+        Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

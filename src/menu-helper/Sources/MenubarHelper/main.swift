@@ -1544,7 +1544,7 @@ private func automaticTargetRuntimeProtection(
     else { return nil }
 
     let protection: LauncherRuntimeProtection?
-    if let parent = request.dockerParent {
+    if let parent = request.credentialParent {
         protection = liveSigningInfo(for: parent)?.runtimeProtection
     } else {
         protection = executableSigningInfo(path: request.target)?.runtimeProtection
@@ -1553,7 +1553,7 @@ private func automaticTargetRuntimeProtection(
         ?? "Hardened Runtime could not be verified; Secret may be exposed to debugging or process-memory inspection"
 }
 
-private func liveSigningInfo(for parent: DockerCredentialParent) -> LiveSigningInfo? {
+private func liveSigningInfo(for parent: CredentialHelperParent) -> LiveSigningInfo? {
     func matches(_ identity: AVProcessIdentity) -> Bool {
         identity.start_usec == parent.startUsec
             && identity.euid == parent.euid
@@ -1739,8 +1739,8 @@ private struct ApprovalRequest {
     let tool: String?
     let title: String?
     let detail: String?
-    let dockerServerURL: String?
-    let dockerParent: DockerCredentialParent?
+    let credentialScope: String?
+    let credentialParent: CredentialHelperParent?
     let selectedSecretValues: SelectedSecretValues
 
     init(
@@ -1758,8 +1758,8 @@ private struct ApprovalRequest {
         tool: String?,
         title: String?,
         detail: String?,
-        dockerServerURL: String? = nil,
-        dockerParent: DockerCredentialParent? = nil,
+        credentialScope: String? = nil,
+        credentialParent: CredentialHelperParent? = nil,
         selectedSecretValues: SelectedSecretValues = SelectedSecretValues(values: [:])
     ) {
         self.op = op
@@ -1776,8 +1776,8 @@ private struct ApprovalRequest {
         self.tool = tool
         self.title = title
         self.detail = detail
-        self.dockerServerURL = dockerServerURL
-        self.dockerParent = dockerParent
+        self.credentialScope = credentialScope
+        self.credentialParent = credentialParent
         self.selectedSecretValues = selectedSecretValues
     }
 
@@ -1797,8 +1797,8 @@ private struct ApprovalRequest {
             tool: tool,
             title: title,
             detail: detail,
-            dockerServerURL: dockerServerURL,
-            dockerParent: dockerParent,
+            credentialScope: credentialScope,
+            credentialParent: credentialParent,
             selectedSecretValues: values
         )
     }
@@ -1819,8 +1819,8 @@ private struct ApprovalRequest {
             tool: tool,
             title: title,
             detail: detail,
-            dockerServerURL: dockerServerURL,
-            dockerParent: dockerParent,
+            credentialScope: credentialScope,
+            credentialParent: credentialParent,
             selectedSecretValues: selectedSecretValues
         )
     }
@@ -1855,9 +1855,9 @@ private struct ApprovalRequest {
             tool: tool,
             title: title,
             detail: detail,
-            dockerServerURL: dockerServerURL,
-            dockerParent: dockerParent.map {
-                AuthorizationDockerParent(
+            credentialScope: credentialScope,
+            credentialParent: credentialParent.map {
+                AuthorizationCredentialHelperParent(
                     pid: $0.pid,
                     startUsec: $0.startUsec,
                     effectiveUserID: $0.euid,
@@ -1891,6 +1891,8 @@ enum SecretMutation {
     case delete(account: String)
     case dockerSave(account: String, value: String, serverURL: String, username: String)
     case dockerDelete(account: String, serverURL: String)
+    case terraformSave(account: String, value: String, hostname: String)
+    case terraformDelete(account: String, hostname: String)
     case deleteValue(account: String, source: StoredSecretValueSource)
     case rename(account: String, newAccount: String)
     case setAccessibility(account: String, accessibility: StoredSecretAccessibility)
@@ -1939,6 +1941,18 @@ enum SecretMutation {
                 "Delete Docker credential for \(serverURL)?",
                 "Docker will no longer be able to authenticate to this registry with the stored credential."
             )
+        case .terraformSave(let account, _, let hostname):
+            properties = (
+                "terraform-save", [account], ["credential", "store", hostname],
+                "Store Terraform credential for \(hostname)?",
+                "Terraform and OpenTofu will use this token through their Automic Vault Secret Gates."
+            )
+        case .terraformDelete(let account, let hostname):
+            properties = (
+                "terraform-delete", [account], ["credential", "forget", hostname],
+                "Delete Terraform credential for \(hostname)?",
+                "Terraform and OpenTofu will no longer be able to authenticate to this host with the stored credential."
+            )
         case .deleteValue(let account, let source):
             properties = (
                 "delete", [account], ["delete", account, escapedSecurityPath(source.displayName)],
@@ -1961,10 +1975,12 @@ enum SecretMutation {
         }
         let tool = switch self {
         case .dockerSave, .dockerDelete: "docker"
+        case .terraformSave, .terraformDelete: "terraform"
         default: URL(fileURLWithPath: callerPath).lastPathComponent
         }
         let cwd: String
         let selectedSecretValues: SelectedSecretValues
+        let credentialScope: String?
         switch self {
         case .saveProject(let account, _, let directory, let accessibility, _):
             cwd = directory
@@ -1977,9 +1993,19 @@ enum SecretMutation {
                 accessibility: accessibility,
                 keychainProperties: []
             )])
+            credentialScope = nil
+        case .dockerSave(_, _, let serverURL, _), .dockerDelete(_, let serverURL):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = serverURL
+        case .terraformSave(_, _, let hostname), .terraformDelete(_, let hostname):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = hostname
         default:
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = nil
         }
         return ApprovalRequest(
             op: properties.op,
@@ -1995,6 +2021,7 @@ enum SecretMutation {
             tool: tool,
             title: properties.title,
             detail: properties.detail,
+            credentialScope: credentialScope,
             selectedSecretValues: selectedSecretValues
         )
     }
@@ -2041,6 +2068,10 @@ enum SecretMutation {
         case .dockerSave(let account, let value, _, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .dockerDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .terraformSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .terraformDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .deleteValue(let account, let source):
             return deleteStoredSecretValueRevokingDirectAccessIfLast(
@@ -2604,7 +2635,7 @@ private struct AWSRegistration: Sendable {
     var credentials: AWSCredentials?
 }
 
-private struct DockerCredentialParent: Sendable {
+private struct CredentialHelperParent: Sendable {
     let pid: pid_t
     let startUsec: UInt64
     let euid: uid_t
@@ -2613,7 +2644,7 @@ private struct DockerCredentialParent: Sendable {
 }
 
 private struct DockerCredentialCandidate: Sendable {
-    let parent: DockerCredentialParent
+    let parent: CredentialHelperParent
     let serverURL: String
     let secretName: String
 }
@@ -2836,6 +2867,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .terraformHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Terraform helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
             handleInject(
                 message,
@@ -2882,6 +2920,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleDockerSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .dockerDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDockerDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .terraformSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleTerraformSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .terraformDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleTerraformDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .list where isTrustedAvCaller(path: callerPath, signing: signing):
             handleList(
                 message,
@@ -3146,15 +3188,22 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let conflicts = Set(dockerRequest.envConflicts)
-            let selectionNames = dockerRequest.keys.filter {
-                dockerRequest.replaceExistingEnv || !conflicts.contains($0)
+            let helperRequest = try terraformCredentialRequest(
+                from: message,
+                request: dockerRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let conflicts = Set(helperRequest.envConflicts)
+            let selectionNames = helperRequest.keys.filter {
+                helperRequest.replaceExistingEnv || !conflicts.contains($0)
             }
             let selected = try secretValueCustody.bind(
                 names: selectionNames,
-                cwd: dockerRequest.cwd
+                cwd: helperRequest.cwd
             )
-            request = approvalRequestWithCredentialContext(dockerRequest.selecting(selected))
+            request = approvalRequestWithCredentialContext(helperRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
@@ -4929,7 +4978,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 message: message,
                 cancellation: cancellation,
                 caller: caller,
-                requiredDockerParent: parent
+                requiredCredentialParent: parent
             )
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
@@ -4962,7 +5011,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 message: message,
                 cancellation: cancellation,
                 caller: caller,
-                requiredDockerParent: parent
+                requiredCredentialParent: parent
             )
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
@@ -4993,22 +5042,96 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func handleTerraformSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let hostnamePointer = xpc_dictionary_get_string(message, "terraform_hostname"),
+              let valuePointer = xpc_dictionary_get_string(message, "value")
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Terraform credential store request")
+            return
+        }
+        let hostname = String(cString: hostnamePointer)
+        let value = String(cString: valuePointer)
+        guard let normalized = normalizeTerraformHostname(hostname),
+              normalized == hostname,
+              parseTerraformCredential(value) != nil
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Terraform credential")
+            return
+        }
+        do {
+            let parent = try terraformCredentialParent(for: caller.identity)
+            handleMutation(
+                .terraformSave(
+                    account: terraformCredentialSecretName(hostname),
+                    value: value,
+                    hostname: hostname
+                ),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleTerraformDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let hostnamePointer = xpc_dictionary_get_string(message, "terraform_hostname") else {
+            reply(peer, to: message, ok: false, error: "invalid Terraform credential forget request")
+            return
+        }
+        let hostname = String(cString: hostnamePointer)
+        guard normalizeTerraformHostname(hostname) == hostname else {
+            reply(peer, to: message, ok: false, error: "invalid Terraform hostname")
+            return
+        }
+        do {
+            let parent = try terraformCredentialParent(for: caller.identity)
+            handleMutation(
+                .terraformDelete(
+                    account: terraformCredentialSecretName(hostname),
+                    hostname: hostname
+                ),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleMutation(
         _ mutation: SecretMutation,
         on peer: xpc_connection_t,
         message: xpc_object_t,
         cancellation: ApprovalCancellation,
         caller: MutationCaller,
-        requiredDockerParent: DockerCredentialParent? = nil
+        requiredCredentialParent: CredentialHelperParent? = nil
     ) {
-        let launcher = requiredDockerParent.flatMap { parent in
+        let launcher = requiredCredentialParent.flatMap { parent in
             var identity = AVProcessIdentity()
             guard av_process_identity(parent.pid, &identity) else { return nil }
             return launcherIdentity(pid: parent.pid, identity: identity)
         } ?? launcherIdentities(for: caller.identity).first
         let launcherFallbackPath = launcherFallbackPath(for: caller.identity) ?? caller.path
-        let requestOverride = requiredDockerParent.map { parent in
+        let requestOverride = requiredCredentialParent.map { parent in
             let request = mutation.approvalRequest(callerPath: caller.path)
+            let tool = credentialHelperTool(parent)
             return ApprovalRequest(
                 op: request.op,
                 keys: request.keys,
@@ -5021,11 +5144,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 shebangScript: request.shebangScript,
                 scriptData: request.scriptData,
                 snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter,
-                tool: request.tool,
+                tool: tool,
                 title: request.title,
                 detail: request.detail,
-                dockerServerURL: request.dockerServerURL,
-                dockerParent: request.dockerParent,
+                credentialScope: request.credentialScope,
+                credentialParent: parent,
                 selectedSecretValues: request.selectedSecretValues
             )
         }
@@ -5040,11 +5163,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 canRequestHumanApproval: self.canRequestHumanApproval,
                 onAccessRequest: self.onAccessRequest,
                 cancellation: cancellation,
-                preflight: requiredDockerParent.map { parent in
+                preflight: requiredCredentialParent.map { parent in
                     {
-                        self.dockerCredentialParentValid(parent)
+                        self.credentialHelperParentValid(parent, tool: self.credentialHelperTool(parent))
                             ? nil
-                            : "Docker Target changed before the approved credential mutation"
+                            : "Credential-helper Target changed before the approved mutation"
                     }
                 },
                 requestOverride: requestOverride
@@ -5057,7 +5180,8 @@ private final class ApprovalServer: @unchecked Sendable {
             case .save(let account, _, _, _),
                  .saveProject(let account, _, _, _, _),
                  .saveIfAbsentOrEqual(let account, _, _),
-                 .dockerSave(let account, _, _, _):
+                 .dockerSave(let account, _, _, _),
+                 .terraformSave(let account, _, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {
@@ -5068,7 +5192,7 @@ private final class ApprovalServer: @unchecked Sendable {
                         error: "failed to store secret \(account): \(status)"
                     )
                 }
-            case .delete(let account), .dockerDelete(let account, _):
+            case .delete(let account), .dockerDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {
@@ -5196,14 +5320,14 @@ private final class ApprovalServer: @unchecked Sendable {
             tool: "docker",
             title: "Use Docker credential for \(serverURL)?",
             detail: "The verified Docker Target will receive the usable registry credential in plaintext, as required by Docker's credential-helper protocol.",
-            dockerServerURL: serverURL,
-            dockerParent: parent
+            credentialScope: serverURL,
+            credentialParent: parent
         )
     }
 
     private func dockerCredentialParent(
         for helperIdentity: AVProcessIdentity
-    ) throws -> DockerCredentialParent {
+    ) throws -> CredentialHelperParent {
         let parentPID = helperIdentity.ppid
         var parentIdentity = AVProcessIdentity()
         guard parentPID > 1,
@@ -5216,7 +5340,7 @@ private final class ApprovalServer: @unchecked Sendable {
         guard dockerTargetIdentityValid(pid: parentPID, path: target) else {
             throw AppError("Docker credential helper parent is not an eligible Docker Target")
         }
-        return DockerCredentialParent(
+        return CredentialHelperParent(
             pid: parentPID,
             startUsec: parentIdentity.start_usec,
             euid: parentIdentity.euid,
@@ -5225,7 +5349,7 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
-    private func dockerCredentialParentValid(_ parent: DockerCredentialParent) -> Bool {
+    private func dockerCredentialParentValid(_ parent: CredentialHelperParent) -> Bool {
         var identity = AVProcessIdentity()
         return av_process_identity(parent.pid, &identity)
             && identity.start_usec == parent.startUsec
@@ -5251,32 +5375,156 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
+    private func terraformCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "terraform-get" else { return request }
+        guard request.tool == "terraform",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys.count == 1,
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let hostnamePointer = xpc_dictionary_get_string(message, "terraform_hostname")
+        else { throw AppError("invalid Terraform credential request") }
+        let hostname = String(cString: hostnamePointer)
+        guard normalizeTerraformHostname(hostname) == hostname,
+              request.keys == [terraformCredentialSecretName(hostname)]
+        else { throw AppError("Terraform host Secret Name does not match its hostname") }
+        let parent = try terraformCredentialParent(for: helperIdentity)
+        let tool = credentialHelperTool(parent)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: tool,
+            title: "Use \(tool == "opentofu" ? "OpenTofu" : "Terraform") credential for \(hostname)?",
+            detail: "The verified \(tool == "opentofu" ? "OpenTofu" : "Terraform") Target will receive the API token in plaintext, as required by the credential-helper protocol.",
+            credentialScope: hostname,
+            credentialParent: parent
+        )
+    }
+
+    private func terraformCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("Terraform credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard terraformTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible Terraform or OpenTofu Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
+    private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
+        parent.target.hasSuffix("/tofu") ? "opentofu" : "terraform"
+    }
+
+    private func credentialHelperParentValid(
+        _ parent: CredentialHelperParent,
+        tool: String
+    ) -> Bool {
+        var identity = AVProcessIdentity()
+        guard av_process_identity(parent.pid, &identity),
+              identity.start_usec == parent.startUsec,
+              identity.euid == parent.euid,
+              pathString(identity) == parent.target,
+              processArguments(parent.pid) == parent.arguments
+        else { return false }
+        switch tool {
+        case "docker": return dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "terraform", "opentofu":
+            return credentialHelperTool(parent) == tool
+                && terraformTargetIdentityValid(pid: parent.pid, path: parent.target)
+        default: return false
+        }
+    }
+
+    private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        let expected: (identifier: String, team: String)? = switch path {
+        case "/opt/av/terraform/current/terraform": ("terraform", "D38WU7D763")
+        case "/opt/av/opentofu/current/tofu": ("tofu", "ZU76A67LGU")
+        default: nil
+        }
+        guard let expected,
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == expected.identifier
+            && signing.teamIdentifier == expected.team
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
     private func prepareApprovedFulfillment(
         for request: ApprovalRequest,
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
-        let dockerParent: DockerCredentialParent?
-        if request.op == "docker-get" {
-            guard let serverURL = request.dockerServerURL,
-                  request.keys == [dockerCredentialSecretName(serverURL)],
-                  let parent = request.dockerParent,
-                  dockerCredentialParentValid(parent),
+        let credentialParent: CredentialHelperParent?
+        if request.op == "docker-get" || request.op == "terraform-get" {
+            guard let scope = request.credentialScope,
+                  let parent = request.credentialParent,
+                  let tool = request.tool,
+                  credentialHelperParentValid(parent, tool: tool),
                   parent.target == request.target,
                   Array(parent.arguments.dropFirst()) == request.args
-            else { throw AppError("invalid Docker credential request") }
-            dockerParent = parent
+            else { throw AppError("invalid credential-helper request") }
+            let expected = request.op == "docker-get"
+                ? dockerCredentialSecretName(scope)
+                : terraformCredentialSecretName(scope)
+            guard request.keys == [expected] else {
+                throw AppError("credential-helper Secret Name changed before Secret Application")
+            }
+            credentialParent = parent
         } else {
-            dockerParent = nil
+            credentialParent = nil
         }
         let secrets = try approvedSecrets(for: request)
-        if let dockerParent,
-           let serverURL = request.dockerServerURL
+        if let credentialParent,
+           let scope = request.credentialScope,
+           let tool = request.tool
         {
-            guard dockerCredentialParentValid(dockerParent),
-                  let value = secrets[dockerCredentialSecretName(serverURL)],
-                  let credential = parseDockerCredential(value),
-                  credential.serverURL == serverURL
-            else { throw AppError("Docker credential changed before Secret Application") }
+            guard credentialHelperParentValid(credentialParent, tool: tool) else {
+                throw AppError("credential-helper Target changed before Secret Application")
+            }
+            if request.op == "docker-get" {
+                guard let value = secrets[dockerCredentialSecretName(scope)],
+                      let credential = parseDockerCredential(value),
+                      credential.serverURL == scope
+                else { throw AppError("Docker credential changed before Secret Application") }
+            } else {
+                guard let value = secrets[terraformCredentialSecretName(scope)],
+                      parseTerraformCredential(value) != nil
+                else { throw AppError("Terraform credential changed before Secret Application") }
+            }
         }
         guard let awsRegistration else {
             return AuthorizationFulfillmentTransaction(material: ApprovedFulfillmentMaterial(
@@ -5373,7 +5621,10 @@ private final class ApprovalServer: @unchecked Sendable {
         guard !secretNames.isEmpty else { return }
 
         let process: LiveSecretUseProcess?
-        if let parent = request.dockerParent, dockerCredentialParentValid(parent) {
+        if let parent = request.credentialParent,
+           let tool = request.tool,
+           credentialHelperParentValid(parent, tool: tool)
+        {
             var parentIdentity = AVProcessIdentity()
             process = av_process_identity(parent.pid, &parentIdentity)
                 ? liveSecretUseProcess(pid: parent.pid, identity: parentIdentity)
@@ -5645,7 +5896,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "proxy-start"
+            || op == "docker-get" || op == "terraform-get" || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
         if xpc_dictionary_get_value(message, "script_data") != nil {
@@ -6040,6 +6291,8 @@ private func classifySecretGateRequest(
         return ghRequestClassification(request.args)
     case "docker":
         return dockerRequestClassification(request.args)
+    case "terraform", "opentofu":
+        return terraformRequestClassification(request.args)
     case "aws":
         if awsRequestMayUseLongLivedCredentials(request) { return .secretDump }
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
@@ -6050,6 +6303,35 @@ private func classifySecretGateRequest(
             gateID: gateID,
             arguments: secretGateCommandWords(request)
         )
+    }
+}
+
+private func terraformRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    if args == ["-version"] || args == ["--version"] { return .readOnly }
+    let words = args.drop(while: {
+        $0 == "-no-color" || $0 == "-help" || $0.hasPrefix("-chdir=")
+    }).map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    switch command {
+    case "version", "help", "validate", "show", "output", "graph":
+        return .readOnly
+    case "fmt":
+        return words.contains("-check") ? .readOnly : .localWrite
+    case "providers":
+        guard let subcommand = words.dropFirst().first else { return .readOnly }
+        return subcommand == "schema" ? .readOnly : .localWrite
+    case "init", "plan", "console", "get":
+        return .localWrite
+    case "apply", "destroy", "import", "refresh", "force-unlock", "login", "logout":
+        return .mutating
+    case "state":
+        guard let subcommand = words.dropFirst().first else { return .unknown }
+        return ["list", "show", "pull"].contains(subcommand) ? .readOnly : .mutating
+    case "workspace":
+        guard let subcommand = words.dropFirst().first else { return .unknown }
+        return subcommand == "list" || subcommand == "show" ? .readOnly : .mutating
+    default:
+        return .unknown
     }
 }
 
@@ -6535,6 +6817,41 @@ private func parseDockerCredential(_ value: String) -> StoredDockerCredential? {
           !secret.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return StoredDockerCredential(serverURL: serverURL, username: username, secret: secret)
+}
+
+private func normalizeTerraformHostname(_ hostname: String) -> String? {
+    guard !hostname.isEmpty,
+          hostname.utf8.count <= 253,
+          hostname.unicodeScalars.allSatisfy(\.isASCII),
+          !hostname.hasPrefix("."),
+          !hostname.hasSuffix(".")
+    else { return nil }
+    let normalized = hostname.lowercased()
+    guard normalized.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ label in
+        !label.isEmpty
+            && label.utf8.count <= 63
+            && label.first != "-"
+            && label.last != "-"
+            && label.unicodeScalars.allSatisfy { $0.isASCIIAlpha || $0.isASCIIDigit || $0 == "-" }
+    }) else { return nil }
+    return normalized
+}
+
+private func terraformCredentialSecretName(_ hostname: String) -> String {
+    let hash = SHA256.hash(data: Data(hostname.utf8)).map { String(format: "%02X", $0) }.joined()
+    return "TERRAFORM_HOST_CREDENTIAL_\(hash)"
+}
+
+private func parseTerraformCredential(_ value: String) -> String? {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["token"]),
+          let token = object["token"] as? String,
+          !token.isEmpty,
+          !token.unicodeScalars.contains(where: { $0.value == 0 })
+    else { return nil }
+    return token
 }
 
 private func isGhTokenKey(_ key: String) -> Bool {
@@ -7092,7 +7409,7 @@ private func approvalProcessSecurity(
     let targetPath = normalizedExecutablePath(request.target)
     let liveTargetPID = approvalTargetPID(
         explicitPID: targetPID,
-        dockerPID: request.dockerParent?.pid,
+        dockerPID: request.credentialParent?.pid,
         targetPath: targetPath,
         identities: identities
     )
@@ -7334,7 +7651,7 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion: false
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .terraformHelperVersion: false
         default: true
         }
     }
@@ -9138,7 +9455,7 @@ private func runApprovalSelfCheck() -> Int32 {
               auditSessionID: liveUse.auditSessionID
           ))
     else { return 1 }
-    let reusedDockerPID = DockerCredentialParent(
+    let reusedDockerPID = CredentialHelperParent(
         pid: getpid(),
         startUsec: selfIdentity.start_usec &+ 1,
         euid: selfIdentity.euid,
@@ -10485,6 +10802,26 @@ private func runDockerCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runTerraformCredentialSelfCheck() -> Int32 {
+    guard terraformRequestClassification(["validate"]) == .readOnly,
+          terraformRequestClassification(["fmt"]) == .localWrite,
+          terraformRequestClassification(["fmt", "-check"]) == .readOnly,
+          terraformRequestClassification(["plan"]) == .localWrite,
+          terraformRequestClassification(["providers", "mirror", "/tmp/providers"]) == .localWrite,
+          terraformRequestClassification(["apply"]) == .mutating,
+          terraformRequestClassification(["state", "pull"]) == .readOnly,
+          terraformRequestClassification(["state", "push"]) == .mutating,
+          terraformRequestClassification(["future-command"]) == .unknown,
+          normalizeTerraformHostname("App.Terraform.IO") == "app.terraform.io",
+          normalizeTerraformHostname("app.terraform.io:443") == nil,
+          terraformCredentialSecretName("app.terraform.io")
+              == "TERRAFORM_HOST_CREDENTIAL_E3078C0B1928EE1F19EBBD26404E4C6B5FC1D639629DB0345330C0ECA3FEFC42",
+          parseTerraformCredential(#"{"token":"secret"}"#) == "secret",
+          parseTerraformCredential(#"{"token":"secret","future":true}"#) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -10645,8 +10982,8 @@ private func runTransientApprovalSelfCheck() -> Int32 {
             tool: "gh",
             title: nil,
             detail: nil,
-            dockerServerURL: nil,
-            dockerParent: nil,
+            credentialScope: nil,
+            credentialParent: nil,
             selectedSecretValues: SelectedSecretValues(values: [:]),
             policy: policy
         )
@@ -11428,6 +11765,10 @@ if CommandLine.arguments.contains("--self-check-gh-read-only") {
 
 if CommandLine.arguments.contains("--self-check-docker-credentials") {
     exit(runDockerCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-terraform-credentials") {
+    exit(runTerraformCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {

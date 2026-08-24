@@ -23,7 +23,7 @@ public struct AuthorizationClientExecution: Hashable, Sendable {
     }
 }
 
-public struct AuthorizationDockerParent: Hashable, Sendable {
+public struct AuthorizationCredentialHelperParent: Hashable, Sendable {
     public let pid: Int32
     public let startUsec: UInt64
     public let effectiveUserID: UInt32
@@ -80,8 +80,8 @@ public struct AuthorizationDecisionReuseRequest: Hashable, Sendable {
     private let tool: String?
     private let title: String?
     private let detail: String?
-    private let dockerServerURL: String?
-    private let dockerParent: AuthorizationDockerParent?
+    private let credentialScope: String?
+    private let credentialParent: AuthorizationCredentialHelperParent?
     private let selectedValueSources: [SelectedSecretValueSourceIdentity]
 
     public init(
@@ -103,8 +103,8 @@ public struct AuthorizationDecisionReuseRequest: Hashable, Sendable {
         tool: String?,
         title: String?,
         detail: String?,
-        dockerServerURL: String?,
-        dockerParent: AuthorizationDockerParent?,
+        credentialScope: String?,
+        credentialParent: AuthorizationCredentialHelperParent?,
         selectedSecretValues: SelectedSecretValues,
         policy: AuthorizationDecisionReusePolicy
     ) {
@@ -126,8 +126,8 @@ public struct AuthorizationDecisionReuseRequest: Hashable, Sendable {
         self.tool = tool
         self.title = title
         self.detail = detail
-        self.dockerServerURL = dockerServerURL
-        self.dockerParent = dockerParent
+        self.credentialScope = credentialScope
+        self.credentialParent = credentialParent
         self.selectedValueSources = selectedSecretValues.authorizationIdentity()
         self.policy = policy
     }

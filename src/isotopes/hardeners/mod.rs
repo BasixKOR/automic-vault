@@ -10,6 +10,7 @@ mod migrations;
 pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
+pub(crate) mod terraform;
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -241,6 +242,18 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(stripe_cli, "stripe"),
         ungated_hardener!(sudo, "sudo"),
         gated_hardener!(supabase, "supabase"),
+        HardenerMetadata {
+            name: "terraform",
+            documentation: include_str!("terraform.md"),
+            detection: terraform::detect(terraform::Tool::Terraform),
+            secret_gate: Some(terraform::secret_gate(terraform::Tool::Terraform)),
+        },
+        HardenerMetadata {
+            name: "opentofu",
+            documentation: include_str!("opentofu.md"),
+            detection: terraform::detect(terraform::Tool::OpenTofu),
+            secret_gate: Some(terraform::secret_gate(terraform::Tool::OpenTofu)),
+        },
     ];
     metadata.extend(env_wrapper::metadata());
     metadata
@@ -255,6 +268,8 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         gh_cli::secret_gate(),
         stripe_cli::secret_gate(),
         supabase::secret_gate(),
+        terraform::secret_gate(terraform::Tool::Terraform),
+        terraform::secret_gate(terraform::Tool::OpenTofu),
     ];
     gates.extend(env_wrapper::secret_gates());
     gates

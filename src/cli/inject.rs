@@ -43,6 +43,7 @@ struct ApprovalRequest {
     snapshot_incompatible_interpreter: Option<&'static str>,
     tool: Option<&'static str>,
     docker_server_url: Option<String>,
+    terraform_hostname: Option<String>,
 }
 
 unsafe extern "C" {
@@ -330,6 +331,7 @@ fn approval_request(
         snapshot_incompatible_interpreter,
         tool: None,
         docker_server_url: None,
+        terraform_hostname: None,
     })
 }
 
@@ -349,6 +351,7 @@ pub(super) fn docker_credential(key: String, server_url: String) -> Result<Strin
         snapshot_incompatible_interpreter: None,
         tool: Some("docker"),
         docker_server_url: Some(server_url),
+        terraform_hostname: None,
     };
     if crate::test_keychain_dir().is_some() {
         return load_test_secret_if_present(&key)?
@@ -357,6 +360,33 @@ pub(super) fn docker_credential(key: String, server_url: String) -> Result<Strin
     xpc_approve_injection(&request)?
         .remove(&key)
         .ok_or_else(|| format!("Automic Vault returned no Docker credential for {key}"))
+}
+
+pub(super) fn terraform_credential(key: String, hostname: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    let request = ApprovalRequest {
+        op: "terraform-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("terraform"),
+        docker_server_url: None,
+        terraform_hostname: Some(hostname),
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no Terraform credential for {key}"))
 }
 
 struct VerifiedScript {
@@ -599,6 +629,7 @@ pub(super) fn approve_gpg_signing(
             snapshot_incompatible_interpreter: None,
             tool: Some("gpg-signing"),
             docker_server_url: None,
+            terraform_hostname: None,
         },
         response_keys,
     )
@@ -735,6 +766,9 @@ fn xpc_approve_request(
         }
         if let Some(server_url) = &request.docker_server_url {
             set_string(message, b"docker_server_url\0", server_url)?;
+        }
+        if let Some(hostname) = &request.terraform_hostname {
+            set_string(message, b"terraform_hostname\0", hostname)?;
         }
         xpc_dictionary_set_bool(
             message,

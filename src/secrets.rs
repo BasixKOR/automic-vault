@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
+const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
     value: Option<String>,
@@ -186,6 +187,67 @@ pub(crate) fn delete_docker_credential(account: &str, server_url: &str) -> Resul
         "docker-delete",
         Some((b"key\0", account)),
         Some((b"docker_server_url\0", server_url)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn ensure_terraform_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "terraform-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", TERRAFORM_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "Terraform credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported Terraform helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no Terraform helper version".into()),
+    }
+}
+
+pub(crate) fn store_terraform_credential(hostname: &str, value: &str) -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(
+            &crate::cli::terraform_credential::secret_name(hostname),
+            value,
+        );
+    }
+    xpc_request(
+        "terraform-save",
+        Some((b"terraform_hostname\0", hostname)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_terraform_credential(hostname: &str) -> Result<(), String> {
+    let account = crate::cli::terraform_credential::secret_name(hostname);
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(dir.join(&account)) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(format!("failed to delete test Terraform credential: {err}")),
+        };
+    }
+    xpc_request(
+        "terraform-delete",
+        Some((b"terraform_hostname\0", hostname)),
+        None,
         None,
         None,
     )

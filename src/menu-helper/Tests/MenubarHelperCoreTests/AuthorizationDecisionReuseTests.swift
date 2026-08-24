@@ -8,8 +8,8 @@ enum RequestMutation: CaseIterable {
     case operation, keys, target, arguments, workingDirectory
     case replaceExistingEnvironment, allowMissingSecrets, environmentConflicts
     case shebangScript, scriptData, snapshotIncompatibleInterpreter, tool, title, detail
-    case dockerServerURL, dockerParentPID, dockerParentStartUsec, dockerParentEUID
-    case dockerParentTarget, dockerParentArguments, selectedValueSource
+    case credentialScope, credentialParentPID, credentialParentStartUsec, credentialParentEUID
+    case credentialParentTarget, credentialParentArguments, selectedValueSource
 }
 
 @Test("an allowed decision is reused only for the complete request", arguments: RequestMutation.allCases)
@@ -108,12 +108,12 @@ private func reuseRequest(
         effectiveUserID: mutation == .effectiveUserID ? 502 : 501,
         auditSessionID: mutation == .auditSessionID ? 43 : 42
     )
-    let dockerParent = AuthorizationDockerParent(
-        pid: mutation == .dockerParentPID ? 778 : 777,
-        startUsec: mutation == .dockerParentStartUsec ? 889 : 888,
-        effectiveUserID: mutation == .dockerParentEUID ? 502 : 501,
-        target: mutation == .dockerParentTarget ? "/usr/local/bin/docker-2" : "/usr/local/bin/docker",
-        arguments: mutation == .dockerParentArguments ? ["pull"] : ["login"]
+    let credentialParent = AuthorizationCredentialHelperParent(
+        pid: mutation == .credentialParentPID ? 778 : 777,
+        startUsec: mutation == .credentialParentStartUsec ? 889 : 888,
+        effectiveUserID: mutation == .credentialParentEUID ? 502 : 501,
+        target: mutation == .credentialParentTarget ? "/usr/local/bin/docker-2" : "/usr/local/bin/docker",
+        arguments: mutation == .credentialParentArguments ? ["pull"] : ["login"]
     )
     let source: StoredSecretValueSource = mutation == .selectedValueSource
         ? .projectDirectory("/tmp/project-2")
@@ -145,8 +145,8 @@ private func reuseRequest(
         tool: mutation == .tool ? "git" : "gh",
         title: mutation == .title ? "Other request" : "Request",
         detail: mutation == .detail ? "Other detail" : "Detail",
-        dockerServerURL: mutation == .dockerServerURL ? "registry-2.example" : "registry.example",
-        dockerParent: dockerParent,
+        credentialScope: mutation == .credentialScope ? "registry-2.example" : "registry.example",
+        credentialParent: credentialParent,
         selectedSecretValues: selected,
         policy: policy
     )
