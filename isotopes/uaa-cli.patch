@@ -9,7 +9,7 @@ new file mode 100644
 index 0000000..a7e502f
 --- /dev/null
 +++ i/config/av.go
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,263 @@
 +package config
 +
 +import (
@@ -246,8 +246,13 @@ index 0000000..a7e502f
 +	}
 +	cmd := exec.Command(avPath, "uaa-credential", action)
 +	cmd.Stdin = bytes.NewReader(input)
++	var stderr bytes.Buffer
++	cmd.Stderr = &stderr
 +	output, err := cmd.Output()
 +	if err != nil {
++		if detail := strings.TrimSpace(stderr.String()); detail != "" {
++			return nil, fmt.Errorf("Automic Vault UAA credential helper failed: %s", detail)
++		}
 +		return nil, fmt.Errorf("Automic Vault UAA credential helper failed: %w", err)
 +	}
 +	if len(output) > avMaxBundleBytes {

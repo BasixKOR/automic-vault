@@ -339,9 +339,10 @@ Launcher, Tool-specific gate, runtime posture, and current agent task.
 
 <img src="./docs/img/temporary-write-access.png" alt="Automic Vault temporary write access controls" style="width: 589px; height: auto" />
 
-The persistent strip shows active grants and lets you end them early. Automic
-Vault also revokes them when the user session becomes inactive, displays sleep,
-an update begins, or the app stops.
+The persistent strip shows every grant and lets you add ten minutes, suspend or
+resume its active-time countdown and Write Access, or end it early. Automic
+Vault also revokes grants when the user session becomes inactive, displays
+sleep, an update begins, or the app stops.
 
 The Verified Launcher remains the identity boundary. The task identifier is a
 forgeable label that narrows the grant. Temporary Access Grants exclude the
