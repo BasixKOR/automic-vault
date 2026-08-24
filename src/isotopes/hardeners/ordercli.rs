@@ -18,6 +18,7 @@ const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
 
 struct ConfigState {
     path: PathBuf,
+    existed: bool,
     original: String,
     sanitized: String,
     credential: Option<String>,
@@ -32,10 +33,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let configs = config_paths()?
         .into_iter()
         .map(|path| {
+            let existed = path.exists();
             let original = read_config(&path)?;
             let (sanitized, credential) = sanitize_config(&original)?;
             Ok(ConfigState {
                 path,
+                existed,
                 original,
                 sanitized,
                 credential,
@@ -82,19 +85,33 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !testing {
         verify_command_resolution()?;
     }
+    let rewrites = configs
+        .iter()
+        .filter(|config| {
+            config.original != config.sanitized || !config.existed && !config.sanitized.is_empty()
+        })
+        .map(|config| super::ConfigRewrite {
+            path: &config.path,
+            existed: config.existed,
+            original: &config.original,
+            replacement: &config.sanitized,
+        })
+        .collect::<Vec<_>>();
+    for rewrite in &rewrites {
+        secure_directory(
+            rewrite
+                .path
+                .parent()
+                .ok_or_else(|| "ordercli config has no parent".to_string())?,
+        )?;
+    }
     if let Some(credential) = credentials.first() {
         crate::secrets::store_secret_if_absent_or_equal(
             crate::cli::ordercli_credential::SECRET_NAME,
             credential,
         )?;
     }
-    for config in configs {
-        if config.original != config.sanitized
-            || !config.path.exists() && !config.sanitized.is_empty()
-        {
-            write_config(&config.path, &config.sanitized)?;
-        }
-    }
+    super::rewrite_configs_with_rollback(&rewrites, write_config, remove_config)?;
     writeln!(stdout, "╰─ hardened ordercli").ok();
     super::write_secret_gate_notice(stdout, "ordercli");
     Ok(())
@@ -252,18 +269,19 @@ fn sanitize_config(contents: &str) -> Result<(String, Option<String>), String> {
     let refresh = string_secret("refresh_token")?;
     let client = string_secret("client_secret")?;
     let mfa = string_secret("pending_mfa_token")?;
-    let cookies = foodora.get("cookies_by_host");
-    if cookies.is_some_and(|value| !value.is_object()) {
-        return Err("ordercli `cookies_by_host` must be an object".into());
-    }
-    if cookies.and_then(Value::as_object).is_some_and(|cookies| {
+    let cookies = match foodora.get("cookies_by_host") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(cookies)) => Some(cookies),
+        Some(_) => return Err("ordercli `cookies_by_host` must be an object or null".into()),
+    };
+    if cookies.is_some_and(|cookies| {
         cookies
             .iter()
             .any(|(host, cookie)| host.is_empty() || !cookie.is_string())
     }) {
         return Err("ordercli cookies contain unsupported fields".into());
     }
-    let cookie_marker = cookies.and_then(Value::as_object).is_some_and(|cookies| {
+    let cookie_marker = cookies.is_some_and(|cookies| {
         cookies.len() == 1 && cookies.get(MARKER).and_then(Value::as_str) == Some(MARKER)
     });
     let any_marker = [access, refresh, client, mfa].contains(&MARKER) || cookie_marker;
@@ -278,9 +296,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Option<String>), String> {
     let has_plaintext = [access, refresh, client, mfa]
         .iter()
         .any(|value| !value.is_empty())
-        || cookies
-            .and_then(Value::as_object)
-            .is_some_and(|cookies| !cookies.is_empty());
+        || cookies.is_some_and(|cookies| !cookies.is_empty());
     if !has_plaintext {
         return Ok((contents.to_string(), None));
     }
@@ -292,7 +308,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Option<String>), String> {
             "refresh_token": refresh,
             "client_secret": client,
             "pending_mfa_token": mfa,
-            "cookies_by_host": cookies.cloned(),
+            "cookies_by_host": cookies,
         })
         .to_string();
         Some(crate::cli::ordercli_credential::parse_credentials(&raw)?)
@@ -392,6 +408,22 @@ fn write_config(path: &Path, contents: &str) -> Result<(), String> {
         let _ = fs::remove_file(staging);
     }
     result
+}
+
+fn remove_config(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("failed to remove {}: {error}", path.display())),
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "ordercli config has no parent".to_string())?;
+    OpenOptions::new()
+        .read(true)
+        .open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("failed to sync {}: {error}", parent.display()))
 }
 
 fn secure_directory(path: &Path) -> Result<(), String> {
@@ -562,6 +594,15 @@ mod tests {
         let (sanitized, credential) = sanitize_config(input).unwrap();
         assert!(credential.unwrap().contains("cookie"));
         assert_eq!(sanitized.matches(MARKER).count(), 6);
+        assert!(
+            sanitize_config(&input.replace(
+                r#""cookies_by_host":{"example.com":"cookie"}"#,
+                r#""cookies_by_host":null"#
+            ))
+            .unwrap()
+            .1
+            .is_some()
+        );
         assert!(
             sanitize_config(&input.replace("\"device_id\"", "\"future\":1,\"device_id\"")).is_err()
         );

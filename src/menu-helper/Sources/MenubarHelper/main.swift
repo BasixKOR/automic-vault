@@ -7042,7 +7042,9 @@ private func railwayRequestClassification(_ args: [String]) -> SecretGateRequest
 private func ordercliRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
     let words = args.map { $0.lowercased() }
     guard let provider = words.first else { return .unknown }
-    if ["help", "completion", "--help", "-h"].contains(provider) { return .readOnly }
+    if ["help", "completion", "--help", "-h", "--version", "-v", "version"].contains(provider) {
+        return .readOnly
+    }
     guard ["foodora", "deliveroo"].contains(provider), let command = words.dropFirst().first
     else { return .unknown }
     if ["history", "orders", "order", "countries"].contains(command) { return .readOnly }
@@ -11874,6 +11876,9 @@ private func runOrdercliCredentialSelfCheck() -> Int32 {
     let scope = #"{"provider":"foodora"}"#
     let credential = #"{"access_token":"access","refresh_token":"refresh","client_secret":"","pending_mfa_token":"","cookies_by_host":{"example.com":"cookie"}}"#
     guard ordercliRequestClassification(["foodora", "history"]) == .readOnly,
+          ordercliRequestClassification(["--version"]) == .readOnly,
+          ordercliRequestClassification(["-v"]) == .readOnly,
+          ordercliRequestClassification(["version"]) == .readOnly,
           ordercliRequestClassification(["foodora", "login"]) == .mutating,
           ordercliRequestClassification(["foodora", "future"]) == .unknown,
           parseOrdercliCredentialScope(scope)?.secretName == ordercliCredentialSecretName,
