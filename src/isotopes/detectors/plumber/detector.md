@@ -11,8 +11,8 @@
 ## Remediation
 
 Run `av harden plumber`. The hardener installs the signed Plumber Isotope and
-migrates the complete local config into Automic Vault custody while leaving only
-a fixed, non-secret marker in `~/.batchsh/plumber.json`.
+migrates the complete local config into Automic Vault custody. If
+`~/.batchsh/plumber.json` exists, it is replaced with a fixed, non-secret marker.
 
 Upstream Plumber has no credential-helper boundary: local connection and relay
 credentials share one JSON document with non-secret configuration. The Isotope
