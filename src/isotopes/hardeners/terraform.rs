@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 
 use super::{
-    HardenerCommand, HardenerDetection, HardenerDiagnostic, RequiredIdentity, SecretGateDescriptor,
-    SecretGateRoute, StubRequirements,
+    HardenerCommand, HardenerDetection, HardenerDiagnostic, RequiredExecutable, RequiredIdentity,
+    SecretGateDescriptor, SecretGateRoute, StubRequirements,
 };
 
 const TERRAFORM_TARGET: &str = super::terraform_release::TARGET_PATH;
@@ -165,7 +165,14 @@ pub(crate) fn detect(tool: Tool) -> HardenerDetection {
         stub_valid,
         stub_path: Some(helper.display().to_string()),
         target_path: target.display().to_string(),
-        required_paths: Vec::new(),
+        required_paths: if test_config_path().is_some() {
+            Vec::new()
+        } else {
+            vec![RequiredExecutable {
+                name: "Automic Vault CLI",
+                path: AV_PATH.into(),
+            }]
+        },
         stub_requirements: Some(stub_requirements(&helper)),
         injected_keys: Vec::new(),
         assignment_keys: Vec::new(),

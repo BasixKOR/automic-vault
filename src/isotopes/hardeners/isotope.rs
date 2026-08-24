@@ -533,7 +533,10 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
         .metadata()
         .is_ok_and(|metadata| metadata.file_type().is_file())
     {
-        return Err(format!("refusing to hash non-regular file {}", path.display()));
+        return Err(format!(
+            "refusing to hash non-regular file {}",
+            path.display()
+        ));
     }
     let mut context = Context::new(&SHA256);
     let mut buffer = [0_u8; 64 * 1024];
