@@ -23,8 +23,9 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         crate::secrets::ensure_plumber_helper_ready()?;
     }
     let path = config_path()?;
+    let existed = path.exists();
     let original = read_config(&path)?;
-    let (sanitized, credential) = sanitize_config(&original)?;
+    let (sanitized, credential) = sanitize_config(&original, existed)?;
     let target = target();
     let plan = super::isotope::plan(super::isotope::PLUMBER)?;
 
@@ -69,7 +70,7 @@ pub(crate) fn detect() -> HardenerDetection {
     let path = config_path().ok();
     let config_valid = path.as_ref().is_some_and(|path| {
         read_config(path).is_ok_and(|contents| {
-            sanitize_config(&contents)
+            sanitize_config(&contents, path.exists())
                 .is_ok_and(|(sanitized, credential)| credential.is_none() && sanitized == contents)
         })
     });
@@ -119,7 +120,7 @@ pub(crate) fn detect() -> HardenerDetection {
     if let Some(path) = path.filter(|path| {
         path.exists()
             && match read_config(path) {
-                Ok(contents) => match sanitize_config(&contents) {
+                Ok(contents) => match sanitize_config(&contents, true) {
                     Ok((sanitized, credential)) => credential.is_some() || sanitized != contents,
                     Err(_) => true,
                 },
@@ -153,8 +154,11 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     }
 }
 
-fn sanitize_config(contents: &str) -> Result<(String, Option<String>), String> {
+fn sanitize_config(contents: &str, existed: bool) -> Result<(String, Option<String>), String> {
     if contents.is_empty() {
+        if existed {
+            return Err("existing Plumber config is empty".into());
+        }
         return Ok((String::new(), None));
     }
     let parsed: Value = serde_json::from_str(contents)
@@ -383,12 +387,17 @@ mod tests {
     fn migrates_the_complete_config_and_rejects_non_objects() {
         let input =
             r#"{"token":"streamdal-token","connections":{"kafka":{"sasl_password":"password"}}}"#;
-        let (sanitized, credential) = sanitize_config(input).unwrap();
+        let (sanitized, credential) = sanitize_config(input, true).unwrap();
         assert_eq!(sanitized, MARKER);
         let credential = credential.unwrap();
         assert!(credential.contains("streamdal-token"));
         assert!(credential.contains("password"));
-        assert_eq!(sanitize_config(MARKER).unwrap(), (MARKER.into(), None));
-        assert!(sanitize_config("[]").is_err());
+        assert_eq!(
+            sanitize_config(MARKER, true).unwrap(),
+            (MARKER.into(), None)
+        );
+        assert!(sanitize_config("[]", true).is_err());
+        assert!(sanitize_config("", true).is_err());
+        assert_eq!(sanitize_config("", false).unwrap(), (String::new(), None));
     }
 }

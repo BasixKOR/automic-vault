@@ -8,9 +8,9 @@ pub fn install_is_insecure() -> Result<bool, String> {
 
 pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     let path = plumber_config_path()?;
-    if path.exists() && config_requires_custody(&read_to_string(&path)?) {
+    if path.exists() && config_contains_secret(&read_to_string(&path)?) {
         return Ok(vec![format!(
-            "Plumber local config is outside Automic Vault custody: {}",
+            "Plumber config contains plaintext local credentials: {}",
             path.display()
         )]);
     }
@@ -28,15 +28,41 @@ fn read_to_string(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))
 }
 
-fn config_requires_custody(contents: &str) -> bool {
-    let Ok(serde_json::Value::Object(object)) = serde_json::from_str(contents) else {
-        return true;
-    };
-    !(object.len() == 1
-        && object
-            .get("automic_vault")
-            .and_then(serde_json::Value::as_str)
-            == Some("plumber-config-v1"))
+fn config_contains_secret(contents: &str) -> bool {
+    const SECRET_KEYS: &[&str] = &[
+        "token",
+        "auth_token",
+        "api_token",
+        "collection_token",
+        "peer_token",
+        "password",
+        "sasl_password",
+        "auth_secret",
+        "secret",
+        "credentials",
+        "client_key",
+    ];
+
+    SECRET_KEYS
+        .iter()
+        .any(|key| json_string_key_has_nonempty_value(contents, key))
+}
+
+fn json_string_key_has_nonempty_value(contents: &str, key: &str) -> bool {
+    let quoted_key = format!("\"{key}\"");
+    let mut rest = contents;
+    while let Some(index) = rest.find(&quoted_key) {
+        let after_key = &rest[index + quoted_key.len()..];
+        let Some(colon_index) = after_key.find(':') else {
+            return false;
+        };
+        let value = after_key[colon_index + 1..].trim_start();
+        if value.starts_with('"') {
+            return !value.starts_with("\"\"");
+        }
+        rest = &after_key[colon_index + 1..];
+    }
+    false
 }
 
 #[cfg(test)]
@@ -45,24 +71,24 @@ mod tests {
 
     #[test]
     fn detects_plumber_tokens_and_connection_secrets() {
-        assert!(config_requires_custody(
+        assert!(config_contains_secret(
             r#"{"token":"fake-streamdal-token","connections":{}}"#
         ));
-        assert!(config_requires_custody(
+        assert!(config_contains_secret(
             r#"{"connections":{"kafka":{"sasl_password":"fake-password"}}}"#
         ));
-        assert!(config_requires_custody(
+        assert!(config_contains_secret(
             r#"{"relays":{"one":{"collection_token":"fake-relay-token"}}}"#
         ));
     }
 
     #[test]
-    fn requires_custody_for_the_complete_config_and_ignores_only_the_marker() {
-        assert!(config_requires_custody(
+    fn ignores_empty_non_secret_configs_and_the_marker() {
+        assert!(!config_contains_secret(
             r#"{"token":"","connections":{"kafka":{"address":"localhost:9092"}}}"#
         ));
-        assert!(config_requires_custody(r#"{"connections":{}}"#));
-        assert!(!config_requires_custody(
+        assert!(!config_contains_secret(r#"{"connections":{}}"#));
+        assert!(!config_contains_secret(
             r#"{"automic_vault":"plumber-config-v1"}"#
         ));
     }
