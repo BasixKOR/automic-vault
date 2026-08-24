@@ -2531,7 +2531,7 @@ private func blessedScriptMatches(
     _ script: BlessedScript,
     request: ApprovalRequest,
     approval: ScriptApproval,
-    launcher: LauncherIdentity?
+    launcher: LauncherIdentity
 ) -> Bool {
     request.op == "inject"
         && request.scriptData != nil
@@ -2545,7 +2545,7 @@ private func blessedScriptMatches(
             target: request.target,
             replaceExistingEnv: request.replaceExistingEnv,
             allowMissingKeys: request.allowMissingKeys,
-            launcherRequirement: launcher?.designatedRequirement
+            launcherRequirement: launcher.designatedRequirement
         )
 }
 
@@ -3574,9 +3574,7 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             promptBlessing = BlessedScriptPromptContext(
                 script: script,
-                explanation: script.launchers.isEmpty
-                    ? "Approval activates this stored authority for one execution."
-                    : "The current launcher isn’t endorsed. Approval permits this request once; the blessed capabilities remain inactive."
+                explanation: "Approval activates this stored authority for one execution."
             )
         } else {
             promptBlessing = nil
@@ -3882,10 +3880,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     launcher: promptLauncher,
                     activateAfterRecording: {
                         if let scriptApproval,
-                           let script = self.matchingBlessedScript(
+                           let script = self.matchingBlessedScriptExecution(
                                request: request,
-                               approval: scriptApproval,
-                               launcher: nil
+                               approval: scriptApproval
                            )
                         {
                             self.registerBlessedExecution(script, pid: pid, identity: identity)
@@ -4489,16 +4486,6 @@ private final class ApprovalServer: @unchecked Sendable {
             }
         }
         return nil
-    }
-
-    private func matchingBlessedScript(
-        request: ApprovalRequest,
-        approval: ScriptApproval,
-        launcher: LauncherIdentity?
-    ) -> BlessedScript? {
-        loadBlessedScripts().first {
-            blessedScriptMatches($0, request: request, approval: approval, launcher: launcher)
-        }
     }
 
     private func matchingBlessedScriptExecution(
