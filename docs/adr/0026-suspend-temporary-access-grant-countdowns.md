@@ -1,4 +1,4 @@
-# ADR 0025: Suspend Temporary Access Grant countdowns
+# ADR 0026: Suspend Temporary Access Grant countdowns
 
 Status: accepted
 
