@@ -7350,7 +7350,7 @@ private func ordercliRequestClassification(_ args: [String]) -> SecretGateReques
 private func openhueRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
     let words = args.map { $0.lowercased() }
     guard let command = words.first else { return .unknown }
-    if ["--version", "version", "help", "completion", "discover", "get"].contains(command) {
+    if ["--version", "--help", "-h", "version", "help", "completion", "discover", "get"].contains(command) {
         return .readOnly
     }
     if command == "config" { return .localWrite }
@@ -12286,6 +12286,7 @@ private func runOrdercliCredentialSelfCheck() -> Int32 {
 private func runOpenHueCredentialSelfCheck() -> Int32 {
     let scope = #"{"bridge":"192.0.2.10"}"#
     guard openhueRequestClassification(["get", "light"]) == .readOnly,
+          openhueRequestClassification(["--help"]) == .readOnly,
           openhueRequestClassification(["config", "--key", "secret"]) == .localWrite,
           openhueRequestClassification(["set", "light"]) == .mutating,
           openhueRequestClassification(["future"]) == .unknown,
