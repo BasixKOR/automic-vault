@@ -115,6 +115,14 @@ pub(crate) fn bless_script(path: &str, endorse_launcher: bool) -> Result<bool, S
 }
 
 pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
+    list_secret_names_filtered(false)
+}
+
+pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
+    list_secret_names_filtered(true)
+}
+
+fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> {
     if let Some(dir) = crate::test_keychain_dir() {
         let entries = match std::fs::read_dir(dir) {
             Ok(entries) => entries,
@@ -130,7 +138,14 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         return Ok(names);
     }
     let cwd = crate::path_security::current_working_directory_utf8()?;
-    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None, None)?.names)
+    Ok(xpc_request(
+        "list",
+        Some((b"cwd\0", &cwd)),
+        None,
+        global_only.then_some(&b"global_only\0"[..]),
+        None,
+    )?
+    .names)
 }
 
 pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {

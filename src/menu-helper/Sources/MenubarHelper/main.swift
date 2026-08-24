@@ -3012,6 +3012,7 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid list request")
             return
         }
+        let globalOnly = xpc_dictionary_get_bool(message, "global_only")
         var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         if launchers.isEmpty, let caller = launcherIdentity(pid: pid, identity: identity) {
@@ -3039,7 +3040,9 @@ private final class ApprovalServer: @unchecked Sendable {
             scriptData: nil,
             tool: "av",
             title: "List saved secret names?",
-            detail: "Secret values will remain hidden. The requesting app will receive every saved secret name."
+            detail: globalOnly
+                ? "Secret values will remain hidden. The requesting app will receive every saved Global Value name."
+                : "Secret values will remain hidden. The requesting app will receive every saved secret name."
         )
         if allowedLauncher != nil
         {
@@ -3050,7 +3053,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 approvalSource: "Auto",
                 reason: "Always allowed in Settings",
                 peer: peer,
-                message: message
+                message: message,
+                globalOnly: globalOnly
             )
             return
         }
@@ -3116,7 +3120,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 approvalSource: "Manual",
                 reason: "Allowed once in prompt",
                 peer: peer,
-                message: message
+                message: message,
+                globalOnly: globalOnly
             )
         }
     }
@@ -3128,11 +3133,16 @@ private final class ApprovalServer: @unchecked Sendable {
         approvalSource: String,
         reason: String,
         peer: xpc_connection_t,
-        message: xpc_object_t
+        message: xpc_object_t,
+        globalOnly: Bool
     ) {
         let names: [String]
         switch loadStoredSecretsResult() {
-        case .success(let secrets): names = secrets.map(\.account)
+        case .success(let secrets):
+            names = secrets.compactMap { secret in
+                (!globalOnly || secret.values.contains { $0.source == .global })
+                    ? secret.account : nil
+            }
         case .failure(let status):
             _ = onAccessRequest(accessRequestRecord(
                 request: request,
