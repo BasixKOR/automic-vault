@@ -29,6 +29,12 @@ import Testing
     #expect(ApprovalServiceOperation.goatDelete.rawValue == "goat-delete")
 }
 
+@Test func railwayCredentialsHaveDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.railwayGet.rawValue == "railway-get")
+    #expect(ApprovalServiceOperation.railwaySave.rawValue == "railway-save")
+    #expect(ApprovalServiceOperation.railwayDelete.rawValue == "railway-delete")
+}
+
 @Test func approvalServiceOperationValuesAreUnique() {
     let values = ApprovalServiceOperation.allCases.map(\.rawValue)
     #expect(Set(values).count == values.count)

@@ -1,0 +1,258 @@
+diff --git i/src/config.rs w/src/config.rs
+index 6ccab0e..4f032bc 100644
+--- i/src/config.rs
++++ w/src/config.rs
+@@ -7,0 +8,5 @@ use std::{
++#[cfg(not(test))]
++use std::io::Write;
++#[cfg(not(test))]
++use std::process::{Command, Stdio};
++
+@@ -52,0 +58,55 @@ pub struct RailwayUser {
++const AV_CREDENTIAL_MARKER: &str = "@av";
++
++#[derive(Serialize, Deserialize)]
++#[serde(deny_unknown_fields, rename_all = "camelCase")]
++struct AVCredentials {
++    token: Option<String>,
++    access_token: Option<String>,
++    refresh_token: Option<String>,
++}
++
++impl AVCredentials {
++    fn from_user(user: &RailwayUser) -> Result<Option<Self>> {
++        Self {
++            token: user.token.clone(),
++            access_token: user.access_token.clone(),
++            refresh_token: user.refresh_token.clone(),
++        }
++        .validate()
++    }
++
++    fn validate(self) -> Result<Option<Self>> {
++        let values = [
++            self.token.as_deref(),
++            self.access_token.as_deref(),
++            self.refresh_token.as_deref(),
++        ];
++        if values.iter().all(|value| value.is_none()) {
++            return Ok(None);
++        }
++        anyhow::ensure!(
++            values
++                .iter()
++                .flatten()
++                .all(|value| !value.is_empty() && !value.contains('\0')),
++            "Railway credentials must be nonempty and contain no NUL"
++        );
++        anyhow::ensure!(
++            !(self.token.is_some()
++                && (self.access_token.is_some() || self.refresh_token.is_some())),
++            "Railway legacy and OAuth credentials cannot be mixed"
++        );
++        anyhow::ensure!(
++            self.token.is_some() || self.access_token.is_some(),
++            "Railway refresh token requires an access token"
++        );
++        Ok(Some(self))
++    }
++
++    fn apply(self, user: &mut RailwayUser) {
++        user.token = self.token;
++        user.access_token = self.access_token;
++        user.refresh_token = self.refresh_token;
++    }
++}
++
+@@ -124,0 +185 @@ pub struct Configs {
++#[derive(Clone, Copy, Debug)]
+@@ -139 +200 @@ impl Configs {
+-            let root_config: RailwayConfig = serde_json::from_slice(&serialized_config)
++            let mut root_config: RailwayConfig = serde_json::from_slice(&serialized_config)
+@@ -147,0 +209 @@ impl Configs {
++            Self::hydrate_credentials(&root_config_path, &mut root_config)?;
+@@ -203 +265,3 @@ impl Configs {
+-        self.root_config = Self::read_root_config(&self.root_config_path).unwrap_or_default();
++        let mut root_config = Self::read_root_config(&self.root_config_path).unwrap_or_default();
++        Self::hydrate_credentials(&self.root_config_path, &mut root_config)?;
++        self.root_config = root_config;
+@@ -390,0 +455,115 @@ impl Configs {
++    fn hydrate_credentials(path: &std::path::Path, config: &mut RailwayConfig) -> Result<()> {
++        let fields = [
++            config.user.token.as_deref(),
++            config.user.access_token.as_deref(),
++            config.user.refresh_token.as_deref(),
++        ];
++        let marker_count = fields
++            .iter()
++            .filter(|value| **value == Some(AV_CREDENTIAL_MARKER))
++            .count();
++        if marker_count == 0 {
++            anyhow::ensure!(
++                fields.iter().all(|value| value.is_none()),
++                "plaintext Railway credentials are disabled; run `av harden railway`"
++            );
++            return Ok(());
++        }
++        anyhow::ensure!(
++            fields
++                .iter()
++                .all(|value| value.is_none() || *value == Some(AV_CREDENTIAL_MARKER)),
++            "Railway auth state is only partially migrated"
++        );
++        let value = Self::av_credential(path, "get", None)?
++            .context("Automic Vault returned no Railway credential")?;
++        anyhow::ensure!(
++            value.len() <= 64 * 1024,
++            "Railway credential exceeds 64 KiB"
++        );
++        let credentials: AVCredentials = serde_json::from_str(&value)?;
++        let credentials = credentials
++            .validate()?
++            .context("Automic Vault returned an empty Railway credential")?;
++        anyhow::ensure!(
++            credentials.token.is_some()
++                == (config.user.token.as_deref() == Some(AV_CREDENTIAL_MARKER))
++                && credentials.access_token.is_some()
++                    == (config.user.access_token.as_deref() == Some(AV_CREDENTIAL_MARKER))
++                && credentials.refresh_token.is_some()
++                    == (config.user.refresh_token.as_deref() == Some(AV_CREDENTIAL_MARKER)),
++            "Automic Vault Railway credential shape does not match config metadata"
++        );
++        credentials.apply(&mut config.user);
++        Ok(())
++    }
++
++    #[cfg(not(test))]
++    fn av_credential(
++        path: &std::path::Path,
++        action: &str,
++        input: Option<&str>,
++    ) -> Result<Option<String>> {
++        let _ = path;
++        let (environment, host) = match Self::get_environment_id() {
++            Environment::Production => ("production", "railway.com"),
++            Environment::Staging => ("staging", "railway-staging.com"),
++            Environment::Dev => ("dev", "railway-develop.com"),
++        };
++        let mut child = Command::new("/usr/local/bin/av")
++            .args(["railway-credential", action, environment, host])
++            .stdin(if input.is_some() {
++                Stdio::piped()
++            } else {
++                Stdio::null()
++            })
++            .stdout(Stdio::piped())
++            .spawn()
++            .context("failed to start Automic Vault Railway credential helper")?;
++        if let Some(input) = input {
++            child
++                .stdin
++                .take()
++                .context("credential helper stdin is unavailable")?
++                .write_all(input.as_bytes())?;
++        }
++        let output = child.wait_with_output()?;
++        anyhow::ensure!(
++            output.status.success(),
++            "Automic Vault Railway credential helper failed"
++        );
++        anyhow::ensure!(
++            output.stdout.len() <= 64 * 1024 + 1,
++            "Railway credential exceeds 64 KiB"
++        );
++        let output = String::from_utf8(output.stdout)?;
++        Ok((action == "get").then(|| output.trim_end_matches('\n').to_string()))
++    }
++
++    #[cfg(test)]
++    fn av_credential(
++        path: &std::path::Path,
++        action: &str,
++        input: Option<&str>,
++    ) -> Result<Option<String>> {
++        use std::collections::HashMap;
++        use std::sync::{Mutex, OnceLock};
++        static STORE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
++        let mut store = STORE.get_or_init(Default::default).lock().unwrap();
++        match action {
++            "get" => Ok(store.get(path).cloned()),
++            "store" => {
++                store.insert(
++                    path.to_path_buf(),
++                    input.context("missing credential")?.to_string(),
++                );
++                Ok(None)
++            }
++            "forget" => {
++                store.remove(path);
++                Ok(None)
++            }
++            _ => bail!("unsupported credential action"),
++        }
++    }
++
+@@ -878 +1057,33 @@ impl Configs {
+-        let value = serde_json::to_value(&self.root_config)?;
++        let credentials = AVCredentials::from_user(&self.root_config.user)?;
++        let disk_has_markers =
++            Self::read_root_config(&self.root_config_path).is_some_and(|config| {
++                [
++                    config.user.token,
++                    config.user.access_token,
++                    config.user.refresh_token,
++                ]
++                .iter()
++                .any(|value| value.as_deref() == Some(AV_CREDENTIAL_MARKER))
++            });
++        let mut value = serde_json::to_value(&self.root_config)?;
++        match credentials {
++            Some(credentials) => {
++                let encoded = serde_json::to_string(&credentials)?;
++                Self::av_credential(&self.root_config_path, "store", Some(&encoded))?;
++                for (field, present) in [
++                    ("token", credentials.token.is_some()),
++                    ("accessToken", credentials.access_token.is_some()),
++                    ("refreshToken", credentials.refresh_token.is_some()),
++                ] {
++                    value["user"][field] = if present {
++                        serde_json::Value::String(AV_CREDENTIAL_MARKER.to_string())
++                    } else {
++                        serde_json::Value::Null
++                    };
++                }
++            }
++            None if disk_has_markers => {
++                Self::av_credential(&self.root_config_path, "forget", None)?;
++            }
++            None => {}
++        }
+@@ -1000,0 +1212,28 @@ mod tests {
++    #[test]
++    fn av_custody_round_trip_never_writes_plaintext() {
++        let dir = tempfile::tempdir().unwrap();
++        let path = dir.path().join("config.json");
++        let mut configs = Configs::for_test(path.clone());
++        configs
++            .save_oauth_tokens("access-secret", Some("refresh-secret"), 3600)
++            .unwrap();
++        let raw = std::fs::read_to_string(&path).unwrap();
++        assert!(!raw.contains("access-secret") && !raw.contains("refresh-secret"));
++        assert_eq!(raw.matches(AV_CREDENTIAL_MARKER).count(), 2);
++
++        let mut reloaded = Configs::for_test(path.clone());
++        reloaded.reload().unwrap();
++        assert_eq!(
++            reloaded.get_railway_auth_token().as_deref(),
++            Some("access-secret")
++        );
++        assert_eq!(reloaded.get_refresh_token(), Some("refresh-secret"));
++
++        std::fs::write(
++            &path,
++            r#"{"projects":{},"user":{"accessToken":"plaintext"}}"#,
++        )
++        .unwrap();
++        assert!(Configs::for_test(path).reload().is_err());
++    }
++

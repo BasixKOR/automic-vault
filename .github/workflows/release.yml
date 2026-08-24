@@ -216,6 +216,10 @@ jobs:
         shell: bash
         run: scripts/build-goat-isotope.sh "$ASSET_DIR"
 
+      - name: Build signed Railway Isotope
+        shell: bash
+        run: scripts/build-railway-isotope.sh "$ASSET_DIR"
+
       - name: Stage release inputs
         shell: bash
         run: |
@@ -247,7 +251,8 @@ jobs:
             shasum -a 256 "$DMG_NAME" "$SBOM_NAME" \
               OpenTofu-Isotope-darwin-arm64.tgz \
               Oxide-CLI-Isotope-darwin-arm64.tgz \
-              goat-Isotope-darwin-arm64.tgz >SHA256SUMS
+              goat-Isotope-darwin-arm64.tgz \
+              Railway-Isotope-darwin-arm64.tgz >SHA256SUMS
           )
 
       - name: Attest build provenance
@@ -270,6 +275,11 @@ jobs:
         with:
           subject-path: ${{ env.ASSET_DIR }}/goat-Isotope-darwin-arm64.tgz
 
+      - name: Attest Railway Isotope provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: ${{ env.ASSET_DIR }}/Railway-Isotope-darwin-arm64.tgz
+
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
@@ -288,6 +298,7 @@ jobs:
             "$ASSET_DIR/OpenTofu-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/Oxide-CLI-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/goat-Isotope-darwin-arm64.tgz" \
+            "$ASSET_DIR/Railway-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

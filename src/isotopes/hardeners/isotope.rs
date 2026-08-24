@@ -18,6 +18,7 @@ const TAP_FORMULA_ROOT: &str =
 const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
 const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
 const GOAT_ASSET: &str = "goat-Isotope-darwin-arm64.tgz";
+const RAILWAY_ASSET: &str = "Railway-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const GH: Spec = Spec {
@@ -73,6 +74,15 @@ pub(crate) const GOAT: Spec = Spec {
     binaries: &["goat"],
     test_path: "AUTOMIC_VAULT_TEST_GOAT_TARGET",
     release_asset: Some(GOAT_ASSET),
+};
+pub(crate) const RAILWAY: Spec = Spec {
+    hardener: "railway",
+    formula: "railway",
+    repository: "automic-vault",
+    primary: "railway",
+    binaries: &["railway"],
+    test_path: "AUTOMIC_VAULT_TEST_RAILWAY_TARGET",
+    release_asset: Some(RAILWAY_ASSET),
 };
 
 #[derive(Clone, Copy)]
@@ -300,6 +310,9 @@ pub(crate) fn install_privileged(
         }
         if spec.hardener == GOAT.hardener {
             super::goat::verify_target(&stage)?;
+        }
+        if spec.hardener == RAILWAY.hardener {
+            super::railway::verify_target(&stage)?;
         }
         staged.push((stage, bin_dir.join(binary)));
     }
@@ -686,6 +699,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     if spec.hardener == GOAT.hardener {
         return super::goat::verify_target(path).is_ok();
     }
+    if spec.hardener == RAILWAY.hardener {
+        return super::railway::verify_target(path).is_ok();
+    }
     true
 }
 
@@ -697,7 +713,7 @@ fn formula_url(spec: Spec) -> String {
 }
 
 fn spec(hardener: &str) -> Option<Spec> {
-    [GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT]
+    [GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT, RAILWAY]
         .into_iter()
         .find(|spec| spec.hardener == hardener)
 }

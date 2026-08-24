@@ -1893,6 +1893,8 @@ enum SecretMutation {
     case dockerDelete(account: String, serverURL: String)
     case goatSave(account: String, value: String, scope: String)
     case goatDelete(account: String, scope: String)
+    case railwaySave(account: String, value: String, scope: String)
+    case railwayDelete(account: String, scope: String)
     case oxideSave(account: String, value: String, scope: String)
     case oxideDelete(account: String, scope: String)
     case terraformSave(account: String, value: String, hostname: String)
@@ -1957,6 +1959,18 @@ enum SecretMutation {
                 "Delete goat auth session?",
                 "goat will no longer be able to authenticate with this session."
             )
+        case .railwaySave(let account, _, let scope):
+            properties = (
+                "railway-save", [account], ["credential", "store", scope],
+                "Store Railway credential?",
+                "Railway CLI will use this credential through its Automic Vault Secret Gate."
+            )
+        case .railwayDelete(let account, let scope):
+            properties = (
+                "railway-delete", [account], ["credential", "forget", scope],
+                "Delete Railway credential?",
+                "Railway CLI will no longer be able to authenticate in this environment."
+            )
         case .oxideSave(let account, _, let scope):
             properties = (
                 "oxide-save", [account], ["credential", "store", scope],
@@ -2004,6 +2018,7 @@ enum SecretMutation {
         let tool = switch self {
         case .dockerSave, .dockerDelete: "docker"
         case .goatSave, .goatDelete: "goat"
+        case .railwaySave, .railwayDelete: "railway"
         case .oxideSave, .oxideDelete: "oxide-cli"
         case .terraformSave, .terraformDelete: "terraform"
         default: URL(fileURLWithPath: callerPath).lastPathComponent
@@ -2029,6 +2044,10 @@ enum SecretMutation {
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = serverURL
         case .goatSave(_, _, let scope), .goatDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
+        case .railwaySave(_, _, let scope), .railwayDelete(_, let scope):
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
@@ -2110,6 +2129,10 @@ enum SecretMutation {
         case .goatSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .goatDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .railwaySave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .railwayDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .oxideSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
@@ -2920,6 +2943,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .railwayHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Railway helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .oxideHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -2944,7 +2974,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .goatGet, .oxideGet, .terraformGet:
+        case .inject, .keys, .authorize, .dockerGet, .goatGet, .railwayGet, .oxideGet, .terraformGet:
             handleInject(
                 message,
                 on: peer,
@@ -2984,6 +3014,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleGoatSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .goatDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleGoatDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .railwaySave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleRailwaySave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .railwayDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleRailwayDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .oxideSave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleOxideSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .oxideDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3263,9 +3297,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let helperRequest = try terraformCredentialRequest(
+            let railwayRequest = try railwayCredentialRequest(
                 from: message,
                 request: goatRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let helperRequest = try terraformCredentialRequest(
+                from: message,
+                request: railwayRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -5174,6 +5215,56 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleRailwaySave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "railway_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseRailwayCredentialScope(String(cString: scopePointer)),
+              let value = parseRailwayCredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Railway credential store request")
+            return
+        }
+        do {
+            let parent = try railwayCredentialParent(for: caller.identity)
+            handleMutation(
+                .railwaySave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleRailwayDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "railway_scope"),
+              let scope = parseRailwayCredentialScope(String(cString: scopePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Railway credential forget request")
+            return
+        }
+        do {
+            let parent = try railwayCredentialParent(for: caller.identity)
+            handleMutation(
+                .railwayDelete(account: scope.secretName, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleOxideSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5370,6 +5461,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .saveIfAbsentOrEqual(let account, _, _),
                  .dockerSave(let account, _, _, _),
                  .goatSave(let account, _, _),
+                 .railwaySave(let account, _, _),
                  .oxideSave(let account, _, _),
                  .terraformSave(let account, _, _):
                 if status == errSecSuccess {
@@ -5384,6 +5476,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
             case .delete(let account), .dockerDelete(let account, _),
                  .goatDelete(let account, _),
+                 .railwayDelete(let account, _),
                  .oxideDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
                     self.reply(peer, to: message, ok: true, error: nil)
@@ -5613,6 +5706,52 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func railwayCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "railway-get" else { return request }
+        guard request.tool == "railway",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty, request.args.isEmpty, request.keys.count == 1,
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "railway_scope"),
+              let scope = parseRailwayCredentialScope(String(cString: scopePointer)),
+              request.keys == [scope.secretName]
+        else { throw AppError("invalid Railway credential request") }
+        let parent = try railwayCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op, keys: request.keys, target: parent.target,
+            args: Array(parent.arguments.dropFirst()), cwd: request.cwd,
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: "railway",
+            title: "Use Railway credential for \(scope.environment)?",
+            detail: "The verified Railway Target will receive its reusable credential for \(scope.host).",
+            credentialScope: scope.canonical, credentialParent: parent
+        )
+    }
+
+    private func railwayCredentialParent(for helperIdentity: AVProcessIdentity) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID), !arguments.isEmpty
+        else { throw AppError("Railway credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard railwayTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible Railway Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID, startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid, target: target, arguments: arguments
+        )
+    }
+
     private func oxideCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -5751,6 +5890,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch parent.target {
         case "/usr/local/bin/goat": "goat"
+        case "/usr/local/bin/railway": "railway"
         case "/usr/local/bin/oxide": "oxide-cli"
         case "/usr/local/bin/tofu": "opentofu"
         default: "terraform"
@@ -5773,6 +5913,9 @@ private final class ApprovalServer: @unchecked Sendable {
         case "goat":
             return credentialHelperTool(parent) == tool
                 && goatTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "railway":
+            return credentialHelperTool(parent) == tool
+                && railwayTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "oxide-cli":
             return credentialHelperTool(parent) == tool
                 && oxideTargetIdentityValid(pid: parent.pid, path: parent.target)
@@ -5788,6 +5931,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "goat"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func railwayTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/railway",
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "railway"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -5825,7 +5978,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "oxide-get", "terraform-get"].contains(request.op) {
+        if ["docker-get", "goat-get", "railway-get", "oxide-get", "terraform-get"].contains(request.op) {
             guard let scope = request.credentialScope,
                   let parent = request.credentialParent,
                   let tool = request.tool,
@@ -5841,6 +5994,11 @@ private final class ApprovalServer: @unchecked Sendable {
                     throw AppError("goat credential scope changed before Secret Application")
                 }
                 expected = goat.secretName
+            case "railway-get":
+                guard let railway = parseRailwayCredentialScope(scope) else {
+                    throw AppError("Railway credential scope changed before Secret Application")
+                }
+                expected = railway.secretName
             case "oxide-get":
                 guard let oxide = parseOxideCredentialScope(scope) else {
                     throw AppError("Oxide credential scope changed before Secret Application")
@@ -5872,6 +6030,10 @@ private final class ApprovalServer: @unchecked Sendable {
                 guard let scope = parseGoatCredentialScope(scope),
                       let value = secrets[scope.secretName], parseGoatCredential(value) != nil
                 else { throw AppError("goat credential changed before Secret Application") }
+            } else if request.op == "railway-get" {
+                guard let scope = parseRailwayCredentialScope(scope),
+                      let value = secrets[scope.secretName], parseRailwayCredential(value) != nil
+                else { throw AppError("Railway credential changed before Secret Application") }
             } else if request.op == "oxide-get" {
                 guard let scope = parseOxideCredentialScope(scope),
                       let value = secrets[scope.secretName],
@@ -6253,7 +6415,8 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "oxide-get" || op == "terraform-get"
+            || op == "docker-get" || op == "goat-get" || op == "railway-get"
+            || op == "oxide-get" || op == "terraform-get"
             || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -6651,6 +6814,8 @@ private func classifySecretGateRequest(
         return dockerRequestClassification(request.args)
     case "goat":
         return goatRequestClassification(request.args)
+    case "railway":
+        return railwayRequestClassification(request.args)
     case "oxide-cli":
         return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
@@ -6684,6 +6849,29 @@ private func goatRequestClassification(_ args: [String]) -> SecretGateRequestCla
         return ["create", "delete", "update"].contains(action) ? .mutating : .unknown
     }
     if ["resolve", "firehose"].contains(command) { return .readOnly }
+    return .unknown
+}
+
+private func railwayRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    if ["--version", "-v", "version", "help", "completion", "docs", "list", "status", "whoami",
+        "logs", "metrics", "usage", "open"].contains(command)
+    {
+        return .readOnly
+    }
+    if ["run", "local", "shell"].contains(command) { return .secretDump }
+    if ["variable", "variables", "vars", "var"].contains(command) {
+        guard let action = words.dropFirst().first else { return .secretDump }
+        if ["list", "ls"].contains(action) { return .secretDump }
+        return ["set", "delete", "rm", "remove"].contains(action) ? .mutating : .unknown
+    }
+    if ["up", "down", "deploy", "redeploy", "restart", "delete", "init", "link", "unlink",
+        "login", "logout", "environment", "service", "variable", "domain", "volume", "tcp-proxy",
+        "private-network", "outbound-network", "scale", "ssh", "connect"].contains(command)
+    {
+        return .mutating
+    }
     return .unknown
 }
 
@@ -7266,6 +7454,59 @@ private func parseGoatCredential(_ value: String) -> String? {
           })
     else { return nil }
     return value
+}
+
+private struct StoredRailwayCredentialScope {
+    let environment: String
+    let host: String
+    let canonical: String
+
+    var secretName: String {
+        let hash = SHA256.hash(data: Data((environment + "\0" + host).utf8))
+            .map { String(format: "%02X", $0) }.joined()
+        return "RAILWAY_AUTH_\(hash)"
+    }
+}
+
+private func parseRailwayCredentialScope(_ value: String) -> StoredRailwayCredentialScope? {
+    let expectedHosts = [
+        "production": "railway.com",
+        "staging": "railway-staging.com",
+        "dev": "railway-develop.com",
+    ]
+    guard value.utf8.count <= 4 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["environment", "host"]),
+          let environment = object["environment"] as? String,
+          let host = object["host"] as? String,
+          expectedHosts[environment] == host,
+          let canonicalData = try? JSONSerialization.data(
+              withJSONObject: ["environment": environment, "host": host],
+              options: [.sortedKeys, .withoutEscapingSlashes]
+          ),
+          let canonical = String(data: canonicalData, encoding: .utf8), canonical == value
+    else { return nil }
+    return StoredRailwayCredentialScope(environment: environment, host: host, canonical: canonical)
+}
+
+private func parseRailwayCredential(_ value: String) -> String? {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["token", "accessToken", "refreshToken"])
+    else { return nil }
+    func string(_ key: String) -> String? {
+        guard let field = object[key] as? String, !field.isEmpty,
+              !field.unicodeScalars.contains(where: { $0.value == 0 })
+        else { return nil }
+        return field
+    }
+    func absent(_ key: String) -> Bool { object[key] is NSNull }
+    let legacy = string("token") != nil && absent("accessToken") && absent("refreshToken")
+    let oauth = absent("token") && string("accessToken") != nil
+        && (absent("refreshToken") || string("refreshToken") != nil)
+    return legacy || oauth ? value : nil
 }
 
 private struct StoredOxideCredentialScope {
@@ -8165,8 +8406,8 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion, .oxideHelperVersion,
-             .terraformHelperVersion: false
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
+             .railwayHelperVersion, .oxideHelperVersion, .terraformHelperVersion: false
         default: true
         }
     }
@@ -11373,6 +11614,29 @@ private func runGoatCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runRailwayCredentialSelfCheck() -> Int32 {
+    let canonical = #"{"environment":"production","host":"railway.com"}"#
+    guard railwayRequestClassification(["status"]) == .readOnly,
+          railwayRequestClassification(["deploy"]) == .mutating,
+          railwayRequestClassification(["run", "env"]) == .secretDump,
+          railwayRequestClassification(["variables", "list", "--json"]) == .secretDump,
+          railwayRequestClassification(["future"]) == .unknown,
+          let scope = parseRailwayCredentialScope(canonical),
+          scope.secretName
+              == "RAILWAY_AUTH_DC8779025AEA8CB5CBCE119C0F3B0CD38FF99203728B2ED45EAAC18F0F891B1A",
+          parseRailwayCredential(
+              #"{"token":null,"accessToken":"access","refreshToken":"refresh"}"#
+          ) != nil,
+          parseRailwayCredential(
+              #"{"token":"legacy","accessToken":null,"refreshToken":null}"#
+          ) != nil,
+          parseRailwayCredential(
+              #"{"token":"legacy","accessToken":"access","refreshToken":null}"#
+          ) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -12328,6 +12592,10 @@ if CommandLine.arguments.contains("--self-check-oxide-credentials") {
 
 if CommandLine.arguments.contains("--self-check-goat-credentials") {
     exit(runGoatCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-railway-credentials") {
+    exit(runRailwayCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {
