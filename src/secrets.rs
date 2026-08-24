@@ -137,10 +137,9 @@ fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> 
         names.sort();
         return Ok(names);
     }
-    let cwd = crate::path_security::current_working_directory_utf8()?;
     Ok(xpc_request(
         "list",
-        Some((b"cwd\0", &cwd)),
+        None,
         None,
         global_only.then_some(&b"global_only\0"[..]),
         None,
@@ -395,6 +394,9 @@ fn xpc_request_with_project_directory(
         Ok(())
     }
 
+    let cwd = xpc_operation_requires_cwd(operation)
+        .then(crate::path_security::current_working_directory_utf8)
+        .transpose()?;
     let service = CString::new(APPROVAL_SERVICE).unwrap();
     let connection =
         unsafe { xpc_connection_create_mach_service(service.as_ptr(), std::ptr::null_mut(), 0) };
@@ -425,6 +427,9 @@ fn xpc_request_with_project_directory(
 
     unsafe {
         set_string(message, b"op\0", operation)?;
+        if let Some(cwd) = cwd.as_deref() {
+            set_string(message, b"cwd\0", cwd)?;
+        }
         if let Some((field, value)) = field {
             set_string(message, field, value)?;
         }
@@ -531,6 +536,20 @@ fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
     }
 }
 
+fn xpc_operation_requires_cwd(operation: &str) -> bool {
+    matches!(
+        operation,
+        "save"
+            | "save-if-absent"
+            | "docker-save"
+            | "docker-delete"
+            | "oxide-save"
+            | "oxide-delete"
+            | "terraform-save"
+            | "terraform-delete"
+    )
+}
+
 #[cfg(not(target_os = "macos"))]
 fn xpc_request(
     _operation: &str,
@@ -551,5 +570,16 @@ mod tests {
         assert_eq!(human_approval_message(b"approved"), Some("approved"));
         assert_eq!(human_approval_message(b"denied"), Some("denied"));
         assert_eq!(human_approval_message(b"unexpected"), None);
+    }
+
+    #[test]
+    fn only_mutations_require_a_working_directory() {
+        assert!(xpc_operation_requires_cwd("save"));
+        assert!(xpc_operation_requires_cwd("docker-delete"));
+        assert!(xpc_operation_requires_cwd("oxide-save"));
+        assert!(xpc_operation_requires_cwd("terraform-save"));
+        assert!(!xpc_operation_requires_cwd("bless"));
+        assert!(!xpc_operation_requires_cwd("docker-helper-version"));
+        assert!(!xpc_operation_requires_cwd("list"));
     }
 }

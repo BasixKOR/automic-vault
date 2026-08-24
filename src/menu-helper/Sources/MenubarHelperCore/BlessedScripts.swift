@@ -155,7 +155,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
         target: String,
         replaceExistingEnv: Bool,
         allowMissingKeys: Bool,
-        launcherRequirement: String?
+        launcherRequirement: String
     ) -> Bool {
         matchesExecution(
             path: path,
@@ -165,9 +165,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
             replaceExistingEnv: replaceExistingEnv,
             allowMissingKeys: allowMissingKeys
         )
-            && launcherRequirement.map { requirement in
-                launchers.contains { $0.requirement == requirement }
-            } ?? launchers.isEmpty
+            && launchers.contains { $0.requirement == launcherRequirement }
     }
 
     public init(

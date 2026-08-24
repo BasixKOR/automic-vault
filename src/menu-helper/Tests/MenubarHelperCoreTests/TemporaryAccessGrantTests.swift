@@ -73,6 +73,173 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     #expect(controller.snapshots(wallNow: start, monotonicNow: 650).isEmpty)
 }
 
+@Test func suspendedCountdownFreezesRemainingTimeAndAuthority() throws {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let grant = controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+
+    let suspended = try #require(controller.setCountdownSuspended(
+        id: grant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(100),
+        monotonicNow: 150
+    ))
+    #expect(suspended.isCountdownSuspended)
+    #expect(suspended.remaining(wallNow: start.addingTimeInterval(10_000), monotonicNow: 10_050) == 500)
+    #expect(controller.withActiveLease(
+        authorizationGateID: "aws",
+        launcherDesignatedRequirement: "identifier com.example.launcher",
+        launcherRuntimeProtection: .hardened,
+        agentTaskContext: AgentTaskContext(provider: .codex, id: codexID),
+        classification: .mutating,
+        wallNow: start.addingTimeInterval(10_000),
+        monotonicNow: 10_050
+    ) { _ in true } == nil)
+
+    let resumedAt = start.addingTimeInterval(10_000)
+    let resumed = try #require(controller.setCountdownSuspended(
+        id: grant.id,
+        suspended: false,
+        wallNow: resumedAt,
+        monotonicNow: 10_050
+    ))
+    #expect(!resumed.isCountdownSuspended)
+    #expect(resumed.expiresAt == resumedAt.addingTimeInterval(500))
+    #expect(resumed.monotonicDeadline == 10_550)
+    #expect(controller.withActiveLease(
+        authorizationGateID: "aws",
+        launcherDesignatedRequirement: "identifier com.example.launcher",
+        launcherRuntimeProtection: .hardened,
+        agentTaskContext: AgentTaskContext(provider: .codex, id: codexID),
+        classification: .mutating,
+        wallNow: resumedAt,
+        monotonicNow: 10_050
+    ) { _ in true } == true)
+    #expect(controller.snapshots(
+        wallNow: resumedAt.addingTimeInterval(500),
+        monotonicNow: 10_050
+    ).isEmpty)
+}
+
+@Test func suspendedCountdownPreservesTheLesserClockRemainder() throws {
+    let start = Date(timeIntervalSince1970: 1_000)
+
+    let wallLimited = TemporaryAccessGrantController()
+    let wallGrant = wallLimited.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    let wallSuspended = try #require(wallLimited.setCountdownSuspended(
+        id: wallGrant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(590),
+        monotonicNow: 150
+    ))
+    #expect(wallSuspended.suspendedRemaining == 10)
+
+    let monotonicLimited = TemporaryAccessGrantController()
+    let monotonicGrant = monotonicLimited.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    let monotonicSuspended = try #require(monotonicLimited.setCountdownSuspended(
+        id: monotonicGrant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(100),
+        monotonicNow: 640
+    ))
+    #expect(monotonicSuspended.suspendedRemaining == 10)
+
+    let resumedAt = start.addingTimeInterval(10_000)
+    let resumed = try #require(monotonicLimited.setCountdownSuspended(
+        id: monotonicGrant.id,
+        suspended: false,
+        wallNow: resumedAt,
+        monotonicNow: 20_000
+    ))
+    #expect(resumed.expiresAt == resumedAt.addingTimeInterval(10))
+    #expect(resumed.monotonicDeadline == 20_010)
+}
+
+@Test func expiredCountdownCannotBeSuspended() {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let grant = controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    #expect(controller.setCountdownSuspended(
+        id: grant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(600),
+        monotonicNow: 50
+    ) == nil)
+}
+
+@Test func tenMinuteExtensionsPreserveCountdownStateAndCannotReviveExpiry() throws {
+    let controller = TemporaryAccessGrantController()
+    let start = Date(timeIntervalSince1970: 1_000)
+    let grant = controller.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+
+    let extended = try #require(controller.addTenMinutes(
+        id: grant.id,
+        wallNow: start.addingTimeInterval(100),
+        monotonicNow: 150
+    ))
+    #expect(extended.expiresAt == start.addingTimeInterval(1_200))
+    #expect(extended.monotonicDeadline == 1_250)
+    #expect(extended.remaining(wallNow: start.addingTimeInterval(100), monotonicNow: 150) == 1_100)
+
+    _ = controller.setCountdownSuspended(
+        id: grant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(200),
+        monotonicNow: 250
+    )
+    let suspendedExtension = try #require(controller.addTenMinutes(
+        id: grant.id,
+        wallNow: start.addingTimeInterval(10_000),
+        monotonicNow: 10_050
+    ))
+    #expect(suspendedExtension.isCountdownSuspended)
+    #expect(suspendedExtension.suspendedRemaining == 1_600)
+
+    let expiredController = TemporaryAccessGrantController()
+    let expired = expiredController.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    #expect(expiredController.addTenMinutes(
+        id: expired.id,
+        wallNow: start.addingTimeInterval(600),
+        monotonicNow: 650
+    ) == nil)
+}
+
 @Test func multipleScopesCoexistAndDuplicateScopeRefreshesInPlace() throws {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)
