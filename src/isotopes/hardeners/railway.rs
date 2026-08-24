@@ -24,6 +24,7 @@ struct Credential {
 
 struct ConfigState {
     path: PathBuf,
+    existed: bool,
     original: String,
     sanitized: String,
     credential: Option<Credential>,
@@ -38,10 +39,12 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     let configs = config_paths()?
         .into_iter()
         .map(|(environment, host, path)| {
+            let existed = path.exists();
             let original = read_config(&path)?;
             let (sanitized, credential) = sanitize_config(&original, environment, host)?;
             Ok(ConfigState {
                 path,
+                existed,
                 original,
                 sanitized,
                 credential,
@@ -73,6 +76,26 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     if !testing {
         verify_command_resolution()?;
     }
+    let rewrites = configs
+        .iter()
+        .filter(|config| {
+            config.original != config.sanitized || !config.existed && !config.sanitized.is_empty()
+        })
+        .map(|config| super::ConfigRewrite {
+            path: &config.path,
+            existed: config.existed,
+            original: &config.original,
+            replacement: &config.sanitized,
+        })
+        .collect::<Vec<_>>();
+    for rewrite in &rewrites {
+        secure_directory(
+            rewrite
+                .path
+                .parent()
+                .ok_or_else(|| "railway config has no parent".to_string())?,
+        )?;
+    }
     for credential in configs
         .iter()
         .filter_map(|config| config.credential.as_ref())
@@ -82,13 +105,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
             &credential.value,
         )?;
     }
-    for config in configs {
-        if config.original != config.sanitized
-            || !config.path.exists() && !config.sanitized.is_empty()
-        {
-            write_config(&config.path, &config.sanitized)?;
-        }
-    }
+    super::rewrite_configs_with_rollback(&rewrites, write_config, remove_config)?;
     writeln!(stdout, "╰─ hardened railway").ok();
     super::write_secret_gate_notice(stdout, "railway");
     Ok(())
@@ -349,6 +366,22 @@ fn write_config(path: &Path, contents: &str) -> Result<(), String> {
         let _ = fs::remove_file(staging);
     }
     result
+}
+
+fn remove_config(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("failed to remove {}: {error}", path.display())),
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "railway config has no parent".to_string())?;
+    OpenOptions::new()
+        .read(true)
+        .open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("failed to sync {}: {error}", parent.display()))
 }
 
 fn secure_directory(path: &Path) -> Result<(), String> {
