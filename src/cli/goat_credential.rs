@@ -139,8 +139,10 @@ pub(crate) fn parse_secrets(value: &str) -> Result<String, String> {
         &secrets.access_token,
         &secrets.session_token,
     ] {
-        if field.is_empty() || field.bytes().any(|byte| byte == 0) {
-            return Err("goat credentials must be nonempty and contain no NUL".into());
+        if field.is_empty() || field == "@av" || field.bytes().any(|byte| byte == 0) {
+            return Err(
+                "goat credentials must be nonempty, secret values, and contain no NUL".into(),
+            );
         }
     }
     serde_json::to_string(&secrets)
@@ -172,6 +174,12 @@ mod tests {
         assert_eq!(
             parse_scope(&scope).unwrap(),
             ("did:plc:abc".into(), "https://pds.example".into())
+        );
+        assert!(
+            parse_secrets(
+                r#"{"password":"@av","access_token":"access","session_token":"refresh"}"#
+            )
+            .is_err()
         );
         assert!(parse_scope(r#"{"did":"did:plc:abc","pds":"https://pds.example","x":1}"#).is_err());
         assert_eq!(

@@ -35,15 +35,28 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
     let path = config_path()?;
     let original = read_config(&path)?;
-    let (sanitized, credentials) = sanitize_config(&original)?;
+    let (sanitized, credentials, managed_secret_names) = sanitize_config(&original)?;
+    let existing_secret_names = crate::secrets::list_global_secret_names()?;
+    if let Some(name) = managed_secret_names
+        .iter()
+        .find(|name| !existing_secret_names.contains(name))
+    {
+        return Err(format!(
+            "Oxide credential marker has no matching Secret Value: {name}"
+        ));
+    }
     let target = target();
     let plan = super::isotope::plan(super::isotope::OXIDE)?;
-    let brew_conflict = !testing && homebrew_formula_installed();
+    let brew = if testing {
+        None
+    } else {
+        homebrew_for_linked_formula()?
+    };
 
     writeln!(stdout, "╭─ harden oxide-cli").ok();
     writeln!(stdout, "│").ok();
     plan.write(stdout, super::isotope::OXIDE);
-    if brew_conflict {
+    if brew.is_some() {
         writeln!(stdout, "├─ unlink the Homebrew oxide-cli formula").ok();
     }
     writeln!(
@@ -62,8 +75,8 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     plan.apply(super::isotope::OXIDE)?;
     verify_target(&target)?;
-    if brew_conflict {
-        unlink_homebrew()?;
+    if let Some(brew) = brew {
+        unlink_homebrew(&brew)?;
     }
     if !testing {
         verify_command_resolution()?;
@@ -89,8 +102,11 @@ pub(crate) fn detect() -> HardenerDetection {
     let config = config_path().ok();
     let config_valid = config.as_deref().is_some_and(|path| {
         read_config(path).is_ok_and(|contents| {
-            sanitize_config(&contents).is_ok_and(|(sanitized, credentials)| {
-                credentials.is_empty() && sanitized == contents
+            sanitize_config(&contents).is_ok_and(|(sanitized, credentials, managed)| {
+                credentials.is_empty()
+                    && sanitized == contents
+                    && crate::secrets::list_global_secret_names()
+                        .is_ok_and(|names| managed.iter().all(|name| names.contains(name)))
             })
         })
     });
@@ -169,9 +185,9 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     }
 }
 
-fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> {
+fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>, Vec<String>), String> {
     if contents.is_empty() {
-        return Ok((String::new(), Vec::new()));
+        return Ok((String::new(), Vec::new(), Vec::new()));
     }
     let mut document = toml::from_str::<Value>(contents)
         .map_err(|error| format!("invalid Oxide credentials TOML: {error}"))?;
@@ -186,6 +202,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
         .and_then(Value::as_table_mut)
         .ok_or_else(|| "Oxide credentials must contain a `profile` table".to_string())?;
     let mut credentials = Vec::new();
+    let mut managed_secret_names = Vec::new();
     for (profile, value) in profiles {
         let profile = crate::cli::oxide_credential::normalize_profile(profile)?;
         let table = value
@@ -215,7 +232,9 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
             table["host"].as_str().expect("validated host"),
         )?;
         let token = table["token"].as_str().expect("validated token");
-        if token != CREDENTIAL_MARKER {
+        if token == CREDENTIAL_MARKER {
+            managed_secret_names.push(crate::cli::oxide_credential::secret_name(&profile, &host));
+        } else {
             credentials.push(Credential {
                 profile: profile.clone(),
                 host: host.clone(),
@@ -227,7 +246,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
     }
     let sanitized = toml::to_string_pretty(&document)
         .map_err(|error| format!("failed to serialize Oxide credentials: {error}"))?;
-    Ok((sanitized, credentials))
+    Ok((sanitized, credentials, managed_secret_names))
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -333,8 +352,8 @@ fn secure_directory(path: &Path) -> Result<(), String> {
     }
 }
 
-fn homebrew_formula_installed() -> bool {
-    ["/opt/homebrew", "/usr/local"].into_iter().any(|prefix| {
+fn homebrew_for_linked_formula() -> Result<Option<PathBuf>, String> {
+    let prefix = ["/opt/homebrew", "/usr/local"].into_iter().find(|prefix| {
         let linked = Path::new(prefix).join("bin/oxide");
         let formula = Path::new(prefix).join("opt/oxide-cli/bin/oxide");
         linked.canonicalize().ok().is_some_and(|linked| {
@@ -343,16 +362,18 @@ fn homebrew_formula_installed() -> bool {
                 .ok()
                 .is_some_and(|formula| linked == formula)
         })
+    });
+    let Some(prefix) = prefix else {
+        return Ok(None);
+    };
+    let brew = Path::new(prefix).join("bin/brew");
+    brew.is_file().then_some(Some(brew)).ok_or_else(|| {
+        "Homebrew oxide-cli is installed but its matching brew is unavailable".into()
     })
 }
 
-fn unlink_homebrew() -> Result<(), String> {
-    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        .into_iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
-        .ok_or_else(|| "Homebrew oxide-cli is installed but brew is unavailable".to_string())?;
-    let status = Command::new(&brew)
+fn unlink_homebrew(brew: &Path) -> Result<(), String> {
+    let status = Command::new(brew)
         .args(["unlink", "oxide-cli"])
         .status()
         .map_err(|error| format!("failed to run {}: {error}", brew.display()))?;
@@ -477,7 +498,7 @@ token_id = "id"
 user = "user"
 time_expires = "tomorrow"
 "#;
-        let (sanitized, credentials) = sanitize_config(input).unwrap();
+        let (sanitized, credentials, managed) = sanitize_config(input).unwrap();
         assert_eq!(
             credentials,
             [Credential {
@@ -488,6 +509,14 @@ time_expires = "tomorrow"
         );
         assert!(sanitized.contains("token = \"@av\""));
         assert!(sanitized.contains("token_id = \"id\""));
+        assert!(managed.is_empty());
+        assert_eq!(
+            sanitize_config(&input.replace("secret", "@av")).unwrap().2,
+            [crate::cli::oxide_credential::secret_name(
+                "prod",
+                "https://oxide.example"
+            )]
+        );
         assert!(sanitize_config(&input.replace("user =", "future = \"x\"\nuser =")).is_err());
     }
 

@@ -232,31 +232,41 @@ pub(crate) fn rewrite_configs_with_rollback(
     for rewrite in rewrites {
         attempted.push(rewrite);
         if let Err(error) = write(rewrite.path, rewrite.replacement) {
-            let rollback_errors = attempted
-                .into_iter()
-                .rev()
-                .filter_map(|rewrite| {
-                    let result = if rewrite.existed {
-                        write(rewrite.path, rewrite.original)
-                    } else {
-                        remove(rewrite.path)
-                    };
-                    result.err()
-                })
-                .collect::<Vec<_>>();
-            return if rollback_errors.is_empty() {
-                Err(format!(
+            return match restore_config_rewrites(&attempted, &mut write, &mut remove) {
+                Ok(()) => Err(format!(
                     "config migration failed and was rolled back: {error}"
-                ))
-            } else {
-                Err(format!(
-                    "config migration failed ({error}); rollback also failed: {}",
-                    rollback_errors.join("; ")
-                ))
+                )),
+                Err(rollback) => Err(format!(
+                    "config migration failed ({error}); rollback also failed: {rollback}"
+                )),
             };
         }
     }
     Ok(())
+}
+
+pub(crate) fn restore_config_rewrites(
+    rewrites: &[&ConfigRewrite<'_>],
+    mut write: impl FnMut(&Path, &str) -> Result<(), String>,
+    mut remove: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let errors = rewrites
+        .iter()
+        .rev()
+        .filter_map(|rewrite| {
+            let result = if rewrite.existed {
+                write(rewrite.path, rewrite.original)
+            } else {
+                remove(rewrite.path)
+            };
+            result.err()
+        })
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 macro_rules! gated_hardener {

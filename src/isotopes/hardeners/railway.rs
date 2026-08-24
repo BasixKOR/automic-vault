@@ -68,14 +68,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
-    plan.apply(super::isotope::RAILWAY)?;
-    verify_target(&target)?;
-    if brew_conflict {
-        unlink_homebrew()?;
-    }
-    if !testing {
-        verify_command_resolution()?;
-    }
     let rewrites = configs
         .iter()
         .filter(|config| {
@@ -106,6 +98,24 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         )?;
     }
     super::rewrite_configs_with_rollback(&rewrites, write_config, remove_config)?;
+    if let Err(error) = plan.apply(super::isotope::RAILWAY) {
+        let references = rewrites.iter().collect::<Vec<_>>();
+        return match super::restore_config_rewrites(&references, write_config, remove_config) {
+            Ok(()) => Err(format!(
+                "Railway Target installation failed and configs were restored: {error}"
+            )),
+            Err(rollback) => Err(format!(
+                "Railway Target installation failed ({error}); config restoration also failed: {rollback}"
+            )),
+        };
+    }
+    verify_target(&target)?;
+    if brew_conflict {
+        unlink_homebrew()?;
+    }
+    if !testing {
+        verify_command_resolution()?;
+    }
     writeln!(stdout, "╰─ hardened railway").ok();
     super::write_secret_gate_notice(stdout, "railway");
     Ok(())
