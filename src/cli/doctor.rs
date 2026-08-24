@@ -1577,6 +1577,7 @@ mod tests {
                             hardener.name,
                             "gh" | "goat"
                                 | "ordercli"
+                                | "openhue-cli"
                                 | "uaa-cli"
                                 | "railway"
                                 | "oxide-cli"

@@ -5,6 +5,7 @@ const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
 const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
+const OPENHUE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 const UAA_HELPER_PROTOCOL_VERSION: u64 = 1;
@@ -527,6 +528,42 @@ pub(crate) fn delete_uaa_credential(scope: &str, account: &str) -> Result<(), St
     .map(|_| ())
 }
 
+pub(crate) fn ensure_openhue_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "openhue-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", OPENHUE_HELPER_PROTOCOL_VERSION)),
+    )?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported OpenHue helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no OpenHue helper version".into()),
+    }
+}
+
+pub(crate) fn store_openhue_credential(scope: &str, value: &str) -> Result<(), String> {
+    crate::cli::openhue_credential::parse_scope(scope)?;
+    crate::cli::openhue_credential::validate_key(value)?;
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(crate::cli::openhue_credential::SECRET_NAME, value);
+    }
+    xpc_request(
+        "openhue-save",
+        Some((b"openhue_scope\0", scope)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
 pub(crate) fn store_railway_credential(scope: &str, value: &str) -> Result<(), String> {
     let (environment, host) = crate::cli::railway_credential::parse_scope(scope)?;
     let account = crate::cli::railway_credential::secret_name(&environment, &host);
@@ -782,6 +819,7 @@ fn xpc_operation_requires_cwd(operation: &str) -> bool {
             | "oxide-delete"
             | "ordercli-save"
             | "ordercli-delete"
+            | "openhue-save"
             | "railway-save"
             | "railway-delete"
             | "terraform-save"
@@ -820,6 +858,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("goat-save"));
         assert!(xpc_operation_requires_cwd("oxide-save"));
         assert!(xpc_operation_requires_cwd("ordercli-save"));
+        assert!(xpc_operation_requires_cwd("openhue-save"));
         assert!(xpc_operation_requires_cwd("railway-save"));
         assert!(xpc_operation_requires_cwd("terraform-save"));
         assert!(xpc_operation_requires_cwd("uaa-save"));

@@ -12,6 +12,7 @@ mod inject;
 mod launcher_bundle;
 mod list;
 mod open;
+pub(crate) mod openhue_credential;
 pub(crate) mod ordercli_credential;
 pub(crate) mod oxide_credential;
 mod proxy;
@@ -51,7 +52,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 35;
+pub(crate) const INSTALL_REVISION: u32 = 36;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -394,6 +395,10 @@ where
                 let result = hardeners::uaa_cli::run(stdout, yes);
                 return finish_hardening(result, "uaa-cli", stdout, stderr);
             }
+            if target == "openhue" || target == "openhue-cli" {
+                let result = hardeners::openhue_cli::run(stdout, yes);
+                return finish_hardening(result, "openhue-cli", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -448,6 +453,7 @@ where
         Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
         Some("goat-credential") => goat_credential::run(rest, stdout, stderr),
         Some("ordercli-credential") => ordercli_credential::run(rest, stdout, stderr),
+        Some("openhue-credential") => openhue_credential::run(rest, stdout, stderr),
         Some("uaa-credential") => uaa_credential::run(rest, stdout, stderr),
         Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),

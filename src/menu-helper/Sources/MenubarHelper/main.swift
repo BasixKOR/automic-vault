@@ -1955,6 +1955,7 @@ enum SecretMutation {
     case goatDelete(account: String, scope: String)
     case ordercliSave(account: String, value: String, scope: String)
     case ordercliDelete(account: String, scope: String)
+    case openhueSave(account: String, value: String, scope: String)
     case uaaSave(account: String, value: String, scope: String)
     case uaaDelete(account: String, scope: String)
     case railwaySave(account: String, value: String, scope: String)
@@ -2035,6 +2036,12 @@ enum SecretMutation {
                 "Delete ordercli session?",
                 "ordercli will no longer be able to authenticate to Foodora with this session."
             )
+        case .openhueSave(let account, _, let scope):
+            properties = (
+                "openhue-save", [account], ["credential", "store", scope],
+                "Store Hue application key?",
+                "OpenHue CLI will use this bridge credential through its Automic Vault Secret Gate."
+            )
         case .uaaSave(let account, _, let scope):
             properties = (
                 "uaa-save", [account], ["credential", "store", scope],
@@ -2107,6 +2114,7 @@ enum SecretMutation {
         case .dockerSave, .dockerDelete: "docker"
         case .goatSave, .goatDelete: "goat"
         case .ordercliSave, .ordercliDelete: "ordercli"
+        case .openhueSave: "openhue-cli"
         case .uaaSave, .uaaDelete: "uaa-cli"
         case .railwaySave, .railwayDelete: "railway"
         case .oxideSave, .oxideDelete: "oxide-cli"
@@ -2138,6 +2146,10 @@ enum SecretMutation {
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
         case .ordercliSave(_, _, let scope), .ordercliDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
+        case .openhueSave(_, _, let scope):
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
@@ -2232,6 +2244,8 @@ enum SecretMutation {
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .ordercliDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .openhueSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .uaaSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .uaaDelete(let account, _):
@@ -3056,6 +3070,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .openhueHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "OpenHue helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .uaaHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3094,7 +3115,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .uaaGet, .railwayGet,
+        case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .uaaGet, .railwayGet,
              .oxideGet, .terraformGet:
             handleInject(
                 message,
@@ -3139,6 +3160,8 @@ private final class ApprovalServer: @unchecked Sendable {
             handleOrdercliSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .ordercliDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleOrdercliDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .openhueSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleOpenHueSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .uaaSave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleUAASave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .uaaDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3441,9 +3464,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let uaaRequest = try uaaCredentialRequest(
+            let openhueRequest = try openhueCredentialRequest(
                 from: message,
                 request: ordercliRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let uaaRequest = try uaaCredentialRequest(
+                from: message,
+                request: openhueRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -5429,6 +5459,32 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleOpenHueSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "openhue_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseOpenHueCredentialScope(String(cString: scopePointer)),
+              let value = parseOpenHueCredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid OpenHue credential store request")
+            return
+        }
+        do {
+            let parent = try openhueCredentialParent(for: caller.identity)
+            handleMutation(
+                .openhueSave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleUAASave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5705,6 +5761,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .dockerSave(let account, _, _, _),
                  .goatSave(let account, _, _),
                  .ordercliSave(let account, _, _),
+                 .openhueSave(let account, _, _),
                  .uaaSave(let account, _, _),
                  .railwaySave(let account, _, _),
                  .oxideSave(let account, _, _),
@@ -5999,6 +6056,52 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func openhueCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "openhue-get" else { return request }
+        guard request.tool == "openhue-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty, request.args.isEmpty,
+              request.keys == [openhueCredentialSecretName],
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "openhue_scope"),
+              let scope = parseOpenHueCredentialScope(String(cString: scopePointer))
+        else { throw AppError("invalid OpenHue credential request") }
+        let parent = try openhueCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op, keys: request.keys, target: parent.target,
+            args: Array(parent.arguments.dropFirst()), cwd: request.cwd,
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: "openhue-cli",
+            title: "Use Hue application key?",
+            detail: "The verified OpenHue Target will authenticate to bridge \(scope.bridge).",
+            credentialScope: scope.canonical, credentialParent: parent
+        )
+    }
+
+    private func openhueCredentialParent(for helperIdentity: AVProcessIdentity) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID), !arguments.isEmpty
+        else { throw AppError("OpenHue credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard openhueTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible OpenHue Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID, startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid, target: target, arguments: arguments
+        )
+    }
+
     private func uaaCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -6230,6 +6333,7 @@ private final class ApprovalServer: @unchecked Sendable {
         switch URL(fileURLWithPath: parent.target).lastPathComponent {
         case "docker": "docker"
         case "goat": "goat"
+        case "openhue": "openhue-cli"
         case "ordercli": "ordercli"
         case "oxide": "oxide-cli"
         case "railway": "railway"
@@ -6259,6 +6363,9 @@ private final class ApprovalServer: @unchecked Sendable {
         case "ordercli":
             return credentialHelperTool(parent) == tool
                 && ordercliTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "openhue-cli":
+            return credentialHelperTool(parent) == tool
+                && openhueTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "uaa-cli":
             return credentialHelperTool(parent) == tool
                 && uaaTargetIdentityValid(pid: parent.pid, path: parent.target)
@@ -6290,6 +6397,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "ordercli"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func openhueTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/openhue",
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "openhue"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -6348,7 +6465,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "ordercli-get", "uaa-get", "railway-get", "oxide-get", "terraform-get"]
+        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "uaa-get", "railway-get", "oxide-get", "terraform-get"]
             .contains(request.op)
         {
             guard let scope = request.credentialScope,
@@ -6367,6 +6484,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
                 expected = goat.secretName
             case "ordercli-get": expected = ordercliCredentialSecretName
+            case "openhue-get": expected = openhueCredentialSecretName
             case "uaa-get": expected = uaaCredentialSecretName
             case "railway-get":
                 guard let railway = parseRailwayCredentialScope(scope) else {
@@ -6409,6 +6527,11 @@ private final class ApprovalServer: @unchecked Sendable {
                       let value = secrets[ordercliCredentialSecretName],
                       parseOrdercliCredential(value) != nil
                 else { throw AppError("ordercli credential changed before Secret Application") }
+            } else if request.op == "openhue-get" {
+                guard parseOpenHueCredentialScope(scope) != nil,
+                      let value = secrets[openhueCredentialSecretName],
+                      parseOpenHueCredential(value) != nil
+                else { throw AppError("OpenHue credential changed before Secret Application") }
             } else if request.op == "uaa-get" {
                 guard parseUAACredentialScope(scope) != nil,
                       let value = secrets[uaaCredentialSecretName],
@@ -6799,7 +6922,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "uaa-get" || op == "railway-get"
+            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "uaa-get" || op == "railway-get"
             || op == "oxide-get" || op == "terraform-get"
             || op == "proxy-start"
         else { return nil }
@@ -7200,6 +7323,8 @@ private func classifySecretGateRequest(
         return goatRequestClassification(request.args)
     case "ordercli":
         return ordercliRequestClassification(request.args)
+    case "openhue-cli":
+        return openhueRequestClassification(request.args)
     case "uaa-cli":
         return uaaRequestClassification(request.args)
     case "railway":
@@ -7282,6 +7407,17 @@ private func ordercliRequestClassification(_ args: [String]) -> SecretGateReques
     {
         return .mutating
     }
+    return .unknown
+}
+
+private func openhueRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    if ["--version", "--help", "-h", "version", "help", "completion", "discover", "get"].contains(command) {
+        return .readOnly
+    }
+    if command == "config" { return .localWrite }
+    if ["setup", "set", "mcp"].contains(command) { return .mutating }
     return .unknown
 }
 
@@ -7957,6 +8093,35 @@ private func parseOrdercliCredential(_ value: String) -> String? {
           }),
           stringKeys.contains(where: { (object[$0] as? String)?.isEmpty == false })
               || !cookies.isEmpty
+    else { return nil }
+    return value
+}
+
+private let openhueCredentialSecretName = "OPENHUE_APPLICATION_KEY"
+
+private struct StoredOpenHueCredentialScope {
+    let bridge: String
+    let canonical: String
+    let secretName = openhueCredentialSecretName
+}
+
+private func parseOpenHueCredentialScope(_ value: String) -> StoredOpenHueCredentialScope? {
+    guard value.utf8.count <= 512,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["bridge"]),
+          let bridge = object["bridge"] as? String,
+          !bridge.isEmpty, bridge.utf8.count <= 255,
+          !bridge.unicodeScalars.contains(where: { $0.value == 0 }),
+          let canonicalData = try? JSONSerialization.data(withJSONObject: ["bridge": bridge], options: [.sortedKeys]),
+          String(data: canonicalData, encoding: .utf8) == value
+    else { return nil }
+    return StoredOpenHueCredentialScope(bridge: bridge, canonical: value)
+}
+
+private func parseOpenHueCredential(_ value: String) -> String? {
+    guard !value.isEmpty, value != "@av", value.utf8.count <= 64 * 1024,
+          !value.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return value
 }
@@ -8955,7 +9120,8 @@ private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
         case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
-             .ordercliHelperVersion, .uaaHelperVersion, .railwayHelperVersion, .oxideHelperVersion,
+             .ordercliHelperVersion, .openhueHelperVersion, .uaaHelperVersion,
+             .railwayHelperVersion, .oxideHelperVersion,
              .terraformHelperVersion: false
         default: true
         }
@@ -12285,6 +12451,20 @@ private func runOrdercliCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runOpenHueCredentialSelfCheck() -> Int32 {
+    let scope = #"{"bridge":"192.0.2.10"}"#
+    guard openhueRequestClassification(["get", "light"]) == .readOnly,
+          openhueRequestClassification(["--help"]) == .readOnly,
+          openhueRequestClassification(["config", "--key", "secret"]) == .localWrite,
+          openhueRequestClassification(["set", "light"]) == .mutating,
+          openhueRequestClassification(["future"]) == .unknown,
+          parseOpenHueCredentialScope(scope)?.bridge == "192.0.2.10",
+          parseOpenHueCredential("application-key") == "application-key",
+          parseOpenHueCredential("@av") == nil
+    else { return 1 }
+    return 0
+}
+
 private func runUAACredentialSelfCheck() -> Int32 {
     let scope = #"{"store":"contexts"}"#
     let credential = #"{"targets":{"url:https://uaa.example":{"context":{"access_token":"access","refresh_token":"refresh"}}}}"#
@@ -13264,6 +13444,10 @@ if CommandLine.arguments.contains("--self-check-railway-credentials") {
 
 if CommandLine.arguments.contains("--self-check-ordercli-credentials") {
     exit(runOrdercliCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-openhue-credentials") {
+    exit(runOpenHueCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-uaa-credentials") {

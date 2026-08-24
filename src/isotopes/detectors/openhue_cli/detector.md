@@ -9,14 +9,18 @@
 - `$XDG_CONFIG_HOME/openhue/config.yaml`
 - `~/.openhue/config.yaml`
 
-## Why This is not Yet Hardened
+## Remediation
 
-The retired `openhue-cli` hardener moved the detected secret to the macOS
-Keychain, then recreated `$XDG_CONFIG_HOME/openhue/config.yaml` inside a
-temporary directory for each run. We no longer consider a temporary plaintext
-file a sufficient security boundary, so this detector remains report-only.
+Run `av harden openhue-cli`. The hardener installs the signed OpenHue CLI
+Isotope and migrates the Hue application key into Automic Vault custody while
+leaving only bridge metadata and an `@av` marker on disk.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
+Upstream OpenHue CLI has no credential-helper boundary: its Hue application
+key shares a YAML config with non-secret bridge and logging metadata. The
+Isotope therefore patches config reads and setup writes to use authenticated
+XPC operations. The Detector covers a non-empty `key` scalar in the active
+`XDG_CONFIG_HOME/openhue/config.yaml` or `~/.openhue/config.yaml`.
 
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+The residual gap is other users' configs, backups, and the inactive config
+root when `XDG_CONFIG_HOME` selects the other location. Unsupported YAML is
+refused by the hardener rather than silently rewritten.

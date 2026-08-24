@@ -8,6 +8,7 @@ pub(crate) mod goat;
 pub(crate) mod homebrew;
 pub(crate) mod isotope;
 mod migrations;
+pub(crate) mod openhue_cli;
 pub(crate) mod ordercli;
 pub(crate) mod oxide_cli;
 pub(crate) mod railway;
@@ -298,6 +299,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(docker, "docker"),
         gated_hardener!(goat, "goat"),
         gated_hardener!(ordercli, "ordercli"),
+        gated_hardener!(openhue_cli, "openhue-cli"),
         gated_hardener!(uaa_cli, "uaa-cli"),
         gated_hardener!(railway, "railway"),
         gated_hardener!(oxide_cli, "oxide-cli"),
@@ -330,6 +332,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         docker::secret_gate(),
         goat::secret_gate(),
         ordercli::secret_gate(),
+        openhue_cli::secret_gate(),
         uaa_cli::secret_gate(),
         railway::secret_gate(),
         oxide_cli::secret_gate(),
