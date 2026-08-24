@@ -9,7 +9,7 @@ new file mode 100644
 index 0000000..a7e502f
 --- /dev/null
 +++ i/config/av.go
-@@ -0,0 +1,249 @@
+@@ -0,0 +1,258 @@
 +package config
 +
 +import (
@@ -256,6 +256,15 @@ index 0000000..a7e502f
 +	return output, nil
 +}
 +
++func avConfigFailure(err error) Config {
++	if avTestEnabled {
++		panic(err)
++	}
++	fmt.Fprintf(os.Stderr, "uaa: %v\n", err)
++	os.Exit(1)
++	return NewConfig()
++}
++
 +func avTestPath() string {
 +	return filepath.Join(ConfigDir(), ".av-test-credentials.json")
 +}
@@ -266,10 +275,10 @@ index 2913330..21cc87b 100644
 @@ -133 +133,6 @@ func ReadConfig() Config {
 -	json.Unmarshal(data, &c)
 +	if err := json.Unmarshal(data, &c); err != nil {
-+		panic(fmt.Sprintf("invalid UAA CLI config: %v", err))
++		return avConfigFailure(fmt.Errorf("invalid UAA CLI config: %w", err))
 +	}
 +	if err := hydrateAV(&c); err != nil {
-+		panic(err)
++		return avConfigFailure(err)
 +	}
 @@ -144 +149,6 @@ func WriteConfig(c Config) error {
 -	data, err := json.Marshal(c)

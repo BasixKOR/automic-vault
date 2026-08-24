@@ -316,7 +316,7 @@ fn read_config(path: &Path) -> Result<String, String> {
         .read_to_string(&mut contents)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
     if contents.len() as u64 > MAX_CONFIG_BYTES {
-        return Err("openhue-cli auth session exceeds 1 MiB".into());
+        return Err("OpenHue config exceeds 1 MiB".into());
     }
     Ok(contents)
 }
@@ -327,7 +327,7 @@ fn write_config(path: &Path, contents: &str) -> Result<(), String> {
         .ok_or_else(|| "openhue-cli config has no parent".to_string())?;
     secure_directory(parent)?;
     let staging = parent.join(format!(
-        ".auth-session.json.av-{}.tmp",
+        ".config.yaml.av-{}.tmp",
         super::isotope::now_nanos()
     ));
     let result = (|| {

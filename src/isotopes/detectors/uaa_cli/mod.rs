@@ -18,6 +18,9 @@ pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
 }
 
 fn uaa_config_path() -> Result<PathBuf, String> {
+    if let Some(path) = std::env::var_os("UAA_HOME") {
+        return Ok(PathBuf::from(path).join("config.json"));
+    }
     Ok(user_home()?.join(".uaa").join("config.json"))
 }
 
@@ -138,6 +141,19 @@ mod tests {
 
         assert!(!result);
         std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn uaa_home_selects_the_same_config_boundary_as_the_target() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let root = std::env::temp_dir().join(format!("av-uaa-home-{}", std::process::id()));
+        unsafe {
+            std::env::set_var("UAA_HOME", &root);
+        }
+        assert_eq!(uaa_config_path().unwrap(), root.join("config.json"));
+        unsafe {
+            std::env::remove_var("UAA_HOME");
+        }
     }
 }
 
