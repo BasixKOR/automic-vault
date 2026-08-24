@@ -39,15 +39,35 @@ fn read_to_string(path: &std::path::Path) -> Result<String, String> {
 }
 
 fn config_has_secrets(contents: &str) -> bool {
-    [
-        "\"access_token\"",
-        "\"refresh_token\"",
-        "\"client_secret\"",
-        "\"pending_mfa_token\"",
-        "\"cookies_by_host\"",
-    ]
-    .iter()
-    .any(|needle| contents.contains(needle))
+    const KEYS: [&str; 4] = [
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "pending_mfa_token",
+    ];
+    let Ok(root) = serde_json::from_str::<serde_json::Value>(contents) else {
+        return KEYS
+            .iter()
+            .chain(["cookies_by_host"].iter())
+            .any(|key| contents.contains(&format!(r#""{key}""#)));
+    };
+    let foodora = root
+        .get("providers")
+        .and_then(|providers| providers.get("foodora"))
+        .unwrap_or(&root);
+    KEYS.iter().any(|key| {
+        foodora
+            .get(*key)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| !value.is_empty() && value != "@av")
+    }) || foodora
+        .get("cookies_by_host")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|cookies| {
+            !cookies.is_empty()
+                && !(cookies.len() == 1
+                    && cookies.get("@av").and_then(serde_json::Value::as_str) == Some("@av"))
+        })
 }
 
 #[cfg(test)]
@@ -69,6 +89,9 @@ mod tests {
     fn ignores_non_secret_config() {
         assert!(!config_has_secrets(
             r#"{"version":1,"providers":{"foodora":{"base_url":"https://example.com"}}}"#
+        ));
+        assert!(!config_has_secrets(
+            r#"{"providers":{"foodora":{"access_token":"@av","refresh_token":"@av","client_secret":"@av","pending_mfa_token":"@av","cookies_by_host":{"@av":"@av"}}}}"#
         ));
     }
 

@@ -1893,6 +1893,8 @@ enum SecretMutation {
     case dockerDelete(account: String, serverURL: String)
     case goatSave(account: String, value: String, scope: String)
     case goatDelete(account: String, scope: String)
+    case ordercliSave(account: String, value: String, scope: String)
+    case ordercliDelete(account: String, scope: String)
     case railwaySave(account: String, value: String, scope: String)
     case railwayDelete(account: String, scope: String)
     case oxideSave(account: String, value: String, scope: String)
@@ -1959,6 +1961,18 @@ enum SecretMutation {
                 "Delete goat auth session?",
                 "goat will no longer be able to authenticate with this session."
             )
+        case .ordercliSave(let account, _, let scope):
+            properties = (
+                "ordercli-save", [account], ["credential", "store", scope],
+                "Store ordercli session?",
+                "ordercli will use this Foodora session through its Automic Vault Secret Gate."
+            )
+        case .ordercliDelete(let account, let scope):
+            properties = (
+                "ordercli-delete", [account], ["credential", "forget", scope],
+                "Delete ordercli session?",
+                "ordercli will no longer be able to authenticate to Foodora with this session."
+            )
         case .railwaySave(let account, _, let scope):
             properties = (
                 "railway-save", [account], ["credential", "store", scope],
@@ -2018,6 +2032,7 @@ enum SecretMutation {
         let tool = switch self {
         case .dockerSave, .dockerDelete: "docker"
         case .goatSave, .goatDelete: "goat"
+        case .ordercliSave, .ordercliDelete: "ordercli"
         case .railwaySave, .railwayDelete: "railway"
         case .oxideSave, .oxideDelete: "oxide-cli"
         case .terraformSave, .terraformDelete: "terraform"
@@ -2044,6 +2059,10 @@ enum SecretMutation {
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = serverURL
         case .goatSave(_, _, let scope), .goatDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
+        case .ordercliSave(_, _, let scope), .ordercliDelete(_, let scope):
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = scope
@@ -2129,6 +2148,10 @@ enum SecretMutation {
         case .goatSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .goatDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .ordercliSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .ordercliDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .railwaySave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
@@ -2943,6 +2966,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .ordercliHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "ordercli helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .railwayHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -2974,7 +3004,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .goatGet, .railwayGet, .oxideGet, .terraformGet:
+        case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .railwayGet,
+             .oxideGet, .terraformGet:
             handleInject(
                 message,
                 on: peer,
@@ -3014,6 +3045,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleGoatSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .goatDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleGoatDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .ordercliSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleOrdercliSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .ordercliDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleOrdercliDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .railwaySave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleRailwaySave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .railwayDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3297,9 +3332,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let railwayRequest = try railwayCredentialRequest(
+            let ordercliRequest = try ordercliCredentialRequest(
                 from: message,
                 request: goatRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let railwayRequest = try railwayCredentialRequest(
+                from: message,
+                request: ordercliRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -5241,6 +5283,56 @@ private final class ApprovalServer: @unchecked Sendable {
         }
     }
 
+    private func handleOrdercliSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "ordercli_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseOrdercliCredentialScope(String(cString: scopePointer)),
+              let value = parseOrdercliCredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid ordercli credential store request")
+            return
+        }
+        do {
+            let parent = try ordercliCredentialParent(for: caller.identity)
+            handleMutation(
+                .ordercliSave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleOrdercliDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "ordercli_scope"),
+              let scope = parseOrdercliCredentialScope(String(cString: scopePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid ordercli credential forget request")
+            return
+        }
+        do {
+            let parent = try ordercliCredentialParent(for: caller.identity)
+            handleMutation(
+                .ordercliDelete(account: scope.secretName, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleRailwayDelete(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5461,6 +5553,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .saveIfAbsentOrEqual(let account, _, _),
                  .dockerSave(let account, _, _, _),
                  .goatSave(let account, _, _),
+                 .ordercliSave(let account, _, _),
                  .railwaySave(let account, _, _),
                  .oxideSave(let account, _, _),
                  .terraformSave(let account, _, _):
@@ -5476,6 +5569,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
             case .delete(let account), .dockerDelete(let account, _),
                  .goatDelete(let account, _),
+                 .ordercliDelete(let account, _),
                  .railwayDelete(let account, _),
                  .oxideDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
@@ -5706,6 +5800,52 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func ordercliCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "ordercli-get" else { return request }
+        guard request.tool == "ordercli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty, request.args.isEmpty,
+              request.keys == [ordercliCredentialSecretName],
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "ordercli_scope"),
+              let scope = parseOrdercliCredentialScope(String(cString: scopePointer))
+        else { throw AppError("invalid ordercli credential request") }
+        let parent = try ordercliCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op, keys: request.keys, target: parent.target,
+            args: Array(parent.arguments.dropFirst()), cwd: request.cwd,
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: "ordercli",
+            title: "Use ordercli Foodora session?",
+            detail: "The verified ordercli Target will receive its reusable Foodora session bundle.",
+            credentialScope: scope.canonical, credentialParent: parent
+        )
+    }
+
+    private func ordercliCredentialParent(for helperIdentity: AVProcessIdentity) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID), !arguments.isEmpty
+        else { throw AppError("ordercli credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard ordercliTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible ordercli Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID, startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid, target: target, arguments: arguments
+        )
+    }
+
     private func railwayCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -5890,6 +6030,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch parent.target {
         case "/usr/local/bin/goat": "goat"
+        case "/usr/local/bin/ordercli": "ordercli"
         case "/usr/local/bin/railway": "railway"
         case "/usr/local/bin/oxide": "oxide-cli"
         case "/usr/local/bin/tofu": "opentofu"
@@ -5913,6 +6054,9 @@ private final class ApprovalServer: @unchecked Sendable {
         case "goat":
             return credentialHelperTool(parent) == tool
                 && goatTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "ordercli":
+            return credentialHelperTool(parent) == tool
+                && ordercliTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "railway":
             return credentialHelperTool(parent) == tool
                 && railwayTargetIdentityValid(pid: parent.pid, path: parent.target)
@@ -5931,6 +6075,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "goat"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func ordercliTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/ordercli",
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "ordercli"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -5978,7 +6132,9 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "railway-get", "oxide-get", "terraform-get"].contains(request.op) {
+        if ["docker-get", "goat-get", "ordercli-get", "railway-get", "oxide-get", "terraform-get"]
+            .contains(request.op)
+        {
             guard let scope = request.credentialScope,
                   let parent = request.credentialParent,
                   let tool = request.tool,
@@ -5994,6 +6150,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     throw AppError("goat credential scope changed before Secret Application")
                 }
                 expected = goat.secretName
+            case "ordercli-get": expected = ordercliCredentialSecretName
             case "railway-get":
                 guard let railway = parseRailwayCredentialScope(scope) else {
                     throw AppError("Railway credential scope changed before Secret Application")
@@ -6030,6 +6187,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 guard let scope = parseGoatCredentialScope(scope),
                       let value = secrets[scope.secretName], parseGoatCredential(value) != nil
                 else { throw AppError("goat credential changed before Secret Application") }
+            } else if request.op == "ordercli-get" {
+                guard parseOrdercliCredentialScope(scope) != nil,
+                      let value = secrets[ordercliCredentialSecretName],
+                      parseOrdercliCredential(value) != nil
+                else { throw AppError("ordercli credential changed before Secret Application") }
             } else if request.op == "railway-get" {
                 guard let scope = parseRailwayCredentialScope(scope),
                       let value = secrets[scope.secretName], parseRailwayCredential(value) != nil
@@ -6415,7 +6577,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "railway-get"
+            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "railway-get"
             || op == "oxide-get" || op == "terraform-get"
             || op == "proxy-start"
         else { return nil }
@@ -6814,6 +6976,8 @@ private func classifySecretGateRequest(
         return dockerRequestClassification(request.args)
     case "goat":
         return goatRequestClassification(request.args)
+    case "ordercli":
+        return ordercliRequestClassification(request.args)
     case "railway":
         return railwayRequestClassification(request.args)
     case "oxide-cli":
@@ -6869,6 +7033,26 @@ private func railwayRequestClassification(_ args: [String]) -> SecretGateRequest
     if ["up", "down", "deploy", "redeploy", "restart", "delete", "init", "link", "unlink",
         "login", "logout", "environment", "service", "variable", "domain", "volume", "tcp-proxy",
         "private-network", "outbound-network", "scale", "ssh", "connect"].contains(command)
+    {
+        return .mutating
+    }
+    return .unknown
+}
+
+private func ordercliRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    guard let provider = words.first else { return .unknown }
+    if ["help", "completion", "--help", "-h"].contains(provider) { return .readOnly }
+    guard ["foodora", "deliveroo"].contains(provider), let command = words.dropFirst().first
+    else { return .unknown }
+    if ["history", "orders", "order", "countries"].contains(command) { return .readOnly }
+    if command == "config" {
+        guard let action = words.dropFirst(2).first else { return .unknown }
+        if action == "show" { return .readOnly }
+        return action == "set" ? .localWrite : .unknown
+    }
+    if provider == "foodora",
+       ["login", "logout", "session", "cookies", "reorder"].contains(command)
     {
         return .mutating
     }
@@ -7452,6 +7636,54 @@ private func parseGoatCredential(_ value: String) -> String? {
               guard let field = object[key] as? String else { return false }
               return !field.isEmpty && !field.unicodeScalars.contains(where: { $0.value == 0 })
           })
+    else { return nil }
+    return value
+}
+
+private let ordercliCredentialSecretName = "ORDERCLI_FOODORA_SESSION"
+
+private struct StoredOrdercliCredentialScope {
+    let canonical: String
+    let secretName = ordercliCredentialSecretName
+}
+
+private func parseOrdercliCredentialScope(_ value: String) -> StoredOrdercliCredentialScope? {
+    guard value == #"{"provider":"foodora"}"# else { return nil }
+    return StoredOrdercliCredentialScope(canonical: value)
+}
+
+private func parseOrdercliCredential(_ value: String) -> String? {
+    guard value.utf8.count <= 256 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set([
+              "access_token", "refresh_token", "client_secret", "pending_mfa_token",
+              "cookies_by_host",
+          ])
+    else { return nil }
+    let stringKeys = ["access_token", "refresh_token", "client_secret", "pending_mfa_token"]
+    guard stringKeys.allSatisfy({ key in
+        guard let field = object[key] as? String else { return false }
+        return !field.unicodeScalars.contains(where: { $0.value == 0 })
+    }) else { return nil }
+    let cookies: [String: Any]
+    if object["cookies_by_host"] is NSNull {
+        cookies = [:]
+    } else if let value = object["cookies_by_host"] as? [String: Any] {
+        cookies = value
+    } else {
+        return nil
+    }
+    guard cookies.count <= 256,
+          cookies.allSatisfy({ host, rawCookie in
+              guard let cookie = rawCookie as? String else { return false }
+              return !host.isEmpty && !cookie.isEmpty
+                  && host.utf8.count <= 2048 && cookie.utf8.count <= 64 * 1024
+                  && !host.unicodeScalars.contains(where: { $0.value == 0 })
+                  && !cookie.unicodeScalars.contains(where: { $0.value == 0 })
+          }),
+          stringKeys.contains(where: { (object[$0] as? String)?.isEmpty == false })
+              || !cookies.isEmpty
     else { return nil }
     return value
 }
@@ -8407,7 +8639,8 @@ private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
         case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
-             .railwayHelperVersion, .oxideHelperVersion, .terraformHelperVersion: false
+             .ordercliHelperVersion, .railwayHelperVersion, .oxideHelperVersion,
+             .terraformHelperVersion: false
         default: true
         }
     }
@@ -11637,6 +11870,21 @@ private func runRailwayCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runOrdercliCredentialSelfCheck() -> Int32 {
+    let scope = #"{"provider":"foodora"}"#
+    let credential = #"{"access_token":"access","refresh_token":"refresh","client_secret":"","pending_mfa_token":"","cookies_by_host":{"example.com":"cookie"}}"#
+    guard ordercliRequestClassification(["foodora", "history"]) == .readOnly,
+          ordercliRequestClassification(["foodora", "login"]) == .mutating,
+          ordercliRequestClassification(["foodora", "future"]) == .unknown,
+          parseOrdercliCredentialScope(scope)?.secretName == ordercliCredentialSecretName,
+          parseOrdercliCredential(credential) == credential,
+          parseOrdercliCredential(
+              #"{"access_token":"access","refresh_token":"refresh","client_secret":"","pending_mfa_token":"","cookies_by_host":null,"future":true}"#
+          ) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -12596,6 +12844,10 @@ if CommandLine.arguments.contains("--self-check-goat-credentials") {
 
 if CommandLine.arguments.contains("--self-check-railway-credentials") {
     exit(runRailwayCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-ordercli-credentials") {
+    exit(runOrdercliCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {
