@@ -1065,7 +1065,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshTemporaryAccessGrants() {
         temporaryAccessGrantSnapshots = temporaryAccessGrants.snapshots()
-        if temporaryAccessGrantSnapshots.isEmpty {
+        if temporaryAccessGrantSnapshots.allSatisfy(\.isCountdownSuspended) {
             temporaryAccessGrantTimer?.invalidate()
             temporaryAccessGrantTimer = nil
         } else if temporaryAccessGrantTimer == nil {
@@ -1105,16 +1105,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     wallNow: wallNow,
                     monotonicNow: monotonicNow
                 ),
-                action: #selector(endTemporaryAccessGrant(_:)),
+                action: nil,
                 keyEquivalent: ""
             )
-            item.target = self
-            item.representedObject = grant.id.uuidString
             item.image = shieldImage(
                 symbolName: "exclamationmark.shield.fill",
                 color: .systemOrange,
                 accessibilityDescription: "Temporary access warning"
             )
+            let submenu = NSMenu()
+            let addTenMinutes = NSMenuItem(
+                title: "Add 10 Minutes",
+                action: #selector(addTenMinutesToTemporaryAccessGrant(_:)),
+                keyEquivalent: ""
+            )
+            addTenMinutes.target = self
+            addTenMinutes.representedObject = grant.id.uuidString
+            submenu.addItem(addTenMinutes)
+            submenu.addItem(.separator())
+            let toggle = NSMenuItem(
+                title: grant.isCountdownSuspended
+                    ? "Resume Write Access"
+: "Suspend Write Access",
+                action: #selector(toggleTemporaryAccessGrantCountdown(_:)),
+                keyEquivalent: ""
+            )
+            toggle.target = self
+            toggle.representedObject = grant.id.uuidString
+            submenu.addItem(toggle)
+            let end = NSMenuItem(
+                title: "End temporary Write Access",
+                action: #selector(endTemporaryAccessGrant(_:)),
+                keyEquivalent: ""
+            )
+            end.target = self
+            end.representedObject = grant.id.uuidString
+            submenu.addItem(end)
+            item.submenu = submenu
             return item
         }
         for item in temporaryAccessGrantMenuItems.reversed() {
@@ -1133,6 +1160,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let id = UUID(uuidString: rawID)
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
+        refreshTemporaryAccessGrants()
+    }
+
+    @objc private func addTenMinutesToTemporaryAccessGrant(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID)
+        else { return }
+        _ = temporaryAccessGrants.addTenMinutes(id: id)
+        refreshTemporaryAccessGrants()
+    }
+
+    @objc private func toggleTemporaryAccessGrantCountdown(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID),
+              let grant = temporaryAccessGrantSnapshots.first(where: { $0.id == id })
+        else { return }
+        _ = temporaryAccessGrants.setCountdownSuspended(
+            id: id,
+            suspended: !grant.isCountdownSuspended
+        )
         refreshTemporaryAccessGrants()
     }
 
@@ -1239,9 +1286,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             grants: temporaryAccessGrantSnapshots,
             wallNow: wallNow,
             monotonicNow: monotonicNow,
+            addTenMinutes: { [weak self] id in
+                guard let self else { return }
+                _ = self.temporaryAccessGrants.addTenMinutes(id: id)
+                self.refreshTemporaryAccessGrants()
+            },
             end: { [weak self] id in
                 guard let self else { return }
                 _ = self.temporaryAccessGrants.cancel(id: id)
+                self.refreshTemporaryAccessGrants()
+            },
+            setCountdownSuspended: { [weak self] id, suspended in
+                guard let self else { return }
+                _ = self.temporaryAccessGrants.setCountdownSuspended(
+                    id: id,
+                    suspended: suspended
+                )
                 self.refreshTemporaryAccessGrants()
             }
         ))
@@ -2508,7 +2568,7 @@ private func temporaryAccessGrantCandidate(
     guard let runtimeRequirement = launcher.runtimeProtection.secretGateAdmissionRequirement else {
         return nil
     }
-    let launcherName = approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
+    let launcherName = temporaryAccessGrantLauncherName(launcher)
     return TemporaryAccessGrantCandidate(
         scope: TemporaryAccessGrantScope(
             authorizationGateID: gate.id,
@@ -7864,13 +7924,24 @@ private func approvalPromptRequester(
     if let appURL = appBundleURL(containing: launcher.path)
         ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: launcher.identifier)
     {
-        let bundle = Bundle(url: appURL)
-        let name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? appURL.deletingPathExtension().lastPathComponent
-        return (name, appURL.path)
+        return (appDisplayName(appURL), appURL.path)
     }
     return (shortAppName(launcher.identifier), launcher.path)
+}
+
+private func temporaryAccessGrantLauncherName(
+    _ launcher: LauncherIdentity,
+    displayName: (URL) -> String = appDisplayName
+) -> String {
+    appBundleURLs(containing: launcher.path).last.map(displayName)
+        ?? approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
+}
+
+private func appDisplayName(_ appURL: URL) -> String {
+    let bundle = Bundle(url: appURL)
+    return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+        ?? appURL.deletingPathExtension().lastPathComponent
 }
 
 private func prettyShellCommand(target: String, args: [String]) -> String {
@@ -8767,7 +8838,8 @@ private func temporaryAccessGrantMenuTitle(
     let remaining = temporaryAccessGrantRemainingText(
         grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow)
     )
-    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(remaining) · \(temporaryAccessGrantUsageText(grant)) — End"
+    let countdown = grant.isCountdownSuspended ? "\(remaining) suspended" : remaining
+    return "\(grant.launcherName) → \(grant.authorizationGateName) · \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(countdown) · \(temporaryAccessGrantUsageText(grant)) — End"
 }
 
 private final class TemporaryAccessGrantPanel: NSPanel {
@@ -8812,7 +8884,9 @@ private struct TemporaryAccessGrantStripView: View {
     let grants: [TemporaryAccessGrantSnapshot]
     let wallNow: Date
     let monotonicNow: TimeInterval
+    let addTenMinutes: (UUID) -> Void
     let end: (UUID) -> Void
+    let setCountdownSuspended: (UUID, Bool) -> Void
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -8823,7 +8897,9 @@ private struct TemporaryAccessGrantStripView: View {
                 .foregroundStyle(.orange)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .accessibilityLabel("Warning: Temporary Write Access is active")
+                .accessibilityLabel(grants.allSatisfy { $0.isCountdownSuspended }
+                    ? "Temporary Write Access is suspended"
+                    : "Warning: Temporary Write Access is active")
 
             Divider()
 
@@ -8831,7 +8907,9 @@ private struct TemporaryAccessGrantStripView: View {
                 TemporaryAccessGrantRow(
                     grant: grant,
                     remaining: grant.remaining(wallNow: wallNow, monotonicNow: monotonicNow),
-                    end: { end(grant.id) }
+                    addTenMinutes: { addTenMinutes(grant.id) },
+                    end: { end(grant.id) },
+                    setCountdownSuspended: { setCountdownSuspended(grant.id, $0) }
                 )
                 if index != grants.indices.last {
                     Divider().padding(.leading, 42)
@@ -8856,7 +8934,16 @@ private struct TemporaryAccessGrantStripView: View {
 private struct TemporaryAccessGrantRow: View {
     let grant: TemporaryAccessGrantSnapshot
     let remaining: TimeInterval
+    let addTenMinutes: () -> Void
     let end: () -> Void
+    let setCountdownSuspended: (Bool) -> Void
+
+    private var countdownStatus: String {
+        let remainingText = "\(temporaryAccessGrantRemainingText(remaining)) remaining"
+        return grant.isCountdownSuspended
+            ? "\(remainingText) · Write Access suspended"
+            : remainingText
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -8869,7 +8956,7 @@ private struct TemporaryAccessGrantRow: View {
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text("\(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(temporaryAccessGrantRemainingText(remaining)) remaining")
+                Text("\(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID) · \(countdownStatus)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Text(temporaryAccessGrantUsageText(grant))
@@ -8879,15 +8966,31 @@ private struct TemporaryAccessGrantRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
-                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(temporaryAccessGrantRemainingText(remaining)) remaining, \(temporaryAccessGrantUsageText(grant))"
+                "\(grant.launcherName), \(grant.authorizationGateName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID), \(countdownStatus), \(temporaryAccessGrantUsageText(grant))"
             )
 
-            Button("End", action: end)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityLabel(
-                    "End temporary Write Access for \(grant.launcherName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID)"
-                )
+            ControlGroup {
+                Button("End", action: end)
+                    .accessibilityLabel(
+                        "End temporary Write Access for \(grant.launcherName), \(grant.scope.agentTaskContext.provider.taskLabel) \(grant.scope.agentTaskContext.abbreviatedID)"
+                    )
+                Menu {
+                    Button("Add 10 Minutes", action: addTenMinutes)
+                    Divider()
+                    Button(grant.isCountdownSuspended
+                        ? "Resume Write Access"
+                        : "Pause Write Access"
+                    ) {
+                        setCountdownSuspended(!grant.isCountdownSuspended)
+                    }
+                } label: {
+                    Label("Temporary Write Access options", systemImage: "chevron.down")
+                        .labelStyle(.iconOnly)
+                }
+                .menuIndicator(.hidden)
+                .accessibilityHint("Opens options to add time or pause Write Access")
+            }
+            .controlSize(.small)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -10072,6 +10175,11 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           let liveBundleFallback,
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,
+          temporaryAccessGrantLauncherName(liveBundleFallback) == "Example",
+          temporaryAccessGrantLauncherName(
+              liveBundleFallback,
+              displayName: { _ in "ChatGPT" }
+          ) == "ChatGPT",
           pathOnlyBundleFallback == nil,
           launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
           launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil,
@@ -11073,7 +11181,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
         grants: grantSnapshots,
         wallNow: grantWallNow,
         monotonicNow: grantMonotonicNow,
-        end: { _ in }
+        addTenMinutes: { _ in },
+        end: { _ in },
+        setCountdownSuspended: { _, _ in }
     ))
     let grantPanel = makeTemporaryAccessGrantPanel()
     let sampleStripFrame = NSRect(x: 200, y: 400, width: 430, height: 120)

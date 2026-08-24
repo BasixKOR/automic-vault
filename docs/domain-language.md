@@ -403,18 +403,23 @@ The final allow or deny result and its source. An allowed request is either **au
 
 An in-memory, user-confirmed delegation of Write Access to one exact
 Tool-specific Authorization Gate, Verified Launcher, accepted Launcher Runtime
-Requirement, and Agent Task Context for ten minutes. It may automically
-authorize recognized read and write operations at that scope. Elevated Secret
-Application, Secret Disclosure, Unknown operations, the Direct Secret Gate, and
-Secret mutation operations remain outside the grant.
+Requirement, and Agent Task Context with an initial ten minutes of active
+countdown time.
+It may automically authorize recognized read and write operations at that scope.
+Elevated Secret Application, Secret Disclosure, Unknown operations, the Direct
+Secret Gate, and Secret mutation operations remain outside the grant.
 
 A Temporary Access Grant can begin only when the user selects its explicit
 action in an eligible live write-request Approval. It is not a
 durable Authorization Policy or Blessing. Automic Vault shows every active
 grant continuously with its successful-use count and last-use time, lets the
-user end each grant immediately, and revokes all grants when the user session
-becomes inactive, displays sleep, an update begins, or the service terminates.
-Expiry uses both wall and monotonic clocks.
+user add ten minutes of active countdown time, lets the user suspend or resume
+its countdown, lets the user end each grant immediately, and revokes all grants
+when the user session becomes inactive, displays sleep, an update begins, or the
+service terminates. A suspended countdown also suspends the grant's authority:
+requests cannot match it until the user resumes it. The remaining active time is
+preserved while suspended. Running countdowns and resumed deadlines use both
+wall and monotonic clocks.
 
 Grant matching occurs when Automic Vault makes the Authorization Decision. A
 still-live request received before the grant began may therefore use it when
