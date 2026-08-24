@@ -17,6 +17,12 @@ import Testing
     #expect(ApprovalServiceOperation.terraformGet.rawValue == "terraform-get")
 }
 
+@Test func oxideCredentialsHaveDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.oxideGet.rawValue == "oxide-get")
+    #expect(ApprovalServiceOperation.oxideSave.rawValue == "oxide-save")
+    #expect(ApprovalServiceOperation.oxideDelete.rawValue == "oxide-delete")
+}
+
 @Test func approvalServiceOperationValuesAreUnique() {
     let values = ApprovalServiceOperation.allCases.map(\.rawValue)
     #expect(Set(values).count == values.count)

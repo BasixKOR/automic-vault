@@ -549,7 +549,7 @@ fn isotope_update_issue(
 ) -> Option<DoctorIssue> {
     let receipt = doctor.receipt_path.as_deref()?;
     let installed = fs::read_to_string(receipt).ok();
-    let current = isotope::current_sha(&doctor.formula_url);
+    let current = isotope::current_sha(&doctor.formula_url, doctor.release_asset);
     match (installed.as_deref().map(str::trim), current) {
         (Some(installed), Ok(current)) if installed == current => None,
         (_, Ok(_)) => Some(DoctorIssue {
@@ -1573,7 +1573,7 @@ mod tests {
                     }
                 } else {
                     assert!(
-                        matches!(hardener.name, "gh" | "stripe" | "supabase"),
+                        matches!(hardener.name, "gh" | "oxide-cli" | "stripe" | "supabase"),
                         "{}:{} needs explicit target-only Doctor coverage review",
                         hardener.name,
                         command.name
@@ -1615,6 +1615,7 @@ mod tests {
         command.isotope = Some(isotope::Doctor {
             identifier: "gh",
             formula_url: "https://example.invalid/gh-cli.rb".into(),
+            release_asset: None,
             receipt_path: None,
         });
         assert!(
@@ -1662,6 +1663,7 @@ mod tests {
         let doctor = isotope::Doctor {
             identifier: "gh",
             formula_url: "https://example.invalid/gh-cli.rb".into(),
+            release_asset: None,
             receipt_path: Some(receipt.display().to_string()),
         };
         assert!(isotope_update_issue(&command, &doctor).is_none());

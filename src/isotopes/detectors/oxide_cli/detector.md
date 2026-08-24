@@ -8,14 +8,13 @@
 
 - `~/.config/oxide/credentials.toml`
 
-## Why This is not Yet Hardened
+## Hardener Coverage
 
-The retired `oxide-cli` hardener moved the detected secret to the macOS
-Keychain, then recreated `~/.config/oxide/credentials.toml` inside a temporary
-directory for each run. We no longer consider a temporary plaintext file a
-sufficient security boundary, so this detector remains report-only.
+`av harden oxide-cli` installs the signed Oxide Isotope and migrates supported
+profile tokens into Automic Vault. The config retains non-secret profile
+metadata and the reserved `@av` marker; the patched Target obtains credentials
+through the XPC Gate instead of recreating plaintext files.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
-
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+Unknown credential fields are refused so a future upstream schema cannot be
+silently discarded. `OXIDE_TOKEN` remains a finding because an environment
+variable is outside this hardener's credential-custody boundary.

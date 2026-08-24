@@ -43,7 +43,7 @@ fn credentials_contain_token(contents: &str) -> bool {
         let Some((key, value)) = trimmed.split_once('=') else {
             return false;
         };
-        key.trim() == "token" && !toml_string_value(value).unwrap_or_default().is_empty()
+        key.trim() == "token" && !matches!(toml_string_value(value), None | Some("") | Some("@av"))
     })
 }
 
@@ -74,6 +74,9 @@ mod tests {
     fn ignores_comments_and_empty_tokens() {
         assert!(!credentials_contain_token(
             "# token = \"fake-token\"\n[profile.prod]\ntoken = \"\"\n"
+        ));
+        assert!(!credentials_contain_token(
+            "[profile.prod]\ntoken = \"@av\"\n"
         ));
     }
 
