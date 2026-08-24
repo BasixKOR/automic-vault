@@ -1065,7 +1065,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshTemporaryAccessGrants() {
         temporaryAccessGrantSnapshots = temporaryAccessGrants.snapshots()
-        if temporaryAccessGrantSnapshots.isEmpty {
+        if temporaryAccessGrantSnapshots.allSatisfy(\.isCountdownSuspended) {
             temporaryAccessGrantTimer?.invalidate()
             temporaryAccessGrantTimer = nil
         } else if temporaryAccessGrantTimer == nil {
@@ -1105,16 +1105,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     wallNow: wallNow,
                     monotonicNow: monotonicNow
                 ),
-                action: #selector(endTemporaryAccessGrant(_:)),
+                action: nil,
                 keyEquivalent: ""
             )
-            item.target = self
-            item.representedObject = grant.id.uuidString
             item.image = shieldImage(
                 symbolName: "exclamationmark.shield.fill",
                 color: .systemOrange,
                 accessibilityDescription: "Temporary access warning"
             )
+            let submenu = NSMenu()
+            let toggle = NSMenuItem(
+                title: grant.isCountdownSuspended
+                    ? "Resume countdown and Write Access"
+                    : "Suspend countdown and Write Access",
+                action: #selector(toggleTemporaryAccessGrantCountdown(_:)),
+                keyEquivalent: ""
+            )
+            toggle.target = self
+            toggle.representedObject = grant.id.uuidString
+            submenu.addItem(toggle)
+            let end = NSMenuItem(
+                title: "End temporary Write Access",
+                action: #selector(endTemporaryAccessGrant(_:)),
+                keyEquivalent: ""
+            )
+            end.target = self
+            end.representedObject = grant.id.uuidString
+            submenu.addItem(end)
+            item.submenu = submenu
             return item
         }
         for item in temporaryAccessGrantMenuItems.reversed() {
@@ -1133,6 +1151,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let id = UUID(uuidString: rawID)
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
+        refreshTemporaryAccessGrants()
+    }
+
+    @objc private func toggleTemporaryAccessGrantCountdown(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String,
+              let id = UUID(uuidString: rawID),
+              let grant = temporaryAccessGrantSnapshots.first(where: { $0.id == id })
+        else { return }
+        _ = temporaryAccessGrants.setCountdownSuspended(
+            id: id,
+            suspended: !grant.isCountdownSuspended
+        )
         refreshTemporaryAccessGrants()
     }
 
@@ -7890,8 +7920,11 @@ private func approvalPromptRequester(
     return (shortAppName(launcher.identifier), launcher.path)
 }
 
-private func temporaryAccessGrantLauncherName(_ launcher: LauncherIdentity) -> String {
-    appBundleURLs(containing: launcher.path).last.map(appDisplayName)
+private func temporaryAccessGrantLauncherName(
+    _ launcher: LauncherIdentity,
+    displayName: (URL) -> String = appDisplayName
+) -> String {
+    appBundleURLs(containing: launcher.path).last.map(displayName)
         ?? approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
 }
 
@@ -8894,8 +8927,10 @@ private struct TemporaryAccessGrantRow: View {
     let setCountdownSuspended: (Bool) -> Void
 
     private var countdownStatus: String {
-        let remaining = "\(temporaryAccessGrantRemainingText(remaining)) remaining"
-        return grant.isCountdownSuspended ? "\(remaining) · Write Access suspended" : remaining
+        let remainingText = "\(temporaryAccessGrantRemainingText(remaining)) remaining"
+        return grant.isCountdownSuspended
+            ? "\(remainingText) · Write Access suspended"
+            : remainingText
     }
 
     var body: some View {
@@ -10126,6 +10161,10 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,
           temporaryAccessGrantLauncherName(liveBundleFallback) == "Example",
+          temporaryAccessGrantLauncherName(
+              liveBundleFallback,
+              displayName: { _ in "ChatGPT" }
+          ) == "ChatGPT",
           pathOnlyBundleFallback == nil,
           launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
           launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil,

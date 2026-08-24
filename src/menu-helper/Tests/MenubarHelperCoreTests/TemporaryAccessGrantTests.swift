@@ -127,6 +127,52 @@ func malformedMissingOrAmbiguousAgentEnvironmentIsRejected(_ environment: [Strin
     ).isEmpty)
 }
 
+@Test func suspendedCountdownPreservesTheLesserClockRemainder() throws {
+    let start = Date(timeIntervalSince1970: 1_000)
+
+    let wallLimited = TemporaryAccessGrantController()
+    let wallGrant = wallLimited.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    let wallSuspended = try #require(wallLimited.setCountdownSuspended(
+        id: wallGrant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(590),
+        monotonicNow: 150
+    ))
+    #expect(wallSuspended.suspendedRemaining == 10)
+
+    let monotonicLimited = TemporaryAccessGrantController()
+    let monotonicGrant = monotonicLimited.start(
+        scope: scope(),
+        launcherName: "Codex",
+        authorizationGateName: "AWS",
+        wallNow: start,
+        monotonicNow: 50
+    )
+    let monotonicSuspended = try #require(monotonicLimited.setCountdownSuspended(
+        id: monotonicGrant.id,
+        suspended: true,
+        wallNow: start.addingTimeInterval(100),
+        monotonicNow: 640
+    ))
+    #expect(monotonicSuspended.suspendedRemaining == 10)
+
+    let resumedAt = start.addingTimeInterval(10_000)
+    let resumed = try #require(monotonicLimited.setCountdownSuspended(
+        id: monotonicGrant.id,
+        suspended: false,
+        wallNow: resumedAt,
+        monotonicNow: 20_000
+    ))
+    #expect(resumed.expiresAt == resumedAt.addingTimeInterval(10))
+    #expect(resumed.monotonicDeadline == 20_010)
+}
+
 @Test func expiredCountdownCannotBeSuspended() {
     let controller = TemporaryAccessGrantController()
     let start = Date(timeIntervalSince1970: 1_000)

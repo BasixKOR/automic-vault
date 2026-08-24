@@ -161,8 +161,8 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         scope: TemporaryAccessGrantScope,
         launcherName: String,
         authorizationGateName: String,
-        wallNow: Date = Date(),
-        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil
     ) -> TemporaryAccessGrantSnapshot {
         startWithLease(
             scope: scope,
@@ -178,12 +178,14 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         scope: TemporaryAccessGrantScope,
         launcherName: String,
         authorizationGateName: String,
-        wallNow: Date = Date(),
-        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime,
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil,
         _ body: (TemporaryAccessGrantSnapshot) throws -> Result
     ) rethrows -> (TemporaryAccessGrantSnapshot, Result) {
         lock.lock()
         defer { lock.unlock() }
+        let wallNow = wallNow ?? Date()
+        let monotonicNow = monotonicNow ?? ProcessInfo.processInfo.systemUptime
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         let id = grants.values.first(where: { $0.scope == scope })?.id ?? UUID()
         let grant = Grant(
@@ -204,11 +206,13 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
     }
 
     public func snapshots(
-        wallNow: Date = Date(),
-        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil
     ) -> [TemporaryAccessGrantSnapshot] {
         lock.lock()
         defer { lock.unlock() }
+        let wallNow = wallNow ?? Date()
+        let monotonicNow = monotonicNow ?? ProcessInfo.processInfo.systemUptime
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         return grants.values.map(\.snapshot).sorted {
             let left = $0.remaining(wallNow: wallNow, monotonicNow: monotonicNow)
@@ -234,11 +238,13 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
     public func setCountdownSuspended(
         id: UUID,
         suspended: Bool,
-        wallNow: Date = Date(),
-        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil
     ) -> TemporaryAccessGrantSnapshot? {
         lock.lock()
         defer { lock.unlock() }
+        let wallNow = wallNow ?? Date()
+        let monotonicNow = monotonicNow ?? ProcessInfo.processInfo.systemUptime
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         guard var grant = grants[id] else { return nil }
         let wasSuspended = grant.suspendedRemaining != nil
@@ -263,12 +269,14 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         launcherRuntimeProtection: LauncherRuntimeProtection,
         agentTaskContext: AgentTaskContext,
         classification: SecretGateRequestClassification,
-        wallNow: Date = Date(),
-        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime,
+        wallNow: Date? = nil,
+        monotonicNow: TimeInterval? = nil,
         _ didUse: (TemporaryAccessGrantSnapshot) throws -> Bool
     ) rethrows -> Bool? {
         lock.lock()
         defer { lock.unlock() }
+        let wallNow = wallNow ?? Date()
+        let monotonicNow = monotonicNow ?? ProcessInfo.processInfo.systemUptime
         removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         guard var grant = grants.values.first(where: {
             $0.scope.matches(
