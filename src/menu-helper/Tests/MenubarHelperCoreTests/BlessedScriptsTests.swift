@@ -68,7 +68,7 @@ import Testing
     #expect(declaration.manifest.capabilities == ["gh": .readOnly])
 }
 
-@Test func launcherlessBlessingRequiresOneManualApprovalPerExecution() {
+@Test func launcherEndorsementOnlyControlsAutomaticExecution() {
     let requirement = #"identifier "com.apple.Terminal""#
     let script = BlessedScript(
         path: "/tmp/script",
@@ -93,7 +93,11 @@ import Testing
             requirement: requirement
         )]
     )
-    func matches(_ script: BlessedScript, launcherRequirement: String?, checksum: String = "checksum") -> Bool {
+    func automaticallyMatches(
+        _ script: BlessedScript,
+        launcherRequirement: String,
+        checksum: String = "checksum"
+    ) -> Bool {
         script.matchesExecution(
             path: "/tmp/script",
             checksum: checksum,
@@ -104,7 +108,7 @@ import Testing
             launcherRequirement: launcherRequirement
         )
     }
-    func executionMatches(_ script: BlessedScript, checksum: String = "checksum") -> Bool {
+    func approvedExecutionMatches(_ script: BlessedScript, checksum: String = "checksum") -> Bool {
         script.matchesExecution(
             path: "/tmp/script",
             checksum: checksum,
@@ -115,13 +119,15 @@ import Testing
         )
     }
 
-    #expect(executionMatches(endorsedScript))
-    #expect(!executionMatches(endorsedScript, checksum: "changed"))
-    #expect(matches(script, launcherRequirement: nil))
-    #expect(!matches(script, launcherRequirement: requirement))
-    #expect(matches(endorsedScript, launcherRequirement: requirement))
-    #expect(!matches(endorsedScript, launcherRequirement: nil))
-    #expect(!matches(script, launcherRequirement: nil, checksum: "changed"))
+    #expect(approvedExecutionMatches(script))
+    #expect(approvedExecutionMatches(endorsedScript))
+    #expect(!approvedExecutionMatches(endorsedScript, checksum: "changed"))
+    #expect(!automaticallyMatches(script, launcherRequirement: requirement))
+    #expect(automaticallyMatches(endorsedScript, launcherRequirement: requirement))
+    #expect(!automaticallyMatches(
+        endorsedScript,
+        launcherRequirement: #"identifier "com.openai.codex""#
+    ))
 }
 
 @Test func blessingIdentityRequiresPathAndChecksum() {
