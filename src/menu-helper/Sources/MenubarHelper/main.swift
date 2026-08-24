@@ -5648,7 +5648,7 @@ private final class ApprovalServer: @unchecked Sendable {
         return signing.identifier == "oxide"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
-            && signing.runtimeProtection.allowsSecretGateAccess
+            && signing.runtimeProtection == .hardened
     }
 
     private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
@@ -6505,12 +6505,27 @@ private func classifySecretGateRequest(
 }
 
 private func oxideRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
-    let words = args.drop(while: { $0.hasPrefix("--profile=") || $0.hasPrefix("--host=") })
-        .map { $0.lowercased() }
+    var commandIndex = 0
+    while commandIndex < args.count {
+        let argument = args[commandIndex].lowercased()
+        if argument.hasPrefix("--profile=") || argument.hasPrefix("--host=") {
+            commandIndex += 1
+        } else if argument == "--profile" || argument == "--host" {
+            guard commandIndex + 1 < args.count else { return .unknown }
+            commandIndex += 2
+        } else {
+            break
+        }
+    }
+    let words = args.dropFirst(commandIndex).map { $0.lowercased() }
     guard let command = words.first else { return .unknown }
     if ["--version", "-v", "version", "help"].contains(command) { return .readOnly }
     if command == "auth" {
-        return words.dropFirst().first == "status" ? .readOnly : .mutating
+        switch words.dropFirst().first {
+        case "status", "help": return .readOnly
+        case "login", "logout": return .mutating
+        default: return .unknown
+        }
     }
     guard let action = words.dropFirst().first else { return .unknown }
     if ["list", "view", "get"].contains(action) { return .readOnly }
@@ -11105,10 +11120,14 @@ private func runTerraformCredentialSelfCheck() -> Int32 {
 private func runOxideCredentialSelfCheck() -> Int32 {
     let canonical = #"{"host":"https://oxide.example","profile":"prod"}"#
     guard oxideRequestClassification(["auth", "status"]) == .readOnly,
+          oxideRequestClassification(["auth", "login"]) == .mutating,
+          oxideRequestClassification(["auth", "future"]) == .unknown,
+          oxideRequestClassification(["--profile", "prod", "project", "list"]) == .readOnly,
           oxideRequestClassification(["project", "list"]) == .readOnly,
           oxideRequestClassification(["project", "create"]) == .mutating,
           oxideRequestClassification(["future-command"]) == .unknown,
           normalizeOxideHost("https://OXIDE.example/") == "https://oxide.example",
+          normalizeOxideHost("https://oxide.example:443/") == "https://oxide.example",
           normalizeOxideHost("https://oxide.example/path") == nil,
           let scope = parseOxideCredentialScope(canonical),
           scope.profile == "prod",

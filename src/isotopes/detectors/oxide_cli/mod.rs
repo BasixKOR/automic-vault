@@ -8,7 +8,7 @@ pub fn install_is_insecure() -> Result<bool, String> {
 
 pub fn install_insecurity_reasons() -> Result<Vec<String>, String> {
     let path = oxide_credentials_path()?;
-    if path.exists() && credentials_contain_token(&read_to_string(&path)?) {
+    if path.exists() && credentials_contain_token(&read_to_string(&path)?)? {
         return Ok(vec![format!(
             "Oxide CLI credentials contain plaintext access tokens: {}",
             path.display()
@@ -34,29 +34,18 @@ fn read_to_string(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))
 }
 
-fn credentials_contain_token(contents: &str) -> bool {
-    contents.lines().any(|line| {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            return false;
-        }
-        let Some((key, value)) = trimmed.split_once('=') else {
-            return false;
-        };
-        key.trim() == "token" && !matches!(toml_string_value(value), None | Some("") | Some("@av"))
-    })
-}
-
-fn toml_string_value(value: &str) -> Option<&str> {
-    let value = value.trim();
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.split_once('"').map(|(value, _)| value))
-        .or_else(|| {
-            value
-                .strip_prefix('\'')
-                .and_then(|value| value.split_once('\'').map(|(value, _)| value))
-        })
+fn credentials_contain_token(contents: &str) -> Result<bool, String> {
+    let document = toml::from_str::<toml::Value>(contents)
+        .map_err(|error| format!("invalid Oxide credentials TOML: {error}"))?;
+    let Some(profiles) = document.get("profile").and_then(toml::Value::as_table) else {
+        return Ok(false);
+    };
+    Ok(profiles.values().any(|profile| {
+        profile
+            .get("token")
+            .and_then(toml::Value::as_str)
+            .is_some_and(|token| !token.is_empty() && token != "@av")
+    }))
 }
 
 #[cfg(test)]
@@ -65,19 +54,25 @@ mod tests {
 
     #[test]
     fn detects_profile_tokens() {
-        assert!(credentials_contain_token(
-            "[profile.prod]\nhost = \"https://oxide.example\"\ntoken = \"fake-oxide-token\"\n"
-        ));
+        assert!(
+            credentials_contain_token(
+                "[profile.prod]\nhost = \"https://oxide.example\"\ntoken = \"fake-oxide-token\"\n"
+            )
+            .unwrap()
+        );
+        assert!(
+            credentials_contain_token("[profile.prod]\ntoken = \"\"\"multiline-secret\"\"\"\n")
+                .unwrap()
+        );
     }
 
     #[test]
     fn ignores_comments_and_empty_tokens() {
-        assert!(!credentials_contain_token(
-            "# token = \"fake-token\"\n[profile.prod]\ntoken = \"\"\n"
-        ));
-        assert!(!credentials_contain_token(
-            "[profile.prod]\ntoken = \"@av\"\n"
-        ));
+        assert!(
+            !credentials_contain_token("# token = \"fake-token\"\n[profile.prod]\ntoken = \"\"\n")
+                .unwrap()
+        );
+        assert!(!credentials_contain_token("[profile.prod]\ntoken = \"@av\"\n").unwrap());
     }
 
     #[test]

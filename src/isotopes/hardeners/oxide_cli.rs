@@ -35,7 +35,16 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
     let path = config_path()?;
     let original = read_config(&path)?;
-    let (sanitized, credentials) = sanitize_config(&original)?;
+    let (sanitized, credentials, managed_secret_names) = sanitize_config(&original)?;
+    let existing_secret_names = crate::secrets::list_secret_names()?;
+    if let Some(name) = managed_secret_names
+        .iter()
+        .find(|name| !existing_secret_names.contains(name))
+    {
+        return Err(format!(
+            "Oxide credential marker has no matching Secret Value: {name}"
+        ));
+    }
     let target = target();
     let plan = super::isotope::plan(super::isotope::OXIDE)?;
     let brew_conflict = !testing && homebrew_formula_installed();
@@ -89,8 +98,11 @@ pub(crate) fn detect() -> HardenerDetection {
     let config = config_path().ok();
     let config_valid = config.as_deref().is_some_and(|path| {
         read_config(path).is_ok_and(|contents| {
-            sanitize_config(&contents).is_ok_and(|(sanitized, credentials)| {
-                credentials.is_empty() && sanitized == contents
+            sanitize_config(&contents).is_ok_and(|(sanitized, credentials, managed)| {
+                credentials.is_empty()
+                    && sanitized == contents
+                    && crate::secrets::list_secret_names()
+                        .is_ok_and(|names| managed.iter().all(|name| names.contains(name)))
             })
         })
     });
@@ -169,9 +181,9 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
     }
 }
 
-fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> {
+fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>, Vec<String>), String> {
     if contents.is_empty() {
-        return Ok((String::new(), Vec::new()));
+        return Ok((String::new(), Vec::new(), Vec::new()));
     }
     let mut document = toml::from_str::<Value>(contents)
         .map_err(|error| format!("invalid Oxide credentials TOML: {error}"))?;
@@ -186,6 +198,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
         .and_then(Value::as_table_mut)
         .ok_or_else(|| "Oxide credentials must contain a `profile` table".to_string())?;
     let mut credentials = Vec::new();
+    let mut managed_secret_names = Vec::new();
     for (profile, value) in profiles {
         let profile = crate::cli::oxide_credential::normalize_profile(profile)?;
         let table = value
@@ -215,7 +228,9 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
             table["host"].as_str().expect("validated host"),
         )?;
         let token = table["token"].as_str().expect("validated token");
-        if token != CREDENTIAL_MARKER {
+        if token == CREDENTIAL_MARKER {
+            managed_secret_names.push(crate::cli::oxide_credential::secret_name(&profile, &host));
+        } else {
             credentials.push(Credential {
                 profile: profile.clone(),
                 host: host.clone(),
@@ -227,7 +242,7 @@ fn sanitize_config(contents: &str) -> Result<(String, Vec<Credential>), String> 
     }
     let sanitized = toml::to_string_pretty(&document)
         .map_err(|error| format!("failed to serialize Oxide credentials: {error}"))?;
-    Ok((sanitized, credentials))
+    Ok((sanitized, credentials, managed_secret_names))
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -477,7 +492,7 @@ token_id = "id"
 user = "user"
 time_expires = "tomorrow"
 "#;
-        let (sanitized, credentials) = sanitize_config(input).unwrap();
+        let (sanitized, credentials, managed) = sanitize_config(input).unwrap();
         assert_eq!(
             credentials,
             [Credential {
@@ -488,6 +503,14 @@ time_expires = "tomorrow"
         );
         assert!(sanitized.contains("token = \"@av\""));
         assert!(sanitized.contains("token_id = \"id\""));
+        assert!(managed.is_empty());
+        assert_eq!(
+            sanitize_config(&input.replace("secret", "@av")).unwrap().2,
+            [crate::cli::oxide_credential::secret_name(
+                "prod",
+                "https://oxide.example"
+            )]
+        );
         assert!(sanitize_config(&input.replace("user =", "future = \"x\"\nuser =")).is_err());
     }
 

@@ -75,7 +75,7 @@ diff --git a/sdk/src/auth.rs b/sdk/src/auth.rs
 index cc3c2c5..eb3415a 100644
 --- a/sdk/src/auth.rs
 +++ b/sdk/src/auth.rs
-@@ -6,14 +6,25 @@
+@@ -6,14 +6,26 @@
 
  use std::{
      collections::BTreeMap,
@@ -100,6 +100,7 @@ index cc3c2c5..eb3415a 100644
 +
  /// Credentials for a particular profile.
  #[derive(Deserialize, Debug)]
++#[serde(deny_unknown_fields)]
  pub struct ProfileCredentials {
 @@ -276,6 +287,12 @@ fn get_profile_auth(
      config_dir: &Path,
