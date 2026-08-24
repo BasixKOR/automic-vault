@@ -7,6 +7,7 @@ pub(crate) mod gh_cli;
 pub(crate) mod homebrew;
 pub(crate) mod isotope;
 mod migrations;
+pub(crate) mod oxide_cli;
 pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
@@ -238,6 +239,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(aws_cli, "aws"),
         ungated_hardener!(codex, "codex"),
         gated_hardener!(docker, "docker"),
+        gated_hardener!(oxide_cli, "oxide-cli"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
         gated_hardener!(stripe_cli, "stripe"),
@@ -265,6 +267,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         gpg_signing_gate(),
         aws_cli::secret_gate(),
         docker::secret_gate(),
+        oxide_cli::secret_gate(),
         homebrew::secret_gate(),
         gh_cli::secret_gate(),
         stripe_cli::secret_gate(),

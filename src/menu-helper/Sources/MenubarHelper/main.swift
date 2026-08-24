@@ -1951,6 +1951,8 @@ enum SecretMutation {
     case delete(account: String)
     case dockerSave(account: String, value: String, serverURL: String, username: String)
     case dockerDelete(account: String, serverURL: String)
+    case oxideSave(account: String, value: String, scope: String)
+    case oxideDelete(account: String, scope: String)
     case terraformSave(account: String, value: String, hostname: String)
     case terraformDelete(account: String, hostname: String)
     case deleteValue(account: String, source: StoredSecretValueSource)
@@ -2001,6 +2003,18 @@ enum SecretMutation {
                 "Delete Docker credential for \(serverURL)?",
                 "Docker will no longer be able to authenticate to this registry with the stored credential."
             )
+        case .oxideSave(let account, _, let scope):
+            properties = (
+                "oxide-save", [account], ["credential", "store", scope],
+                "Store Oxide credential?",
+                "Oxide CLI will use this profile token through its Automic Vault Secret Gate."
+            )
+        case .oxideDelete(let account, let scope):
+            properties = (
+                "oxide-delete", [account], ["credential", "forget", scope],
+                "Delete Oxide credential?",
+                "Oxide CLI will no longer be able to authenticate with this profile."
+            )
         case .terraformSave(let account, _, let hostname):
             properties = (
                 "terraform-save", [account], ["credential", "store", hostname],
@@ -2035,6 +2049,7 @@ enum SecretMutation {
         }
         let tool = switch self {
         case .dockerSave, .dockerDelete: "docker"
+        case .oxideSave, .oxideDelete: "oxide-cli"
         case .terraformSave, .terraformDelete: "terraform"
         default: URL(fileURLWithPath: callerPath).lastPathComponent
         }
@@ -2058,6 +2073,10 @@ enum SecretMutation {
             cwd = requestCWD
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = serverURL
+        case .oxideSave(_, _, let scope), .oxideDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
         case .terraformSave(_, _, let hostname), .terraformDelete(_, let hostname):
             cwd = requestCWD
             selectedSecretValues = SelectedSecretValues(values: [:])
@@ -2128,6 +2147,10 @@ enum SecretMutation {
         case .dockerSave(let account, let value, _, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .dockerDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .oxideSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .oxideDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .terraformSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
@@ -2927,6 +2950,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .oxideHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Oxide helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .terraformHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -2944,7 +2974,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .terraformGet:
+        case .inject, .keys, .authorize, .dockerGet, .oxideGet, .terraformGet:
             handleInject(
                 message,
                 on: peer,
@@ -2980,6 +3010,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleDockerSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .dockerDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDockerDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .oxideSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleOxideSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .oxideDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleOxideDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .terraformSave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleTerraformSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .terraformDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3034,10 +3068,9 @@ private final class ApprovalServer: @unchecked Sendable {
         callerPath: String,
         signing: SigningInfo
     ) {
-        guard let cwdPointer = xpc_dictionary_get_string(message, "cwd") else {
-            reply(peer, to: message, ok: false, error: "invalid list request")
-            return
-        }
+        let cwd = xpc_dictionary_get_string(message, "cwd")
+            .map { String(cString: $0) } ?? ""
+        let globalOnly = xpc_dictionary_get_bool(message, "global_only")
         var launchers = launcherIdentities(for: identity)
         let ancestorFallbackPath = launcherFallbackPath(for: identity)
         if launchers.isEmpty, let caller = launcherIdentity(pid: pid, identity: identity) {
@@ -3057,7 +3090,7 @@ private final class ApprovalServer: @unchecked Sendable {
             keys: [],
             target: callerPath,
             args: ["list"],
-            cwd: String(cString: cwdPointer),
+            cwd: cwd,
             replaceExistingEnv: false,
             allowMissingKeys: false,
             envConflicts: [],
@@ -3065,7 +3098,9 @@ private final class ApprovalServer: @unchecked Sendable {
             scriptData: nil,
             tool: "av",
             title: "List saved secret names?",
-            detail: "Secret values will remain hidden. The requesting app will receive every saved secret name."
+            detail: globalOnly
+                ? "Secret values will remain hidden. The requesting app will receive every saved Global Value name."
+                : "Secret values will remain hidden. The requesting app will receive every saved secret name."
         )
         if allowedLauncher != nil
         {
@@ -3076,7 +3111,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 approvalSource: "Auto",
                 reason: "Always allowed in Settings",
                 peer: peer,
-                message: message
+                message: message,
+                globalOnly: globalOnly
             )
             return
         }
@@ -3142,7 +3178,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 approvalSource: "Manual",
                 reason: "Allowed once in prompt",
                 peer: peer,
-                message: message
+                message: message,
+                globalOnly: globalOnly
             )
         }
     }
@@ -3154,11 +3191,16 @@ private final class ApprovalServer: @unchecked Sendable {
         approvalSource: String,
         reason: String,
         peer: xpc_connection_t,
-        message: xpc_object_t
+        message: xpc_object_t,
+        globalOnly: Bool
     ) {
         let names: [String]
         switch loadStoredSecretsResult() {
-        case .success(let secrets): names = secrets.map(\.account)
+        case .success(let secrets):
+            names = secrets.compactMap { secret in
+                (!globalOnly || secret.values.contains { $0.source == .global })
+                    ? secret.account : nil
+            }
         case .failure(let status):
             _ = onAccessRequest(accessRequestRecord(
                 request: request,
@@ -3255,15 +3297,22 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let conflicts = Set(helperRequest.envConflicts)
-            let selectionNames = helperRequest.keys.filter {
-                helperRequest.replaceExistingEnv || !conflicts.contains($0)
+            let oxideRequest = try oxideCredentialRequest(
+                from: message,
+                request: helperRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let conflicts = Set(oxideRequest.envConflicts)
+            let selectionNames = oxideRequest.keys.filter {
+                oxideRequest.replaceExistingEnv || !conflicts.contains($0)
             }
             let selected = try secretValueCustody.bind(
                 names: selectionNames,
-                cwd: helperRequest.cwd
+                cwd: oxideRequest.cwd
             )
-            request = approvalRequestWithCredentialContext(helperRequest.selecting(selected))
+            request = approvalRequestWithCredentialContext(oxideRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
@@ -5089,6 +5138,62 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func handleOxideSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "oxide_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseOxideCredentialScope(String(cString: scopePointer)),
+              let value = parseOxideCredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Oxide credential store request")
+            return
+        }
+        do {
+            let parent = try oxideCredentialParent(for: caller.identity)
+            handleMutation(
+                .oxideSave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleOxideDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "oxide_scope"),
+              let scope = parseOxideCredentialScope(String(cString: scopePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid Oxide credential forget request")
+            return
+        }
+        do {
+            let parent = try oxideCredentialParent(for: caller.identity)
+            handleMutation(
+                .oxideDelete(account: scope.secretName, scope: scope.canonical),
+                on: peer,
+                message: message,
+                cancellation: cancellation,
+                caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleTerraformSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5233,6 +5338,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .saveProject(let account, _, _, _, _),
                  .saveIfAbsentOrEqual(let account, _, _),
                  .dockerSave(let account, _, _, _),
+                 .oxideSave(let account, _, _),
                  .terraformSave(let account, _, _):
                 if status == errSecSuccess {
                     self.reply(peer, to: message, ok: true, error: nil)
@@ -5244,7 +5350,8 @@ private final class ApprovalServer: @unchecked Sendable {
                         error: "failed to store secret \(account): \(status)"
                     )
                 }
-            case .delete(let account), .dockerDelete(let account, _), .terraformDelete(let account, _):
+            case .delete(let account), .dockerDelete(let account, _),
+                 .oxideDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
                     self.reply(peer, to: message, ok: true, error: nil)
                 } else {
@@ -5427,6 +5534,72 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
+    private func oxideCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "oxide-get" else { return request }
+        guard request.tool == "oxide-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys.count == 1,
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "oxide_scope"),
+              let scope = parseOxideCredentialScope(String(cString: scopePointer)),
+              request.keys == [scope.secretName]
+        else { throw AppError("invalid Oxide credential request") }
+        let parent = try oxideCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "oxide-cli",
+            title: "Use Oxide credential for profile \(scope.profile)?",
+            detail: "The verified Oxide Target will receive this profile token in plaintext for \(scope.host).",
+            credentialScope: scope.canonical,
+            credentialParent: parent
+        )
+    }
+
+    private func oxideCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("Oxide credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard oxideTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible Oxide Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
     private func terraformCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -5499,6 +5672,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch URL(fileURLWithPath: parent.target).lastPathComponent {
         case "docker": "docker"
+        case "oxide": "oxide-cli"
         case "tofu": "opentofu"
         case "terraform": "terraform"
         default: ""
@@ -5518,11 +5692,26 @@ private final class ApprovalServer: @unchecked Sendable {
         else { return false }
         switch tool {
         case "docker": return dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "oxide-cli":
+            return credentialHelperTool(parent) == tool
+                && oxideTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "terraform", "opentofu":
             return credentialHelperTool(parent) == tool
                 && terraformTargetIdentityValid(pid: parent.pid, path: parent.target)
         default: return false
         }
+    }
+
+    private func oxideTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/oxide",
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "oxide"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection == .hardened
+            && liveProcessHasNoEntitlements(pid: pid)
     }
 
     private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
@@ -5546,7 +5735,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if request.op == "docker-get" || request.op == "terraform-get" {
+        if ["docker-get", "oxide-get", "terraform-get"].contains(request.op) {
             guard let scope = request.credentialScope,
                   let parent = request.credentialParent,
                   let tool = request.tool,
@@ -5554,9 +5743,16 @@ private final class ApprovalServer: @unchecked Sendable {
                   parent.target == request.target,
                   Array(parent.arguments.dropFirst()) == request.args
             else { throw AppError("invalid credential-helper request") }
-            let expected = request.op == "docker-get"
-                ? dockerCredentialSecretName(scope)
-                : terraformCredentialSecretName(scope)
+            let expected: String
+            switch request.op {
+            case "docker-get": expected = dockerCredentialSecretName(scope)
+            case "oxide-get":
+                guard let oxide = parseOxideCredentialScope(scope) else {
+                    throw AppError("Oxide credential scope changed before Secret Application")
+                }
+                expected = oxide.secretName
+            default: expected = terraformCredentialSecretName(scope)
+            }
             guard request.keys == [expected] else {
                 throw AppError("credential-helper Secret Name changed before Secret Application")
             }
@@ -5577,6 +5773,11 @@ private final class ApprovalServer: @unchecked Sendable {
                       let credential = parseDockerCredential(value),
                       credential.serverURL == scope
                 else { throw AppError("Docker credential changed before Secret Application") }
+            } else if request.op == "oxide-get" {
+                guard let scope = parseOxideCredentialScope(scope),
+                      let value = secrets[scope.secretName],
+                      parseOxideCredential(value) != nil
+                else { throw AppError("Oxide credential changed before Secret Application") }
             } else {
                 guard let value = secrets[terraformCredentialSecretName(scope)],
                       parseTerraformCredential(value) != nil
@@ -5953,7 +6154,8 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "terraform-get" || op == "proxy-start"
+            || op == "docker-get" || op == "oxide-get" || op == "terraform-get"
+            || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
         if xpc_dictionary_get_value(message, "script_data") != nil {
@@ -6348,6 +6550,8 @@ private func classifySecretGateRequest(
         return ghRequestClassification(request.args)
     case "docker":
         return dockerRequestClassification(request.args)
+    case "oxide-cli":
+        return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
         return terraformRequestClassification(request.args)
     case "aws":
@@ -6361,6 +6565,45 @@ private func classifySecretGateRequest(
             arguments: secretGateCommandWords(request)
         )
     }
+}
+
+private func oxideRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    var commandIndex = 0
+    while commandIndex < args.count {
+        let argument = args[commandIndex].lowercased()
+        if argument.hasPrefix("--profile=") || argument.hasPrefix("--host=") {
+            commandIndex += 1
+        } else if argument == "--profile" || argument == "--host" {
+            guard commandIndex + 1 < args.count else { return .unknown }
+            commandIndex += 2
+        } else {
+            break
+        }
+    }
+    let words = args.dropFirst(commandIndex).map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    if ["--version", "-v", "version", "help"].contains(command) { return .readOnly }
+    if command == "auth" {
+        switch words.dropFirst().first {
+        case "status", "help": return .readOnly
+        case "login", "logout": return .mutating
+        default: return .unknown
+        }
+    }
+    let topLevelCommands = [
+        "alert", "api", "audit-log", "auth-settings", "bundle", "certificate", "completion",
+        "current-user", "der", "disk", "docs", "experimental", "external-subnet", "floating-ip",
+        "group", "image", "instance", "internet-gateway", "ip-pool", "pem", "ping", "policy",
+        "project", "scim", "silo", "snapshot", "subnet-pool", "system", "user", "utilization",
+        "vpc",
+    ]
+    guard topLevelCommands.contains(command) else { return .unknown }
+    guard let action = words.dropFirst().first else { return .unknown }
+    if ["list", "view", "get"].contains(action) { return .readOnly }
+    if ["create", "delete", "edit", "update", "start", "stop", "reboot"].contains(action) {
+        return .mutating
+    }
+    return .unknown
 }
 
 private func terraformRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -6874,6 +7117,71 @@ private func parseDockerCredential(_ value: String) -> StoredDockerCredential? {
           !secret.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return StoredDockerCredential(serverURL: serverURL, username: username, secret: secret)
+}
+
+private struct StoredOxideCredentialScope {
+    let profile: String
+    let host: String
+    let canonical: String
+
+    var secretName: String {
+        let data = Data((profile + "\0" + host).utf8)
+        let hash = SHA256.hash(data: data).map { String(format: "%02X", $0) }.joined()
+        return "OXIDE_PROFILE_TOKEN_\(hash)"
+    }
+}
+
+private func parseOxideCredentialScope(_ value: String) -> StoredOxideCredentialScope? {
+    guard value.utf8.count <= 4 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["host", "profile"]),
+          let profile = object["profile"] as? String,
+          let host = object["host"] as? String,
+          validOxideProfile(profile),
+          normalizeOxideHost(host) == host,
+          let canonicalData = try? JSONSerialization.data(
+              withJSONObject: ["host": host, "profile": profile],
+              options: [.sortedKeys, .withoutEscapingSlashes]
+          ),
+          let canonical = String(data: canonicalData, encoding: .utf8),
+          canonical == value
+    else { return nil }
+    return StoredOxideCredentialScope(profile: profile, host: host, canonical: canonical)
+}
+
+private func validOxideProfile(_ profile: String) -> Bool {
+    !profile.isEmpty
+        && profile.utf8.count <= 128
+        && profile == profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        && profile.unicodeScalars.allSatisfy { $0.isASCII && $0.value > 31 && $0.value != 127 }
+}
+
+private func normalizeOxideHost(_ host: String) -> String? {
+    guard let input = URLComponents(string: host),
+          let scheme = input.scheme?.lowercased(),
+          scheme == "http" || scheme == "https",
+          let hostname = input.host?.lowercased(),
+          !hostname.isEmpty,
+          input.user == nil,
+          input.password == nil,
+          input.path.isEmpty || input.path == "/",
+          input.query == nil,
+          input.fragment == nil
+    else { return nil }
+    var output = URLComponents()
+    output.scheme = scheme
+    output.host = hostname
+    if input.port != (scheme == "https" ? 443 : 80) { output.port = input.port }
+    return output.string
+}
+
+private func parseOxideCredential(_ value: String) -> String? {
+    guard !value.isEmpty,
+          value.utf8.count <= 64 * 1024,
+          !value.unicodeScalars.contains(where: { [0, 10, 13].contains($0.value) })
+    else { return nil }
+    return value
 }
 
 private func normalizeTerraformHostname(_ hostname: String) -> String? {
@@ -7708,7 +8016,8 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .terraformHelperVersion: false
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .oxideHelperVersion,
+             .terraformHelperVersion: false
         default: true
         }
     }
@@ -7784,6 +8093,25 @@ private func liveSigningInfo(pid: pid_t) -> LiveSigningInfo? {
             SecCodeCheckValidity(code, [], $0)
         }
     )
+}
+
+private func liveProcessHasNoEntitlements(pid: pid_t) -> Bool {
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess,
+          let code,
+          SecCodeCheckValidity(code, [], nil) == errSecSuccess
+    else { return false }
+    var info: CFDictionary?
+    let inspectableCode = unsafeBitCast(code, to: SecStaticCode.self)
+    guard SecCodeCopySigningInformation(
+        inspectableCode,
+        SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSDynamicInformation),
+        &info
+    ) == errSecSuccess,
+        let dictionary = info as? [CFString: Any]
+    else { return false }
+    return (dictionary[kSecCodeInfoEntitlementsDict] as? [String: Any] ?? [:]).isEmpty
 }
 
 private func liveCodeIdentity(pid: pid_t) -> Data? {
@@ -10933,6 +11261,31 @@ private func runTerraformCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runOxideCredentialSelfCheck() -> Int32 {
+    let canonical = #"{"host":"https://oxide.example","profile":"prod"}"#
+    guard oxideRequestClassification(["auth", "status"]) == .readOnly,
+          oxideRequestClassification(["auth", "login"]) == .mutating,
+          oxideRequestClassification(["auth", "future"]) == .unknown,
+          oxideRequestClassification(["--profile", "prod", "project", "list"]) == .readOnly,
+          oxideRequestClassification(["project", "list"]) == .readOnly,
+          oxideRequestClassification(["project", "create"]) == .mutating,
+          oxideRequestClassification(["future-command"]) == .unknown,
+          oxideRequestClassification(["future-command", "list"]) == .unknown,
+          normalizeOxideHost("https://OXIDE.example/") == "https://oxide.example",
+          normalizeOxideHost("https://oxide.example:443/") == "https://oxide.example",
+          normalizeOxideHost("https://oxide.example/path") == nil,
+          let scope = parseOxideCredentialScope(canonical),
+          scope.profile == "prod",
+          scope.host == "https://oxide.example",
+          scope.secretName
+              == "OXIDE_PROFILE_TOKEN_7B278C7242C18FEA05959821606917F993F33A93618CDF5207AD0DCE95F9BCF0",
+          parseOxideCredential("secret") == "secret",
+          parseOxideCredential("secret\n") == nil,
+          parseOxideCredentialScope(#"{"profile":"prod","host":"https://oxide.example"}"#) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -11882,6 +12235,10 @@ if CommandLine.arguments.contains("--self-check-docker-credentials") {
 
 if CommandLine.arguments.contains("--self-check-terraform-credentials") {
     exit(runTerraformCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-oxide-credentials") {
+    exit(runOxideCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {

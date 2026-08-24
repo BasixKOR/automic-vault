@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
+const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
@@ -114,6 +115,14 @@ pub(crate) fn bless_script(path: &str, endorse_launcher: bool) -> Result<bool, S
 }
 
 pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
+    list_secret_names_filtered(false)
+}
+
+pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
+    list_secret_names_filtered(true)
+}
+
+fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> {
     if let Some(dir) = crate::test_keychain_dir() {
         let entries = match std::fs::read_dir(dir) {
             Ok(entries) => entries,
@@ -128,7 +137,14 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         names.sort();
         return Ok(names);
     }
-    Ok(xpc_request("list", None, None, None, None)?.names)
+    Ok(xpc_request(
+        "list",
+        None,
+        None,
+        global_only.then_some(&b"global_only\0"[..]),
+        None,
+    )?
+    .names)
 }
 
 pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {
@@ -246,6 +262,65 @@ pub(crate) fn delete_terraform_credential(hostname: &str) -> Result<(), String> 
     xpc_request(
         "terraform-delete",
         Some((b"terraform_hostname\0", hostname)),
+        None,
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn ensure_oxide_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "oxide-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", OXIDE_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "Oxide credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported Oxide helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no Oxide helper version".into()),
+    }
+}
+
+pub(crate) fn store_oxide_credential(scope: &str, value: &str) -> Result<(), String> {
+    let (profile, host) = crate::cli::oxide_credential::parse_scope(scope)?;
+    let account = crate::cli::oxide_credential::secret_name(&profile, &host);
+    if crate::test_keychain_dir().is_some() {
+        return store_secret(&account, value);
+    }
+    xpc_request(
+        "oxide-save",
+        Some((b"oxide_scope\0", scope)),
+        Some((b"value\0", value)),
+        None,
+        None,
+    )
+    .map(|_| ())
+}
+
+pub(crate) fn delete_oxide_credential(scope: &str, account: &str) -> Result<(), String> {
+    if let Some(dir) = crate::test_keychain_dir() {
+        return match std::fs::remove_file(dir.join(account)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("failed to delete test Oxide credential: {error}")),
+        };
+    }
+    xpc_request(
+        "oxide-delete",
+        Some((b"oxide_scope\0", scope)),
         None,
         None,
         None,
@@ -468,6 +543,8 @@ fn xpc_operation_requires_cwd(operation: &str) -> bool {
             | "save-if-absent"
             | "docker-save"
             | "docker-delete"
+            | "oxide-save"
+            | "oxide-delete"
             | "terraform-save"
             | "terraform-delete"
     )
@@ -499,6 +576,7 @@ mod tests {
     fn only_mutations_require_a_working_directory() {
         assert!(xpc_operation_requires_cwd("save"));
         assert!(xpc_operation_requires_cwd("docker-delete"));
+        assert!(xpc_operation_requires_cwd("oxide-save"));
         assert!(xpc_operation_requires_cwd("terraform-save"));
         assert!(!xpc_operation_requires_cwd("bless"));
         assert!(!xpc_operation_requires_cwd("docker-helper-version"));

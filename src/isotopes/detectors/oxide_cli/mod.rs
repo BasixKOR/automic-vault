@@ -35,16 +35,30 @@ fn read_to_string(path: &Path) -> Result<String, String> {
 }
 
 fn credentials_contain_token(contents: &str) -> bool {
-    contents.lines().any(|line| {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            return false;
-        }
-        let Some((key, value)) = trimmed.split_once('=') else {
-            return false;
-        };
-        key.trim() == "token" && !toml_string_value(value).unwrap_or_default().is_empty()
-    })
+    let Ok(document) = toml::from_str::<toml::Value>(contents) else {
+        return contents.lines().any(|line| {
+            let line = line.trim();
+            if line.starts_with('#') {
+                return false;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                return false;
+            };
+            key.trim() == "token"
+                && toml_string_value(value).is_some_and(|token| !token.is_empty() && token != "@av")
+        });
+    };
+    document
+        .get("profile")
+        .and_then(toml::Value::as_table)
+        .is_some_and(|profiles| {
+            profiles.values().any(|profile| {
+                profile
+                    .get("token")
+                    .and_then(toml::Value::as_str)
+                    .is_some_and(|token| !token.is_empty() && token != "@av")
+            })
+        })
 }
 
 fn toml_string_value(value: &str) -> Option<&str> {
@@ -68,12 +82,21 @@ mod tests {
         assert!(credentials_contain_token(
             "[profile.prod]\nhost = \"https://oxide.example\"\ntoken = \"fake-oxide-token\"\n"
         ));
+        assert!(credentials_contain_token(
+            "[profile.prod]\ntoken = \"\"\"multiline-secret\"\"\"\n"
+        ));
+        assert!(credentials_contain_token(
+            "not valid TOML\ntoken = \"plaintext\"\n"
+        ));
     }
 
     #[test]
     fn ignores_comments_and_empty_tokens() {
         assert!(!credentials_contain_token(
             "# token = \"fake-token\"\n[profile.prod]\ntoken = \"\"\n"
+        ));
+        assert!(!credentials_contain_token(
+            "[profile.prod]\ntoken = \"@av\"\n"
         ));
     }
 

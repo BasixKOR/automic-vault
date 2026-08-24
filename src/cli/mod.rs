@@ -11,6 +11,7 @@ mod inject;
 mod launcher_bundle;
 mod list;
 mod open;
+pub(crate) mod oxide_credential;
 mod proxy;
 mod save;
 mod scan;
@@ -46,7 +47,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 30;
+pub(crate) const INSTALL_REVISION: u32 = 31;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -369,6 +370,10 @@ where
                     hardeners::terraform::run(hardeners::terraform::Tool::OpenTofu, stdout, yes);
                 return finish_hardening(result, "opentofu", stdout, stderr);
             }
+            if target == "oxide" || target == "oxide-cli" {
+                let result = hardeners::oxide_cli::run(stdout, yes);
+                return finish_hardening(result, "oxide-cli", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -420,6 +425,7 @@ where
         }
         Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
         Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
+        Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

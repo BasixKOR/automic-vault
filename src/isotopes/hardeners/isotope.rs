@@ -16,6 +16,7 @@ const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
 const TAP_FORMULA_ROOT: &str =
     "https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula";
 const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
+const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const GH: Spec = Spec {
@@ -25,6 +26,7 @@ pub(crate) const GH: Spec = Spec {
     primary: "gh",
     binaries: &["gh"],
     test_path: "AUTOMIC_VAULT_TEST_GH_CLI_PATH",
+    release_asset: None,
 };
 pub(crate) const STRIPE: Spec = Spec {
     hardener: "stripe",
@@ -33,6 +35,7 @@ pub(crate) const STRIPE: Spec = Spec {
     primary: "stripe",
     binaries: &["stripe"],
     test_path: "AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH",
+    release_asset: None,
 };
 pub(crate) const SUPABASE: Spec = Spec {
     hardener: "supabase",
@@ -41,6 +44,7 @@ pub(crate) const SUPABASE: Spec = Spec {
     primary: "supabase",
     binaries: &["supabase-go", "supabase"],
     test_path: "AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH",
+    release_asset: None,
 };
 const OPENTOFU: Spec = Spec {
     hardener: "opentofu",
@@ -49,6 +53,16 @@ const OPENTOFU: Spec = Spec {
     primary: "tofu",
     binaries: &["tofu"],
     test_path: "AUTOMIC_VAULT_TEST_OPENTOFU_TARGET",
+    release_asset: Some(OPENTOFU_ASSET),
+};
+pub(crate) const OXIDE: Spec = Spec {
+    hardener: "oxide-cli",
+    formula: "oxide-cli",
+    repository: "automic-vault",
+    primary: "oxide",
+    binaries: &["oxide"],
+    test_path: "AUTOMIC_VAULT_TEST_OXIDE_TARGET",
+    release_asset: Some(OXIDE_ASSET),
 };
 
 #[derive(Clone, Copy)]
@@ -59,12 +73,14 @@ pub(crate) struct Spec {
     primary: &'static str,
     binaries: &'static [&'static str],
     test_path: &'static str,
+    release_asset: Option<&'static str>,
 }
 
 #[derive(Clone)]
 pub(crate) struct Doctor {
     pub(crate) identifier: &'static str,
     pub(crate) formula_url: String,
+    pub(crate) release_asset: Option<&'static str>,
     pub(crate) receipt_path: Option<String>,
 }
 
@@ -141,7 +157,9 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
         }
         return Ok(InstallPlan::Ready);
     }
-    if let Some(brew) = brew_path() {
+    if spec.release_asset.is_none()
+        && let Some(brew) = brew_path()
+    {
         return Ok(InstallPlan::Homebrew {
             brew,
             conflict: conflicting_formula(spec),
@@ -157,12 +175,13 @@ pub(crate) fn target(spec: Spec) -> PathBuf {
     if let Some(path) = crate::test_env_var(spec.test_path) {
         return path.into();
     }
-    brew_targets(spec)
-        .into_iter()
-        .find(|path| executable(path))
+    spec.release_asset
+        .is_none()
+        .then(|| brew_targets(spec).into_iter().find(|path| executable(path)))
+        .flatten()
         .or_else(|| executable(&direct_target(spec)).then(|| direct_target(spec)))
         .unwrap_or_else(|| {
-            if brew_path().is_some() {
+            if spec.release_asset.is_none() && brew_path().is_some() {
                 brew_targets(spec).remove(0)
             } else {
                 direct_target(spec)
@@ -179,15 +198,19 @@ pub(crate) fn detect(spec: Spec) -> HardenerDetection {
     detection.commands[0].isotope = Some(Doctor {
         identifier: spec.primary,
         formula_url: formula_url(spec),
+        release_asset: spec.release_asset,
         receipt_path: is_direct_target(spec, &target)
             .then(|| receipt_path(spec).display().to_string()),
     });
     detection
 }
 
-pub(crate) fn current_sha(formula_url: &str) -> Result<String, String> {
-    let formula = fetch(formula_url, 5)?;
-    parse_formula(&formula, None).map(|manifest| manifest.sha256)
+pub(crate) fn current_sha(source_url: &str, release_asset: Option<&str>) -> Result<String, String> {
+    let contents = fetch(source_url, 5)?;
+    match release_asset {
+        Some(asset) => parse_release_digest(&contents, source_url, asset).map(str::to_string),
+        None => parse_formula(&contents, None).map(|manifest| manifest.sha256),
+    }
 }
 
 pub(crate) fn signature_valid(path: &Path, identifier: &str) -> bool {
@@ -262,6 +285,9 @@ pub(crate) fn install_privileged(
         if spec.hardener == OPENTOFU.hardener {
             super::terraform::verify_target(super::terraform::Tool::OpenTofu, &stage)?;
         }
+        if spec.hardener == OXIDE.hardener {
+            super::oxide_cli::verify_target(&stage)?;
+        }
         staged.push((stage, bin_dir.join(binary)));
     }
     for (stage, destination) in &staged {
@@ -285,7 +311,7 @@ pub(crate) fn install_privileged(
 }
 
 pub(crate) fn install_opentofu() -> Result<(), String> {
-    let manifest = opentofu_manifest()?;
+    let manifest = release_manifest(OPENTOFU_ASSET)?;
     install_direct(OPENTOFU, &manifest)
 }
 
@@ -444,6 +470,9 @@ fn extract_and_verify(
 }
 
 fn current_manifest(spec: Spec) -> Result<Manifest, String> {
+    if let Some(asset) = spec.release_asset {
+        return release_manifest(asset);
+    }
     let formula = fetch(&formula_url(spec), 15)?;
     parse_formula(&formula, Some(spec))
 }
@@ -629,20 +658,35 @@ fn is_direct_target(spec: Spec, path: &Path) -> bool {
 }
 
 fn installed(spec: Spec, path: &Path) -> bool {
-    executable(path) || crate::test_env_var(spec.test_path).is_some() && path.exists()
+    if crate::test_env_var(spec.test_path).is_some() {
+        return path.exists();
+    }
+    if !executable(path) {
+        return false;
+    }
+    if spec.hardener == OPENTOFU.hardener {
+        return super::terraform::verify_target(super::terraform::Tool::OpenTofu, path).is_ok();
+    }
+    if spec.hardener == OXIDE.hardener {
+        return super::oxide_cli::verify_target(path).is_ok();
+    }
+    true
 }
 
 fn formula_url(spec: Spec) -> String {
-    format!("{TAP_FORMULA_ROOT}/{}.rb", spec.formula)
+    match spec.release_asset {
+        Some(_) => release_sums_url(),
+        None => format!("{TAP_FORMULA_ROOT}/{}.rb", spec.formula),
+    }
 }
 
 fn spec(hardener: &str) -> Option<Spec> {
-    [GH, STRIPE, SUPABASE, OPENTOFU]
+    [GH, STRIPE, SUPABASE, OPENTOFU, OXIDE]
         .into_iter()
         .find(|spec| spec.hardener == hardener)
 }
 
-fn opentofu_manifest() -> Result<Manifest, String> {
+fn release_manifest(asset: &str) -> Result<Manifest, String> {
     if let Some(formula) = crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA") {
         return parse_formula(&formula, None);
     }
@@ -651,25 +695,37 @@ fn opentofu_manifest() -> Result<Manifest, String> {
         format!("https://github.com/automic-vault/automic-vault/releases/download/{version}");
     let sums_url = format!("{base}/SHA256SUMS");
     let sums = fetch(&sums_url, 15)?;
+    let digest = parse_release_digest(&sums, &sums_url, asset)?;
+    Ok(Manifest {
+        url: format!("{base}/{asset}"),
+        sha256: digest.to_string(),
+    })
+}
+
+fn release_sums_url() -> String {
+    format!(
+        "https://github.com/automic-vault/automic-vault/releases/download/{}/SHA256SUMS",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+fn parse_release_digest<'a>(sums: &'a str, sums_url: &str, asset: &str) -> Result<&'a str, String> {
     let matches = sums
         .lines()
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
             let digest = fields.next()?;
             let name = fields.next()?.trim_start_matches('*');
-            (name == OPENTOFU_ASSET && fields.next().is_none()).then_some(digest)
+            (name == asset && fields.next().is_none()).then_some(digest)
         })
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err(format!(
-            "{sums_url} must contain exactly one {OPENTOFU_ASSET} digest"
+            "{sums_url} must contain exactly one {asset} digest"
         ));
     }
     validate_sha256(matches[0])?;
-    Ok(Manifest {
-        url: format!("{base}/{OPENTOFU_ASSET}"),
-        sha256: matches[0].to_string(),
-    })
+    Ok(matches[0])
 }
 
 pub(crate) fn prepare_install_directory(path: &Path) -> Result<(), String> {

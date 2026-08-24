@@ -44,6 +44,7 @@ struct ApprovalRequest {
     tool: Option<&'static str>,
     docker_server_url: Option<String>,
     terraform_hostname: Option<String>,
+    oxide_scope: Option<String>,
 }
 
 unsafe extern "C" {
@@ -332,6 +333,7 @@ fn approval_request(
         tool: None,
         docker_server_url: None,
         terraform_hostname: None,
+        oxide_scope: None,
     })
 }
 
@@ -352,6 +354,7 @@ pub(super) fn docker_credential(key: String, server_url: String) -> Result<Strin
         tool: Some("docker"),
         docker_server_url: Some(server_url),
         terraform_hostname: None,
+        oxide_scope: None,
     };
     if crate::test_keychain_dir().is_some() {
         return load_test_secret_if_present(&key)?
@@ -379,6 +382,7 @@ pub(super) fn terraform_credential(key: String, hostname: String) -> Result<Stri
         tool: Some("terraform"),
         docker_server_url: None,
         terraform_hostname: Some(hostname),
+        oxide_scope: None,
     };
     if crate::test_keychain_dir().is_some() {
         return load_test_secret_if_present(&key)?
@@ -387,6 +391,34 @@ pub(super) fn terraform_credential(key: String, hostname: String) -> Result<Stri
     xpc_approve_injection(&request)?
         .remove(&key)
         .ok_or_else(|| format!("Automic Vault returned no Terraform credential for {key}"))
+}
+
+pub(super) fn oxide_credential(key: String, scope: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    let request = ApprovalRequest {
+        op: "oxide-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("oxide-cli"),
+        docker_server_url: None,
+        terraform_hostname: None,
+        oxide_scope: Some(scope),
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no Oxide credential for {key}"))
 }
 
 struct VerifiedScript {
@@ -630,6 +662,7 @@ pub(super) fn approve_gpg_signing(
             tool: Some("gpg-signing"),
             docker_server_url: None,
             terraform_hostname: None,
+            oxide_scope: None,
         },
         response_keys,
     )
@@ -769,6 +802,9 @@ fn xpc_approve_request(
         }
         if let Some(hostname) = &request.terraform_hostname {
             set_string(message, b"terraform_hostname\0", hostname)?;
+        }
+        if let Some(scope) = &request.oxide_scope {
+            set_string(message, b"oxide_scope\0", scope)?;
         }
         xpc_dictionary_set_bool(
             message,
