@@ -27,9 +27,10 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
     assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 3);
     assert!(RELEASE_WORKFLOW.contains("OpenTofu-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains(
-        "sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6"
-    ));
+    assert!(
+        RELEASE_WORKFLOW
+            .contains("sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6")
+    );
     assert!(OPENTOFU_ISOTOPE_SCRIPT.contains("cosign verify-blob"));
     assert!(OPENTOFU_ISOTOPE_SCRIPT.contains("codesign --verify --strict"));
     assert!(RELEASE_WORKFLOW.contains("sbom-path:"));
