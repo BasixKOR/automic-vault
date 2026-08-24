@@ -1891,6 +1891,8 @@ enum SecretMutation {
     case delete(account: String)
     case dockerSave(account: String, value: String, serverURL: String, username: String)
     case dockerDelete(account: String, serverURL: String)
+    case goatSave(account: String, value: String, scope: String)
+    case goatDelete(account: String, scope: String)
     case oxideSave(account: String, value: String, scope: String)
     case oxideDelete(account: String, scope: String)
     case terraformSave(account: String, value: String, hostname: String)
@@ -1943,6 +1945,18 @@ enum SecretMutation {
                 "Delete Docker credential for \(serverURL)?",
                 "Docker will no longer be able to authenticate to this registry with the stored credential."
             )
+        case .goatSave(let account, _, let scope):
+            properties = (
+                "goat-save", [account], ["credential", "store", scope],
+                "Store goat auth session?",
+                "goat will use this password session through its Automic Vault Secret Gate."
+            )
+        case .goatDelete(let account, let scope):
+            properties = (
+                "goat-delete", [account], ["credential", "forget", scope],
+                "Delete goat auth session?",
+                "goat will no longer be able to authenticate with this session."
+            )
         case .oxideSave(let account, _, let scope):
             properties = (
                 "oxide-save", [account], ["credential", "store", scope],
@@ -1989,6 +2003,7 @@ enum SecretMutation {
         }
         let tool = switch self {
         case .dockerSave, .dockerDelete: "docker"
+        case .goatSave, .goatDelete: "goat"
         case .oxideSave, .oxideDelete: "oxide-cli"
         case .terraformSave, .terraformDelete: "terraform"
         default: URL(fileURLWithPath: callerPath).lastPathComponent
@@ -2013,6 +2028,10 @@ enum SecretMutation {
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = serverURL
+        case .goatSave(_, _, let scope), .goatDelete(_, let scope):
+            cwd = ""
+            selectedSecretValues = SelectedSecretValues(values: [:])
+            credentialScope = scope
         case .oxideSave(_, _, let scope), .oxideDelete(_, let scope):
             cwd = ""
             selectedSecretValues = SelectedSecretValues(values: [:])
@@ -2087,6 +2106,10 @@ enum SecretMutation {
         case .dockerSave(let account, let value, _, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
         case .dockerDelete(let account, _):
+            return deleteStoredSecretRevokingDirectAccess(account: account)
+        case .goatSave(let account, let value, _):
+            return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
+        case .goatDelete(let account, _):
             return deleteStoredSecretRevokingDirectAccess(account: account)
         case .oxideSave(let account, let value, _):
             return saveStoredSecret(account: account, value: value, accessibility: .whenUnlocked)
@@ -2890,6 +2913,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .goatHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "goat helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .oxideHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -2914,7 +2944,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 callerPath: callerPath,
                 signing: signing
             )
-        case .inject, .keys, .authorize, .dockerGet, .oxideGet, .terraformGet:
+        case .inject, .keys, .authorize, .dockerGet, .goatGet, .oxideGet, .terraformGet:
             handleInject(
                 message,
                 on: peer,
@@ -2950,6 +2980,10 @@ private final class ApprovalServer: @unchecked Sendable {
             handleDockerSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .dockerDelete where isTrustedAvCaller(path: callerPath, signing: signing):
             handleDockerDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .goatSave where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleGoatSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
+        case .goatDelete where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleGoatDelete(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .oxideSave where isTrustedAvCaller(path: callerPath, signing: signing):
             handleOxideSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .oxideDelete where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -3222,9 +3256,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let helperRequest = try terraformCredentialRequest(
+            let goatRequest = try goatCredentialRequest(
                 from: message,
                 request: dockerRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let helperRequest = try terraformCredentialRequest(
+                from: message,
+                request: goatRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -5083,6 +5124,56 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func handleGoatSave(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "goat_scope"),
+              let valuePointer = xpc_dictionary_get_string(message, "value"),
+              let scope = parseGoatCredentialScope(String(cString: scopePointer)),
+              let value = parseGoatCredential(String(cString: valuePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid goat credential store request")
+            return
+        }
+        do {
+            let parent = try goatCredentialParent(for: caller.identity)
+            handleMutation(
+                .goatSave(account: scope.secretName, value: value, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
+    private func handleGoatDelete(
+        _ message: xpc_object_t,
+        on peer: xpc_connection_t,
+        cancellation: ApprovalCancellation,
+        caller: MutationCaller
+    ) {
+        guard let scopePointer = xpc_dictionary_get_string(message, "goat_scope"),
+              let scope = parseGoatCredentialScope(String(cString: scopePointer))
+        else {
+            reply(peer, to: message, ok: false, error: "invalid goat credential forget request")
+            return
+        }
+        do {
+            let parent = try goatCredentialParent(for: caller.identity)
+            handleMutation(
+                .goatDelete(account: scope.secretName, scope: scope.canonical),
+                on: peer, message: message, cancellation: cancellation, caller: caller,
+                requiredCredentialParent: parent
+            )
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+        }
+    }
+
     private func handleOxideSave(
         _ message: xpc_object_t,
         on peer: xpc_connection_t,
@@ -5278,6 +5369,7 @@ private final class ApprovalServer: @unchecked Sendable {
                  .saveProject(let account, _, _, _, _),
                  .saveIfAbsentOrEqual(let account, _, _),
                  .dockerSave(let account, _, _, _),
+                 .goatSave(let account, _, _),
                  .oxideSave(let account, _, _),
                  .terraformSave(let account, _, _):
                 if status == errSecSuccess {
@@ -5291,6 +5383,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     )
                 }
             case .delete(let account), .dockerDelete(let account, _),
+                 .goatDelete(let account, _),
                  .oxideDelete(let account, _), .terraformDelete(let account, _):
                 if status == errSecSuccess || status == errSecItemNotFound {
                     self.reply(peer, to: message, ok: true, error: nil)
@@ -5474,6 +5567,52 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
+    private func goatCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "goat-get" else { return request }
+        guard request.tool == "goat",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty, request.args.isEmpty, request.keys.count == 1,
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              let scopePointer = xpc_dictionary_get_string(message, "goat_scope"),
+              let scope = parseGoatCredentialScope(String(cString: scopePointer)),
+              request.keys == [scope.secretName]
+        else { throw AppError("invalid goat credential request") }
+        let parent = try goatCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op, keys: request.keys, target: parent.target,
+            args: Array(parent.arguments.dropFirst()), cwd: request.cwd,
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: "goat",
+            title: "Use goat auth session for \(scope.did)?",
+            detail: "The verified goat Target will receive the password and session tokens for \(scope.pds).",
+            credentialScope: scope.canonical, credentialParent: parent
+        )
+    }
+
+    private func goatCredentialParent(for helperIdentity: AVProcessIdentity) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1, av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID), !arguments.isEmpty
+        else { throw AppError("goat credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard goatTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible goat Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID, startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid, target: target, arguments: arguments
+        )
+    }
+
     private func oxideCredentialRequest(
         from message: xpc_object_t,
         request: ApprovalRequest,
@@ -5611,6 +5750,7 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch parent.target {
+        case "/usr/local/bin/goat": "goat"
         case "/usr/local/bin/oxide": "oxide-cli"
         case "/usr/local/bin/tofu": "opentofu"
         default: "terraform"
@@ -5630,6 +5770,9 @@ private final class ApprovalServer: @unchecked Sendable {
         else { return false }
         switch tool {
         case "docker": return dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "goat":
+            return credentialHelperTool(parent) == tool
+                && goatTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "oxide-cli":
             return credentialHelperTool(parent) == tool
                 && oxideTargetIdentityValid(pid: parent.pid, path: parent.target)
@@ -5638,6 +5781,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 && terraformTargetIdentityValid(pid: parent.pid, path: parent.target)
         default: return false
         }
+    }
+
+    private func goatTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard path == "/usr/local/bin/goat",
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "goat"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
     }
 
     private func oxideTargetIdentityValid(pid: pid_t, path: String) -> Bool {
@@ -5672,7 +5825,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "oxide-get", "terraform-get"].contains(request.op) {
+        if ["docker-get", "goat-get", "oxide-get", "terraform-get"].contains(request.op) {
             guard let scope = request.credentialScope,
                   let parent = request.credentialParent,
                   let tool = request.tool,
@@ -5683,6 +5836,11 @@ private final class ApprovalServer: @unchecked Sendable {
             let expected: String
             switch request.op {
             case "docker-get": expected = dockerCredentialSecretName(scope)
+            case "goat-get":
+                guard let goat = parseGoatCredentialScope(scope) else {
+                    throw AppError("goat credential scope changed before Secret Application")
+                }
+                expected = goat.secretName
             case "oxide-get":
                 guard let oxide = parseOxideCredentialScope(scope) else {
                     throw AppError("Oxide credential scope changed before Secret Application")
@@ -5710,6 +5868,10 @@ private final class ApprovalServer: @unchecked Sendable {
                       let credential = parseDockerCredential(value),
                       credential.serverURL == scope
                 else { throw AppError("Docker credential changed before Secret Application") }
+            } else if request.op == "goat-get" {
+                guard let scope = parseGoatCredentialScope(scope),
+                      let value = secrets[scope.secretName], parseGoatCredential(value) != nil
+                else { throw AppError("goat credential changed before Secret Application") }
             } else if request.op == "oxide-get" {
                 guard let scope = parseOxideCredentialScope(scope),
                       let value = secrets[scope.secretName],
@@ -6091,7 +6253,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "oxide-get" || op == "terraform-get"
+            || op == "docker-get" || op == "goat-get" || op == "oxide-get" || op == "terraform-get"
             || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -6487,6 +6649,8 @@ private func classifySecretGateRequest(
         return ghRequestClassification(request.args)
     case "docker":
         return dockerRequestClassification(request.args)
+    case "goat":
+        return goatRequestClassification(request.args)
     case "oxide-cli":
         return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
@@ -6502,6 +6666,25 @@ private func classifySecretGateRequest(
             arguments: secretGateCommandWords(request)
         )
     }
+}
+
+private func goatRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    guard let command = words.first else { return .unknown }
+    if ["--version", "-v", "help"].contains(command) { return .readOnly }
+    if command == "account" {
+        guard let action = words.dropFirst().first else { return .unknown }
+        if ["check-auth", "missing-blobs", "status"].contains(action) { return .readOnly }
+        return ["login", "logout", "activate", "deactivate", "update-handle", "create"]
+            .contains(action) ? .mutating : .unknown
+    }
+    if command == "record" {
+        guard let action = words.dropFirst().first else { return .unknown }
+        if ["get", "list"].contains(action) { return .readOnly }
+        return ["create", "delete", "update"].contains(action) ? .mutating : .unknown
+    }
+    if ["resolve", "firehose"].contains(command) { return .readOnly }
+    return .unknown
 }
 
 private func oxideRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -7031,6 +7214,58 @@ private func parseDockerCredential(_ value: String) -> StoredDockerCredential? {
           !secret.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return StoredDockerCredential(serverURL: serverURL, username: username, secret: secret)
+}
+
+private struct StoredGoatCredentialScope {
+    let did: String
+    let pds: String
+    let canonical: String
+
+    var secretName: String {
+        let hash = SHA256.hash(data: Data((did + "\0" + pds).utf8))
+            .map { String(format: "%02X", $0) }.joined()
+        return "GOAT_AUTH_SESSION_\(hash)"
+    }
+}
+
+private func parseGoatCredentialScope(_ value: String) -> StoredGoatCredentialScope? {
+    guard value.utf8.count <= 4 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["did", "pds"]),
+          let did = object["did"] as? String, validGoatDID(did),
+          let pds = object["pds"] as? String, normalizeOxideHost(pds) == pds,
+          let canonicalData = try? JSONSerialization.data(
+              withJSONObject: ["did": did, "pds": pds],
+              options: [.sortedKeys, .withoutEscapingSlashes]
+          ),
+          let canonical = String(data: canonicalData, encoding: .utf8), canonical == value
+    else { return nil }
+    return StoredGoatCredentialScope(did: did, pds: pds, canonical: canonical)
+}
+
+private func validGoatDID(_ did: String) -> Bool {
+    let prefixLength = did.hasPrefix("did:plc:") ? "did:plc:".utf8.count
+        : did.hasPrefix("did:web:") ? "did:web:".utf8.count : 0
+    return prefixLength > 0
+        && did.utf8.count > prefixLength
+        && did.utf8.count <= 2048
+        && did.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (scalar.isASCIIAlpha || scalar.isASCIIDigit || ".:_%~-".contains(Character(scalar)))
+        }
+}
+
+private func parseGoatCredential(_ value: String) -> String? {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          Set(object.keys) == Set(["password", "access_token", "session_token"]),
+          ["password", "access_token", "session_token"].allSatisfy({ key in
+              guard let field = object[key] as? String else { return false }
+              return !field.isEmpty && !field.unicodeScalars.contains(where: { $0.value == 0 })
+          })
+    else { return nil }
+    return value
 }
 
 private struct StoredOxideCredentialScope {
@@ -7930,7 +8165,7 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .oxideHelperVersion,
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion, .oxideHelperVersion,
              .terraformHelperVersion: false
         default: true
         }
@@ -11122,6 +11357,22 @@ private func runOxideCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runGoatCredentialSelfCheck() -> Int32 {
+    let canonical = #"{"did":"did:plc:abc","pds":"https://pds.example"}"#
+    guard goatRequestClassification(["account", "check-auth"]) == .readOnly,
+          goatRequestClassification(["record", "create"]) == .mutating,
+          goatRequestClassification(["future"]) == .unknown,
+          let scope = parseGoatCredentialScope(canonical),
+          scope.secretName
+              == "GOAT_AUTH_SESSION_DA212E2E592DBA2E786AE246CCA580593FCB2A3CFC3641CE1BB9B5D3391963CA",
+          parseGoatCredential(
+              #"{"password":"pass","access_token":"access","session_token":"refresh"}"#
+          ) != nil,
+          parseGoatCredential(#"{"password":"pass","access_token":"access"}"#) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runAwsReadOnlySelfCheck() -> Int32 {
     let allowed = [
         ["--version"],
@@ -12073,6 +12324,10 @@ if CommandLine.arguments.contains("--self-check-terraform-credentials") {
 
 if CommandLine.arguments.contains("--self-check-oxide-credentials") {
     exit(runOxideCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-goat-credentials") {
+    exit(runGoatCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-aws-read-only") {

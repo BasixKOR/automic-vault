@@ -6,6 +6,7 @@ mod aws;
 mod bless;
 pub(crate) mod docker_credential;
 pub(crate) mod doctor;
+pub(crate) mod goat_credential;
 mod gpg_sign;
 mod inject;
 mod launcher_bundle;
@@ -47,7 +48,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 31;
+pub(crate) const INSTALL_REVISION: u32 = 32;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -374,6 +375,10 @@ where
                 let result = hardeners::oxide_cli::run(stdout, yes);
                 return finish_hardening(result, "oxide-cli", stdout, stderr);
             }
+            if target == "goat" {
+                let result = hardeners::goat::run(stdout, yes);
+                return finish_hardening(result, "goat", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -426,6 +431,7 @@ where
         Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
         Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
         Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
+        Some("goat-credential") => goat_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

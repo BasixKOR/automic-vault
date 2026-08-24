@@ -55,7 +55,7 @@ fn json_string_field_is_present(contents: &str, field: &str) -> bool {
     let Some((_, value)) = after_field.split_once(':') else {
         return false;
     };
-    json_string_value(value).is_some_and(|value| !value.is_empty())
+    json_string_value(value).is_some_and(|value| !value.is_empty() && value != "@av")
 }
 
 fn json_string_value(value: &str) -> Option<String> {
@@ -98,6 +98,9 @@ mod tests {
     fn ignores_missing_or_empty_session_secrets() {
         assert!(!session_contains_secret(r#"{"did":"did:plc:example"}"#));
         assert!(!session_contains_secret(r#"{"password":""}"#));
+        assert!(!session_contains_secret(
+            r#"{"password":"@av","access_token":"@av","session_token":"@av"}"#
+        ));
     }
 
     #[test]

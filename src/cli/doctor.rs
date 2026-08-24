@@ -1573,7 +1573,10 @@ mod tests {
                     }
                 } else {
                     assert!(
-                        matches!(hardener.name, "gh" | "oxide-cli" | "stripe" | "supabase"),
+                        matches!(
+                            hardener.name,
+                            "gh" | "goat" | "oxide-cli" | "stripe" | "supabase"
+                        ),
                         "{}:{} needs explicit target-only Doctor coverage review",
                         hardener.name,
                         command.name

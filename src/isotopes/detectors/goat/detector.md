@@ -9,14 +9,13 @@
 - `$XDG_STATE_HOME/goat/auth-session.json`
 - `~/.local/state/goat/auth-session.json`
 
-## Why This is not Yet Hardened
+## Hardener Coverage
 
-The retired `goat` hardener moved the detected secret to the macOS Keychain,
-then recreated `$XDG_STATE_HOME/goat/auth-session.json` inside a temporary
-directory for each run. We no longer consider a temporary plaintext file a
-sufficient security boundary, so this detector remains report-only.
+`av harden goat` installs the signed goat Isotope and migrates the password,
+access token, and refresh token into one DID-and-PDS-bound Secret. The file
+retains only the DID, PDS origin, and reserved `@av` markers; the patched Target
+uses fixed XPC operations rather than recreating plaintext files.
 
-If a narrow environment-variable or credential-helper interface can cover this
-state without writing the secret back to disk, we can reconsider the hardener.
-
-[Open an issue to discuss a safer integration](https://github.com/automic-vault/automic-vault/issues).
+Unknown or incomplete session fields are refused. Explicit login credentials
+provided through goat's command-line or environment interfaces remain outside
+this stored-session Hardener and may still be exposed by those channels.

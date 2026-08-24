@@ -42,6 +42,7 @@ jobs:
       IMMUTABLE_RELEASES_ENABLED: ${{ vars.IMMUTABLE_RELEASES_ENABLED }}
       RUST_TOOLCHAIN: 1.96.0
       OXIDE_RUST_TOOLCHAIN: 1.97.1
+      GOAT_GO_TOOLCHAIN: go1.25.1
       GH_TOKEN: ${{ github.token }}
       RELEASE_NOTES: ${{ inputs.notes }}
 
@@ -211,6 +212,10 @@ jobs:
         shell: bash
         run: scripts/build-oxide-isotope.sh "$ASSET_DIR"
 
+      - name: Build signed goat Isotope
+        shell: bash
+        run: scripts/build-goat-isotope.sh "$ASSET_DIR"
+
       - name: Stage release inputs
         shell: bash
         run: |
@@ -241,7 +246,8 @@ jobs:
             cd "$ASSET_DIR"
             shasum -a 256 "$DMG_NAME" "$SBOM_NAME" \
               OpenTofu-Isotope-darwin-arm64.tgz \
-              Oxide-CLI-Isotope-darwin-arm64.tgz >SHA256SUMS
+              Oxide-CLI-Isotope-darwin-arm64.tgz \
+              goat-Isotope-darwin-arm64.tgz >SHA256SUMS
           )
 
       - name: Attest build provenance
@@ -258,6 +264,11 @@ jobs:
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: ${{ env.ASSET_DIR }}/Oxide-CLI-Isotope-darwin-arm64.tgz
+
+      - name: Attest goat Isotope provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: ${{ env.ASSET_DIR }}/goat-Isotope-darwin-arm64.tgz
 
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
@@ -276,6 +287,7 @@ jobs:
             "$ASSET_DIR/$SBOM_NAME" \
             "$ASSET_DIR/OpenTofu-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/Oxide-CLI-Isotope-darwin-arm64.tgz" \
+            "$ASSET_DIR/goat-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
