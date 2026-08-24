@@ -501,11 +501,12 @@ A verifier for Automic Vault's intervention. Doctor checks declared invariants s
 
 ### Isotope
 
-An Automic Vault-compatible build or wrapper of a third-party Tool. A Hardener
-installs an Isotope produced by this repository's reviewed release workflow,
-verifies its release digest and Automic Vault code signature, and assumes
-responsibility for its updates. An Isotope is not a Detector, Hardener, or
-Secret.
+An Automic Vault-compatible build or wrapper of a third-party Tool. New direct
+Isotope assets are produced by this repository's reviewed release workflow. A
+Hardener verifies the release digest and Automic Vault code signature and
+assumes responsibility for direct-install updates. Existing Isotopes may remain
+installed through the signed Isotopes Homebrew tap while their distribution is
+migrated. An Isotope is not a Detector, Hardener, or Secret.
 
 ## Reviewed automation
 

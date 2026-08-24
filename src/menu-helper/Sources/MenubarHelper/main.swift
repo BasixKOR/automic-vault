@@ -1904,7 +1904,7 @@ enum SecretMutation {
         }
     }
 
-    fileprivate func approvalRequest(callerPath: String) -> ApprovalRequest {
+    fileprivate func approvalRequest(callerPath: String, requestCWD: String = "") -> ApprovalRequest {
         let properties: (op: String, keys: [String], args: [String], title: String, detail: String)
         switch self {
         case .save(let account, _, _, let warning):
@@ -1995,15 +1995,15 @@ enum SecretMutation {
             )])
             credentialScope = nil
         case .dockerSave(_, _, let serverURL, _), .dockerDelete(_, let serverURL):
-            cwd = ""
+            cwd = requestCWD
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = serverURL
         case .terraformSave(_, _, let hostname), .terraformDelete(_, let hostname):
-            cwd = ""
+            cwd = requestCWD
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = hostname
         default:
-            cwd = ""
+            cwd = requestCWD
             selectedSecretValues = SelectedSecretValues(values: [:])
             credentialScope = nil
         }
@@ -5123,14 +5123,19 @@ private final class ApprovalServer: @unchecked Sendable {
         caller: MutationCaller,
         requiredCredentialParent: CredentialHelperParent? = nil
     ) {
+        guard let cwdPointer = xpc_dictionary_get_string(message, "cwd") else {
+            reply(peer, to: message, ok: false, error: "secret mutation is missing its working directory")
+            return
+        }
+        let cwd = String(cString: cwdPointer)
         let launcher = requiredCredentialParent.flatMap { parent in
             var identity = AVProcessIdentity()
             guard av_process_identity(parent.pid, &identity) else { return nil }
             return launcherIdentity(pid: parent.pid, identity: identity)
         } ?? launcherIdentities(for: caller.identity).first
         let launcherFallbackPath = launcherFallbackPath(for: caller.identity) ?? caller.path
+        let request = mutation.approvalRequest(callerPath: caller.path, requestCWD: cwd)
         let requestOverride = requiredCredentialParent.map { parent in
-            let request = mutation.approvalRequest(callerPath: caller.path)
             let tool = credentialHelperTool(parent)
             return ApprovalRequest(
                 op: request.op,
@@ -5151,7 +5156,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 credentialParent: parent,
                 selectedSecretValues: request.selectedSecretValues
             )
-        }
+        } ?? request
         DispatchQueue.main.async {
             let result = performApprovedSecretMutation(
                 mutation,
@@ -9298,6 +9303,12 @@ private func showAutomaticAccessToast(
 
 @MainActor
 private func runSecretMutationSelfCheck() -> Int32 {
+    let credentialMutationRequest = SecretMutation.terraformDelete(
+        account: "TERRAFORM_CREDENTIALS_registry.example",
+        hostname: "registry.example"
+    ).approvalRequest(callerPath: "/usr/local/bin/av", requestCWD: "/tmp/project")
+    guard credentialMutationRequest.cwd == "/tmp/project" else { return 1 }
+
     for mutation in [
         SecretMutation.save(account: "TEST_SECRET", value: "secret", accessibility: .whenUnlocked),
         SecretMutation.saveIfAbsentOrEqual(account: "TEST_SECRET", value: "secret"),

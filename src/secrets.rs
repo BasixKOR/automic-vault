@@ -128,8 +128,7 @@ pub(crate) fn list_secret_names() -> Result<Vec<String>, String> {
         names.sort();
         return Ok(names);
     }
-    let cwd = crate::path_security::current_working_directory_utf8()?;
-    Ok(xpc_request("list", Some((b"cwd\0", &cwd)), None, None, None)?.names)
+    Ok(xpc_request("list", None, None, None, None)?.names)
 }
 
 pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {
@@ -320,6 +319,7 @@ fn xpc_request_with_project_directory(
         Ok(())
     }
 
+    let cwd = crate::path_security::current_working_directory_utf8()?;
     let service = CString::new(APPROVAL_SERVICE).unwrap();
     let connection =
         unsafe { xpc_connection_create_mach_service(service.as_ptr(), std::ptr::null_mut(), 0) };
@@ -350,6 +350,7 @@ fn xpc_request_with_project_directory(
 
     unsafe {
         set_string(message, b"op\0", operation)?;
+        set_string(message, b"cwd\0", &cwd)?;
         if let Some((field, value)) = field {
             set_string(message, field, value)?;
         }
