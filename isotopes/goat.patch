@@ -84,7 +84,7 @@ index aa0f2df..07543eb 100644
 +	if sess.Password != avCredentialMarker || sess.AccessToken != avCredentialMarker || sess.RefreshToken != avCredentialMarker {
 +		return nil, errors.New("plaintext goat credentials are disabled; run `av harden goat`")
 +	}
-@@ -68,0 +121,44 @@ func loadAuthSessionFile() (*AuthSession, error) {
+@@ -68,0 +121,53 @@ func loadAuthSessionFile() (*AuthSession, error) {
 +func loadAuthSessionFile() (*AuthSession, error) {
 +	sess, err := loadAuthMetadataFile()
 +	if err != nil {
@@ -120,7 +120,16 @@ index aa0f2df..07543eb 100644
 +	var output bytes.Buffer
 +	output.Grow(4096)
 +	cmd.Stdout = &output
++	var stderr bytes.Buffer
++	cmd.Stderr = &stderr
 +	if err := cmd.Run(); err != nil {
++		detail := bytes.TrimSpace(stderr.Bytes())
++		if len(detail) > 4096 {
++			detail = detail[:4096]
++		}
++		if len(detail) != 0 {
++			return nil, fmt.Errorf("Automic Vault goat credential helper failed: %w: %s", err, detail)
++		}
 +		return nil, fmt.Errorf("Automic Vault goat credential helper failed: %w", err)
 +	}
 +	if output.Len() > 64*1024 {

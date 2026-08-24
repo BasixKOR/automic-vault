@@ -39,7 +39,7 @@ fn config_contains_token(contents: &str) -> bool {
         return contains_non_empty_json_string(contents, "access_token")
             || contains_non_empty_json_string(contents, "refresh_token");
     };
-    value
+    let structured = value
         .get("Targets")
         .and_then(serde_json::Value::as_object)
         .into_iter()
@@ -58,7 +58,10 @@ fn config_contains_token(contents: &str) -> bool {
                     .and_then(serde_json::Value::as_str)
                     .is_some_and(|value| !value.is_empty() && value != "@av")
             })
-        })
+        });
+    structured
+        || contains_non_empty_json_string(contents, "access_token")
+        || contains_non_empty_json_string(contents, "refresh_token")
 }
 
 fn contains_non_empty_json_string(contents: &str, key: &str) -> bool {
@@ -103,6 +106,9 @@ mod tests {
         ));
         assert!(config_contains_token(
             r#"{"Targets":{"url:https://uaa.example":{"Contexts":{"ctx":{"Token":{"refresh_token":"fake-refresh"}}}}}}"#
+        ));
+        assert!(config_contains_token(
+            r#"{"future_format":{"access_token":"fake-access"}}"#
         ));
     }
 

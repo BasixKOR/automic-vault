@@ -279,7 +279,9 @@ fn sanitize_config(contents: &str) -> Result<(String, Option<String>), String> {
             .iter()
             .any(|(host, cookie)| host.is_empty() || !cookie.is_string())
     }) {
-        return Err("ordercli cookies contain unsupported fields".into());
+        return Err(
+            "ordercli cookies_by_host must map nonempty host names to cookie strings".into(),
+        );
     }
     let cookie_marker = cookies.is_some_and(|cookies| {
         cookies.len() == 1 && cookies.get(MARKER).and_then(Value::as_str) == Some(MARKER)

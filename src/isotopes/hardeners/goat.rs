@@ -205,9 +205,8 @@ fn sanitize_config(contents: &str) -> Result<(String, Option<Credential>), Strin
     for key in ["password", "access_token", "session_token"] {
         object.insert(key.into(), Value::String(MARKER.into()));
     }
-    let mut sanitized = serde_json::to_string_pretty(&value)
+    let sanitized = serde_json::to_string_pretty(&value)
         .map_err(|error| format!("failed to encode goat auth metadata: {error}"))?;
-    sanitized.push('\n');
     Ok((sanitized, credential))
 }
 
@@ -454,6 +453,8 @@ mod tests {
         assert_eq!(credential.did, "did:plc:abc");
         assert_eq!(credential.pds, "https://pds.example");
         assert!(sanitized.contains("\"password\": \"@av\""));
+        assert!(!sanitized.ends_with('\n'));
+        assert_eq!(sanitize_config(&sanitized).unwrap().0, sanitized);
         assert!(sanitize_config(&input.replace("\"pds\"", "\"future\":1,\"pds\"")).is_err());
         assert!(sanitize_config(&input.replace("\"pass\"", "\"@av\"")).is_err());
     }
