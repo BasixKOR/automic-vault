@@ -94,9 +94,13 @@ public struct TemporaryAccessGrantSnapshot: Identifiable, Equatable, Sendable {
     public let monotonicDeadline: TimeInterval
     public let useCount: Int
     public let lastUsedAt: Date
+    public let suspendedRemaining: TimeInterval?
+
+    public var isCountdownSuspended: Bool { suspendedRemaining != nil }
 
     public func remaining(wallNow: Date, monotonicNow: TimeInterval) -> TimeInterval {
-        max(0, min(expiresAt.timeIntervalSince(wallNow), monotonicDeadline - monotonicNow))
+        suspendedRemaining
+            ?? max(0, min(expiresAt.timeIntervalSince(wallNow), monotonicDeadline - monotonicNow))
     }
 }
 
@@ -110,10 +114,11 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         let launcherName: String
         let authorizationGateName: String
         let grantedAt: Date
-        let expiresAt: Date
-        let monotonicDeadline: TimeInterval
+        var expiresAt: Date
+        var monotonicDeadline: TimeInterval
         var useCount: Int
         var lastUsedAt: Date
+        var suspendedRemaining: TimeInterval?
 
         var snapshot: TemporaryAccessGrantSnapshot {
             TemporaryAccessGrantSnapshot(
@@ -126,12 +131,23 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
                 expiresAt: expiresAt,
                 monotonicDeadline: monotonicDeadline,
                 useCount: useCount,
-                lastUsedAt: lastUsedAt
+                lastUsedAt: lastUsedAt,
+                suspendedRemaining: suspendedRemaining
             )
         }
 
-        func isActive(wallNow: Date, monotonicNow: TimeInterval) -> Bool {
-            wallNow < expiresAt && monotonicNow < monotonicDeadline
+        func remaining(wallNow: Date, monotonicNow: TimeInterval) -> TimeInterval {
+            suspendedRemaining
+                ?? max(0, min(expiresAt.timeIntervalSince(wallNow), monotonicDeadline - monotonicNow))
+        }
+
+        func isExpired(wallNow: Date, monotonicNow: TimeInterval) -> Bool {
+            suspendedRemaining == nil
+                && (wallNow >= expiresAt || monotonicNow >= monotonicDeadline)
+        }
+
+        func canAuthorize(wallNow: Date, monotonicNow: TimeInterval) -> Bool {
+            suspendedRemaining == nil && !isExpired(wallNow: wallNow, monotonicNow: monotonicNow)
         }
     }
 
@@ -180,7 +196,8 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
             expiresAt: wallNow.addingTimeInterval(Self.duration),
             monotonicDeadline: monotonicNow + Self.duration,
             useCount: 1,
-            lastUsedAt: wallNow
+            lastUsedAt: wallNow,
+            suspendedRemaining: nil
         )
         grants[id] = grant
         return try (grant.snapshot, body(grant.snapshot))
@@ -213,6 +230,34 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
         grants.removeAll()
     }
 
+    @discardableResult
+    public func setCountdownSuspended(
+        id: UUID,
+        suspended: Bool,
+        wallNow: Date = Date(),
+        monotonicNow: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> TemporaryAccessGrantSnapshot? {
+        lock.lock()
+        defer { lock.unlock() }
+        removeExpired(wallNow: wallNow, monotonicNow: monotonicNow)
+        guard var grant = grants[id] else { return nil }
+        guard grant.suspendedRemaining == nil ? suspended : !suspended else {
+            return grant.snapshot
+        }
+        if suspended {
+            grant.suspendedRemaining = grant.remaining(
+                wallNow: wallNow,
+                monotonicNow: monotonicNow
+            )
+        } else if let remaining = grant.suspendedRemaining {
+            grant.expiresAt = wallNow.addingTimeInterval(remaining)
+            grant.monotonicDeadline = monotonicNow + remaining
+            grant.suspendedRemaining = nil
+        }
+        grants[id] = grant
+        return grant.snapshot
+    }
+
     public func withActiveLease(
         authorizationGateID: String,
         launcherDesignatedRequirement: String,
@@ -234,6 +279,7 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
                 agentTaskContext: agentTaskContext,
                 classification: classification
             )
+                && $0.canAuthorize(wallNow: wallNow, monotonicNow: monotonicNow)
         }) else { return nil }
         if try didUse(grant.snapshot) {
             grant.useCount += 1
@@ -244,6 +290,6 @@ public final class TemporaryAccessGrantController: @unchecked Sendable {
     }
 
     private func removeExpired(wallNow: Date, monotonicNow: TimeInterval) {
-        grants = grants.filter { $0.value.isActive(wallNow: wallNow, monotonicNow: monotonicNow) }
+        grants = grants.filter { !$0.value.isExpired(wallNow: wallNow, monotonicNow: monotonicNow) }
     }
 }
