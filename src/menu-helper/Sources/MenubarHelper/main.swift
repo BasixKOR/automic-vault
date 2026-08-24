@@ -1126,7 +1126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let toggle = NSMenuItem(
                 title: grant.isCountdownSuspended
                     ? "Resume Write Access"
-                    : "Pause Write Access",
+: "Suspend Write Access",
                 action: #selector(toggleTemporaryAccessGrantCountdown(_:)),
                 keyEquivalent: ""
             )
