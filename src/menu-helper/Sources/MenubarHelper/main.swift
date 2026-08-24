@@ -1944,13 +1944,13 @@ enum SecretMutation {
         case .terraformSave(let account, _, let hostname):
             properties = (
                 "terraform-save", [account], ["credential", "store", hostname],
-                "Store Terraform credential for \(hostname)?",
+                "Store Terraform/OpenTofu credential for \(hostname)?",
                 "Terraform and OpenTofu will use this token through their Automic Vault Secret Gates."
             )
         case .terraformDelete(let account, let hostname):
             properties = (
                 "terraform-delete", [account], ["credential", "forget", hostname],
-                "Delete Terraform credential for \(hostname)?",
+                "Delete Terraform/OpenTofu credential for \(hostname)?",
                 "Terraform and OpenTofu will no longer be able to authenticate to this host with the stored credential."
             )
         case .deleteValue(let account, let source):
@@ -5450,7 +5450,12 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
-        parent.target.hasSuffix("/tofu") ? "opentofu" : "terraform"
+        switch URL(fileURLWithPath: parent.target).lastPathComponent {
+        case "docker": "docker"
+        case "tofu": "opentofu"
+        case "terraform": "terraform"
+        default: ""
+        }
     }
 
     private func credentialHelperParentValid(
@@ -9304,7 +9309,7 @@ private func showAutomaticAccessToast(
 @MainActor
 private func runSecretMutationSelfCheck() -> Int32 {
     let credentialMutationRequest = SecretMutation.terraformDelete(
-        account: "TERRAFORM_CREDENTIALS_registry.example",
+        account: terraformCredentialSecretName("registry.example"),
         hostname: "registry.example"
     ).approvalRequest(callerPath: "/usr/local/bin/av", requestCWD: "/tmp/project")
     guard credentialMutationRequest.cwd == "/tmp/project" else { return 1 }
