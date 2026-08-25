@@ -386,6 +386,7 @@ fn embedded_target_from_contents(contents: &str) -> Option<PathBuf> {
 }
 
 fn wrapper(name: &str) -> Option<&'static EnvWrapper> {
+    let name = if name == "npm" { "node" } else { name };
     WRAPPERS.iter().find(|wrapper| wrapper.name == name)
 }
 

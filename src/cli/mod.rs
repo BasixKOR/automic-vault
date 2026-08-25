@@ -754,6 +754,32 @@ mod tests {
     }
 
     #[test]
+    fn harden_npm_aliases_node() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let targets = std::env::temp_dir().join(format!("av-cli-npm-{}", std::process::id()));
+        std::fs::create_dir_all(&targets).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &targets);
+        }
+
+        let (code, stdout, stderr) = run_args(&["av", "harden", "npm"]);
+
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR");
+        }
+        std::fs::remove_dir_all(&targets).unwrap();
+        assert_eq!(code, 1);
+        assert_eq!(stdout, "");
+        assert_eq!(
+            stderr,
+            format!(
+                "av harden: npm is not an executable file: {}\n",
+                targets.join("npm").display()
+            )
+        );
+    }
+
+    #[test]
     fn harden_sudo_previews_the_privileged_step() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let pam = std::env::temp_dir().join(format!("av-cli-sudo-{}", std::process::id()));
