@@ -32,22 +32,9 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
     assert!(RELEASE_WORKFLOW.contains("actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6"));
-    assert_eq!(
-        RELEASE_WORKFLOW.matches("uses: actions/attest@").count(),
-        10
-    );
-    assert!(RELEASE_WORKFLOW.contains("OpenTofu-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("Oxide-CLI-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("goat-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("Railway-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("ordercli-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("UAA-CLI-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("OpenHue-CLI-Isotope-darwin-arm64.tgz"));
-    assert!(RELEASE_WORKFLOW.contains("Plumber-Isotope-darwin-arm64.tgz"));
-    assert!(
-        RELEASE_WORKFLOW
-            .contains("sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6")
-    );
+    assert_eq!(RELEASE_WORKFLOW.matches("uses: actions/attest@").count(), 2);
+    assert!(!RELEASE_WORKFLOW.contains("Isotope-darwin-arm64.tgz"));
+    assert!(!RELEASE_WORKFLOW.contains("cosign-installer"));
     assert!(OPENTOFU_ISOTOPE_SCRIPT.contains("cosign verify-blob"));
     assert!(OPENTOFU_ISOTOPE_SCRIPT.contains("codesign --verify --strict"));
     assert!(OXIDE_ISOTOPE_SCRIPT.contains("isotopes/oxide.source-sha256"));

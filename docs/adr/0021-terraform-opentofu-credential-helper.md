@@ -38,14 +38,15 @@ installer accepts only the expected archive entries, extracts only the
 Runtime, a trusted timestamp, and no embedded entitlements before installing the
 root-owned Target at `/usr/local/bin/terraform`.
 
-The reviewed Automic Vault release workflow pins an OpenTofu version, verifies
-OpenTofu's signed checksum manifest with its release-workflow Sigstore identity,
-extracts only the expected executable, and signs it with identifier `tofu`,
-Automic Vault team `ZU76A67LGU`, Hardened Runtime, and a trusted timestamp. It
-also rejects embedded entitlements and publishes that Isotope from this
-repository. The privileged installer verifies the release digest and Automic
-Vault signature before installing the root-owned Target at
-`/usr/local/bin/tofu`.
+The reviewed `automic-vault/opentofu` fork release pins an OpenTofu version,
+verifies OpenTofu's signed checksum manifest with its release-workflow Sigstore
+identity, extracts only the expected executable, and signs it with identifier
+`tofu`, Automic Vault team `ZU76A67LGU`, Hardened Runtime, and a trusted
+timestamp. It also rejects embedded entitlements. The signed Isotopes tap pins
+the exact fork release URL and digest. The privileged installer verifies that
+manifest, digest, and Automic Vault signature before installing the root-owned
+Target at `/usr/local/bin/tofu`, as specified by
+[ADR 0029](0029-fork-owned-isotope-releases.md).
 
 Both Hardeners unlink an active Homebrew formula and verify command resolution
 before moving Secrets. The Homebrew formula remains installed and can be linked

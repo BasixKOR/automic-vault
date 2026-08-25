@@ -15,11 +15,13 @@ risk whenever upstream adds a credential-bearing field.
 
 ## Decision
 
-Automic Vault publishes a pinned Plumber Isotope signed with Developer ID,
-Hardened Runtime, timestamping, and no entitlements. The upstream patch is
-limited to the local config read/write boundary: it stores the complete local
-config JSON through dedicated XPC operations and persists only a fixed custody
-marker. Cluster-mode KV storage is unchanged.
+The `automic-vault/plumber` fork publishes a pinned Plumber Isotope signed with
+Developer ID, Hardened Runtime, timestamping, and no entitlements. The signed
+Isotopes tap pins the exact fork release URL and digest as specified by
+[ADR 0029](0029-fork-owned-isotope-releases.md). The upstream patch is limited
+to the local config read/write boundary: it stores the complete local config
+JSON through dedicated XPC operations and persists only a fixed custody marker.
+Cluster-mode KV storage is unchanged.
 
 The approval service binds helper operations to the live signed `plumber`
 parent, its complete arguments, the fixed local-config scope, and the exact

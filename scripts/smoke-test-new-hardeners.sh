@@ -1,22 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AV=/usr/local/bin/av
 APP_AV="/Applications/Automic Vault.app/Contents/MacOS/av"
-RELEASE_REPOSITORY=https://github.com/automic-vault/automic-vault
+FORMULA_ROOT=https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula
 HARDENERS=(terraform opentofu oxide-cli goat railway ordercli uaa-cli openhue-cli plumber)
 COMMANDS=(terraform tofu oxide goat railway ordercli uaa openhue plumber)
-ASSETS=(
-  OpenTofu-Isotope-darwin-arm64.tgz
-  Oxide-CLI-Isotope-darwin-arm64.tgz
-  goat-Isotope-darwin-arm64.tgz
-  Railway-Isotope-darwin-arm64.tgz
-  ordercli-Isotope-darwin-arm64.tgz
-  UAA-CLI-Isotope-darwin-arm64.tgz
-  OpenHue-CLI-Isotope-darwin-arm64.tgz
-  Plumber-Isotope-darwin-arm64.tgz
-)
+FORMULAS=(opentofu oxide.rs goat railway-cli ordercli uaa-cli openhue-cli plumber)
+REPOSITORIES=(opentofu oxide.rs goat railway-cli ordercli uaa-cli openhue-cli plumber)
 
 [[ "$(uname -s)" == Darwin ]] || { echo "error: macOS is required" >&2; exit 1; }
 [[ "$(id -u)" -ne 0 ]] || {
@@ -37,8 +28,6 @@ launchctl print "gui/$(id -u)/com.automicvault.menubar-helper" >/dev/null || {
   exit 1
 }
 
-version="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT/Cargo.toml")"
-base="$RELEASE_REPOSITORY/releases/download/$version"
 work="$(mktemp -d "${TMPDIR:-/tmp}/av-hardener-smoke.XXXXXX")"
 keeper_pid=
 cleanup() {
@@ -47,15 +36,29 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Preflighting Automic Vault $version release assets…"
-curl --fail --location --silent --show-error "$base/SHA256SUMS" --output "$work/SHA256SUMS"
-for asset in "${ASSETS[@]}"; do
-  matches="$(awk -v asset="$asset" '$2 == asset { count++ } END { print count + 0 }' "$work/SHA256SUMS")"
-  [[ "$matches" == 1 ]] || {
-    echo "error: $asset is not uniquely listed in $base/SHA256SUMS" >&2
+echo "Preflighting signed Isotope fork releases…"
+for index in "${!FORMULAS[@]}"; do
+  formula="${FORMULAS[$index]}"
+  repository="${REPOSITORIES[$index]}"
+  manifest="$work/$formula.rb"
+  curl --fail --location --silent --show-error "$FORMULA_ROOT/$formula.rb" --output "$manifest"
+  url="$(awk -F '"' '/^[[:space:]]*url "[^"]+"[[:space:]]*$/ { print $2 }' "$manifest")"
+  sha256="$(awk -F '"' '/^[[:space:]]*sha256 "[^"]+"[[:space:]]*$/ { print $2 }' "$manifest")"
+  [[ -n "$url" && "$url" != *$'\n'* ]] || {
+    echo "error: $formula formula must contain exactly one release URL" >&2
     exit 1
   }
-  curl --fail --location --silent --show-error --head "$base/$asset" >/dev/null
+  prefix="https://github.com/automic-vault/$repository/releases/download/"
+  [[ "$url" == "$prefix"* && "$url" == *.tgz ]] || {
+    echo "error: $formula formula points outside $repository releases" >&2
+    exit 1
+  }
+  [[ "$sha256" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "error: $formula formula must contain exactly one SHA-256 digest" >&2
+    exit 1
+  }
+  curl --fail --location --silent --show-error --head "$url" >/dev/null
+  printf 'PASS  %-12s %s\n' "$formula" "$url"
 done
 
 echo "Authenticating once for protected Target installation…"

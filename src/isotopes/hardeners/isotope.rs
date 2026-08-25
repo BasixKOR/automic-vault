@@ -15,14 +15,6 @@ const SUDO_PATH: &str = "/usr/bin/sudo";
 const TEAM_IDENTIFIER: &str = "ZU76A67LGU";
 const TAP_FORMULA_ROOT: &str =
     "https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula";
-const OPENTOFU_ASSET: &str = "OpenTofu-Isotope-darwin-arm64.tgz";
-const OXIDE_ASSET: &str = "Oxide-CLI-Isotope-darwin-arm64.tgz";
-const GOAT_ASSET: &str = "goat-Isotope-darwin-arm64.tgz";
-const ORDERCLI_ASSET: &str = "ordercli-Isotope-darwin-arm64.tgz";
-const OPENHUE_ASSET: &str = "OpenHue-CLI-Isotope-darwin-arm64.tgz";
-const PLUMBER_ASSET: &str = "Plumber-Isotope-darwin-arm64.tgz";
-const UAA_ASSET: &str = "UAA-CLI-Isotope-darwin-arm64.tgz";
-const RAILWAY_ASSET: &str = "Railway-Isotope-darwin-arm64.tgz";
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const GH: Spec = Spec {
@@ -32,7 +24,7 @@ pub(crate) const GH: Spec = Spec {
     primary: "gh",
     binaries: &["gh"],
     test_path: "AUTOMIC_VAULT_TEST_GH_CLI_PATH",
-    release_asset: None,
+    direct: false,
 };
 pub(crate) const STRIPE: Spec = Spec {
     hardener: "stripe",
@@ -41,7 +33,7 @@ pub(crate) const STRIPE: Spec = Spec {
     primary: "stripe",
     binaries: &["stripe"],
     test_path: "AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH",
-    release_asset: None,
+    direct: false,
 };
 pub(crate) const SUPABASE: Spec = Spec {
     hardener: "supabase",
@@ -50,79 +42,79 @@ pub(crate) const SUPABASE: Spec = Spec {
     primary: "supabase",
     binaries: &["supabase-go", "supabase"],
     test_path: "AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH",
-    release_asset: None,
+    direct: false,
 };
 const OPENTOFU: Spec = Spec {
     hardener: "opentofu",
     formula: "opentofu",
-    repository: "automic-vault",
+    repository: "opentofu",
     primary: "tofu",
     binaries: &["tofu"],
     test_path: "AUTOMIC_VAULT_TEST_OPENTOFU_TARGET",
-    release_asset: Some(OPENTOFU_ASSET),
+    direct: true,
 };
 pub(crate) const OXIDE: Spec = Spec {
     hardener: "oxide-cli",
-    formula: "oxide-cli",
-    repository: "automic-vault",
+    formula: "oxide.rs",
+    repository: "oxide.rs",
     primary: "oxide",
     binaries: &["oxide"],
     test_path: "AUTOMIC_VAULT_TEST_OXIDE_TARGET",
-    release_asset: Some(OXIDE_ASSET),
+    direct: true,
 };
 pub(crate) const GOAT: Spec = Spec {
     hardener: "goat",
     formula: "goat",
-    repository: "automic-vault",
+    repository: "goat",
     primary: "goat",
     binaries: &["goat"],
     test_path: "AUTOMIC_VAULT_TEST_GOAT_TARGET",
-    release_asset: Some(GOAT_ASSET),
+    direct: true,
 };
 pub(crate) const RAILWAY: Spec = Spec {
     hardener: "railway",
-    formula: "railway",
-    repository: "automic-vault",
+    formula: "railway-cli",
+    repository: "railway-cli",
     primary: "railway",
     binaries: &["railway"],
     test_path: "AUTOMIC_VAULT_TEST_RAILWAY_TARGET",
-    release_asset: Some(RAILWAY_ASSET),
+    direct: true,
 };
 pub(crate) const ORDERCLI: Spec = Spec {
     hardener: "ordercli",
     formula: "ordercli",
-    repository: "automic-vault",
+    repository: "ordercli",
     primary: "ordercli",
     binaries: &["ordercli"],
     test_path: "AUTOMIC_VAULT_TEST_ORDERCLI_TARGET",
-    release_asset: Some(ORDERCLI_ASSET),
+    direct: true,
 };
 pub(crate) const OPENHUE: Spec = Spec {
     hardener: "openhue-cli",
     formula: "openhue-cli",
-    repository: "automic-vault",
+    repository: "openhue-cli",
     primary: "openhue",
     binaries: &["openhue"],
     test_path: "AUTOMIC_VAULT_TEST_OPENHUE_CLI_TARGET",
-    release_asset: Some(OPENHUE_ASSET),
+    direct: true,
 };
 pub(crate) const UAA: Spec = Spec {
     hardener: "uaa-cli",
     formula: "uaa-cli",
-    repository: "automic-vault",
+    repository: "uaa-cli",
     primary: "uaa",
     binaries: &["uaa"],
     test_path: "AUTOMIC_VAULT_TEST_UAA_CLI_TARGET",
-    release_asset: Some(UAA_ASSET),
+    direct: true,
 };
 pub(crate) const PLUMBER: Spec = Spec {
     hardener: "plumber",
     formula: "plumber",
-    repository: "automic-vault",
+    repository: "plumber",
     primary: "plumber",
     binaries: &["plumber"],
     test_path: "AUTOMIC_VAULT_TEST_PLUMBER_TARGET",
-    release_asset: Some(PLUMBER_ASSET),
+    direct: true,
 };
 
 #[derive(Clone, Copy)]
@@ -133,14 +125,14 @@ pub(crate) struct Spec {
     primary: &'static str,
     binaries: &'static [&'static str],
     test_path: &'static str,
-    release_asset: Option<&'static str>,
+    direct: bool,
 }
 
 #[derive(Clone)]
 pub(crate) struct Doctor {
     pub(crate) identifier: &'static str,
     pub(crate) formula_url: String,
-    pub(crate) release_asset: Option<&'static str>,
+    pub(crate) repository: &'static str,
     pub(crate) receipt_path: Option<String>,
 }
 
@@ -217,7 +209,7 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
         }
         return Ok(InstallPlan::Ready);
     }
-    if spec.release_asset.is_none()
+    if !spec.direct
         && let Some(brew) = brew_path()
     {
         return Ok(InstallPlan::Homebrew {
@@ -235,13 +227,12 @@ pub(crate) fn target(spec: Spec) -> PathBuf {
     if let Some(path) = crate::test_env_var(spec.test_path) {
         return path.into();
     }
-    spec.release_asset
-        .is_none()
+    (!spec.direct)
         .then(|| brew_targets(spec).into_iter().find(|path| executable(path)))
         .flatten()
         .or_else(|| executable(&direct_target(spec)).then(|| direct_target(spec)))
         .unwrap_or_else(|| {
-            if spec.release_asset.is_none() && brew_path().is_some() {
+            if !spec.direct && brew_path().is_some() {
                 brew_targets(spec).remove(0)
             } else {
                 direct_target(spec)
@@ -258,19 +249,16 @@ pub(crate) fn detect(spec: Spec) -> HardenerDetection {
     detection.commands[0].isotope = Some(Doctor {
         identifier: spec.primary,
         formula_url: formula_url(spec),
-        release_asset: spec.release_asset,
+        repository: spec.repository,
         receipt_path: is_direct_target(spec, &target)
             .then(|| receipt_path(spec).display().to_string()),
     });
     detection
 }
 
-pub(crate) fn current_sha(source_url: &str, release_asset: Option<&str>) -> Result<String, String> {
+pub(crate) fn current_sha(source_url: &str, repository: &str) -> Result<String, String> {
     let contents = fetch(source_url, 5)?;
-    match release_asset {
-        Some(asset) => parse_release_digest(&contents, source_url, asset).map(str::to_string),
-        None => parse_formula(&contents, None).map(|manifest| manifest.sha256),
-    }
+    parse_formula(&contents, Some(repository)).map(|manifest| manifest.sha256)
 }
 
 pub(crate) fn signature_valid(path: &Path, identifier: &str) -> bool {
@@ -389,7 +377,7 @@ pub(crate) fn install_privileged(
 }
 
 pub(crate) fn install_opentofu() -> Result<(), String> {
-    let manifest = release_manifest(OPENTOFU_ASSET)?;
+    let manifest = current_manifest(OPENTOFU)?;
     install_direct(OPENTOFU, &manifest)
 }
 
@@ -548,14 +536,11 @@ fn extract_and_verify(
 }
 
 fn current_manifest(spec: Spec) -> Result<Manifest, String> {
-    if let Some(asset) = spec.release_asset {
-        return release_manifest(asset);
-    }
     let formula = fetch(&formula_url(spec), 15)?;
-    parse_formula(&formula, Some(spec))
+    parse_formula(&formula, Some(spec.repository))
 }
 
-fn parse_formula(contents: &str, spec: Option<Spec>) -> Result<Manifest, String> {
+fn parse_formula(contents: &str, repository: Option<&str>) -> Result<Manifest, String> {
     let values = |prefix: &str| {
         contents
             .lines()
@@ -569,10 +554,10 @@ fn parse_formula(contents: &str, spec: Option<Spec>) -> Result<Manifest, String>
         return Err("isotope formula must contain exactly one URL and SHA-256".into());
     }
     let url = urls[0];
-    if let Some(spec) = spec {
+    if let Some(repository) = repository {
         let prefix = format!(
             "https://github.com/automic-vault/{}/releases/download/",
-            spec.repository
+            repository
         );
         if !url.starts_with(&prefix) || !url.ends_with(".tgz") {
             return Err(format!("refusing unexpected isotope URL: {url}"));
@@ -770,10 +755,7 @@ fn installed(spec: Spec, path: &Path) -> bool {
 }
 
 fn formula_url(spec: Spec) -> String {
-    match spec.release_asset {
-        Some(_) => release_sums_url(),
-        None => format!("{TAP_FORMULA_ROOT}/{}.rb", spec.formula),
-    }
+    format!("{TAP_FORMULA_ROOT}/{}.rb", spec.formula)
 }
 
 fn spec(hardener: &str) -> Option<Spec> {
@@ -782,48 +764,6 @@ fn spec(hardener: &str) -> Option<Spec> {
     ]
     .into_iter()
     .find(|spec| spec.hardener == hardener)
-}
-
-fn release_manifest(asset: &str) -> Result<Manifest, String> {
-    if let Some(formula) = crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA") {
-        return parse_formula(&formula, None);
-    }
-    let version = env!("CARGO_PKG_VERSION");
-    let base =
-        format!("https://github.com/automic-vault/automic-vault/releases/download/{version}");
-    let sums_url = format!("{base}/SHA256SUMS");
-    let sums = fetch(&sums_url, 15)?;
-    let digest = parse_release_digest(&sums, &sums_url, asset)?;
-    Ok(Manifest {
-        url: format!("{base}/{asset}"),
-        sha256: digest.to_string(),
-    })
-}
-
-fn release_sums_url() -> String {
-    format!(
-        "https://github.com/automic-vault/automic-vault/releases/download/{}/SHA256SUMS",
-        env!("CARGO_PKG_VERSION")
-    )
-}
-
-fn parse_release_digest<'a>(sums: &'a str, sums_url: &str, asset: &str) -> Result<&'a str, String> {
-    let matches = sums
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            let digest = fields.next()?;
-            let name = fields.next()?.trim_start_matches('*');
-            (name == asset && fields.next().is_none()).then_some(digest)
-        })
-        .collect::<Vec<_>>();
-    if matches.len() != 1 {
-        return Err(format!(
-            "{sums_url} must contain exactly one {asset} digest"
-        ));
-    }
-    validate_sha256(matches[0])?;
-    Ok(matches[0])
 }
 
 pub(crate) fn prepare_install_directory(path: &Path) -> Result<(), String> {
@@ -938,13 +878,35 @@ mod tests {
     }
 
     #[test]
+    fn direct_isotopes_use_their_fork_formula_manifests() {
+        for (isotope, formula, repository) in [
+            (OPENTOFU, "opentofu", "opentofu"),
+            (OXIDE, "oxide.rs", "oxide.rs"),
+            (GOAT, "goat", "goat"),
+            (RAILWAY, "railway-cli", "railway-cli"),
+            (ORDERCLI, "ordercli", "ordercli"),
+            (UAA, "uaa-cli", "uaa-cli"),
+            (OPENHUE, "openhue-cli", "openhue-cli"),
+            (PLUMBER, "plumber", "plumber"),
+        ] {
+            assert!(isotope.direct);
+            assert_eq!(isotope.formula, formula);
+            assert_eq!(isotope.repository, repository);
+            assert_eq!(
+                formula_url(isotope),
+                format!("{TAP_FORMULA_ROOT}/{formula}.rb")
+            );
+        }
+    }
+
+    #[test]
     fn formula_parser_accepts_only_the_expected_release_and_digest() {
         let formula = r#"
           url "https://github.com/automic-vault/gh-cli/releases/download/v2.97.0/cli-2.97.0.tgz"
           sha256 "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070"
         "#;
         assert_eq!(
-            parse_formula(formula, Some(GH)).unwrap(),
+            parse_formula(formula, Some(GH.repository)).unwrap(),
             Manifest {
                 url: "https://github.com/automic-vault/gh-cli/releases/download/v2.97.0/cli-2.97.0.tgz".into(),
                 sha256: "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070".into(),
@@ -953,7 +915,7 @@ mod tests {
         assert!(
             parse_formula(
                 &formula.replace("automic-vault/gh-cli", "evil/gh-cli"),
-                Some(GH)
+                Some(GH.repository)
             )
             .is_err()
         );

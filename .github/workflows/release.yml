@@ -41,8 +41,6 @@ jobs:
       SBOM_NAME: Automic-Vault-${{ inputs.version }}.spdx.json
       IMMUTABLE_RELEASES_ENABLED: ${{ vars.IMMUTABLE_RELEASES_ENABLED }}
       RUST_TOOLCHAIN: 1.96.0
-      OXIDE_RUST_TOOLCHAIN: 1.97.1
-      GOAT_GO_TOOLCHAIN: go1.25.1
       GH_TOKEN: ${{ github.token }}
       RELEASE_NOTES: ${{ inputs.notes }}
 
@@ -132,7 +130,6 @@ jobs:
         run: |
           set -euo pipefail
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
-          rustup toolchain install "$OXIDE_RUST_TOOLCHAIN" --profile minimal
           rustup override set "$RUST_TOOLCHAIN"
 
           create_dmg_archive="$RUNNER_TEMP/create-dmg-1.3.0.tar.gz"
@@ -143,11 +140,6 @@ jobs:
             shasum -a 256 --check
           tar -xzf "$create_dmg_archive" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/create-dmg-1.3.0" >>"$GITHUB_PATH"
-
-      - name: Install pinned cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.1.3
 
       - name: Import Developer ID signing material
         shell: bash
@@ -204,38 +196,6 @@ jobs:
           codesign --verify "$dmg"
           xcrun stapler validate "$dmg"
 
-      - name: Build signed OpenTofu Isotope
-        shell: bash
-        run: scripts/build-opentofu-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed Oxide CLI Isotope
-        shell: bash
-        run: scripts/build-oxide-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed goat Isotope
-        shell: bash
-        run: scripts/build-goat-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed Railway Isotope
-        shell: bash
-        run: scripts/build-railway-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed ordercli Isotope
-        shell: bash
-        run: scripts/build-ordercli-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed UAA CLI Isotope
-        shell: bash
-        run: scripts/build-uaa-cli-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed OpenHue CLI Isotope
-        shell: bash
-        run: scripts/build-openhue-cli-isotope.sh "$ASSET_DIR"
-
-      - name: Build signed Plumber Isotope
-        shell: bash
-        run: scripts/build-plumber-isotope.sh "$ASSET_DIR"
-
       - name: Stage release inputs
         shell: bash
         run: |
@@ -264,61 +224,13 @@ jobs:
           set -euo pipefail
           (
             cd "$ASSET_DIR"
-            shasum -a 256 "$DMG_NAME" "$SBOM_NAME" \
-              OpenTofu-Isotope-darwin-arm64.tgz \
-              Oxide-CLI-Isotope-darwin-arm64.tgz \
-              goat-Isotope-darwin-arm64.tgz \
-              Railway-Isotope-darwin-arm64.tgz \
-              ordercli-Isotope-darwin-arm64.tgz \
-              UAA-CLI-Isotope-darwin-arm64.tgz \
-              OpenHue-CLI-Isotope-darwin-arm64.tgz \
-              Plumber-Isotope-darwin-arm64.tgz >SHA256SUMS
+            shasum -a 256 "$DMG_NAME" "$SBOM_NAME" >SHA256SUMS
           )
 
       - name: Attest build provenance
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: ${{ env.ASSET_DIR }}/${{ env.DMG_NAME }}
-
-      - name: Attest OpenTofu Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/OpenTofu-Isotope-darwin-arm64.tgz
-
-      - name: Attest Oxide CLI Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/Oxide-CLI-Isotope-darwin-arm64.tgz
-
-      - name: Attest goat Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/goat-Isotope-darwin-arm64.tgz
-
-      - name: Attest Railway Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/Railway-Isotope-darwin-arm64.tgz
-
-      - name: Attest ordercli Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/ordercli-Isotope-darwin-arm64.tgz
-
-      - name: Attest UAA CLI Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/UAA-CLI-Isotope-darwin-arm64.tgz
-
-      - name: Attest OpenHue CLI Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/OpenHue-CLI-Isotope-darwin-arm64.tgz
-
-      - name: Attest Plumber Isotope provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
-        with:
-          subject-path: ${{ env.ASSET_DIR }}/Plumber-Isotope-darwin-arm64.tgz
 
       - name: Attest the SBOM
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
@@ -335,14 +247,6 @@ jobs:
           gh release create "$VERSION" \
             "$ASSET_DIR/$DMG_NAME" \
             "$ASSET_DIR/$SBOM_NAME" \
-            "$ASSET_DIR/OpenTofu-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/Oxide-CLI-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/goat-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/Railway-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/ordercli-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/UAA-CLI-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/OpenHue-CLI-Isotope-darwin-arm64.tgz" \
-            "$ASSET_DIR/Plumber-Isotope-darwin-arm64.tgz" \
             "$ASSET_DIR/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \

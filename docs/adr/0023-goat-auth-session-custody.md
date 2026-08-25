@@ -25,13 +25,15 @@ Hardener stores a complete session secret with save-if-absent-or-equal semantics
 before atomically replacing the mode-0600 state file. Failure leaves the
 original state available for recovery.
 
-The release workflow builds the patched executable from the pinned upstream
-commit with the pinned Go toolchain, signs it as identifier `goat` under Automic
-Vault team `ZU76A67LGU` with Hardened Runtime and a trusted timestamp, rejects
-embedded entitlements, and publishes it from this repository. The privileged
-installer accepts only the expected archive entry and revalidates the release
+The `automic-vault/goat` fork release builds the patched executable from the
+pinned upstream commit with the pinned Go toolchain, signs it as identifier
+`goat` under Automic Vault team `ZU76A67LGU` with Hardened Runtime and a trusted
+timestamp, rejects embedded entitlements, and publishes it from that fork. The
+signed Isotopes tap pins the exact fork release URL and digest. The privileged
+installer accepts only the expected archive entry and revalidates the manifest,
 digest, signature, runtime, timestamp, and entitlements before installing
-`/usr/local/bin/goat`.
+`/usr/local/bin/goat`, as specified by
+[ADR 0029](0029-fork-owned-isotope-releases.md).
 
 For every credential operation, the menu app derives the helper's live parent
 from the kernel and requires that exact installed Target, Developer ID identity,

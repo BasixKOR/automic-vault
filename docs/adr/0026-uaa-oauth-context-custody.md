@@ -16,10 +16,12 @@ also update the same persisted config they read.
 
 ## Decision
 
-Automic Vault publishes a pinned, patched UAA CLI Isotope signed with Developer
-ID, Hardened Runtime, timestamping, and no entitlements. The patch is limited to
-the upstream config read/write boundary. It stores one strictly validated map
-of target/context OAuth tokens through dedicated XPC operations and leaves only
+The `automic-vault/uaa-cli` fork publishes a pinned, patched UAA CLI Isotope
+signed with Developer ID, Hardened Runtime, timestamping, and no entitlements.
+The signed Isotopes tap pins the exact fork release URL and digest as specified
+by [ADR 0029](0029-fork-owned-isotope-releases.md). The patch is limited to the
+upstream config read/write boundary. It stores one strictly validated map of
+target/context OAuth tokens through dedicated XPC operations and leaves only
 `@av` markers plus non-secret metadata on disk.
 
 The approval service binds every helper operation to the live signed `uaa`

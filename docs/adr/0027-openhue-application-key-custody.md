@@ -12,10 +12,12 @@ need a temporary plaintext config.
 
 ## Decision
 
-Automic Vault publishes a pinned OpenHue CLI Isotope signed with Developer ID,
-Hardened Runtime, timestamping, and no entitlements. The upstream patch is
-limited to `Config.Load` and `Config.Save`: it reads and writes the application
-key through dedicated XPC operations and persists only an `@av` marker.
+The `automic-vault/openhue-cli` fork publishes a pinned OpenHue CLI Isotope
+signed with Developer ID, Hardened Runtime, timestamping, and no entitlements.
+The signed Isotopes tap pins the exact fork release URL and digest as specified
+by [ADR 0029](0029-fork-owned-isotope-releases.md). The upstream patch is limited
+to `Config.Load` and `Config.Save`: it reads and writes the application key
+through dedicated XPC operations and persists only an `@av` marker.
 
 The approval service binds helper operations to the live signed `openhue`
 parent, its complete arguments, the bridge scope, and the exact Secret Name.

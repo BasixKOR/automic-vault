@@ -28,13 +28,15 @@ save-if-absent-or-equal semantics before atomically replacing any file with its
 mode-0600 marker form. Failure before replacement leaves the original files
 available for recovery.
 
-The release workflow builds the patched executable from the pinned upstream
-commit with a pinned Rust toolchain, signs it as identifier `railway` under
-Automic Vault team `ZU76A67LGU` with Hardened Runtime and a trusted timestamp,
-rejects embedded entitlements, and publishes it from this repository. The
+The `automic-vault/railway-cli` fork release builds the patched executable from
+the pinned upstream commit with a pinned Rust toolchain, signs it as identifier
+`railway` under Automic Vault team `ZU76A67LGU` with Hardened Runtime and a
+trusted timestamp, rejects embedded entitlements, and publishes it from that
+fork. The signed Isotopes tap pins the exact fork release URL and digest. The
 privileged installer accepts only the expected archive entry and revalidates
-the release digest, signature, runtime, timestamp, and entitlements before
-installing `/usr/local/bin/railway`.
+the manifest, digest, signature, runtime, timestamp, and entitlements before
+installing `/usr/local/bin/railway`, as specified by
+[ADR 0029](0029-fork-owned-isotope-releases.md).
 
 For every credential operation, the menu app derives the helper's live parent
 from the kernel and requires that exact installed Target, Developer ID identity,

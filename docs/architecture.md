@@ -46,7 +46,7 @@ Detectors inspect the developer environment without changing it. A Scan produces
 
 ### Tool Hardening
 
-Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. This repository's reviewed release workflow produces new signed direct-install Isotope assets. The Hardener verifies the release digest and Automic Vault code signature, installs into `/usr/local/bin`, and assumes responsibility for direct-install updates. Existing Isotopes may remain installed and updated through the signed Isotopes Homebrew tap while their distribution is migrated.
+Hardeners move supported Tools into a declared Hardened State. Doctor verifies the installed intervention and its dependencies. An Isotope supplies an Automic Vault-compatible build or wrapper where upstream behavior cannot support the required boundary. Each Automic Vault-maintained Tool fork produces and publishes its signed Isotope asset. The signed Isotopes Homebrew tap pins the expected fork release URL and digest. The Hardener constrains the manifest to the exact fork, verifies the release digest and Automic Vault code signature, installs direct Isotopes into `/usr/local/bin`, and assumes responsibility for their updates. Isotopes designated for Homebrew installation remain installed and updated through the signed tap.
 
 Hardener detection is point-in-time diagnostic state, not runtime authorization
 evidence. Runtime Authorization consumes static Gate definitions and performs
@@ -197,7 +197,7 @@ canonical-path execution.
 
 ### Distribution
 
-The app, CLI, signed helpers, signed Isotope release assets and Isotopes tap,
+The app, CLI, signed helpers, signed fork Isotope releases and Isotopes tap,
 website, and companion app distribute and present the system. Distribution
 supports the security contexts but does not define competing domain language or
 policy semantics.
