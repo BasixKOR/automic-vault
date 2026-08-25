@@ -221,16 +221,28 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         );
     }
 
-    let (target, mut env) = match prepare_injection(
-        &options,
-        stderr,
-        verified_script
-            .as_ref()
-            .map(|script| script.data.as_slice()),
-        path_interpreter,
-        approve_injection,
-        build_env,
-    ) {
+    let secretless = verified_script.as_ref().is_some_and(|script| {
+        crate::isotopes::hardeners::env_wrapper::invocation_is_secretless(
+            &script.path,
+            &script.data,
+            &options.args,
+        )
+    });
+    let prepared = if secretless {
+        resolve_target(&options.target).map(|target| (target, secretless_environment(&options)))
+    } else {
+        prepare_injection(
+            &options,
+            stderr,
+            verified_script
+                .as_ref()
+                .map(|script| script.data.as_slice()),
+            path_interpreter,
+            approve_injection,
+            build_env,
+        )
+    };
+    let (target, mut env) = match prepared {
         Ok(prepared) => prepared,
         Err(err) => {
             let _ = writeln!(stderr, "av inject: {err}");
@@ -268,6 +280,14 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         target.display()
     );
     1
+}
+
+fn secretless_environment(options: &Options) -> BTreeMap<OsString, OsString> {
+    let mut env = std::env::vars_os().collect::<BTreeMap<_, _>>();
+    for key in &options.keys {
+        env.remove(std::ffi::OsStr::new(key));
+    }
+    env
 }
 
 fn path_script_interpreter(target: &Path, args_before_script: &[OsString]) -> Option<&'static str> {
@@ -1294,6 +1314,26 @@ mod tests {
         assert_eq!(request.shebang_script.as_deref(), Some("/tmp/tool"));
         assert_eq!(request.script_data.as_deref(), Some(b"script".as_slice()));
         assert_eq!(request.snapshot_incompatible_interpreter, Some("uv"));
+    }
+
+    #[test]
+    fn secretless_environment_removes_requested_secrets() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe { std::env::set_var("SOME_SECRET", "ambient") };
+        let options = Options {
+            replace_existing_env: false,
+            allow_missing_keys: true,
+            keys: vec!["SOME_SECRET".into()],
+            target: "/bin/echo".into(),
+            args: Vec::new(),
+            shebang_script: None,
+        };
+
+        let env = secretless_environment(&options);
+
+        unsafe { std::env::remove_var("SOME_SECRET") };
+        assert!(!env.contains_key(std::ffi::OsStr::new("SOME_SECRET")));
+        assert!(env.contains_key(std::ffi::OsStr::new("PATH")));
     }
 
     #[test]

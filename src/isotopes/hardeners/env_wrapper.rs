@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -58,6 +59,45 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
 
 pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
     WRAPPERS.iter().map(secret_gate).collect()
+}
+
+pub(crate) fn invocation_is_secretless(
+    script_path: &Path,
+    script_data: &[u8],
+    args: &[OsString],
+) -> bool {
+    let Some(stub) = wrapper("node").map(|wrapper| &wrapper.primary) else {
+        return false;
+    };
+    if !same_path(script_path, &stub_path(stub.command)) {
+        return false;
+    }
+    let Ok(contents) = std::str::from_utf8(script_data) else {
+        return false;
+    };
+    let Some(target) = embedded_target_from_contents(contents) else {
+        return false;
+    };
+    if contents != stub_script(stub, &target) {
+        return false;
+    }
+    let Some(script) = args.first() else {
+        return false;
+    };
+    if !same_path(Path::new(script), script_path) {
+        return false;
+    }
+    npm_invocation_is_secretless(&args[1..])
+}
+
+fn npm_invocation_is_secretless(args: &[OsString]) -> bool {
+    let Some(command) = args.first().and_then(|arg| arg.to_str()) else {
+        return false;
+    };
+    matches!(
+        command,
+        "root" | "prefix" | "help" | "help-search" | "completion"
+    ) || args.len() == 1 && matches!(command, "--help" | "-h" | "--version" | "-v")
 }
 
 fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
@@ -765,6 +805,57 @@ mod tests {
         assert!(script.contains("+AKAMAI_ENV_ASSIGNMENTS"));
         assert!(script.contains("for assignment in ${AKAMAI_ENV_ASSIGNMENTS-}"));
         assert!(script.contains("export \"$assignment\""));
+    }
+
+    #[test]
+    fn node_bypasses_secrets_only_for_exact_secretless_commands() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_dir("env-wrapper-secretless-node");
+        unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &dir) };
+        let script_path = dir.join("npm");
+        let script = stub_script(
+            &wrapper("node").unwrap().primary,
+            Path::new("/opt/homebrew/bin/npm"),
+        );
+        let args = |values: &[&str]| {
+            std::iter::once(script_path.clone().into_os_string())
+                .chain(values.iter().map(OsString::from))
+                .collect::<Vec<_>>()
+        };
+
+        for command in [
+            vec!["root", "-g"],
+            vec!["prefix"],
+            vec!["help", "install"],
+            vec!["completion"],
+            vec!["--version"],
+        ] {
+            assert!(invocation_is_secretless(
+                &script_path,
+                script.as_bytes(),
+                &args(&command),
+            ));
+        }
+        for command in [
+            vec!["install"],
+            vec!["publish"],
+            vec!["run", "build"],
+            vec!["version"],
+        ] {
+            assert!(!invocation_is_secretless(
+                &script_path,
+                script.as_bytes(),
+                &args(&command),
+            ));
+        }
+        assert!(!invocation_is_secretless(
+            &script_path,
+            format!("{script}# changed\n").as_bytes(),
+            &args(&["root"]),
+        ));
+
+        unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
