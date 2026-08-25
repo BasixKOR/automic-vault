@@ -288,7 +288,7 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
     #expect(loadSecretGates(descriptors: [descriptor], service: service).map(\.id) == ["gh"])
 }
 
-@Test func dashboardIncludesStandaloneAuthorizationGates() throws {
+@Test func dashboardRequiresConfiguredCredentialForStandaloneGPGAuthorizationGate() throws {
     let inactiveHardener = testGateMetadata(hardened: false)
     let gpg = SecretGateDescriptor(
         id: "gpg-signing",
@@ -303,9 +303,19 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
             allowMissingKeys: false
         )]
     )
-    let descriptors = dashboardSecretGateDescriptors(
+    #expect(dashboardSecretGateDescriptors(
         hardeners: [inactiveHardener],
         catalog: [try #require(inactiveHardener.secretGate), gpg]
+    ).isEmpty)
+    #expect(dashboardSecretGateDescriptors(
+        hardeners: [inactiveHardener],
+        catalog: [try #require(inactiveHardener.secretGate), gpg],
+        storedSecretNames: [gpgAlternatePrivateKeySecretName]
+    ).map(\.id) == ["gpg-signing"])
+    let descriptors = dashboardSecretGateDescriptors(
+        hardeners: [inactiveHardener],
+        catalog: [try #require(inactiveHardener.secretGate), gpg],
+        storedSecretNames: [gpgDefaultPrivateKeySecretName]
     )
     let gate = try #require(loadSecretGates(
         descriptors: descriptors,
