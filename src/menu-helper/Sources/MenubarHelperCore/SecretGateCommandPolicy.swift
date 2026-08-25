@@ -27,9 +27,11 @@ public func genericSecretGateRequestClassification(
     let candidates = (1...min(3, words.count)).reversed().map {
         words.prefix($0).joined(separator: " ")
     }
-    if candidates.contains(where: policy.secretDump.contains) { return .secretDump }
-    if candidates.contains(where: policy.readOnly.contains) { return .readOnly }
-    if candidates.contains(where: policy.mutating.contains) { return .mutating }
+    for candidate in candidates {
+        if policy.secretDump.contains(candidate) { return .secretDump }
+        if policy.readOnly.contains(candidate) { return .readOnly }
+        if policy.mutating.contains(candidate) { return .mutating }
+    }
     return .unknown
 }
 
@@ -59,7 +61,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "luarocks": .init("search,show,list,which", "install,remove,upload,publish"),
     "minio-mc": .init("ls,stat,find,du,tree", "cp,mv,rm,mb,rb,mirror", secretDump: "alias export"),
     "netlify-cli": .init("status,sites list,functions list", "deploy,sites create,sites delete,functions create", secretDump: "env list,env get"),
-    "node": .init("view,info,search,audit,outdated,ping,whoami", "publish,unpublish,deprecate,access,token,dist-tag", secretDump: "config get"),
+    "node": .init(
+        "access list,access get,audit,audit signatures,diff,dist-tag ls,doctor,org ls,outdated,owner ls,ping,profile get,search,find,s,se,stage list,stage view,stars,team ls,token list,trust list,view,info,show,v,whoami",
+        "access,audit fix,ci,clean-install,ic,install-clean,isntall-clean,deprecate,dist-tag,dist-tags,install,add,i,in,ins,inst,insta,instal,isnt,isnta,isntal,isntall,install-ci-test,cit,clean-install-test,sit,install-test,it,logout,org,ogr,owner,author,profile,publish,stage,star,team,token,trust,undeprecate,unpublish,unstar,update,u,up,upgrade,udpate",
+        secretDump: "config get"
+    ),
     "pnpm": .init("view,info,search,audit,outdated,why,list", "publish,unpublish,deprecate,add,remove,update", secretDump: "config get"),
     "pulumi": .init("whoami,stack ls,preview,about,config get", "up,destroy,refresh,import,cancel", secretDump: "config get --show-secrets,stack export --show-secrets"),
     "qwen-code": .init("", "chat,run"),

@@ -92,12 +92,76 @@ pub(crate) fn invocation_is_secretless(
 
 fn npm_invocation_is_secretless(args: &[OsString]) -> bool {
     let Some(command) = args.first().and_then(|arg| arg.to_str()) else {
-        return false;
+        return true;
     };
-    matches!(
+    // Keep this positive list exact: npm's dynamic abbreviations can change
+    // meaning when npm adds commands, and arbitrary package scripts must not
+    // inherit NODE_AUTH_TOKEN merely because npm launched them.
+    !matches!(
         command,
-        "root" | "prefix" | "help" | "help-search" | "completion"
-    ) || args.len() == 1 && matches!(command, "--help" | "-h" | "--version" | "-v")
+        "access"
+            | "audit"
+            | "ci"
+            | "clean-install"
+            | "ic"
+            | "install-clean"
+            | "isntall-clean"
+            | "deprecate"
+            | "diff"
+            | "dist-tag"
+            | "dist-tags"
+            | "doctor"
+            | "install"
+            | "add"
+            | "i"
+            | "in"
+            | "ins"
+            | "inst"
+            | "insta"
+            | "instal"
+            | "isnt"
+            | "isnta"
+            | "isntal"
+            | "isntall"
+            | "install-ci-test"
+            | "cit"
+            | "clean-install-test"
+            | "sit"
+            | "install-test"
+            | "it"
+            | "logout"
+            | "org"
+            | "ogr"
+            | "outdated"
+            | "owner"
+            | "author"
+            | "ping"
+            | "profile"
+            | "publish"
+            | "search"
+            | "find"
+            | "s"
+            | "se"
+            | "stage"
+            | "star"
+            | "stars"
+            | "team"
+            | "token"
+            | "trust"
+            | "undeprecate"
+            | "unpublish"
+            | "unstar"
+            | "update"
+            | "u"
+            | "up"
+            | "upgrade"
+            | "udpate"
+            | "view"
+            | "info"
+            | "show"
+            | "v"
+            | "whoami"
+    )
 }
 
 fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
@@ -811,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn node_bypasses_secrets_only_for_exact_secretless_commands() {
+    fn node_requests_secrets_only_for_reviewed_npm_commands() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = temp_dir("env-wrapper-secretless-node");
         unsafe { std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &dir) };
@@ -827,11 +891,21 @@ mod tests {
         };
 
         for command in [
+            vec![],
+            vec!["ls", "-g", "--depth=0", "--json"],
+            vec!["list"],
+            vec!["ll"],
+            vec!["la"],
             vec!["root", "-g"],
             vec!["prefix"],
             vec!["help", "install"],
             vec!["completion"],
             vec!["--version"],
+            vec!["config", "get", "//registry.npmjs.org/:_authToken"],
+            vec!["login"],
+            vec!["run", "build"],
+            vec!["version"],
+            vec!["future-command"],
         ] {
             assert!(invocation_is_secretless(
                 &script_path,
@@ -841,9 +915,15 @@ mod tests {
         }
         for command in [
             vec!["install"],
+            vec!["i", "private-package"],
+            vec!["ci"],
+            vec!["audit"],
+            vec!["doctor"],
+            vec!["view", "private-package"],
+            vec!["whoami"],
             vec!["publish"],
-            vec!["run", "build"],
-            vec!["version"],
+            vec!["dist-tags", "ls", "private-package"],
+            vec!["trust", "list", "private-package"],
         ] {
             assert!(!invocation_is_secretless(
                 &script_path,

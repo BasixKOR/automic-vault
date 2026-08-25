@@ -71,6 +71,13 @@ and process execution immediately before every Secret Application. Unknown
 Targets and changed runtime posture fail closed. See
 [ADR 0014](adr/0014-docker-credential-helper.md).
 
+A command-aware wrapper may use a reviewed positive catalog to decide whether
+an invocation may request Secret Application. Invocations outside that catalog
+execute with the protected Secret removed from their environment and never
+enter an Authorization Gate. This is least-authority routing before an
+Authorization Request exists, not automic authorization of an Unknown
+operation. See [ADR 0032](adr/0032-positive-secret-routing.md).
+
 ### Secret Custody
 
 Automic Vault stores named opaque Secrets in the macOS Data Protection

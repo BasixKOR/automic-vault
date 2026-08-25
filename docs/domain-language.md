@@ -506,6 +506,13 @@ Evidence that an unauthorized party obtained or used a Secret or Credential. Nev
 
 A **Hardener** is a Tool-specific procedure that moves the Tool toward declared security invariants. **Hardening** applies that procedure through migration, configuration, a wrapper, or an Isotope.
 
+A Hardener-installed wrapper may request Secret Application only for a reviewed
+set of Tool operations. An invocation outside that set may execute with the
+protected Secret removed from its environment. That invocation makes no Secret
+Use request; it is not an Unknown operation receiving automic authorization.
+An explicit Secret Use request whose characteristics remain Unknown still
+requires Approval.
+
 ### Hardened State
 
 The current, verifiable invariants established by a Hardener. Hardened State does not mean fully safe.
