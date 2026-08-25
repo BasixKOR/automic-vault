@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
-const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 1;
+const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 2;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
 const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
