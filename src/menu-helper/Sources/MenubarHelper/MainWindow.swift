@@ -137,10 +137,6 @@ final class AutomicVaultWindow: NSWindow {
         }
 
         switch key {
-        case "c":
-            return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
-        case "v":
-            return NSApp.sendAction(#selector(NSText.paste(_:)), to: firstResponder, from: self)
         case "w":
             performClose(nil)
             return true
