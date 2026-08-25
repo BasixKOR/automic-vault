@@ -605,6 +605,10 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     public var scriptPaths: [String] { routes.compactMap(\.scriptPath).uniqueSorted() }
     public var targetPaths: [String] { routes.map(\.targetPath).uniqueSorted() }
     public var defaultPolicyLabel: String { appPolicies.isEmpty ? "All Apps" : "All Other Apps" }
+    public var displayName: String { id == "node" ? "npm" : id }
+    public var authorizationGateName: String {
+        id == "node" ? "npm Authorization Gate" : "\(id.uppercased()) Authorization Gate"
+    }
 
     public var availableProtections: [SecretGateProtection] {
         if id == "gpg-signing" {

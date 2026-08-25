@@ -783,6 +783,20 @@ func protectionPolicyMatrix(
     #expect(protection.allows(classification) == expected)
 }
 
+@Test func nodeGateUsesNpmDisplayNameWithoutChangingItsID() {
+    let gate = SecretGate(
+        id: "node",
+        keyPatterns: ["NODE_AUTH_TOKEN"],
+        routes: [],
+        defaultProtection: .readOnly,
+        appPolicies: []
+    )
+
+    #expect(gate.id == "node")
+    #expect(gate.displayName == "npm")
+    #expect(gate.authorizationGateName == "npm Authorization Gate")
+}
+
 @Test func secretGatePoliciesPersistAndResolveOverrides() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.\(UUID().uuidString)"

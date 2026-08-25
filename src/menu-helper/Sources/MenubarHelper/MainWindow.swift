@@ -959,7 +959,7 @@ final class DashboardModel: ObservableObject {
                 return
             }
             self.approveAuthorityChange(
-                "Add \(signing.identifier) to \(gate.id)",
+                "Add \(signing.identifier) to \(gate.displayName)",
                 detail: "Recognized read-only operations will be automically authorized."
             ) {
                 let status = setSecretGateAppProtection(
@@ -988,7 +988,7 @@ final class DashboardModel: ObservableObject {
         }
         guard protection.addsAuthority(over: gate.defaultProtection) else { update(); return }
         approveAuthorityChange(
-            "Broaden \(gate.id) default to \(protection.title)",
+            "Broaden \(gate.displayName) default to \(protection.title)",
             detail: protection.subtitle,
             perform: update
         )
@@ -4293,7 +4293,7 @@ private struct SecretGateDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(gate.id)
+                Text(gate.displayName)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(3)
@@ -4423,7 +4423,7 @@ private struct ApprovedAppRow: View {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive, action: remove)
         } message: {
-            Text("This deletes the Launcher-specific rule. Future requests from this Verified Launcher at the \(gate.id) Authorization Gate will use the default \(gate.protectionTitle(gate.defaultProtection)) Access Level.")
+            Text("This deletes the Launcher-specific rule. Future requests from this Verified Launcher at the \(gate.displayName) Authorization Gate will use the default \(gate.protectionTitle(gate.defaultProtection)) Access Level.")
         }
     }
 }

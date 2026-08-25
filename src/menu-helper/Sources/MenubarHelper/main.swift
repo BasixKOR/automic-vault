@@ -2753,7 +2753,7 @@ private func temporaryAccessGrantCandidate(
         ),
         launcher: launcher,
         launcherName: launcherName,
-        authorizationGateName: "\(gate.id.uppercased()) Authorization Gate"
+        authorizationGateName: gate.authorizationGateName
     )
 }
 
@@ -3735,7 +3735,7 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             retainedProcessExplanation = retainedProcessApprovalExplanation(
                 match: retainedGateProvenance,
-                gateName: configuredGate.map { "the \($0.id) gate" } ?? "the Direct Secret Gate"
+                gateName: configuredGate.map { "the \($0.displayName) gate" } ?? "the Direct Secret Gate"
             )
         } else {
             retainedProcessExplanation = nil
