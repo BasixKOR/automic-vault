@@ -153,6 +153,7 @@ fn run(wrapper: &EnvWrapper, stdout: &mut dyn Write, yes: bool) -> Result<(), St
         .ok_or_else(|| format!("no credential migration registered for {}", wrapper.name))??;
     writeln!(stdout, "╰─ hardened {}", wrapper.name).ok();
     super::write_secret_gate_notice(stdout, wrapper.name);
+    writeln!(stdout, "◇ next: run `hash -r`").ok();
     Ok(())
 }
 
@@ -731,6 +732,7 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains(&format!("target {}", target_dir.join("doctl").display())));
         assert!(output.contains("install launcher"));
+        assert!(output.ends_with("◇ next: run `hash -r`\n"));
         fs::remove_dir_all(dir).unwrap();
     }
 
