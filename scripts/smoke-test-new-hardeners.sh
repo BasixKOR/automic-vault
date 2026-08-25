@@ -29,9 +29,7 @@ launchctl print "gui/$(id -u)/com.automicvault.menubar-helper" >/dev/null || {
 }
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/av-hardener-smoke.XXXXXX")"
-keeper_pid=
 cleanup() {
-  if [[ -n "$keeper_pid" ]]; then kill "$keeper_pid" 2>/dev/null || true; fi
   rm -rf "$work"
 }
 trap cleanup EXIT INT TERM
@@ -63,16 +61,6 @@ done
 
 echo "Authenticating once for protected Target installation…"
 sudo -v
-parent_pid=$$
-(
-  # Keep the one authentication valid while each hardener performs its own
-  # narrowly scoped privileged installation.
-  while kill -0 "$parent_pid" 2>/dev/null; do
-    sudo -n -v || exit
-    sleep 45
-  done
-) &
-keeper_pid=$!
 
 for hardener in "${HARDENERS[@]}"; do
   echo
@@ -97,7 +85,10 @@ for index in "${!HARDENERS[@]}"; do
     echo "error: $target has unexpected entitlements" >&2
     exit 1
   }
-  "$AV" doctor "$hardener" --json >/dev/null
+  if ! doctor_output="$("$AV" doctor "$hardener" --json)"; then
+    printf '%s\n' "$doctor_output" >&2
+    exit 1
+  fi
   printf 'PASS  %-12s %s\n' "$hardener" "$target"
 done
 

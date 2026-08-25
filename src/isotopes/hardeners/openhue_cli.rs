@@ -110,7 +110,7 @@ pub(crate) fn detect() -> HardenerDetection {
         .next()
         .and_then(|command| command.isotope);
     let command = HardenerCommand {
-        name: "openhue-cli".into(),
+        name: "openhue".into(),
         hardened,
         stub_valid: true,
         stub_path: None,
@@ -479,6 +479,22 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doctor_uses_the_executable_name() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var(
+                "AUTOMIC_VAULT_TEST_OPENHUE_CLI_CONFIG",
+                "/missing/openhue-config.yaml",
+            );
+        }
+        let name = detect().commands[0].name.clone();
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_OPENHUE_CLI_CONFIG");
+        }
+        assert_eq!(name, "openhue");
+    }
 
     #[test]
     fn migrates_application_key_and_rejects_unsupported_yaml() {

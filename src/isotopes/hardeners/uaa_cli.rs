@@ -109,7 +109,7 @@ pub(crate) fn detect() -> HardenerDetection {
         .next()
         .and_then(|command| command.isotope);
     let command = HardenerCommand {
-        name: "uaa-cli".into(),
+        name: "uaa".into(),
         hardened,
         stub_valid: true,
         stub_path: None,
@@ -570,6 +570,22 @@ fn confirm(stdout: &mut dyn Write, yes: bool) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doctor_uses_the_executable_name() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var(
+                "AUTOMIC_VAULT_TEST_UAA_CLI_CONFIG",
+                "/missing/uaa-config.json",
+            );
+        }
+        let name = detect().commands[0].name.clone();
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_UAA_CLI_CONFIG");
+        }
+        assert_eq!(name, "uaa");
+    }
 
     #[test]
     fn migrates_oauth_contexts_and_rejects_partial_or_unknown_state() {
