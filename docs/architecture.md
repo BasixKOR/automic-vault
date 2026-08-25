@@ -275,12 +275,13 @@ Authorization Record.
 
 The policy identity is the Launcher's designated requirement, checked against the live process and its launch chain. Paths, process identifiers, names, and icons help the user recognize software but do not establish identity. Hardened Runtime requirements and rejected entitlements form part of launcher eligibility.
 
-Eligible Launchers must enable Hardened Runtime. JIT executable-memory
-exceptions and disabled library validation are supported compatibility
-exceptions. Disabled library validation is presented as a warning because
-third-party code loaded into the Launcher inherits its authority. DYLD
-environment-variable injection, disabled executable-page protection, and
-debugger attachment remain ineligible.
+Eligible Launchers must enable Hardened Runtime or be Apple platform binaries
+signed as part of a macOS release, for which macOS applies the runtime
+protections intrinsically. JIT executable-memory exceptions and disabled
+library validation are supported compatibility exceptions. Disabled library
+validation is presented as a warning because third-party code loaded into the
+Launcher inherits its authority. DYLD environment-variable injection, disabled
+executable-page protection, and debugger attachment remain ineligible.
 
 New durable Launcher rules store the accepted Launcher Runtime Requirement.
 Every request rechecks the live signature and permits an equal or stronger
@@ -451,7 +452,11 @@ Notification Approvals bind the same exact request as the full app. Requests
 with Unknown operation risk, Secret Disclosure, Unconstrained Secret
 Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
-values. The iPhone does not persist Authorization History.
+values. The iPhone does not persist Authorization History. It may keep at most
+50 protected, device-local iPhone Activity entries for responses successfully
+sent from that phone. These summaries omit Secret Names, working directories,
+and expanded request details, are excluded from backup, and do not claim that
+the Mac accepted a response.
 
 Before signing and transmitting any allow response, the iPhone app verifies a
 current iPhone Approval subscription from StoreKit's signed transaction ledger.

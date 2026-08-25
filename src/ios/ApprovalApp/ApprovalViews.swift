@@ -23,6 +23,11 @@ struct ApprovalRootView: View {
             }
             .navigationTitle("Approvals")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { ApprovalActivityView(model: model) } label: {
+                        Label("iPhone Activity", systemImage: "clock.arrow.circlepath")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { ApprovalSettingsView(model: model, subscription: subscription) } label: {
                         Label("Settings", systemImage: "gear")
@@ -236,6 +241,20 @@ struct ApprovalSettingsView: View {
                 Text("When enabled, Approve requires biometrics on this iPhone. Passcode, Apple Watch, and a companion Mac cannot substitute.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
+            Section {
+                Toggle("Host", isOn: Binding(
+                    get: { model.notificationPreferences.showsHost },
+                    set: { model.setNotificationHostVisible($0) }
+                ))
+                Toggle("Approval type", isOn: Binding(
+                    get: { model.notificationPreferences.showsApprovalType },
+                    set: { model.setNotificationApprovalTypeVisible($0) }
+                ))
+            } header: {
+                Text("Notification Details")
+            } footer: {
+                Text("Selected details appear in notification text and may be visible on the Lock Screen, Apple Watch, or a mirrored Mac.")
+            }
             Section("Physical Separation") {
                 Label("iPhone Mirroring and Show on Mac can put Approval controls back onto a Mac when biometric protection is off.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
@@ -265,6 +284,78 @@ struct ApprovalSettingsView: View {
         case .connected: "Connected"
         case .unavailable(let reason): reason
         case .reconnecting(let reason): reason
+        }
+    }
+}
+
+struct ApprovalActivityView: View {
+    @Bindable var model: ApprovalModel
+
+    var body: some View {
+        Group {
+            if model.activity.isEmpty {
+                ContentUnavailableView(
+                    "No iPhone Activity",
+                    systemImage: "clock.arrow.circlepath",
+                    description: Text("Responses sent from this iPhone will appear here.")
+                )
+            } else {
+                List(model.activity) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(item.responseTitle, systemImage: item.responseSystemImage)
+                            .font(.headline)
+                            .foregroundStyle(item.responseColor)
+                        Text(item.command)
+                            .font(.callout.monospaced())
+                            .lineLimit(2)
+                        HStack {
+                            Text("\(item.launcher) · \(item.tool) · \(item.macName)")
+                            Spacer()
+                            Text(
+                                Date(timeIntervalSince1970: TimeInterval(item.respondedAtMilliseconds) / 1_000),
+                                style: .relative
+                            )
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("iPhone Activity")
+        .safeAreaInset(edge: .bottom) {
+            Text("Up to 50 responses sent from this iPhone. The Mac's Authorization History is authoritative.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+        }
+    }
+}
+
+private extension PhoneApprovalActivity {
+    var responseTitle: String {
+        switch outcome {
+        case .approved: "Approve Once sent"
+        case .denied: "Deny sent"
+        case .temporaryWriteAccess: "10-minute Write Access sent"
+        }
+    }
+
+    var responseSystemImage: String {
+        switch outcome {
+        case .approved: "checkmark.shield"
+        case .denied: "xmark.shield"
+        case .temporaryWriteAccess: "clock.badge.checkmark"
+        }
+    }
+
+    var responseColor: Color {
+        switch outcome {
+        case .approved, .temporaryWriteAccess: .green
+        case .denied: .red
         }
     }
 }

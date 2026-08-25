@@ -106,7 +106,9 @@ final class ApprovalModel {
     }
 
     private(set) var pending: [PhoneApprovalRequest] = []
+    private(set) var activity: [PhoneApprovalActivity] = []
     private(set) var state: ConnectionState = .setup
+    private(set) var notificationPreferences = ApprovalNotificationPreferences()
     var errorMessage: String?
     var biometricProtectionEnabled = UserDefaults.standard.bool(forKey: biometricDefaultsKey) {
         didSet {
@@ -132,6 +134,12 @@ final class ApprovalModel {
             UserDefaults.standard.set(value, forKey: "approvalDeviceID")
             deviceID = value
         }
+        do {
+            activity = try PhoneApprovalActivityStore.load()
+        } catch {
+            errorMessage = "iPhone Activity could not be loaded."
+        }
+        notificationPreferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
     }
 
     func start() async {
@@ -213,6 +221,14 @@ final class ApprovalModel {
         }
         guard authenticated else { return }
         biometricProtectionEnabled = enabled
+    }
+
+    func setNotificationHostVisible(_ enabled: Bool) {
+        saveNotificationPreferences { $0.showsHost = enabled }
+    }
+
+    func setNotificationApprovalTypeVisible(_ enabled: Bool) {
+        saveNotificationPreferences { $0.showsApprovalType = enabled }
     }
 
     func handleNotificationResponse(_ response: UNNotificationResponse) async {
@@ -301,6 +317,7 @@ final class ApprovalModel {
             guard let relay else { throw ApprovalRelayClientError.disconnected }
             let response = try PhoneApprovalResponse(request: request, outcome: outcome, deviceID: deviceID)
             try await relay.send(.response(response))
+            recordActivity(.init(request: request, outcome: outcome))
             pending.removeAll { $0.id == request.id }
             await removeDeliveredNotifications(for: request.id)
         } catch {
@@ -320,6 +337,7 @@ final class ApprovalModel {
                 deviceID: deviceID
             )
             try await relay.send(.response(response))
+            recordActivity(.init(ticket: ticket, outcome: outcome))
             pending.removeAll { $0.id == ticket.requestID }
             await removeDeliveredNotifications(for: ticket.requestID)
         } catch {
@@ -400,5 +418,66 @@ final class ApprovalModel {
             try? await Task.sleep(for: .seconds(delay))
             await self?.connect()
         }
+    }
+
+    private func saveNotificationPreferences(
+        _ change: (inout ApprovalNotificationPreferences) -> Void
+    ) {
+        var preferences = notificationPreferences
+        change(&preferences)
+        do {
+            try preferences.save()
+            notificationPreferences = preferences
+        } catch {
+            errorMessage = "Notification detail settings could not be saved."
+        }
+    }
+
+    private func recordActivity(_ item: PhoneApprovalActivity) {
+        activity = PhoneApprovalActivity.adding(item, to: activity)
+        do {
+            try PhoneApprovalActivityStore.save(activity)
+        } catch {
+            errorMessage = "The response was delivered, but iPhone Activity could not be saved."
+        }
+    }
+}
+
+private enum PhoneApprovalActivityStore {
+    static func load() throws -> [PhoneApprovalActivity] {
+        let url = try fileURL()
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return Array(try JSONDecoder().decode([PhoneApprovalActivity].self, from: Data(contentsOf: url))
+            .prefix(PhoneApprovalActivity.maximumItems))
+    }
+
+    static func save(_ activity: [PhoneApprovalActivity]) throws {
+        try JSONEncoder().encode(activity).write(
+            to: fileURL(),
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        )
+    }
+
+    private static func fileURL() throws -> URL {
+        let directory = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appending(path: "iPhone Activity", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: directory.path
+        )
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var protectedDirectory = directory
+        try protectedDirectory.setResourceValues(values)
+        return directory.appending(path: "responses.json")
     }
 }

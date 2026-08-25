@@ -126,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installTextEditingShortcuts()
         installStatusMenu()
 
         if shouldHandOffToLaunchAgent() {
@@ -13449,13 +13450,32 @@ private final class PasteProbeTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         didPaste = true
+        NSApp.stop(nil)
+    }
+}
+
+@MainActor
+private func installTextEditingShortcuts() {
+    NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        let action: Selector? = switch event.charactersIgnoringModifiers?.lowercased() {
+        case "c": #selector(NSText.copy(_:))
+        case "v": #selector(NSText.paste(_:))
+        default: nil
+        }
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+              let responder = event.window?.firstResponder,
+              let action,
+              NSApp.sendAction(action, to: responder, from: event)
+        else { return event }
+        return nil
     }
 }
 
 @MainActor
 private func runTextPasteSelfCheck() -> Int32 {
     _ = NSApplication.shared
-    let window = AutomicVaultWindow(
+    installTextEditingShortcuts()
+    let window = NSPanel(
         contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
         styleMask: .titled,
         backing: .buffered,
@@ -13463,6 +13483,7 @@ private func runTextPasteSelfCheck() -> Int32 {
     )
     let textView = PasteProbeTextView(frame: window.contentView?.bounds ?? .zero)
     window.contentView?.addSubview(textView)
+    window.makeKeyAndOrderFront(nil)
 
     guard window.makeFirstResponder(textView),
           let event = NSEvent.keyEvent(
@@ -13476,12 +13497,19 @@ private func runTextPasteSelfCheck() -> Int32 {
               charactersIgnoringModifiers: "v",
               isARepeat: false,
               keyCode: 9
-          ),
-          window.performKeyEquivalent(with: event),
-          textView.didPaste
+          )
     else { return 1 }
 
-    return 0
+    NSApp.setActivationPolicy(.accessory)
+    NSApp.activate()
+    DispatchQueue.main.async {
+        NSApp.postEvent(event, atStart: true)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        NSApp.stop(nil)
+    }
+    NSApp.run()
+    return textView.didPaste ? 0 : 1
 }
 
 private final class UpdatePreflightURLProtocol: URLProtocol, @unchecked Sendable {

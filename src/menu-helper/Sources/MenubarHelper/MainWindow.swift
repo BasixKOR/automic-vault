@@ -137,10 +137,6 @@ final class AutomicVaultWindow: NSWindow {
         }
 
         switch key {
-        case "c":
-            return NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
-        case "v":
-            return NSApp.sendAction(#selector(NSText.paste(_:)), to: firstResponder, from: self)
         case "w":
             performClose(nil)
             return true
@@ -1940,7 +1936,7 @@ private struct DashboardDetailView: View {
                         .padding(.bottom, 28)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.selectedItem?.id == "gpg-signing" {
-                    GPGSigningSettingsView()
+                    GPGSigningSettingsView(onCredentialSaved: model.reload)
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -3780,6 +3776,7 @@ private struct DetachedProcessAccessSettingsView: View {
 }
 
 private struct GPGSigningSettingsView: View {
+    let onCredentialSaved: () -> Void
     @State private var defaultConfigured = hasGPGSigningCredential(alternate: false)
     @State private var alternateConfigured = hasGPGSigningCredential(alternate: true)
     @State private var defaultPublicKey: String?
@@ -3894,6 +3891,7 @@ private struct GPGSigningSettingsView: View {
                     defaultPublicKey = publicKey
                 }
                 status = "Saved the \(sheet.alternate ? "alternate" : "default") GPG signing credential in the Data Protection Keychain."
+                onCredentialSaved()
             }
         }
     }

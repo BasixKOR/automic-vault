@@ -85,9 +85,11 @@ public struct DashboardSnapshot: Equatable, Sendable {
     ) -> DashboardSnapshot {
         _ = resumePendingSecretMutation()
         let hardenerMetadata = loadHardenerMetadata(avExecutableURL: avExecutableURL)
+        let secrets = loadStoredSecrets(directAccessRules: loadDirectAccessRules())
         let gateDescriptors = dashboardSecretGateDescriptors(
             hardeners: hardenerMetadata,
-            catalog: (try? loadSecretGateDescriptors(avExecutableURL: avExecutableURL)) ?? []
+            catalog: (try? loadSecretGateDescriptors(avExecutableURL: avExecutableURL)) ?? [],
+            storedSecretNames: Set(secrets.map(\.account))
         )
         _ = initializeSecretGatePolicies(descriptors: gateDescriptors, service: policyService)
         let hardenedTools = loadHardenedTools(
@@ -95,7 +97,6 @@ public struct DashboardSnapshot: Equatable, Sendable {
             ghCLIURL: ghCLIURL,
             metadata: hardenerMetadata
         )
-        let secrets = loadStoredSecrets(directAccessRules: loadDirectAccessRules())
         return DashboardSnapshot(
             detectors: loadDetectorMetadata(avExecutableURL: avExecutableURL),
             detectorFindings: [],
@@ -572,7 +573,10 @@ public func launcherRuntimeProtection(
         (value as? NSNumber)?.boolValue == true ? key : nil
     })
     return launcherRuntimeProtection(
-        signatureFlags: signatureFlags?.uint32Value ?? 0,
+        signatureFlags: (signatureFlags?.uint32Value ?? 0) |
+            (signingInformation[kSecCodeInfoPlatformIdentifier] is NSNumber
+                ? SecCodeSignatureFlags.runtime.rawValue
+                : 0),
         enabledEntitlements: enabledEntitlements
     )
 }
@@ -1003,7 +1007,8 @@ public func loadSecretGates(
 
 public func dashboardSecretGateDescriptors(
     hardeners: [HardenerMetadata],
-    catalog: [SecretGateDescriptor]
+    catalog: [SecretGateDescriptor],
+    storedSecretNames: Set<String> = []
 ) -> [SecretGateDescriptor] {
     let hardenerGateIDs = Set(hardeners.compactMap { $0.secretGate?.id })
     let activeHardenerGates = hardeners.compactMap { hardener -> SecretGateDescriptor? in
@@ -1014,7 +1019,12 @@ public func dashboardSecretGateDescriptors(
         else { return nil }
         return descriptor
     }
-    return activeHardenerGates + catalog.filter { !hardenerGateIDs.contains($0.id) }
+    return activeHardenerGates + catalog.filter {
+        !hardenerGateIDs.contains($0.id)
+            && ($0.id != "gpg-signing"
+                || storedSecretNames.contains(gpgDefaultPrivateKeySecretName)
+                || storedSecretNames.contains(gpgAlternatePrivateKeySecretName))
+    }
 }
 
 public func loadSecretGates(
