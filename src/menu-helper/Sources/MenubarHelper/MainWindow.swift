@@ -244,7 +244,7 @@ final class DashboardModel: ObservableObject {
                 let apps = $0.appPolicies.count == 1 ? "1 app" : "\($0.appPolicies.count) apps"
                 return DashboardItem(
                     id: $0.id,
-                    title: $0.id,
+                    title: $0.displayName,
                     subtitle: "\(secrets) • \(apps)",
                     detail: [
                         "Scripts: \($0.scriptPaths.joined(separator: ", "))",
@@ -1325,7 +1325,13 @@ func runDashboardSearchSelfCheck() -> Int32 {
             HardenerMetadata(name: "aws", hardened: true),
             HardenerMetadata(name: "gh", hardened: false),
         ],
-        secretGates: [],
+        secretGates: [SecretGate(
+            id: "node",
+            keyPatterns: ["NODE_AUTH_TOKEN"],
+            routes: [],
+            defaultProtection: .readOnly,
+            appPolicies: []
+        )],
         secrets: [
             StoredSecret(
                 account: "AWS_TOKEN",
@@ -1462,6 +1468,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
           blessedScriptDiff(previous: previousScriptData, current: currentScriptData)?.contains("+ echo current") == true
     else { return 1 }
     changedModel.cancelPendingBlessing()
+    model.selectSection(.secretGates)
+    guard model.items.first?.title == "npm" else { return 1 }
+    model.selectSection(.detectors)
     guard DashboardSection.allCases.last == .settings,
           model.count(for: .detectors) == 3,
           model.count(for: .doctor) == 1,
