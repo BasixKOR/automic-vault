@@ -132,12 +132,14 @@ The app or executable at the root of the operation's verified launch chain, such
 
 A live Launcher whose code signature, designated requirement, and runtime protections meet the gate's eligibility rules. Code signing establishes identity and integrity, not intent. Failed verification prevents automic authorization.
 
-Eligible Launchers enable Hardened Runtime. A gate may accept narrowly defined
-compatibility exceptions while continuing to block runtime capabilities that
-permit environment-driven code injection, disable executable-page protection,
-or allow debugger attachment. A Launcher that disables library validation may
-be eligible, but the UI must warn that third-party libraries and plug-ins can
-run inside its process and inherit its authority.
+Eligible Launchers enable Hardened Runtime or are Apple platform binaries signed
+as part of a macOS release, for which macOS applies the runtime protections
+intrinsically. A gate may accept narrowly defined compatibility exceptions while
+continuing to block runtime capabilities that permit environment-driven code
+injection, disable executable-page protection, or allow debugger attachment. A
+Launcher that disables library validation may be eligible, but the UI must warn
+that third-party libraries and plug-ins can run inside its process and inherit
+its authority.
 
 ### Launcher Bundle
 
