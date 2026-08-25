@@ -953,7 +953,7 @@ public func doctorIssues(from doctorJSON: Data, loginShellPATHAvailable: Bool = 
     }
     guard !loginShellPATHAvailable else { return issues }
     issues.removeAll {
-        [
+        $0.kind.hasSuffix("_command_shadowed") || [
             "agent_cli_signature_invalid",
             "agent_cli_unavailable",
             "isotope_not_first_on_path",

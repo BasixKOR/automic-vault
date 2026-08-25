@@ -216,6 +216,9 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
       {"name":"codex","commands":["codex"],"issues":[
         {"kind":"agent_cli_unavailable","command":"codex","message":"codex is not available through PATH","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":null},
         {"kind":"agent_cli_signature_invalid","command":"codex","message":"codex has an invalid signature","remediation":"Fix PATH.","stub_path":"/usr/local/bin/codex","target_path":null,"resolved_path":"/usr/bin/codex"}
+      ]},
+      {"name":"terraform","commands":["terraform"],"issues":[
+        {"kind":"terraform_command_shadowed","command":null,"message":"terraform is not available through PATH","remediation":"Fix PATH.","stub_path":null,"target_path":"/usr/local/bin/terraform","resolved_path":null}
       ]}
     ]}
     """#.utf8)
