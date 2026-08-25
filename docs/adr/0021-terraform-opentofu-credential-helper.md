@@ -43,14 +43,16 @@ verifies OpenTofu's signed checksum manifest with its release-workflow Sigstore
 identity, extracts only the expected executable, and signs it with identifier
 `tofu`, Automic Vault team `ZU76A67LGU`, Hardened Runtime, and a trusted
 timestamp. It also rejects embedded entitlements. The signed Isotopes tap pins
-the exact fork release URL and digest. The privileged installer verifies that
-manifest, digest, and Automic Vault signature before installing the root-owned
-Target at `/usr/local/bin/tofu`, as specified by
-[ADR 0029](0029-fork-owned-isotope-releases.md).
+the exact fork release URL and digest. The Hardener installs that formula when
+Homebrew is available, or verifies the manifest, digest, and Automic Vault
+signature before installing the root-owned Target at `/usr/local/bin/tofu`
+otherwise, as specified by
+[ADR 0031](0031-isotope-installation-selection.md).
 
-Both Hardeners unlink an active Homebrew formula and verify command resolution
-before moving Secrets. The Homebrew formula remains installed and can be linked
-again, but a shadowing Target is not Hardened State.
+The Terraform Hardener unlinks an active upstream Homebrew formula before using
+its verified vendor Target. The OpenTofu Hardener replaces an upstream formula
+with the Isotopes tap formula when Homebrew is available. Both verify command
+resolution before moving Secrets; a shadowing Target is not Hardened State.
 
 For `get`, `store`, and `forget`, the menu app obtains the helper's live parent
 from the kernel. It accepts only the exact Target path, signing identifier, team,

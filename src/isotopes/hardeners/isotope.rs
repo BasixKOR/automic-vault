@@ -24,7 +24,6 @@ pub(crate) const GH: Spec = Spec {
     primary: "gh",
     binaries: &["gh"],
     test_path: "AUTOMIC_VAULT_TEST_GH_CLI_PATH",
-    direct: false,
 };
 pub(crate) const STRIPE: Spec = Spec {
     hardener: "stripe",
@@ -33,7 +32,6 @@ pub(crate) const STRIPE: Spec = Spec {
     primary: "stripe",
     binaries: &["stripe"],
     test_path: "AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH",
-    direct: false,
 };
 pub(crate) const SUPABASE: Spec = Spec {
     hardener: "supabase",
@@ -42,79 +40,70 @@ pub(crate) const SUPABASE: Spec = Spec {
     primary: "supabase",
     binaries: &["supabase-go", "supabase"],
     test_path: "AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH",
-    direct: false,
 };
-const OPENTOFU: Spec = Spec {
+pub(crate) const OPENTOFU: Spec = Spec {
     hardener: "opentofu",
-    formula: "opentofu",
+    formula: "opentofu-isotope",
     repository: "opentofu",
     primary: "tofu",
     binaries: &["tofu"],
     test_path: "AUTOMIC_VAULT_TEST_OPENTOFU_TARGET",
-    direct: true,
 };
 pub(crate) const OXIDE: Spec = Spec {
     hardener: "oxide-cli",
-    formula: "oxide.rs",
+    formula: "oxide-cli-isotope",
     repository: "oxide.rs",
     primary: "oxide",
     binaries: &["oxide"],
     test_path: "AUTOMIC_VAULT_TEST_OXIDE_TARGET",
-    direct: true,
 };
 pub(crate) const GOAT: Spec = Spec {
     hardener: "goat",
-    formula: "goat",
+    formula: "goat-isotope",
     repository: "goat",
     primary: "goat",
     binaries: &["goat"],
     test_path: "AUTOMIC_VAULT_TEST_GOAT_TARGET",
-    direct: true,
 };
 pub(crate) const RAILWAY: Spec = Spec {
     hardener: "railway",
-    formula: "railway-cli",
+    formula: "railway-isotope",
     repository: "railway-cli",
     primary: "railway",
     binaries: &["railway"],
     test_path: "AUTOMIC_VAULT_TEST_RAILWAY_TARGET",
-    direct: true,
 };
 pub(crate) const ORDERCLI: Spec = Spec {
     hardener: "ordercli",
-    formula: "ordercli",
+    formula: "ordercli-isotope",
     repository: "ordercli",
     primary: "ordercli",
     binaries: &["ordercli"],
     test_path: "AUTOMIC_VAULT_TEST_ORDERCLI_TARGET",
-    direct: true,
 };
 pub(crate) const OPENHUE: Spec = Spec {
     hardener: "openhue-cli",
-    formula: "openhue-cli",
+    formula: "openhue-cli-isotope",
     repository: "openhue-cli",
     primary: "openhue",
     binaries: &["openhue"],
     test_path: "AUTOMIC_VAULT_TEST_OPENHUE_CLI_TARGET",
-    direct: true,
 };
 pub(crate) const UAA: Spec = Spec {
     hardener: "uaa-cli",
-    formula: "uaa-cli",
+    formula: "uaa-cli-isotope",
     repository: "uaa-cli",
     primary: "uaa",
     binaries: &["uaa"],
     test_path: "AUTOMIC_VAULT_TEST_UAA_CLI_TARGET",
-    direct: true,
 };
 pub(crate) const PLUMBER: Spec = Spec {
     hardener: "plumber",
-    formula: "plumber",
+    formula: "plumber-isotope",
     repository: "plumber",
     primary: "plumber",
     binaries: &["plumber"],
     test_path: "AUTOMIC_VAULT_TEST_PLUMBER_TARGET",
-    direct: true,
 };
 
 #[derive(Clone, Copy)]
@@ -125,7 +114,6 @@ pub(crate) struct Spec {
     primary: &'static str,
     binaries: &'static [&'static str],
     test_path: &'static str,
-    direct: bool,
 }
 
 #[derive(Clone)]
@@ -209,9 +197,7 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
         }
         return Ok(InstallPlan::Ready);
     }
-    if !spec.direct
-        && let Some(brew) = brew_path()
-    {
+    if let Some(brew) = brew_path() {
         return Ok(InstallPlan::Homebrew {
             brew,
             conflict: conflicting_formula(spec),
@@ -227,17 +213,9 @@ pub(crate) fn target(spec: Spec) -> PathBuf {
     if let Some(path) = crate::test_env_var(spec.test_path) {
         return path.into();
     }
-    (!spec.direct)
-        .then(|| brew_targets(spec).into_iter().find(|path| executable(path)))
-        .flatten()
-        .or_else(|| executable(&direct_target(spec)).then(|| direct_target(spec)))
-        .unwrap_or_else(|| {
-            if !spec.direct && brew_path().is_some() {
-                brew_targets(spec).remove(0)
-            } else {
-                direct_target(spec)
-            }
-        })
+    brew_path()
+        .map(|brew| brew_target(spec, &brew))
+        .unwrap_or_else(|| direct_target(spec))
 }
 
 pub(crate) fn detect(spec: Spec) -> HardenerDetection {
@@ -374,11 +352,6 @@ pub(crate) fn install_privileged(
     fs::rename(&staged_receipt, &receipt)
         .map_err(|err| format!("failed to install {}: {err}", receipt.display()))?;
     Ok(())
-}
-
-pub(crate) fn install_opentofu() -> Result<(), String> {
-    let manifest = current_manifest(OPENTOFU)?;
-    install_direct(OPENTOFU, &manifest)
 }
 
 fn install_with_homebrew(
@@ -667,15 +640,14 @@ fn brew_path() -> Option<PathBuf> {
         .find(|path| executable(path))
 }
 
-fn brew_targets(spec: Spec) -> Vec<PathBuf> {
-    ["/opt/homebrew/opt", "/usr/local/opt"]
-        .map(|root| {
-            Path::new(root)
-                .join(spec.formula)
-                .join("bin")
-                .join(spec.primary)
-        })
-        .to_vec()
+fn brew_target(spec: Spec, brew: &Path) -> PathBuf {
+    brew.parent()
+        .and_then(Path::parent)
+        .unwrap_or(Path::new("/opt/homebrew"))
+        .join("opt")
+        .join(spec.formula)
+        .join("bin")
+        .join(spec.primary)
 }
 
 fn conflicting_formula(spec: Spec) -> Option<String> {
@@ -686,13 +658,13 @@ fn conflicting_formula(spec: Spec) -> Option<String> {
     ["/opt/homebrew/opt", "/usr/local/opt"]
         .map(|root| {
             Path::new(root)
-                .join(spec.primary)
+                .join(spec.hardener)
                 .join("bin")
                 .join(spec.primary)
         })
         .into_iter()
         .any(|path| executable(&path))
-        .then(|| spec.primary.to_string())
+        .then(|| spec.hardener.to_string())
 }
 
 fn direct_target(spec: Spec) -> PathBuf {
@@ -866,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn every_direct_isotope_is_registered_for_privileged_installation() {
+    fn every_executable_isotope_is_registered_for_direct_fallback() {
         for expected in [
             OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI, OPENHUE, UAA, PLUMBER,
         ] {
@@ -878,24 +850,71 @@ mod tests {
     }
 
     #[test]
-    fn direct_isotopes_use_their_fork_formula_manifests() {
+    fn executable_isotopes_use_their_fork_formula_manifests() {
         for (isotope, formula, repository) in [
-            (OPENTOFU, "opentofu", "opentofu"),
-            (OXIDE, "oxide.rs", "oxide.rs"),
-            (GOAT, "goat", "goat"),
-            (RAILWAY, "railway-cli", "railway-cli"),
-            (ORDERCLI, "ordercli", "ordercli"),
-            (UAA, "uaa-cli", "uaa-cli"),
-            (OPENHUE, "openhue-cli", "openhue-cli"),
-            (PLUMBER, "plumber", "plumber"),
+            (OPENTOFU, "opentofu-isotope", "opentofu"),
+            (OXIDE, "oxide-cli-isotope", "oxide.rs"),
+            (GOAT, "goat-isotope", "goat"),
+            (RAILWAY, "railway-isotope", "railway-cli"),
+            (ORDERCLI, "ordercli-isotope", "ordercli"),
+            (UAA, "uaa-cli-isotope", "uaa-cli"),
+            (OPENHUE, "openhue-cli-isotope", "openhue-cli"),
+            (PLUMBER, "plumber-isotope", "plumber"),
         ] {
-            assert!(isotope.direct);
             assert_eq!(isotope.formula, formula);
             assert_eq!(isotope.repository, repository);
             assert_eq!(
                 formula_url(isotope),
                 format!("{TAP_FORMULA_ROOT}/{formula}.rb")
             );
+        }
+    }
+
+    #[test]
+    fn every_tap_isotope_prefers_homebrew() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH", "/test/bin/brew");
+        }
+        for isotope in [
+            GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI, OPENHUE, UAA, PLUMBER,
+        ] {
+            let missing =
+                std::env::temp_dir().join(format!("av-test-missing-{}-isotope", isotope.hardener));
+            unsafe {
+                std::env::set_var(isotope.test_path, missing);
+            }
+            assert!(matches!(plan(isotope), Ok(InstallPlan::Homebrew { .. })));
+            unsafe {
+                std::env::remove_var(isotope.test_path);
+            }
+        }
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+        }
+    }
+
+    #[test]
+    fn executable_isotope_falls_back_to_direct_install_without_homebrew() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let missing = std::env::temp_dir().join("av-test-missing-direct-gh-isotope");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH", missing);
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH", "");
+            std::env::set_var(
+                "AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA",
+                r#"url "https://github.com/automic-vault/gh-cli/releases/download/v2.97.0/cli-2.97.0.tgz"
+sha256 "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070""#,
+            );
+        }
+        assert!(matches!(
+            plan(GH),
+            Ok(InstallPlan::Direct { update: false, .. })
+        ));
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_GH_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_FORMULA");
         }
     }
 

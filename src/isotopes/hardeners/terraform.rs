@@ -14,7 +14,6 @@ use super::{
 };
 
 const TERRAFORM_TARGET: &str = super::terraform_release::TARGET_PATH;
-const OPENTOFU_TARGET: &str = "/usr/local/bin/tofu";
 const MAX_CONFIG: u64 = 1024 * 1024;
 const AV_PATH: &str = "/usr/local/bin/av";
 const SUDO_PATH: &str = "/usr/bin/sudo";
@@ -42,18 +41,12 @@ impl Tool {
     }
 
     fn target(self) -> PathBuf {
-        let test = match self {
-            Self::Terraform => "AUTOMIC_VAULT_TEST_TERRAFORM_TARGET",
-            Self::OpenTofu => "AUTOMIC_VAULT_TEST_OPENTOFU_TARGET",
-        };
-        crate::test_env_var(test)
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                PathBuf::from(match self {
-                    Self::Terraform => TERRAFORM_TARGET,
-                    Self::OpenTofu => OPENTOFU_TARGET,
-                })
-            })
+        match self {
+            Self::Terraform => crate::test_env_var("AUTOMIC_VAULT_TEST_TERRAFORM_TARGET")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from(TERRAFORM_TARGET)),
+            Self::OpenTofu => super::isotope::target(super::isotope::OPENTOFU),
+        }
     }
 }
 
@@ -63,8 +56,16 @@ pub(crate) fn run(tool: Tool, stdout: &mut dyn Write, yes: bool) -> Result<(), S
     if !testing {
         crate::secrets::ensure_terraform_helper_ready()?;
     }
-    let target_ready = testing || verify_target(tool, &tool.target()).is_ok();
-    let brew_conflict = !testing && homebrew_formula_installed(tool);
+    let isotope_plan = match tool {
+        Tool::Terraform => None,
+        Tool::OpenTofu => Some(super::isotope::plan(super::isotope::OPENTOFU)?),
+    };
+    let target_ready = testing
+        || match &isotope_plan {
+            Some(plan) => !plan.needed(),
+            None => verify_target(tool, &tool.target()).is_ok(),
+        };
+    let brew_conflict = !testing && tool == Tool::Terraform && homebrew_formula_installed(tool);
     refuse_competing_config(tool)?;
     let path = config_path()?;
     let mut config = read_config(&path)?;
@@ -80,10 +81,13 @@ pub(crate) fn run(tool: Tool, stdout: &mut dyn Write, yes: bool) -> Result<(), S
                 stdout,
                 "├─ download and install HashiCorp's signed native Terraform release"
             ),
-            Tool::OpenTofu => writeln!(
-                stdout,
-                "├─ download and install this release's Automic Vault-signed OpenTofu Isotope"
-            ),
+            Tool::OpenTofu => {
+                isotope_plan
+                    .as_ref()
+                    .expect("OpenTofu install plan")
+                    .write(stdout, super::isotope::OPENTOFU);
+                Ok(())
+            }
         }
         .ok();
     }
@@ -106,7 +110,10 @@ pub(crate) fn run(tool: Tool, stdout: &mut dyn Write, yes: bool) -> Result<(), S
     }
 
     if !target_ready {
-        install_target(tool)?;
+        match isotope_plan {
+            Some(plan) => plan.apply(super::isotope::OPENTOFU)?,
+            None => install_terraform_target()?,
+        }
         verify_target(tool, &tool.target())?;
     }
     if brew_conflict {
@@ -462,38 +469,32 @@ fn install_helper() -> Result<(), String> {
     result
 }
 
-fn install_target(tool: Tool) -> Result<(), String> {
-    match tool {
-        Tool::OpenTofu => super::isotope::install_opentofu(),
-        Tool::Terraform => {
-            let temporary = TemporaryDirectory::new("terraform-release")?;
-            let archive = temporary.path.join("terraform.zip");
-            let digest = super::terraform_release::download(&archive)?;
-            super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
-            let revision = Command::new(AV_PATH)
-                .arg("__version")
-                .output()
-                .map_err(|error| format!("failed to check {AV_PATH}: {error}"))?;
-            if !revision.status.success()
-                || String::from_utf8_lossy(&revision.stdout).trim()
-                    != crate::cli::INSTALL_REVISION.to_string()
-            {
-                return Err(
-                    "update the av CLI from the Automic Vault app before hardening Terraform"
-                        .into(),
-                );
-            }
-            let status = Command::new(SUDO_PATH)
-                .args([AV_PATH, "__install-terraform-release", &digest])
-                .arg(archive)
-                .status()
-                .map_err(|error| format!("failed to run sudo: {error}"))?;
-            status
-                .success()
-                .then_some(())
-                .ok_or_else(|| format!("Terraform installation failed: {status}"))
-        }
+fn install_terraform_target() -> Result<(), String> {
+    let temporary = TemporaryDirectory::new("terraform-release")?;
+    let archive = temporary.path.join("terraform.zip");
+    let digest = super::terraform_release::download(&archive)?;
+    super::env_wrapper::validate_privileged_av(Path::new(AV_PATH))?;
+    let revision = Command::new(AV_PATH)
+        .arg("__version")
+        .output()
+        .map_err(|error| format!("failed to check {AV_PATH}: {error}"))?;
+    if !revision.status.success()
+        || String::from_utf8_lossy(&revision.stdout).trim()
+            != crate::cli::INSTALL_REVISION.to_string()
+    {
+        return Err(
+            "update the av CLI from the Automic Vault app before hardening Terraform".into(),
+        );
     }
+    let status = Command::new(SUDO_PATH)
+        .args([AV_PATH, "__install-terraform-release", &digest])
+        .arg(archive)
+        .status()
+        .map_err(|error| format!("failed to run sudo: {error}"))?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| format!("Terraform installation failed: {status}"))
 }
 
 fn homebrew_formula_installed(tool: Tool) -> bool {

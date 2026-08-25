@@ -6487,7 +6487,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func goatTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/goat",
+        guard configuredSecretGateTarget("goat", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "goat"
@@ -6497,7 +6497,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func ordercliTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/ordercli",
+        guard configuredSecretGateTarget("ordercli", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "ordercli"
@@ -6507,7 +6507,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func openhueTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/openhue",
+        guard configuredSecretGateTarget("openhue-cli", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "openhue"
@@ -6517,7 +6517,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func uaaTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/uaa",
+        guard configuredSecretGateTarget("uaa-cli", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "uaa"
@@ -6527,7 +6527,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func plumberTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/plumber",
+        guard configuredSecretGateTarget("plumber", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "plumber"
@@ -6537,7 +6537,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func railwayTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/railway",
+        guard configuredSecretGateTarget("railway", matches: path),
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "railway"
@@ -6547,7 +6547,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func oxideTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        guard path == "/usr/local/bin/oxide",
+        guard configuredSecretGateTarget("oxide-cli", matches: path),
               let signing = liveSigningInfo(pid: pid),
               signing.mainExecutable == path
         else { return false }
@@ -6559,10 +6559,14 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func terraformTargetIdentityValid(pid: pid_t, path: String) -> Bool {
-        let expected: (identifier: String, team: String)? = switch path {
-        case "/usr/local/bin/terraform": ("terraform", "D38WU7D763")
-        case "/usr/local/bin/tofu": ("tofu", "ZU76A67LGU")
-        default: nil
+        let expected: (identifier: String, team: String)? = if configuredSecretGateTarget(
+            "terraform", matches: path
+        ) {
+            ("terraform", "D38WU7D763")
+        } else if configuredSecretGateTarget("opentofu", matches: path) {
+            ("tofu", "ZU76A67LGU")
+        } else {
+            nil
         }
         guard let expected,
               let signing = liveSigningInfo(pid: pid),
@@ -6572,6 +6576,12 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.teamIdentifier == expected.team
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func configuredSecretGateTarget(_ gateID: String, matches path: String) -> Bool {
+        secretGateDescriptors.first(where: { $0.id == gateID })?.routes.contains {
+            normalizedExecutablePath($0.targetPath) == normalizedExecutablePath(path)
+        } == true
     }
 
     private func prepareApprovedFulfillment(

@@ -53,14 +53,10 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         .collect::<Result<Vec<_>, String>>()?;
     let target = target();
     let plan = super::isotope::plan(super::isotope::RAILWAY)?;
-    let brew_conflict = !testing && homebrew_formula_installed();
 
     writeln!(stdout, "╭─ harden railway").ok();
     writeln!(stdout, "│").ok();
     plan.write(stdout, super::isotope::RAILWAY);
-    if brew_conflict {
-        writeln!(stdout, "├─ unlink the Homebrew railway formula").ok();
-    }
     writeln!(stdout, "├─ migrate Railway auth state without printing it").ok();
     writeln!(stdout, "├─ keep only user metadata and @av markers on disk").ok();
     writeln!(stdout, "│").ok();
@@ -110,9 +106,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         };
     }
     verify_target(&target)?;
-    if brew_conflict {
-        unlink_homebrew()?;
-    }
     if !testing {
         verify_command_resolution()?;
     }
@@ -420,35 +413,6 @@ fn secure_directory(path: &Path) -> Result<(), String> {
         }
         Err(error) => Err(format!("failed to inspect {}: {error}", path.display())),
     }
-}
-
-fn homebrew_formula_installed() -> bool {
-    ["/opt/homebrew", "/usr/local"].into_iter().any(|prefix| {
-        let linked = Path::new(prefix).join("bin/railway");
-        let formula = Path::new(prefix).join("opt/railway/bin/railway");
-        linked.canonicalize().ok().is_some_and(|linked| {
-            formula
-                .canonicalize()
-                .ok()
-                .is_some_and(|formula| linked == formula)
-        })
-    })
-}
-
-fn unlink_homebrew() -> Result<(), String> {
-    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        .into_iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
-        .ok_or_else(|| "Homebrew railway is installed but brew is unavailable".to_string())?;
-    let status = Command::new(&brew)
-        .args(["unlink", "railway"])
-        .status()
-        .map_err(|error| format!("failed to run {}: {error}", brew.display()))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| format!("failed to unlink Homebrew railway: {status}"))
 }
 
 fn verify_command_resolution() -> Result<(), String> {

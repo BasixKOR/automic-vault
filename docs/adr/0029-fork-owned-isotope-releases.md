@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Installation selection was refined by
+[ADR 0031](0031-isotope-installation-selection.md).
+
 ## Context
 
 Automic Vault maintains a separate GitHub fork for each patched Tool. Those
@@ -18,11 +21,10 @@ ID identity, Hardened Runtime, trusted timestamp, and lack of entitlements.
 
 The signed Isotopes Homebrew formula is the update manifest for each Isotope.
 The Hardener accepts a formula only when it contains one URL under the exact
-expected `automic-vault` Tool fork and one valid SHA-256 digest. Direct
-Isotopes are downloaded from that URL, installed as root-owned Targets under
-`/usr/local/bin`, and bound to the digest with a protected receipt. Isotopes
-designated for Homebrew installation continue to use the same formula through
-the tap.
+expected `automic-vault` Tool fork and one valid SHA-256 digest. Homebrew
+installs the formula when it is available. Otherwise executable-only Isotopes
+are downloaded from that URL, installed as root-owned Targets under
+`/usr/local/bin`, and bound to the digest with a protected receipt.
 
 The Automic Vault app release contains only app-owned artifacts. It does not
 build, attest, checksum, or publish duplicate Tool Isotopes.

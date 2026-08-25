@@ -30,11 +30,11 @@ The `automic-vault/ordercli` fork release builds the patched executable from the
 pinned upstream commit with a pinned Go toolchain, signs it as identifier
 `ordercli` under Automic Vault team `ZU76A67LGU` with Hardened Runtime and a
 trusted timestamp, rejects embedded entitlements, and publishes it from that
-fork. The signed Isotopes tap pins the exact fork release URL and digest. The
-privileged installer revalidates the manifest, archive digest, signature,
-runtime, timestamp, and entitlements before installing
-`/usr/local/bin/ordercli`, as specified by
-[ADR 0029](0029-fork-owned-isotope-releases.md).
+fork. The signed Isotopes tap pins the exact fork release URL and digest.
+Homebrew installs that formula when available; otherwise the privileged
+installer revalidates the manifest, archive digest, signature, runtime,
+timestamp, and entitlements before installing `/usr/local/bin/ordercli`, as
+specified by [ADR 0031](0031-isotope-installation-selection.md).
 
 For every credential operation, the menu app derives the helper's live parent
 from the kernel and binds the exact Target, Developer ID identity, Hardened

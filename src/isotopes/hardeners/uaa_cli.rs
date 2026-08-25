@@ -51,14 +51,10 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
     let target = target();
     let plan = super::isotope::plan(super::isotope::UAA)?;
-    let brew_conflict = !testing && homebrew_formula_installed();
 
     writeln!(stdout, "╭─ harden uaa-cli").ok();
     writeln!(stdout, "│").ok();
     plan.write(stdout, super::isotope::UAA);
-    if brew_conflict {
-        writeln!(stdout, "├─ unlink the Homebrew uaa-cli formula").ok();
-    }
     writeln!(
         stdout,
         "├─ migrate UAA OAuth contexts without printing them"
@@ -72,9 +68,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
     plan.apply(super::isotope::UAA)?;
     verify_target(&target)?;
-    if brew_conflict {
-        unlink_homebrew()?;
-    }
     if !testing {
         verify_command_resolution()?;
     }
@@ -471,35 +464,6 @@ fn secure_directory(path: &Path) -> Result<(), String> {
         }
         Err(error) => Err(format!("failed to inspect {}: {error}", path.display())),
     }
-}
-
-fn homebrew_formula_installed() -> bool {
-    ["/opt/homebrew", "/usr/local"].into_iter().any(|prefix| {
-        let linked = Path::new(prefix).join("bin/uaa");
-        let formula = Path::new(prefix).join("opt/uaa-cli/bin/uaa");
-        linked.canonicalize().ok().is_some_and(|linked| {
-            formula
-                .canonicalize()
-                .ok()
-                .is_some_and(|formula| linked == formula)
-        })
-    })
-}
-
-fn unlink_homebrew() -> Result<(), String> {
-    let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
-        .into_iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
-        .ok_or_else(|| "Homebrew uaa-cli is installed but brew is unavailable".to_string())?;
-    let status = Command::new(&brew)
-        .args(["unlink", "uaa-cli"])
-        .status()
-        .map_err(|error| format!("failed to run {}: {error}", brew.display()))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| format!("failed to unlink Homebrew uaa-cli: {status}"))
 }
 
 fn verify_command_resolution() -> Result<(), String> {

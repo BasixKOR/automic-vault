@@ -47,18 +47,10 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     }
     let target = target();
     let plan = super::isotope::plan(super::isotope::OXIDE)?;
-    let brew = if testing {
-        None
-    } else {
-        homebrew_for_linked_formula()?
-    };
 
     writeln!(stdout, "╭─ harden oxide-cli").ok();
     writeln!(stdout, "│").ok();
     plan.write(stdout, super::isotope::OXIDE);
-    if brew.is_some() {
-        writeln!(stdout, "├─ unlink the Homebrew oxide-cli formula").ok();
-    }
     writeln!(
         stdout,
         "├─ migrate {} profile token{} without printing them",
@@ -75,9 +67,6 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     plan.apply(super::isotope::OXIDE)?;
     verify_target(&target)?;
-    if let Some(brew) = brew {
-        unlink_homebrew(&brew)?;
-    }
     if !testing {
         verify_command_resolution()?;
     }
@@ -347,37 +336,6 @@ fn secure_directory(path: &Path) -> Result<(), String> {
         }
         Err(error) => Err(format!("failed to inspect {}: {error}", path.display())),
     }
-}
-
-fn homebrew_for_linked_formula() -> Result<Option<PathBuf>, String> {
-    let prefix = ["/opt/homebrew", "/usr/local"].into_iter().find(|prefix| {
-        let linked = Path::new(prefix).join("bin/oxide");
-        let formula = Path::new(prefix).join("opt/oxide-cli/bin/oxide");
-        linked.canonicalize().ok().is_some_and(|linked| {
-            formula
-                .canonicalize()
-                .ok()
-                .is_some_and(|formula| linked == formula)
-        })
-    });
-    let Some(prefix) = prefix else {
-        return Ok(None);
-    };
-    let brew = Path::new(prefix).join("bin/brew");
-    brew.is_file().then_some(Some(brew)).ok_or_else(|| {
-        "Homebrew oxide-cli is installed but its matching brew is unavailable".into()
-    })
-}
-
-fn unlink_homebrew(brew: &Path) -> Result<(), String> {
-    let status = Command::new(brew)
-        .args(["unlink", "oxide-cli"])
-        .status()
-        .map_err(|error| format!("failed to run {}: {error}", brew.display()))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| format!("failed to unlink Homebrew oxide-cli: {status}"))
 }
 
 fn verify_command_resolution() -> Result<(), String> {

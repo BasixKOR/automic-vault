@@ -6,7 +6,7 @@ APP_AV="/Applications/Automic Vault.app/Contents/MacOS/av"
 FORMULA_ROOT=https://raw.githubusercontent.com/automic-vault/homebrew-isotopes/main/Formula
 HARDENERS=(terraform opentofu oxide-cli goat railway ordercli uaa-cli openhue-cli plumber)
 COMMANDS=(terraform tofu oxide goat railway ordercli uaa openhue plumber)
-FORMULAS=(opentofu oxide.rs goat railway-cli ordercli uaa-cli openhue-cli plumber)
+FORMULAS=(opentofu-isotope oxide-cli-isotope goat-isotope railway-isotope ordercli-isotope uaa-cli-isotope openhue-cli-isotope plumber-isotope)
 REPOSITORIES=(opentofu oxide.rs goat railway-cli ordercli uaa-cli openhue-cli plumber)
 
 [[ "$(uname -s)" == Darwin ]] || { echo "error: macOS is required" >&2; exit 1; }

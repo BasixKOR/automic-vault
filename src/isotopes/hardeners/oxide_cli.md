@@ -11,5 +11,6 @@ the signed `av` Gate Client. Each operation binds the live Oxide Target,
 complete arguments, working directory, profile, host, and derived Secret Name.
 
 Unknown credential fields fail hardening without changing the file. The
-Hardened State covers the patched `/usr/local/bin/oxide` Command; code signing
-does not establish user intent or protect a token after the Target receives it.
+Hardened State covers the selected Isotopes tap or direct-install `oxide`
+Command; code signing does not establish user intent or protect a token after
+the Target receives it.
