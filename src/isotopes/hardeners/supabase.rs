@@ -16,14 +16,28 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     let token_paths = supabase_token_paths()?;
     let mut tokens = read_plaintext_tokens(&token_paths)?;
+
+    writeln!(stdout, "╭─ harden supabase")
+        .map_err(|err| format!("failed to show Keychain notice: {err}"))?;
+    writeln!(stdout, "│").map_err(|err| format!("failed to show Keychain notice: {err}"))?;
+    writeln!(
+        stdout,
+        "├─ macOS may show a Keychain request from `security` while migrating a legacy Supabase token"
+    )
+    .map_err(|err| format!("failed to show Keychain notice: {err}"))?;
+    writeln!(
+        stdout,
+        "├─ Automic Vault initiated that request; choose Allow, not Always Allow"
+    )
+    .and_then(|()| stdout.flush())
+    .map_err(|err| format!("failed to show Keychain notice: {err}"))?;
+
     if tokens.is_empty() {
         tokens.extend(read_legacy_keychain_tokens());
     }
     tokens.sort();
     tokens.dedup();
 
-    writeln!(stdout, "╭─ harden supabase").ok();
-    writeln!(stdout, "│").ok();
     install.write(stdout, isotope::SUPABASE);
     if tokens.is_empty() && !install.needed() {
         writeln!(stdout, "╰─ no legacy Supabase credentials found").ok();
@@ -234,7 +248,8 @@ mod tests {
             std::env::set_var("AUTOMIC_VAULT_TEST_SUPABASE_CLI_PATH", &supabase);
         }
 
-        run(&mut Vec::new(), true).unwrap();
+        let mut output = Vec::new();
+        run(&mut output, true).unwrap();
 
         unsafe {
             std::env::remove_var("HOME");
@@ -245,6 +260,9 @@ mod tests {
             fs::read_to_string(keychain.join(VAULT_KEY)).unwrap(),
             "sbp_0123456789abcdef0123456789abcdef01234567"
         );
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Automic Vault initiated that request"));
+        assert!(output.contains("choose Allow, not Always Allow"));
         assert!(!token_dir.join("access-token").exists());
         let _ = fs::remove_dir_all(dir);
     }
