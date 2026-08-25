@@ -442,7 +442,11 @@ where
             {
                 return finish_hardening(result, target, stdout, stderr);
             }
-            let _ = writeln!(stderr, "{USAGE}");
+            let _ = writeln!(
+                stderr,
+                "av harden: no such hardener `{}`",
+                target.to_string_lossy()
+            );
             2
         }
         Some("inject") => inject::run(rest, stdout, stderr, shebang_script),
@@ -777,6 +781,15 @@ mod tests {
                 targets.join("npm").display()
             )
         );
+    }
+
+    #[test]
+    fn harden_rejects_unknown_hardeners_with_a_specific_error() {
+        let (code, stdout, stderr) = run_args(&["av", "harden", "foo"]);
+
+        assert_eq!(code, 2);
+        assert_eq!(stdout, "");
+        assert_eq!(stderr, "av harden: no such hardener `foo`\n");
     }
 
     #[test]
