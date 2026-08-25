@@ -214,7 +214,7 @@ pub(crate) fn target(spec: Spec) -> PathBuf {
         return path.into();
     }
     brew_path()
-        .map(|brew| brew_target(spec, &brew))
+        .map(|_| brew_target(spec))
         .unwrap_or_else(|| direct_target(spec))
 }
 
@@ -640,10 +640,8 @@ fn brew_path() -> Option<PathBuf> {
         .find(|path| executable(path))
 }
 
-fn brew_target(spec: Spec, brew: &Path) -> PathBuf {
-    brew.parent()
-        .and_then(Path::parent)
-        .unwrap_or(Path::new("/opt/homebrew"))
+fn brew_target(spec: Spec) -> PathBuf {
+    super::homebrew::brew_prefix()
         .join("opt")
         .join(spec.formula)
         .join("bin")
@@ -891,6 +889,19 @@ mod tests {
         }
         unsafe {
             std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+        }
+    }
+
+    #[test]
+    fn homebrew_target_uses_the_homebrew_prefix_not_the_launcher_path() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let prefix = std::env::temp_dir().join("av-test-isotope-homebrew-prefix");
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_PREFIX", &prefix);
+        }
+        assert_eq!(brew_target(GH), prefix.join("opt/gh-cli/bin/gh"));
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_PREFIX");
         }
     }
 

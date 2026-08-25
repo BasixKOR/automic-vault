@@ -1403,7 +1403,7 @@ fn test_u32(name: &str) -> Option<u32> {
     crate::test_env_string(name)?.parse().ok()
 }
 
-fn brew_prefix() -> PathBuf {
+pub(crate) fn brew_prefix() -> PathBuf {
     crate::test_env_var("AUTOMIC_VAULT_TEST_BREW_PREFIX")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(BREW_PREFIX))
