@@ -573,7 +573,10 @@ public func launcherRuntimeProtection(
         (value as? NSNumber)?.boolValue == true ? key : nil
     })
     return launcherRuntimeProtection(
-        signatureFlags: signatureFlags?.uint32Value ?? 0,
+        signatureFlags: (signatureFlags?.uint32Value ?? 0) |
+            (signingInformation[kSecCodeInfoPlatformIdentifier] is NSNumber
+                ? SecCodeSignatureFlags.runtime.rawValue
+                : 0),
         enabledEntitlements: enabledEntitlements
     )
 }
