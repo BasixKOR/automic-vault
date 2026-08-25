@@ -439,9 +439,26 @@ Access Grants. Neither establishes identity. Authorization History records
 local operations but provides neither tamper resistance nor a complete audit
 log.
 
-Use macOS TCC as defense in depth. Give a general-purpose terminal or agent
-harness Full Disk Access or permission to modify other apps only when its work
-requires those permissions.
+### Rescind Unneeded Terminal Permissions
+
+For an agent used through a CLI, the terminal app is often the macOS TCC
+boundary. Agents, dependencies, plug-ins, and scripts launched by that terminal
+may inherit capabilities you granted it. Automic Vault does not replace these
+macOS protections.
+
+> [!IMPORTANT]
+> Open **System Settings → Privacy & Security** and turn off every permission
+> your terminal or agent harness does not need. Review the whole list,
+> especially **Full Disk Access**, **App Management**, and **Files & Folders**.
+> Re-enable an individual permission only when the work requires it.
+
+If some work genuinely needs broad macOS permissions, use one terminal app for
+that work and a different, locked-down terminal app for agents and untrusted
+project code. Another window, profile, or copy of the same app is not a separate
+TCC identity.
+
+See Apple's [Privacy & Security settings](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac)
+for the permissions macOS currently exposes.
 
 ## Sign Git Commits Without Giving Git the Private Key
 
