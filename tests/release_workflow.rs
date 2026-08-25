@@ -1,6 +1,7 @@
 const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
 const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
+const HARDENER_SMOKE_SCRIPT: &str = include_str!("../scripts/smoke-test-hardeners.sh");
 const NOTARIZE_SCRIPT: &str = include_str!("../scripts/build-notarize-dmg.sh");
 const BUILD_SCANNER_SCRIPT: &str = include_str!("../scripts/build-scanner.sh");
 const INSTALL_SCRIPT: &str = include_str!("../scripts/dist/install.sh");
@@ -128,6 +129,18 @@ fn release_builds_are_actions_only_and_fail_closed() {
         assert!(RELEASE_WORKFLOW.contains(&format!("vars.{public_value}")));
         assert!(!RELEASE_WORKFLOW.contains(&format!("secrets.{public_value}")));
     }
+}
+
+#[test]
+fn hardener_smoke_test_is_blessable_and_uses_the_live_catalog() {
+    assert!(HARDENER_SMOKE_SCRIPT.starts_with(
+        "#!/usr/local/bin/av inject -- /bin/bash\n\
+# --- automic-vault\n\
+# capabilities:\n\
+#   brew: trusted\n\
+# ---\n"
+    ));
+    assert!(HARDENER_SMOKE_SCRIPT.contains(".hardeners[] | select(.applicable) | .name"));
 }
 
 #[test]
