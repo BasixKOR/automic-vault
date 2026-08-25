@@ -378,6 +378,14 @@ Authorization Decision may receive memory-only transient reuse. Reuse is bound
 to the same live process and complete Authorization Request identity and does
 not reuse the phone response itself.
 
+### iPhone Activity
+
+A bounded, device-local convenience list of Approval responses successfully
+sent from one iPhone. An iPhone Activity entry is not an Authorization Record
+and does not establish that the Mac accepted the response or allowed the
+operation. It contains no Secret Values and does not replace the Mac's
+authoritative Authorization History.
+
 ### Touch ID Approval
 
 An optional Mac-local Approval surface that requires a fresh Touch ID result for

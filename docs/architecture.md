@@ -444,7 +444,11 @@ Notification Approvals bind the same exact request as the full app. Requests
 with Unknown operation risk, Secret Disclosure, Unconstrained Secret
 Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
-values. The iPhone does not persist Authorization History.
+values. The iPhone does not persist Authorization History. It may keep at most
+50 protected, device-local iPhone Activity entries for responses successfully
+sent from that phone. These summaries omit Secret Names, working directories,
+and expanded request details, are excluded from backup, and do not claim that
+the Mac accepted a response.
 
 Before signing and transmitting any allow response, the iPhone app verifies a
 current iPhone Approval subscription from StoreKit's signed transaction ledger.

@@ -21,7 +21,14 @@ final class NotificationService: UNNotificationServiceExtension {
             let plaintext = try ApprovalCrypto(rootKeyData: key).open(envelope, purpose: "notification")
             let ticket = try JSONDecoder().decode(PhoneApprovalTicket.self, from: plaintext)
             content.title = "Approval waiting"
-            content.body = "Review the full request on your Mac or open Automic Vault."
+            let preferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
+            var details: [String] = []
+            if preferences.showsHost { details.append("Host: \(ticket.macName)") }
+            if preferences.showsApprovalType {
+                details.append("Approval type: \(ticket.requiresFullReview ? "Full review" : "Routine")")
+            }
+            content.body = (["Review the full request on your Mac or open Automic Vault."] + details)
+                .joined(separator: "\n")
             content.categoryIdentifier = ticket.requiresFullReview ? "AV_REVIEW" : "AV_ROUTINE"
             content.threadIdentifier = ticket.requestID.uuidString
             contentHandler(content)

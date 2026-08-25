@@ -104,3 +104,61 @@ public struct ICloudApprovalRootKey: Sendable {
         return data
     }
 }
+
+public enum ApprovalNotificationPreferencesError: Error, Equatable {
+    case unavailable(OSStatus)
+    case invalidData
+}
+
+public struct ApprovalNotificationPreferences: Equatable, Sendable {
+    public var showsHost: Bool
+    public var showsApprovalType: Bool
+
+    public init(showsHost: Bool = false, showsApprovalType: Bool = false) {
+        self.showsHost = showsHost
+        self.showsApprovalType = showsApprovalType
+    }
+
+    public static func load() throws -> Self {
+        var query = primaryKey
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return Self() }
+        guard status == errSecSuccess else {
+            throw ApprovalNotificationPreferencesError.unavailable(status)
+        }
+        guard let data = result as? Data, data.count == 1, let value = data.first else {
+            throw ApprovalNotificationPreferencesError.invalidData
+        }
+        return Self(showsHost: value & 1 != 0, showsApprovalType: value & 2 != 0)
+    }
+
+    public func save() throws {
+        let value = Data([(showsHost ? 1 : 0) | (showsApprovalType ? 2 : 0)])
+        var status = SecItemUpdate(
+            Self.primaryKey as CFDictionary,
+            [kSecValueData as String: value] as CFDictionary
+        )
+        if status == errSecItemNotFound {
+            var query = Self.primaryKey
+            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            query[kSecValueData as String] = value
+            status = SecItemAdd(query as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            throw ApprovalNotificationPreferencesError.unavailable(status)
+        }
+    }
+
+    private static var primaryKey: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.automicvault.approval.preferences",
+            kSecAttrAccount as String: "notification-details-v1",
+            kSecAttrAccessGroup as String: ICloudApprovalRootKey.accessGroup,
+            kSecAttrSynchronizable as String: false,
+        ]
+    }
+}

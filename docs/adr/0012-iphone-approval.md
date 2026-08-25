@@ -48,6 +48,10 @@ Automic Vault provides opt-in iPhone Approval per Mac.
 - Emergency Mac-local recovery requires system authentication and rotates the
   account key, invalidating all devices and Macs in the account.
 - Secret values and durable Authorization History never leave the Mac.
+- Each iPhone may retain up to 50 protected, backup-excluded summaries of
+  responses successfully sent from that phone. This iPhone Activity is not
+  Authorization History and does not establish that the Mac accepted a
+  response.
 
 The product warns that iPhone Mirroring, Show on Mac, and Apple Watch can expose
 actionable notification surfaces when per-device biometrics are disabled. The

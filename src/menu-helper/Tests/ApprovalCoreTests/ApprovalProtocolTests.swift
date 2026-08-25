@@ -114,6 +114,33 @@ import Testing
     #expect(PhoneApprovalSubscriptionAccess.unavailable.permits(.denied))
 }
 
+@Test func iPhoneActivityIsNewestFirstDeduplicatedAndBounded() throws {
+    var activity: [PhoneApprovalActivity] = []
+    for index in 0...PhoneApprovalActivity.maximumItems {
+        let request = try sampleRequest(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!,
+            command: "command-\(index)"
+        )
+        activity = PhoneApprovalActivity.adding(
+            .init(request: request, outcome: .approved),
+            to: activity
+        )
+    }
+
+    #expect(activity.count == PhoneApprovalActivity.maximumItems)
+    #expect(activity.first?.command == "command-50")
+    #expect(activity.last?.command == "command-1")
+
+    let replacement = try sampleRequest(id: activity.last!.id, command: "replacement")
+    activity = PhoneApprovalActivity.adding(
+        .init(request: replacement, outcome: .denied),
+        to: activity
+    )
+    #expect(activity.count == PhoneApprovalActivity.maximumItems)
+    #expect(activity.first?.command == "replacement")
+    #expect(activity.first?.outcome == .denied)
+}
+
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
     command: String,

@@ -201,10 +201,76 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public enum PhoneApprovalOutcome: String, Codable, Sendable {
+public enum PhoneApprovalOutcome: String, Codable, Equatable, Sendable {
     case approved
     case denied
     case temporaryWriteAccess
+}
+
+public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable {
+    public static let maximumItems = 50
+
+    public let id: UUID
+    public let respondedAtMilliseconds: UInt64
+    public let macName: String
+    public let launcher: String
+    public let tool: String
+    public let command: String
+    public let outcome: PhoneApprovalOutcome
+
+    public init(
+        request: PhoneApprovalRequest,
+        outcome: PhoneApprovalOutcome,
+        respondedAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
+    ) {
+        self.init(
+            id: request.id,
+            respondedAtMilliseconds: respondedAtMilliseconds,
+            macName: request.macName,
+            launcher: request.launcher,
+            tool: request.tool,
+            command: request.command,
+            outcome: outcome
+        )
+    }
+
+    public init(
+        ticket: PhoneApprovalTicket,
+        outcome: PhoneApprovalOutcome,
+        respondedAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
+    ) {
+        self.init(
+            id: ticket.requestID,
+            respondedAtMilliseconds: respondedAtMilliseconds,
+            macName: ticket.macName,
+            launcher: ticket.launcher,
+            tool: ticket.tool,
+            command: ticket.command,
+            outcome: outcome
+        )
+    }
+
+    public static func adding(_ item: Self, to items: [Self]) -> [Self] {
+        Array(([item] + items.filter { $0.id != item.id }).prefix(maximumItems))
+    }
+
+    private init(
+        id: UUID,
+        respondedAtMilliseconds: UInt64,
+        macName: String,
+        launcher: String,
+        tool: String,
+        command: String,
+        outcome: PhoneApprovalOutcome
+    ) {
+        self.id = id
+        self.respondedAtMilliseconds = respondedAtMilliseconds
+        self.macName = macName
+        self.launcher = launcher
+        self.tool = tool
+        self.command = command
+        self.outcome = outcome
+    }
 }
 
 public enum PhoneApprovalSubscriptionAccess: Sendable {
