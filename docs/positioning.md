@@ -56,6 +56,8 @@ Automic Vault decides whether a complete operation may use it.
 User-facing copy must preserve these limits:
 
 - Code signing establishes software identity and integrity, not intent.
+- App Launcher verification covers the exact executable that represents the
+  Launcher, not every unrelated resource shipped in the containing app.
 - After Secret Application, the Target controls the Secret in its memory,
   helpers, child processes, and output.
 - Automic Vault does not contain root or kernel compromise, prevent arbitrary
