@@ -3,8 +3,8 @@ import Security
 import Testing
 @testable import MenubarHelperCore
 
-@Test func targetedAppValidationIgnoresUnrelatedResourcesAndRejectsTargetChanges() throws {
-    #expect(targetedAppResourceValidationAvailable)
+@Test(.enabled(if: targetedAppResourceValidationAvailable))
+func targetedAppValidationIgnoresUnrelatedResourcesAndRejectsTargetChanges() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let app = root.appendingPathComponent("Example.app", isDirectory: true)

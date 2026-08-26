@@ -26,8 +26,9 @@ public func validateAppBundleMainExecutable(
     requirement: SecRequirement? = nil
 ) -> OSStatus {
     var information: CFDictionary?
-    guard SecCodeCopySigningInformation(staticCode, [], &information) == errSecSuccess,
-          let dictionary = information as? [CFString: Any],
+    let informationStatus = SecCodeCopySigningInformation(staticCode, [], &information)
+    guard informationStatus == errSecSuccess else { return informationStatus }
+    guard let dictionary = information as? [CFString: Any],
           let executableURL = dictionary[kSecCodeInfoMainExecutable] as? URL
     else { return errSecCSInvalidObjectRef }
     return validateAppBundleResource(
