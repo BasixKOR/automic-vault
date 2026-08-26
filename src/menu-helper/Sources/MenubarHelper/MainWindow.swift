@@ -1891,6 +1891,7 @@ private struct DashboardListView: View {
                 .fill(.bar)
                 .mask(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom))
                 .frame(height: 52)
+                .padding(.leading, -100)
                 .offset(y: -52)
                 .allowsHitTesting(false)
         }
