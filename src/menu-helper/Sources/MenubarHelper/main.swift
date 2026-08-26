@@ -9183,6 +9183,11 @@ private func launcherIdentities(
         }
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
     ).filter { seenApps.insert($0.path).inserted }
+    let helperAssociation = verifiedLauncherHelperAssociation(
+        path: path,
+        signing: signing,
+        containingAppURLs: containingAppURLs
+    )
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
         || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
     if claimsLauncherBundleIdentity {
@@ -9208,7 +9213,7 @@ private func launcherIdentities(
         )]
     }
     guard !signing.isAdHoc else { return [] }
-    let apps: [LauncherIdentity] = appURLs.compactMap { appURL in
+    var apps: [LauncherIdentity] = appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
             pid: pid,
@@ -9218,6 +9223,18 @@ private func launcherIdentities(
             designatedRequirement: app.designatedRequirement,
             runtimeProtection: signing.runtimeProtection
         )
+    }
+    if let helperAssociation,
+       seenApps.insert(helperAssociation.appURL.path).inserted,
+       let app = verifiedLauncherHelperSigningInfo(helperAssociation, pid: pid) {
+        apps.append(LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: app.identifier,
+            teamIdentifier: app.teamIdentifier,
+            designatedRequirement: app.designatedRequirement,
+            runtimeProtection: signing.runtimeProtection
+        ))
     }
     if !apps.isEmpty { return apps }
     guard allowsStandaloneFallback,
@@ -9308,6 +9325,12 @@ private struct StaticSigningInfo {
     let identifier: String
     let teamIdentifier: String
     let designatedRequirement: String
+}
+
+private struct VerifiedLauncherHelperAssociation {
+    let helper: VerifiedLauncherHelper
+    let appURL: URL
+    let executableURL: URL
 }
 
 private func runtimeProtection(_ dictionary: [CFString: Any]) -> LauncherRuntimeProtection {
@@ -9448,6 +9471,10 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
         return nil
     }
 
+    return staticSigningInfo(staticCode)
+}
+
+private func staticSigningInfo(_ staticCode: SecStaticCode) -> StaticSigningInfo? {
     var info: CFDictionary?
     let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
     guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
@@ -9480,14 +9507,29 @@ private func launcherAppVerificationFailure(
             guard av_process_identity(pid, &ancestor) else { break }
             let path = pathString(ancestor)
             if let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) {
-                let appURLs = (
+                let containingAppURLs = (
                     appBundleURLs(containing: path)
                     + appBundleURLs(containing: signing.mainExecutable)
-                ).filter {
-                    appBundleMatchesMainExecutable(
-                        $0,
-                        executablePaths: [path, signing.mainExecutable]
+                )
+                let helperAssociation = verifiedLauncherHelperAssociation(
+                    path: path,
+                    signing: signing,
+                    containingAppURLs: containingAppURLs
+                )
+                if let helperAssociation,
+                   checkedApps.insert(helperAssociation.appURL.path).inserted,
+                   verifiedLauncherHelperSigningInfo(helperAssociation, pid: pid) == nil {
+                    return LauncherAppVerificationFailure(
+                        appName: helperAssociation.helper.appName,
+                        resourcesUnreadable: false
                     )
+                }
+                let appURLs = containingAppURLs.filter {
+                    $0.path != helperAssociation?.appURL.path
+                        && appBundleMatchesMainExecutable(
+                            $0,
+                            executablePaths: [path, signing.mainExecutable]
+                        )
                 }
                     + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
                 for appURL in appURLs where checkedApps.insert(appURL.path).inserted {
@@ -9593,6 +9635,141 @@ private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> U
     }
     return NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.automicvault.vaultty")
         ?? URL(fileURLWithPath: "/Applications/Vaultty.app")
+}
+
+private func verifiedLauncherHelperAssociation(
+    path: String,
+    signing: LiveSigningInfo,
+    containingAppURLs: [URL]? = nil,
+    helpers: [VerifiedLauncherHelper] = verifiedLauncherHelpers,
+    configuration: VerifiedLauncherHelperConfiguration? = nil,
+    bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
+) -> VerifiedLauncherHelperAssociation? {
+    guard signing.isDeveloperID,
+          let helper = helpers.first(where: {
+              $0.helperSigningIdentifier == signing.identifier
+                  && $0.helperTeamIdentifier == signing.teamIdentifier
+          }),
+          (configuration ?? loadVerifiedLauncherHelperConfiguration()).isEnabled(helper)
+    else { return nil }
+    let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
+    let executableURL = URL(fileURLWithPath: executablePath)
+        .standardizedFileURL
+        .resolvingSymlinksInPath()
+    let appURLs = containingAppURLs ?? appBundleURLs(containing: executableURL.path)
+    guard let appURL = appURLs.first(where: {
+        bundleIdentifier($0) == helper.appBundleIdentifier
+    }) else { return nil }
+    return VerifiedLauncherHelperAssociation(
+        helper: helper,
+        appURL: appURL,
+        executableURL: executableURL
+    )
+}
+
+// Apple ships this targeted resource-seal validator on every supported macOS release.
+// Resolve the SPI dynamically so absence falls back to strict full-bundle validation.
+private typealias ValidateSealedResource = @convention(c) (
+    SecStaticCode,
+    CFURL,
+    UInt32,
+    UnsafeMutableRawPointer?
+) -> OSStatus
+
+private let validateSealedResource: ValidateSealedResource? = {
+    guard let handle = dlopen(nil, RTLD_LAZY),
+          let symbol = dlsym(handle, "SecStaticCodeValidateResourceWithErrors") else {
+        return nil
+    }
+    return unsafeBitCast(symbol, to: ValidateSealedResource.self)
+}()
+
+private func verifiedLauncherHelperSigningInfo(
+    _ association: VerifiedLauncherHelperAssociation,
+    pid: pid_t
+) -> StaticSigningInfo? {
+    guard let liveCodeIdentifier = liveCodeIdentity(pid: pid),
+          let fileCodeIdentifier = staticCodeIdentity(association.executableURL),
+          liveCodeIdentifier == fileCodeIdentifier
+    else { return nil }
+
+    return verifiedLauncherHelperAppSigningInfo(association)
+}
+
+private func verifiedLauncherHelperAppSigningInfo(
+    _ association: VerifiedLauncherHelperAssociation
+) -> StaticSigningInfo? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(
+        association.appURL as CFURL,
+        [],
+        &staticCode
+    ) == errSecSuccess,
+        let staticCode,
+        let requirement = verifiedLauncherHelperAppRequirement(association.helper)
+    else { return nil }
+
+    guard let validateSealedResource else {
+        let fullFlags = SecCSFlags(
+            rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate
+        )
+        guard SecStaticCodeCheckValidity(staticCode, fullFlags, requirement) == errSecSuccess,
+              let app = staticSigningInfo(staticCode),
+              app.identifier == association.helper.appBundleIdentifier,
+              app.teamIdentifier == association.helper.appTeamIdentifier
+        else { return nil }
+        return app
+    }
+
+    let appFlags = SecCSFlags(
+        rawValue: kSecCSCheckAllArchitectures
+            | kSecCSDoNotValidateResources
+            | kSecCSStrictValidate
+    )
+    guard SecStaticCodeCheckValidity(staticCode, appFlags, requirement) == errSecSuccess,
+          validateSealedResource(
+              staticCode,
+              association.executableURL as CFURL,
+              kSecCSStrictValidate,
+              nil
+          ) == errSecSuccess,
+          let app = staticSigningInfo(staticCode),
+          app.identifier == association.helper.appBundleIdentifier,
+          app.teamIdentifier == association.helper.appTeamIdentifier
+    else { return nil }
+    return app
+}
+
+private func verifiedLauncherHelperAppRequirement(
+    _ helper: VerifiedLauncherHelper
+) -> SecRequirement? {
+    let source = """
+    identifier "\(helper.appBundleIdentifier)" and \
+    anchor apple generic and \
+    certificate 1[field.1.2.840.113635.100.6.2.6] exists and \
+    certificate leaf[field.1.2.840.113635.100.6.1.13] exists and \
+    certificate leaf[subject.OU] = "\(helper.appTeamIdentifier)"
+    """
+    var requirement: SecRequirement?
+    guard SecRequirementCreateWithString(
+        source as CFString,
+        [],
+        &requirement
+    ) == errSecSuccess else { return nil }
+    return requirement
+}
+
+private func staticCodeIdentity(_ url: URL) -> Data? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+    else { return nil }
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any]
+    else { return nil }
+    return dictionary[kSecCodeInfoUnique] as? Data
 }
 
 private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
@@ -12082,6 +12259,69 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .hardened,
         isDeveloperID: true
     )
+    let bundledCodex = LiveSigningInfo(
+        identifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        teamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        designatedRequirement: #"identifier "codex" and anchor apple generic"#,
+        mainExecutable: "/Applications/ChatGPT.app/Contents/Resources/codex",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let chatGPTURL = URL(fileURLWithPath: "/Applications/ChatGPT.app")
+    let codexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let disabledCodexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(
+            disabledHelperIDs: [codexVerifiedLauncherHelper.id]
+        ),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let xcodeGit = LiveSigningInfo(
+        identifier: "com.apple.git",
+        teamIdentifier: "Software Signing",
+        designatedRequirement: #"identifier "com.apple.git" and anchor apple"#,
+        mainExecutable: "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: false
+    )
+    let xcodeHelperAssociation = verifiedLauncherHelperAssociation(
+        path: xcodeGit.mainExecutable,
+        signing: xcodeGit,
+        containingAppURLs: [URL(fileURLWithPath: "/Applications/Xcode.app")],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in "com.apple.dt.Xcode" }
+    )
+    let installedCodexValidation: Bool = {
+        let executableURL = URL(
+            fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"
+        )
+        guard FileManager.default.fileExists(atPath: executableURL.path) else { return true }
+        guard let signing = executableSigningInfo(path: executableURL.path),
+              let association = verifiedLauncherHelperAssociation(
+                  path: executableURL.path,
+                  signing: signing,
+                  helpers: [codexVerifiedLauncherHelper],
+                  configuration: VerifiedLauncherHelperConfiguration()
+              ),
+              verifiedLauncherHelperAppSigningInfo(association) != nil
+        else { return false }
+        let outsideResource = VerifiedLauncherHelperAssociation(
+            helper: codexVerifiedLauncherHelper,
+            appURL: association.appURL,
+            executableURL: URL(fileURLWithPath: "/bin/ls")
+        )
+        return verifiedLauncherHelperAppSigningInfo(outsideResource) == nil
+    }()
     let liveBundleFallback = launcherIdentities(
         pid: 44,
         path: bundledDeveloperID.mainExecutable,
@@ -12104,6 +12344,12 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ),
           launcher.isStandalone,
           launcher.designatedRequirement == requirement,
+          validateSealedResource != nil,
+          codexAssociation?.helper == codexVerifiedLauncherHelper,
+          codexAssociation?.appURL == chatGPTURL,
+          disabledCodexAssociation == nil,
+          xcodeHelperAssociation == nil,
+          installedCodexValidation,
           let liveBundleFallback,
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,

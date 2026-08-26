@@ -44,6 +44,9 @@ Automic Vault decides whether a complete operation may use it.
   minutes, suspend its countdown, or end it; suspension also suspends its
   authority.
 - Existing developer commands continue to work above the security boundary.
+- An explicitly recognized, vendor-signed CLI sealed inside its vendor's app
+  may represent that app as a Verified Launcher; unrelated bundled executables
+  do not inherit the app's authority.
 - Git can keep its ordinary commit workflow while the GPG Signing Gate
   authorizes private-key use and may select an alternate credential for exact
   Verified Launchers.
