@@ -4810,15 +4810,18 @@ private func launcherSigning(_ url: URL) -> LauncherSigning? {
     }
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
-          let staticCode,
-          SecStaticCodeCheckValidity(
-              staticCode,
-              SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode),
-              nil
-          ) == errSecSuccess
+          let staticCode
     else {
         return nil
     }
+    let validationStatus = isApp
+        ? validateAppBundleMainExecutable(staticCode)
+        : SecStaticCodeCheckValidity(
+            staticCode,
+            SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode),
+            nil
+        )
+    guard validationStatus == errSecSuccess else { return nil }
 
     var info: CFDictionary?
     let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)

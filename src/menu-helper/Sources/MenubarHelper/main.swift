@@ -9608,7 +9608,7 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
           let staticCode,
-          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+          validateAppBundleMainExecutable(staticCode) == errSecSuccess
     else {
         return nil
     }
@@ -9691,7 +9691,7 @@ private func appBundleVerificationFailure(_ url: URL) -> LauncherAppVerification
     else {
         return nil
     }
-    let status = SecStaticCodeCheckValidity(staticCode, [], nil)
+    let status = validateAppBundleMainExecutable(staticCode)
     guard status != errSecSuccess else { return nil }
     let name = url.deletingPathExtension().lastPathComponent
     let executableOnly = SecCSFlags(
@@ -9809,23 +9809,6 @@ private func verifiedLauncherHelperAssociation(
     )
 }
 
-// Apple ships this targeted resource-seal validator on every supported macOS release.
-// Resolve the SPI dynamically so absence falls back to strict full-bundle validation.
-private typealias ValidateSealedResource = @convention(c) (
-    SecStaticCode,
-    CFURL,
-    UInt32,
-    UnsafeMutableRawPointer?
-) -> OSStatus
-
-private let validateSealedResource: ValidateSealedResource? = {
-    guard let handle = dlopen(nil, RTLD_LAZY),
-          let symbol = dlsym(handle, "SecStaticCodeValidateResourceWithErrors") else {
-        return nil
-    }
-    return unsafeBitCast(symbol, to: ValidateSealedResource.self)
-}()
-
 private func verifiedLauncherHelperSigningInfo(
     _ association: VerifiedLauncherHelperAssociation,
     pid: pid_t
@@ -9851,30 +9834,11 @@ private func verifiedLauncherHelperAppSigningInfo(
         let requirement = verifiedLauncherHelperAppRequirement(association.helper)
     else { return nil }
 
-    guard let validateSealedResource else {
-        let fullFlags = SecCSFlags(
-            rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate
-        )
-        guard SecStaticCodeCheckValidity(staticCode, fullFlags, requirement) == errSecSuccess,
-              let app = staticSigningInfo(staticCode),
-              app.identifier == association.helper.appBundleIdentifier,
-              app.teamIdentifier == association.helper.appTeamIdentifier
-        else { return nil }
-        return app
-    }
-
-    let appFlags = SecCSFlags(
-        rawValue: kSecCSCheckAllArchitectures
-            | kSecCSDoNotValidateResources
-            | kSecCSStrictValidate
-    )
-    guard SecStaticCodeCheckValidity(staticCode, appFlags, requirement) == errSecSuccess,
-          validateSealedResource(
-              staticCode,
-              association.executableURL as CFURL,
-              kSecCSStrictValidate,
-              nil
-          ) == errSecSuccess,
+    guard validateAppBundleResource(
+        staticCode,
+        resourceURL: association.executableURL,
+        requirement: requirement
+    ) == errSecSuccess,
           let app = staticSigningInfo(staticCode),
           app.identifier == association.helper.appBundleIdentifier,
           app.teamIdentifier == association.helper.appTeamIdentifier
@@ -12464,6 +12428,12 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         )
         return verifiedLauncherHelperAppSigningInfo(outsideResource) == nil
     }()
+    let installedMainAppValidation = [
+        URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+        URL(fileURLWithPath: "/Applications/Xcode.app"),
+    ].allSatisfy {
+        !FileManager.default.fileExists(atPath: $0.path) || staticSigningInfo(url: $0) != nil
+    }
     let liveBundleFallback = launcherIdentities(
         pid: 44,
         path: bundledDeveloperID.mainExecutable,
@@ -12486,12 +12456,13 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ),
           launcher.isStandalone,
           launcher.designatedRequirement == requirement,
-          validateSealedResource != nil,
+          targetedAppResourceValidationAvailable,
           codexAssociation?.helper == codexVerifiedLauncherHelper,
           codexAssociation?.appURL == chatGPTURL,
           disabledCodexAssociation == nil,
           xcodeHelperAssociation == nil,
           installedCodexValidation,
+          installedMainAppValidation,
           let liveBundleFallback,
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,
