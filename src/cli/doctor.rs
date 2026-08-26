@@ -1584,6 +1584,7 @@ mod tests {
                                 | "oxide-cli"
                                 | "stripe"
                                 | "supabase"
+                                | "wakatime-cli"
                         ),
                         "{}:{} needs explicit target-only Doctor coverage review",
                         hardener.name,

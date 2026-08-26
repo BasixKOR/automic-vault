@@ -3127,6 +3127,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .wakatimeHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "WakaTime helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
             handleInject(
                 message,
@@ -3138,7 +3145,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing
             )
         case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .plumberGet, .uaaGet, .railwayGet,
-             .oxideGet, .terraformGet:
+             .oxideGet, .terraformGet, .wakatimeGet:
             handleInject(
                 message,
                 on: peer,
@@ -3529,15 +3536,22 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let conflicts = Set(oxideRequest.envConflicts)
-            let selectionNames = oxideRequest.keys.filter {
-                oxideRequest.replaceExistingEnv || !conflicts.contains($0)
+            let wakatimeRequest = try wakatimeCredentialRequest(
+                from: message,
+                request: oxideRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let conflicts = Set(wakatimeRequest.envConflicts)
+            let selectionNames = wakatimeRequest.keys.filter {
+                wakatimeRequest.replaceExistingEnv || !conflicts.contains($0)
             }
             let selected = try secretValueCustody.bind(
                 names: selectionNames,
-                cwd: oxideRequest.cwd
+                cwd: wakatimeRequest.cwd
             )
-            request = approvalRequestWithCredentialContext(oxideRequest.selecting(selected))
+            request = approvalRequestWithCredentialContext(wakatimeRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
@@ -6405,6 +6419,71 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func wakatimeCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "wakatime-get" else { return request }
+        guard request.tool == "wakatime-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys == [wakatimeCredentialSecretName],
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let urlPointer = xpc_dictionary_get_string(message, "wakatime_api_url"),
+              String(cString: urlPointer) == wakatimeOfficialAPIURL
+        else { throw AppError("invalid WakaTime credential request") }
+        let parent = try wakatimeCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "wakatime-cli",
+            title: "Use the WakaTime API key?",
+            detail: "The verified WakaTime Target will receive the global API key for WakaTime's official API endpoint.",
+            credentialScope: wakatimeOfficialAPIURL,
+            credentialParent: parent
+        )
+    }
+
+    private func wakatimeCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("WakaTime credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard wakatimeTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible WakaTime Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
     private func terraformCredentialParent(
         for helperIdentity: AVProcessIdentity
     ) throws -> CredentialHelperParent {
@@ -6441,6 +6520,7 @@ private final class ApprovalServer: @unchecked Sendable {
         case "tofu": "opentofu"
         case "terraform": "terraform"
         case "uaa": "uaa-cli"
+        case "wakatime-cli": "wakatime-cli"
         default: ""
         }
     }
@@ -6482,6 +6562,9 @@ private final class ApprovalServer: @unchecked Sendable {
         case "terraform", "opentofu":
             return credentialHelperTool(parent) == tool
                 && terraformTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "wakatime-cli":
+            return credentialHelperTool(parent) == tool
+                && wakatimeTargetIdentityValid(pid: parent.pid, path: parent.target)
         default: return false
         }
     }
@@ -6578,6 +6661,18 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
+    private func wakatimeTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard configuredSecretGateTarget("wakatime-cli", matches: path),
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "wakatime-cli"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection == .hardened
+            && liveProcessHasNoEntitlements(pid: pid)
+    }
+
     private func configuredSecretGateTarget(_ gateID: String, matches path: String) -> Bool {
         secretGateDescriptors.first(where: { $0.id == gateID })?.routes.contains {
             normalizedExecutablePath($0.targetPath) == normalizedExecutablePath(path)
@@ -6589,7 +6684,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get"]
+        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get", "wakatime-get"]
             .contains(request.op)
         {
             guard let scope = request.credentialScope,
@@ -6621,6 +6716,11 @@ private final class ApprovalServer: @unchecked Sendable {
                     throw AppError("Oxide credential scope changed before Secret Application")
                 }
                 expected = oxide.secretName
+            case "wakatime-get":
+                guard scope == wakatimeOfficialAPIURL else {
+                    throw AppError("WakaTime API endpoint changed before Secret Application")
+                }
+                expected = wakatimeCredentialSecretName
             default: expected = terraformCredentialSecretName(scope)
             }
             guard request.keys == [expected] else {
@@ -6676,6 +6776,11 @@ private final class ApprovalServer: @unchecked Sendable {
                       let value = secrets[scope.secretName],
                       parseOxideCredential(value) != nil
                 else { throw AppError("Oxide credential changed before Secret Application") }
+            } else if request.op == "wakatime-get" {
+                guard scope == wakatimeOfficialAPIURL,
+                      let value = secrets[wakatimeCredentialSecretName],
+                      validWakaTimeAPIKey(value)
+                else { throw AppError("WakaTime credential changed before Secret Application") }
             } else {
                 guard let value = secrets[terraformCredentialSecretName(scope)],
                       parseTerraformCredential(value) != nil
@@ -7053,7 +7158,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
             || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
-            || op == "oxide-get" || op == "terraform-get"
+            || op == "oxide-get" || op == "terraform-get" || op == "wakatime-get"
             || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -7465,6 +7570,8 @@ private func classifySecretGateRequest(
         return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
         return terraformRequestClassification(request.args)
+    case "wakatime-cli":
+        return wakatimeRequestClassification(request.args)
     case "aws":
         if awsRequestMayUseLongLivedCredentials(request) { return .secretDump }
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
@@ -7476,6 +7583,24 @@ private func classifySecretGateRequest(
             arguments: secretGateCommandWords(request)
         )
     }
+}
+
+private func wakatimeRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    if words.contains(where: {
+        $0 == "--entity" || $0.hasPrefix("--entity=") || $0 == "--extra-heartbeats"
+            || $0 == "--sync-offline-activity" || $0.hasPrefix("--sync-offline-activity=")
+            || $0 == "--sync-ai-activity" || $0 == "--sync-ai-heartbeats"
+    }) {
+        return .mutating
+    }
+    if words.contains(where: {
+        $0 == "--today" || $0 == "--file-experts" || $0 == "--today-goal"
+            || $0.hasPrefix("--today-goal=")
+    }) {
+        return .readOnly
+    }
+    return .unknown
 }
 
 private func goatRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -8486,6 +8611,23 @@ private func parseTerraformCredential(_ value: String) -> String? {
           !token.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return token
+}
+
+private let wakatimeCredentialSecretName = "WAKATIME_API_KEY"
+private let wakatimeOfficialAPIURL = "https://api.wakatime.com/api/v1"
+
+private func validWakaTimeAPIKey(_ value: String) -> Bool {
+    let key = value.hasPrefix("waka_") ? String(value.dropFirst(5)) : value
+    let bytes = Array(key.utf8)
+    let hyphens = Set([8, 13, 18, 23])
+    guard bytes.count == 36, bytes[14] == 52, [56, 57, 97, 98].contains(bytes[19]) else {
+        return false
+    }
+    return bytes.enumerated().allSatisfy { index, byte in
+        hyphens.contains(index)
+            ? byte == 45
+            : (48...57).contains(byte) || (97...102).contains(byte)
+    }
 }
 
 private func isGhTokenKey(_ key: String) -> Bool {
@@ -12778,6 +12920,22 @@ private func runTerraformCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runWakaTimeCredentialSelfCheck() -> Int32 {
+    let valid = ["waka_01234567", "89ab", "4cde", "8fab", "0123456789ab"].joined(separator: "-")
+    let bare = ["01234567", "89ab", "4cde", "bfab", "0123456789ab"].joined(separator: "-")
+    let wrongVersion = ["01234567", "89ab", "3cde", "8fab", "0123456789ab"].joined(separator: "-")
+    guard wakatimeRequestClassification(["--today"]) == .readOnly,
+          wakatimeRequestClassification(["--today-goal=123"]) == .readOnly,
+          wakatimeRequestClassification(["--entity", "/tmp/main.rs"]) == .mutating,
+          wakatimeRequestClassification(["--sync-offline-activity=100"]) == .mutating,
+          wakatimeRequestClassification(["--future-operation"]) == .unknown,
+          validWakaTimeAPIKey(valid),
+          validWakaTimeAPIKey(bare),
+          !validWakaTimeAPIKey(wrongVersion)
+    else { return 1 }
+    return 0
+}
+
 private func runOxideCredentialSelfCheck() -> Int32 {
     let canonical = #"{"host":"https://oxide.example","profile":"prod"}"#
     guard oxideRequestClassification(["auth", "status"]) == .readOnly,
@@ -13879,6 +14037,10 @@ if CommandLine.arguments.contains("--self-check-docker-credentials") {
 
 if CommandLine.arguments.contains("--self-check-terraform-credentials") {
     exit(runTerraformCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-wakatime-credentials") {
+    exit(runWakaTimeCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-oxide-credentials") {

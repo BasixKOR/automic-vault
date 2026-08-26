@@ -19,6 +19,7 @@ pub(crate) mod supabase;
 pub(crate) mod terraform;
 pub(crate) mod terraform_release;
 pub(crate) mod uaa_cli;
+pub(crate) mod wakatime_cli;
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -310,6 +311,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(stripe_cli, "stripe"),
         ungated_hardener!(sudo, "sudo"),
         gated_hardener!(supabase, "supabase"),
+        gated_hardener!(wakatime_cli, "wakatime-cli"),
         HardenerMetadata {
             name: "terraform",
             documentation: include_str!("terraform.md"),
@@ -343,6 +345,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         gh_cli::secret_gate(),
         stripe_cli::secret_gate(),
         supabase::secret_gate(),
+        wakatime_cli::secret_gate(),
         terraform::secret_gate(terraform::Tool::Terraform),
         terraform::secret_gate(terraform::Tool::OpenTofu),
     ];

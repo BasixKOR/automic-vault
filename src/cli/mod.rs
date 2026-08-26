@@ -23,6 +23,7 @@ mod scan;
 mod shell_secrets;
 pub(crate) mod terraform_credential;
 pub(crate) mod uaa_credential;
+pub(crate) mod wakatime_credential;
 
 use crate::isotopes::hardeners;
 
@@ -53,7 +54,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 38;
+pub(crate) const INSTALL_REVISION: u32 = 39;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -404,6 +405,10 @@ where
                 let result = hardeners::plumber::run(stdout, yes);
                 return finish_hardening(result, "plumber", stdout, stderr);
             }
+            if target == "wakatime" || target == "wakatime-cli" {
+                let result = hardeners::wakatime_cli::run(stdout, yes);
+                return finish_hardening(result, "wakatime-cli", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -466,6 +471,7 @@ where
         Some("plumber-credential") => plumber_credential::run(rest, stdout, stderr),
         Some("uaa-credential") => uaa_credential::run(rest, stdout, stderr),
         Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
+        Some("wakatime-credential") => wakatime_credential::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {

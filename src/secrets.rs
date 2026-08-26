@@ -10,6 +10,7 @@ const PLUMBER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 const UAA_HELPER_PROTOCOL_VERSION: u64 = 1;
+const WAKATIME_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
     value: Option<String>,
@@ -236,6 +237,31 @@ pub(crate) fn ensure_terraform_helper_ready() -> Result<(), String> {
             "the running Automic Vault app reported unsupported Terraform helper version {version}"
         )),
         None => Err("the running Automic Vault app returned no Terraform helper version".into()),
+    }
+}
+
+pub(crate) fn ensure_wakatime_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "wakatime-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", WAKATIME_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "WakaTime credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported WakaTime helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no WakaTime helper version".into()),
     }
 }
 
