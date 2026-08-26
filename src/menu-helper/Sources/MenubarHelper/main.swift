@@ -8768,8 +8768,15 @@ private func retainedProcessExecution(
     pid: pid_t,
     identity: AVProcessIdentity
 ) -> RetainedProcessExecution? {
+    guard identity.euid == geteuid() else { return nil }
+    return liveProcessExecution(pid: pid, identity: identity)
+}
+
+private func liveProcessExecution(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> RetainedProcessExecution? {
     guard identity.pidversion > 0,
-          identity.euid == geteuid(),
           let codeIdentity = liveCodeIdentity(pid: pid)
     else { return nil }
 
@@ -8907,7 +8914,7 @@ private func approvalProcessIdentities(
     let callerNode = ApprovalProcessIdentity(
         pid: gateClientPID,
         path: pathString(caller),
-        execution: retainedProcessExecution(pid: gateClientPID, identity: caller)
+        execution: liveProcessExecution(pid: gateClientPID, identity: caller)
     )
     var chains: [[ApprovalProcessIdentity]] = []
     for startPID in launcherAncestorStartPIDs(caller) {
@@ -8923,7 +8930,7 @@ private func approvalProcessIdentities(
                 nodes.append(ApprovalProcessIdentity(
                     pid: currentPID,
                     path: path,
-                    execution: retainedProcessExecution(pid: currentPID, identity: identity)
+                    execution: liveProcessExecution(pid: currentPID, identity: identity)
                 ))
             }
             currentPID = identity.ppid
@@ -9024,7 +9031,7 @@ private func approvalProcessSecurity(
     {
         var identity = AVProcessIdentity()
         let execution = av_process_identity(launcher.pid, &identity)
-            ? retainedProcessExecution(pid: launcher.pid, identity: identity)
+            ? liveProcessExecution(pid: launcher.pid, identity: identity)
             : nil
         identities.append(ApprovalProcessIdentity(
             pid: launcher.pid,
