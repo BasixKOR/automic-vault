@@ -2869,6 +2869,8 @@ private struct ApprovedFulfillmentMaterial: Sendable {
     let awsRegistration: AWSRegistration?
 }
 
+private let dockerHelperProtocolVersion: UInt64 = 2
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
@@ -3066,11 +3068,11 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: true, error: nil, value: String(negotiated))
         case .dockerHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
-            guard requested == 1 else {
+            guard requested == dockerHelperProtocolVersion else {
                 reply(peer, to: message, ok: false, error: "Docker helper protocol upgrade is required")
                 return
             }
-            reply(peer, to: message, ok: true, error: nil, value: "1")
+            reply(peer, to: message, ok: true, error: nil, value: String(dockerHelperProtocolVersion))
         case .goatHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3127,6 +3129,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .aliyunHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Alibaba Cloud helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .wakatimeHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3145,7 +3154,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing
             )
         case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .plumberGet, .uaaGet, .railwayGet,
-             .oxideGet, .terraformGet, .wakatimeGet:
+             .oxideGet, .terraformGet, .aliyunGet, .wakatimeGet:
             handleInject(
                 message,
                 on: peer,
@@ -3529,9 +3538,16 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let oxideRequest = try oxideCredentialRequest(
+            let aliyunRequest = try aliyunCredentialRequest(
                 from: message,
                 request: helperRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let oxideRequest = try oxideCredentialRequest(
+                from: message,
+                request: aliyunRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
@@ -6508,8 +6524,77 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func aliyunCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "aliyun-get" else { return request }
+        guard request.tool == "aliyun-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys.count == 1,
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let profilePointer = xpc_dictionary_get_string(message, "aliyun_profile")
+        else { throw AppError("invalid Alibaba Cloud credential request") }
+        let profile = String(cString: profilePointer)
+        guard normalizeAliyunProfile(profile) == profile,
+              request.keys == [aliyunCredentialSecretName(profile)]
+        else { throw AppError("Alibaba Cloud Secret Name does not match its profile") }
+        let parent = try aliyunCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "aliyun-cli",
+            title: "Use Alibaba Cloud credential for profile \(profile)?",
+            detail: "The verified Alibaba Cloud CLI Target will receive the credential in plaintext, as required by the External credential-provider protocol.",
+            credentialScope: profile,
+            credentialParent: parent
+        )
+    }
+
+    private func aliyunCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("Alibaba Cloud credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard aliyunTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible Alibaba Cloud CLI Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch URL(fileURLWithPath: parent.target).lastPathComponent {
+        case "aliyun": "aliyun-cli"
         case "docker": "docker"
         case "goat": "goat"
         case "openhue": "openhue-cli"
@@ -6537,6 +6622,9 @@ private final class ApprovalServer: @unchecked Sendable {
               processArguments(parent.pid) == parent.arguments
         else { return false }
         switch tool {
+        case "aliyun-cli":
+            return credentialHelperTool(parent) == tool
+                && aliyunTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "docker": return dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "goat":
             return credentialHelperTool(parent) == tool
@@ -6574,6 +6662,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "goat"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func aliyunTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard configuredSecretGateTarget("aliyun-cli", matches: path),
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "aliyun"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -6684,7 +6782,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get", "wakatime-get"]
+        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get", "aliyun-get", "wakatime-get"]
             .contains(request.op)
         {
             guard let scope = request.credentialScope,
@@ -6696,6 +6794,7 @@ private final class ApprovalServer: @unchecked Sendable {
             else { throw AppError("invalid credential-helper request") }
             let expected: String
             switch request.op {
+            case "aliyun-get": expected = aliyunCredentialSecretName(scope)
             case "docker-get": expected = dockerCredentialSecretName(scope)
             case "goat-get":
                 guard let goat = parseGoatCredentialScope(scope) else {
@@ -6776,6 +6875,10 @@ private final class ApprovalServer: @unchecked Sendable {
                       let value = secrets[scope.secretName],
                       parseOxideCredential(value) != nil
                 else { throw AppError("Oxide credential changed before Secret Application") }
+            } else if request.op == "aliyun-get" {
+                guard let value = secrets[aliyunCredentialSecretName(scope)],
+                      parseAliyunCredential(value)
+                else { throw AppError("Alibaba Cloud credential changed before Secret Application") }
             } else if request.op == "wakatime-get" {
                 guard scope == wakatimeOfficialAPIURL,
                       let value = secrets[wakatimeCredentialSecretName],
@@ -7158,7 +7261,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
             || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
-            || op == "oxide-get" || op == "terraform-get" || op == "wakatime-get"
+            || op == "oxide-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
             || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -7570,6 +7673,8 @@ private func classifySecretGateRequest(
         return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
         return terraformRequestClassification(request.args)
+    case "aliyun-cli":
+        return aliyunRequestClassification(request.args)
     case "wakatime-cli":
         return wakatimeRequestClassification(request.args)
     case "aws":
@@ -7777,6 +7882,17 @@ private func terraformRequestClassification(_ args: [String]) -> SecretGateReque
     default:
         return .unknown
     }
+}
+
+private func aliyunRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    if words == ["--version"] || words == ["version"] || words == ["help"] {
+        return .readOnly
+    }
+    if words.starts(with: ["sts", "getcalleridentity"]) {
+        return .readOnly
+    }
+    return .unknown
 }
 
 private func dockerRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -8599,6 +8715,45 @@ private func normalizeTerraformHostname(_ hostname: String) -> String? {
 private func terraformCredentialSecretName(_ hostname: String) -> String {
     let hash = SHA256.hash(data: Data(hostname.utf8)).map { String(format: "%02X", $0) }.joined()
     return "TERRAFORM_HOST_CREDENTIAL_\(hash)"
+}
+
+private func normalizeAliyunProfile(_ profile: String) -> String? {
+    guard !profile.isEmpty,
+          profile.utf8.count <= 128,
+          profile.unicodeScalars.allSatisfy({
+              $0.isASCII && !((0...31).contains($0.value) || $0.value == 127)
+          })
+    else { return nil }
+    return profile.trimmingCharacters(in: .whitespacesAndNewlines) == profile ? profile : nil
+}
+
+private func aliyunCredentialSecretName(_ profile: String) -> String {
+    let hash = SHA256.hash(data: Data(profile.utf8)).map { String(format: "%02X", $0) }.joined()
+    return "ALIYUN_PROFILE_CREDENTIAL_\(hash)"
+}
+
+private func parseAliyunCredential(_ value: String) -> Bool {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let mode = object["mode"] as? String,
+          let accessKeyID = object["access_key_id"] as? String,
+          let accessKeySecret = object["access_key_secret"] as? String,
+          validAliyunCredentialValue(accessKeyID),
+          validAliyunCredentialValue(accessKeySecret)
+    else { return false }
+    if mode == "AK" {
+        return Set(object.keys) == Set(["mode", "access_key_id", "access_key_secret"])
+    }
+    guard mode == "StsToken", let token = object["sts_token"] as? String,
+          validAliyunCredentialValue(token)
+    else { return false }
+    return Set(object.keys) == Set(["mode", "access_key_id", "access_key_secret", "sts_token"])
+}
+
+private func validAliyunCredentialValue(_ value: String) -> Bool {
+    !value.isEmpty && value.utf8.count <= 64 * 1024
+        && !value.unicodeScalars.contains(where: { [0, 10, 13].contains($0.value) })
 }
 
 private func parseTerraformCredential(_ value: String) -> String? {
@@ -9447,7 +9602,7 @@ private extension ApprovalServiceOperation {
         case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
              .ordercliHelperVersion, .openhueHelperVersion, .plumberHelperVersion, .uaaHelperVersion,
              .railwayHelperVersion, .oxideHelperVersion,
-             .terraformHelperVersion: false
+             .terraformHelperVersion, .aliyunHelperVersion: false
         default: true
         }
     }
@@ -12891,6 +13046,27 @@ private func runTerraformCredentialSelfCheck() -> Int32 {
     return 0
 }
 
+private func runAliyunCredentialSelfCheck() -> Int32 {
+    guard aliyunRequestClassification(["sts", "GetCallerIdentity"]) == .readOnly,
+          aliyunRequestClassification(["ecs", "DescribeInstances"]) == .unknown,
+          normalizeAliyunProfile("prod") == "prod",
+          normalizeAliyunProfile(" prod") == nil,
+          normalizeAliyunProfile("prod\n") == nil,
+          aliyunCredentialSecretName("prod")
+              == "ALIYUN_PROFILE_CREDENTIAL_6754AF9632A2745E85C293E5AAC0863370D9BD3330B9938C00CADFD215227D77",
+          parseAliyunCredential(
+              #"{"mode":"AK","access_key_id":"id","access_key_secret":"secret"}"#
+          ),
+          parseAliyunCredential(
+              #"{"mode":"StsToken","access_key_id":"id","access_key_secret":"secret","sts_token":"token"}"#
+          ),
+          !parseAliyunCredential(
+              #"{"mode":"AK","access_key_id":"id","access_key_secret":"secret","future":true}"#
+          )
+    else { return 1 }
+    return 0
+}
+
 private func runWakaTimeCredentialSelfCheck() -> Int32 {
     let valid = ["waka_01234567", "89ab", "4cde", "8fab", "0123456789ab"].joined(separator: "-")
     let bare = ["01234567", "89ab", "4cde", "bfab", "0123456789ab"].joined(separator: "-")
@@ -14008,6 +14184,10 @@ if CommandLine.arguments.contains("--self-check-docker-credentials") {
 
 if CommandLine.arguments.contains("--self-check-terraform-credentials") {
     exit(runTerraformCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-aliyun-credentials") {
+    exit(runAliyunCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-wakatime-credentials") {

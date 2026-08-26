@@ -105,6 +105,14 @@ pub(crate) const PLUMBER: Spec = Spec {
     binaries: &["plumber"],
     test_path: "AUTOMIC_VAULT_TEST_PLUMBER_TARGET",
 };
+pub(crate) const ALIYUN: Spec = Spec {
+    hardener: "aliyun-cli",
+    formula: "aliyun-cli-isotope",
+    repository: "aliyun-cli",
+    primary: "aliyun",
+    binaries: &["aliyun"],
+    test_path: "AUTOMIC_VAULT_TEST_ALIYUN_TARGET",
+};
 pub(crate) const WAKATIME: Spec = Spec {
     hardener: "wakatime-cli",
     formula: "wakatime-cli-isotope",
@@ -732,6 +740,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     if spec.hardener == PLUMBER.hardener {
         return super::plumber::verify_target(path).is_ok();
     }
+    if spec.hardener == ALIYUN.hardener {
+        return super::aliyun_cli::verify_target(path).is_ok();
+    }
     if spec.hardener == WAKATIME.hardener {
         return super::wakatime_cli::verify_target(path).is_ok();
     }
@@ -745,7 +756,7 @@ fn formula_url(spec: Spec) -> String {
 fn spec(hardener: &str) -> Option<Spec> {
     [
         GH, STRIPE, SUPABASE, OPENTOFU, OXIDE, GOAT, RAILWAY, ORDERCLI, OPENHUE, UAA, PLUMBER,
-        WAKATIME,
+        ALIYUN, WAKATIME,
     ]
     .into_iter()
     .find(|spec| spec.hardener == hardener)
