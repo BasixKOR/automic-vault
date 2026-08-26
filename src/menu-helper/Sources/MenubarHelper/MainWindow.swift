@@ -1865,10 +1865,7 @@ private struct DashboardListView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                List(selection: itemSelection) {
-                    rows(items)
-                }
-                .listStyle(.inset)
+                itemList(items)
             }
         }
         .sheet(isPresented: $model.isAddingSecret) {
@@ -1881,6 +1878,21 @@ private struct DashboardListView: View {
             model.selectedItemID
         } set: { id in
             model.selectedItemID = id
+        }
+    }
+
+    private func itemList(_ items: [DashboardItem]) -> some View {
+        List(selection: itemSelection) {
+            rows(items)
+        }
+        .listStyle(.inset)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.bar)
+                .mask(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom))
+                .frame(height: 52)
+                .offset(y: -52)
+                .allowsHitTesting(false)
         }
     }
 
