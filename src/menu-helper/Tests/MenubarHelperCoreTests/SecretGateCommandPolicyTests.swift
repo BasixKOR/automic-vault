@@ -62,9 +62,55 @@ import Testing
 @Test func genericPoliciesClassifyMutationsSecretsAndUnknowns() {
     #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["deploy"]) == .mutating)
     #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["auth", "token"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(
+        gateID: "stripe",
+        arguments: ["sandbox", "create", "--from-git", "--non-interactive", "--config", "/tmp/config.toml"]
+    ) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["sandbox", "claim"]) == .mutating)
     #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["future-command"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "future-hardener", arguments: ["list"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: []) == .unknown)
+}
+
+@Test func stripePolicyClassifiesGeneratedBuiltInAndPluginCommands() {
+    let readOnly = [
+        ["customers", "list"],
+        ["billing", "alerts", "retrieve", "al_123"],
+        ["climate", "commitment", "show"],
+        ["v2", "core", "account_persons", "retrieve", "acct_123"],
+        ["--config", "/tmp/config.toml", "payment_intents", "search", "--query", "status:'succeeded'"],
+        ["--config", "/tmp/config.toml", "--help"],
+        ["--config", "/tmp/config.toml", "--version"],
+        ["--config", "/tmp/config.toml", "--map=json", "customers", "create", "--name", "Jenny"],
+        ["keys", "permissions", "GET /v1/customers"],
+        ["agent", "setup", "--status"],
+        ["login", "list"],
+        ["reporting", "query-runs", "retrieve", "sqr_123"],
+    ]
+    for arguments in readOnly {
+        #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: arguments) == .readOnly)
+    }
+
+    let mutating = [
+        ["customers", "create", "--name", "Jenny"],
+        ["customers", "create", "--name", "-h"],
+        ["billing", "alerts", "archive", "al_123"],
+        ["events", "resend", "evt_123"],
+        ["terminal", "quickstart"],
+        ["v2", "core", "account_persons", "delete", "acct_123"],
+        ["post", "/v1/customers"],
+        ["samples", "create", "accept-a-payment"],
+        ["reporting", "query-runs", "create", "--sql", "select 1"],
+    ]
+    for arguments in mutating {
+        #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: arguments) == .mutating)
+    }
+
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["listen"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["config", "--list"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["projects", "add", "database"]) == .unknown)
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["customers", "future-operation"]) == .unknown)
+    #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["future-resource", "list"]) == .unknown)
 }
 
 @Test func npmPolicyUsesSpecificSubcommandsBeforeBroadFallbacks() {
