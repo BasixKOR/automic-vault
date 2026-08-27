@@ -2545,6 +2545,15 @@ private struct RetainedProcessExecution: Hashable, Sendable {
     let codeIdentity: Data
 }
 
+private struct ApprovalProcessExecution: Sendable {
+    let pid: Int32
+    let pidVersion: Int32?
+    let startUsec: UInt64
+    let effectiveUserID: UInt32
+    let auditSessionID: UInt32?
+    let codeIdentity: Data
+}
+
 private struct LiveSecretUseProcess: Hashable, Sendable {
     let pid: Int32
     let startUsec: UInt64
@@ -8770,15 +8779,8 @@ private func retainedProcessExecution(
     pid: pid_t,
     identity: AVProcessIdentity
 ) -> RetainedProcessExecution? {
-    guard identity.euid == geteuid() else { return nil }
-    return liveProcessExecution(pid: pid, identity: identity)
-}
-
-private func liveProcessExecution(
-    pid: pid_t,
-    identity: AVProcessIdentity
-) -> RetainedProcessExecution? {
-    guard identity.pidversion > 0,
+    guard identity.euid == geteuid(),
+          identity.pidversion > 0,
           let codeIdentity = liveCodeIdentity(pid: pid)
     else { return nil }
 
@@ -8814,6 +8816,49 @@ private func retainedProcessExecutionIsLive(_ execution: RetainedProcessExecutio
     else { return false }
     var after = AVProcessIdentity()
     return av_process_identity(execution.pid, &after) && matches(after)
+}
+
+private func approvalProcessExecution(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> ApprovalProcessExecution? {
+    guard let codeIdentity = liveCodeIdentity(pid: pid) else { return nil }
+    // Setuid Gate Clients may deny task-port access. This evidence is diagnostic only,
+    // so bind audit-token fields when available and always bind live process identity.
+    let hasAuditToken = identity.pidversion > 0
+    let execution = ApprovalProcessExecution(
+        pid: pid,
+        pidVersion: hasAuditToken ? identity.pidversion : nil,
+        startUsec: identity.start_usec,
+        effectiveUserID: identity.euid,
+        auditSessionID: hasAuditToken ? identity.audit_session_id : nil,
+        codeIdentity: codeIdentity
+    )
+    var current = AVProcessIdentity()
+    return av_process_identity(pid, &current) && approvalProcessExecutionMatches(execution, current)
+        ? execution
+        : nil
+}
+
+private func approvalProcessExecutionMatches(
+    _ execution: ApprovalProcessExecution,
+    _ identity: AVProcessIdentity
+) -> Bool {
+    execution.startUsec == identity.start_usec
+        && execution.effectiveUserID == identity.euid
+        && execution.pidVersion.map { $0 == identity.pidversion } ?? true
+        && execution.auditSessionID.map { $0 == identity.audit_session_id } ?? true
+}
+
+private func approvalProcessExecutionIsLive(_ execution: ApprovalProcessExecution) -> Bool {
+    var before = AVProcessIdentity()
+    guard av_process_identity(execution.pid, &before),
+          approvalProcessExecutionMatches(execution, before),
+          liveCodeIdentity(pid: execution.pid) == execution.codeIdentity
+    else { return false }
+    var after = AVProcessIdentity()
+    return av_process_identity(execution.pid, &after)
+        && approvalProcessExecutionMatches(execution, after)
 }
 
 private func liveSecretUseProcess(
@@ -8883,7 +8928,7 @@ private func launcherFallbackPath(for identity: AVProcessIdentity) -> String? {
 private struct ApprovalProcessIdentity {
     let pid: pid_t
     let path: String
-    let execution: RetainedProcessExecution?
+    let execution: ApprovalProcessExecution?
 }
 
 private enum ApprovalProcessPosture: Equatable {
@@ -8916,7 +8961,7 @@ private func approvalProcessIdentities(
     let callerNode = ApprovalProcessIdentity(
         pid: gateClientPID,
         path: pathString(caller),
-        execution: liveProcessExecution(pid: gateClientPID, identity: caller)
+        execution: approvalProcessExecution(pid: gateClientPID, identity: caller)
     )
     var chains: [[ApprovalProcessIdentity]] = []
     for startPID in launcherAncestorStartPIDs(caller) {
@@ -8932,7 +8977,7 @@ private func approvalProcessIdentities(
                 nodes.append(ApprovalProcessIdentity(
                     pid: currentPID,
                     path: path,
-                    execution: liveProcessExecution(pid: currentPID, identity: identity)
+                    execution: approvalProcessExecution(pid: currentPID, identity: identity)
                 ))
             }
             currentPID = identity.ppid
@@ -9033,7 +9078,7 @@ private func approvalProcessSecurity(
     {
         var identity = AVProcessIdentity()
         let execution = av_process_identity(launcher.pid, &identity)
-            ? liveProcessExecution(pid: launcher.pid, identity: identity)
+            ? approvalProcessExecution(pid: launcher.pid, identity: identity)
             : nil
         identities.append(ApprovalProcessIdentity(
             pid: launcher.pid,
@@ -9067,9 +9112,9 @@ private func approvalProcessSecurity(
         if roles.isEmpty { roles.append("Intermediary") }
 
         let signing = identity.execution.flatMap { execution -> LiveSigningInfo? in
-            guard retainedProcessExecutionIsLive(execution) else { return nil }
+            guard approvalProcessExecutionIsLive(execution) else { return nil }
             let signing = liveSigningInfo(pid: identity.pid)
-            return retainedProcessExecutionIsLive(execution) ? signing : nil
+            return approvalProcessExecutionIsLive(execution) ? signing : nil
         }
         let result = approvalProcessPosture(
             signing: signing,
@@ -12053,6 +12098,23 @@ private func runApprovalSelfCheck() -> Int32 {
     return 0
 }
 
+private func runApprovalProcessExecutionSelfCheck() -> Int32 {
+    var identity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &identity) else { return 1 }
+    identity.pidversion = 0
+    identity.audit_session_id = 0
+    var reusedIdentity = identity
+    reusedIdentity.start_usec &+= 1
+    guard let execution = approvalProcessExecution(pid: getpid(), identity: identity),
+          execution.pidVersion == nil,
+          execution.auditSessionID == nil,
+          approvalProcessExecutionIsLive(execution),
+          approvalProcessExecution(pid: getpid(), identity: reusedIdentity) == nil,
+          retainedProcessExecution(pid: getpid(), identity: identity) == nil
+    else { return 1 }
+    return 0
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
     let requirement = #"identifier "com.example.cli" and anchor apple generic"#
     let developerID = LiveSigningInfo(
@@ -13639,6 +13701,10 @@ if CommandLine.arguments.contains("--self-check-sleep") {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-approval-process-execution") {
+    exit(runApprovalProcessExecutionSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-standalone-launchers") {
