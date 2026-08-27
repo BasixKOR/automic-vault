@@ -9240,6 +9240,7 @@ private struct ApprovalProcessSecurityNode: Identifiable {
     let roles: [String]
     let posture: ApprovalProcessPosture
     let explanation: String
+    let isAutomicVaultSigned: Bool
 
     var id: String { "\(pid ?? -1):\(path)" }
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
@@ -9247,6 +9248,13 @@ private struct ApprovalProcessSecurityNode: Identifiable {
 
 private struct ApprovalProcessSecurity {
     let nodes: [ApprovalProcessSecurityNode]
+}
+
+private func isAutomicVaultSigned(
+    _ signing: LiveSigningInfo?,
+    teamIdentifier: String?
+) -> Bool {
+    signing?.isDeveloperID == true && signing?.teamIdentifier == teamIdentifier
 }
 
 private func approvalProcessIdentities(
@@ -9366,6 +9374,7 @@ private func approvalProcessSecurity(
     targetPID: pid_t? = nil,
     launcher: LauncherIdentity?
 ) -> ApprovalProcessSecurity {
+    let automicVaultTeamIdentifier = selfTeamIdentifier()
     var identities = approvalProcessIdentities(
         gateClientPID: gateClientPID,
         launcherPID: launcher?.pid
@@ -9424,7 +9433,11 @@ private func approvalProcessSecurity(
             path: identity.path,
             roles: roles,
             posture: result.0,
-            explanation: result.1
+            explanation: result.1,
+            isAutomicVaultSigned: isAutomicVaultSigned(
+                signing,
+                teamIdentifier: automicVaultTeamIdentifier
+            )
         )
     }
 
@@ -9439,7 +9452,11 @@ private func approvalProcessSecurity(
             path: request.target,
             roles: [request.keys.isEmpty ? "Target (not started)" : "Secret recipient (not started)"],
             posture: result.0,
-            explanation: result.1
+            explanation: result.1,
+            isAutomicVaultSigned: isAutomicVaultSigned(
+                signing,
+                teamIdentifier: automicVaultTeamIdentifier
+            )
         ), at: 0)
     }
     return ApprovalProcessSecurity(nodes: nodes)
@@ -10732,6 +10749,18 @@ private struct ApprovalPromptProcessNodeView: View {
                     .font(.system(.headline, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if node.isAutomicVaultSigned,
+                   let imageURL = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png"),
+                   let image = NSImage(contentsOf: imageURL)
+                {
+                    Image(nsImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 10, height: 12)
+                        .help("Signed by Automic Vault")
+                        .accessibilityHidden(true)
+                }
                 if node.posture != .meetsRequirements {
                     Image(systemName: presentation.image)
                         .font(.body)
@@ -10753,7 +10782,9 @@ private struct ApprovalPromptProcessNodeView: View {
         }
         .frame(width: 150)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
+        .accessibilityLabel(
+            "\(node.displayRoles), \(node.name), \(presentation.title)\(node.isAutomicVaultSigned ? ", signed by Automic Vault" : "")"
+        )
     }
 }
 
@@ -11860,14 +11891,16 @@ private func runApprovalSelfCheck() -> Int32 {
             path: "/Applications/Example.app/Contents/MacOS/Example",
             roles: ["Verified Launcher"],
             posture: .meetsRequirements,
-            explanation: "Valid code signature; Hardened Runtime"
+            explanation: "Valid code signature; Hardened Runtime",
+            isAutomicVaultSigned: false
         ),
         ApprovalProcessSecurityNode(
             pid: 41,
             path: "/opt/homebrew/bin/gh",
             roles: ["Secret recipient", "Verified Gate Client"],
             posture: .meetsRequirements,
-            explanation: "Valid code signature; Hardened Runtime"
+            explanation: "Valid code signature; Hardened Runtime",
+            isAutomicVaultSigned: true
         ),
     ])
     let promptContent = ApprovalPromptContent(
@@ -12068,6 +12101,9 @@ private func runApprovalSelfCheck() -> Int32 {
           nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
           hardenedPosture.0 == .meetsRequirements,
+          isAutomicVaultSigned(unbundledSigning, teamIdentifier: "TEAM"),
+          !isAutomicVaultSigned(unbundledSigning, teamIdentifier: "OTHER"),
+          !isAutomicVaultSigned(pythonSigning, teamIdentifier: "unknown"),
           nodePosture.0 == .needsAttention,
           nodePosture.1.contains("mutable JavaScript"),
           unsafePosture.0 == .doesNotMeetRequirements,
