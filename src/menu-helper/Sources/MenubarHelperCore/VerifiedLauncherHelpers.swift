@@ -94,14 +94,16 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     }
 
     public mutating func enable(_ helpers: [VerifiedLauncherHelper]) {
-        for helper in helpers {
-            let helper = catalogHelper(matching: helper) ?? helper
-            if !verifiedLauncherHelpers.contains(where: { $0.id == helper.id }),
-               !userApprovedHelpers.contains(where: { $0.id == helper.id })
-            {
-                userApprovedHelpers.append(helper)
+        for discovered in helpers {
+            let isValid = verifiedLauncherHelpers.contains(discovered)
+                || isValidUserApprovedHelper(discovered)
+            guard isValid else { continue }
+            if let helper = catalogHelper(matching: discovered) {
+                disabledHelperIDs.remove(helper.id)
+            } else {
+                userApprovedHelpers.append(discovered)
+                disabledHelperIDs.remove(discovered.id)
             }
-            disabledHelperIDs.remove(helper.id)
         }
         userApprovedHelpers.sort { $0.id < $1.id }
     }
@@ -121,12 +123,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
             [VerifiedLauncherHelper].self,
             forKey: .userApprovedHelpers
         ) ?? []
-        guard Set(userApprovedHelpers.map(\.id)).count == userApprovedHelpers.count,
-              userApprovedHelpers.allSatisfy(isValidUserApprovedHelper),
-              userApprovedHelpers.allSatisfy({ helper in
-                  !verifiedLauncherHelpers.contains { $0.id == helper.id }
-              })
-        else {
+        guard isValidVerifiedLauncherHelperConfiguration(self) else {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: decoder.codingPath, debugDescription: "Invalid user-approved Launcher helper catalog")
             )
@@ -190,7 +187,10 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
                   .allowsSecretGateAccess
         else { continue }
 
-        let relativePath = String(executableURL.path.dropFirst(appURL.path.count + 1))
+        guard let relativePath = verifiedLauncherHelperRelativePath(
+            for: executableURL,
+            inside: appURL
+        ) else { continue }
         var helper = VerifiedLauncherHelper(
             id: "",
             name: helperDisplayName(executableURL, inside: appURL),
@@ -221,6 +221,14 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
     }
 }
 
+func verifiedLauncherHelperRelativePath(for executableURL: URL, inside appURL: URL) -> String? {
+    let appURL = appURL.standardizedFileURL.resolvingSymlinksInPath()
+    let executableURL = executableURL.standardizedFileURL.resolvingSymlinksInPath()
+    let prefix = appURL.path + "/"
+    guard executableURL.path.hasPrefix(prefix) else { return nil }
+    return String(executableURL.path.dropFirst(prefix.count))
+}
+
 private func isValidUserApprovedHelper(_ helper: VerifiedLauncherHelper) -> Bool {
     guard helper.id == userApprovedVerifiedLauncherHelperID(helper),
           !helper.name.isEmpty,
@@ -236,6 +244,17 @@ private func isValidUserApprovedHelper(_ helper: VerifiedLauncherHelper) -> Bool
     return !relativePath.split(separator: "/", omittingEmptySubsequences: false).contains {
         $0.isEmpty || $0 == "." || $0 == ".."
     }
+}
+
+private func isValidVerifiedLauncherHelperConfiguration(
+    _ configuration: VerifiedLauncherHelperConfiguration
+) -> Bool {
+    Set(configuration.userApprovedHelpers.map(\.id)).count
+        == configuration.userApprovedHelpers.count
+        && configuration.userApprovedHelpers.allSatisfy(isValidUserApprovedHelper)
+        && configuration.userApprovedHelpers.allSatisfy { helper in
+            !verifiedLauncherHelpers.contains { $0.id == helper.id }
+        }
 }
 
 private struct HelperSigningIdentity {
@@ -343,7 +362,9 @@ func saveVerifiedLauncherHelperConfiguration(
     service: String,
     account: String
 ) -> OSStatus {
-    guard let data = try? JSONEncoder().encode(configuration) else { return errSecParam }
+    guard isValidVerifiedLauncherHelperConfiguration(configuration),
+          let data = try? JSONEncoder().encode(configuration)
+    else { return errSecParam }
     return saveKeychainData(
         data,
         service: service,

@@ -1016,6 +1016,10 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func cancelLauncherHelperDiscovery() {
+        launcherHelperDiscoveryTask?.cancel()
+    }
+
     func confirmLauncherHelperReview(selectedHelperIDs: Set<String>) {
         guard let review = pendingLauncherHelperReview else { return }
         pendingLauncherHelperReview = nil
@@ -1859,14 +1863,20 @@ struct DashboardRootView: View {
                             ProgressView()
                                 .controlSize(.small)
                                 .help("Inspecting the selected app for signed helpers")
+                            Button {
+                                model.cancelLauncherHelperDiscovery()
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .help("Cancel App Inspection")
+                        } else {
+                            Button {
+                                model.addApp(to: gate)
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                            .help("Add Calling App")
                         }
-                        Button {
-                            model.addApp(to: gate)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .help("Add Calling App")
-                        .disabled(model.isDiscoveringLauncherHelpers)
                     }
                     if model.selectedSection == .blessedScripts {
                         Button {
