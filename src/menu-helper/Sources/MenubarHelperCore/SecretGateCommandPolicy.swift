@@ -37,12 +37,6 @@ public func genericSecretGateRequestClassification(
 }
 
 private func stripeRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
-    if ["--help", "-h", "--version", "-v", "version"].contains(arguments[0])
-        || arguments[0] == "--map" || arguments[0].hasPrefix("--map=")
-    {
-        return .readOnly
-    }
-
     let optionsWithValues = ["--api-key", "--color", "--config", "--device-name", "--log-level", "--project-name", "-p"]
     var index = 0
     while index < arguments.count {
@@ -52,6 +46,10 @@ private func stripeRequestClassification(_ arguments: [String]) -> SecretGateReq
             index += 2
         } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") }) {
             index += 1
+        } else if ["--help", "-h", "--version", "-v"].contains(argument)
+            || argument == "--map" || argument.hasPrefix("--map=")
+        {
+            return .readOnly
         } else if argument.hasPrefix("-") {
             return .unknown
         } else {
