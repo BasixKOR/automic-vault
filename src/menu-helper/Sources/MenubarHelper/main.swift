@@ -10696,8 +10696,11 @@ private struct ApprovalPromptProcessNodeView: View {
                     .font(.system(.headline, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if node.isAutomicVaultSigned {
-                    Image("NSMenuItem", bundle: .main)
+                if node.isAutomicVaultSigned,
+                   let imageURL = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png"),
+                   let image = NSImage(contentsOf: imageURL)
+                {
+                    Image(nsImage: image)
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
