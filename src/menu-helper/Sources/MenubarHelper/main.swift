@@ -9947,16 +9947,18 @@ private func verifiedLauncherHelperAssociation(
     path: String,
     signing: LiveSigningInfo,
     containingAppURLs: [URL]? = nil,
-    helpers: [VerifiedLauncherHelper] = verifiedLauncherHelpers,
+    helpers: [VerifiedLauncherHelper]? = nil,
     configuration: VerifiedLauncherHelperConfiguration? = nil,
     bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
 ) -> VerifiedLauncherHelperAssociation? {
+    let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
+    let helpers = helpers ?? configuration.helpers
     guard signing.isDeveloperID,
           let helper = helpers.first(where: {
               $0.helperSigningIdentifier == signing.identifier
                   && $0.helperTeamIdentifier == signing.teamIdentifier
           }),
-          (configuration ?? loadVerifiedLauncherHelperConfiguration()).isEnabled(helper)
+          configuration.isEnabled(helper)
     else { return nil }
     let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
     let executableURL = URL(fileURLWithPath: executablePath)
@@ -9966,6 +9968,12 @@ private func verifiedLauncherHelperAssociation(
     guard let appURL = appURLs.first(where: {
         bundleIdentifier($0) == helper.appBundleIdentifier
     }) else { return nil }
+    if let relativePath = helper.relativePath {
+        let expectedURL = appURL.appendingPathComponent(relativePath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        guard expectedURL == executableURL else { return nil }
+    }
     return VerifiedLauncherHelperAssociation(
         helper: helper,
         appURL: appURL,
