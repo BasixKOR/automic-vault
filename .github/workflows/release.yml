@@ -56,12 +56,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-            echo "Release runs must be dispatched from main." >&2
+          release_branch="${GITHUB_REF#refs/heads/}"
+          if [[ "$GITHUB_REF" != refs/heads/* ]] ||
+            [[ "$release_branch" != "main" && ! "$release_branch" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+            echo "Release runs must be dispatched from main or a vMAJOR.MINOR maintenance branch." >&2
             exit 64
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Version must use MAJOR.MINOR.PATCH." >&2
+            exit 64
+          fi
+          maintenance_prefix="${release_branch#v}."
+          if [[ "$release_branch" != "main" && "$VERSION" != "$maintenance_prefix"* ]]; then
+            echo "Version $VERSION does not belong to maintenance branch $release_branch." >&2
             exit 64
           fi
           if [[ -z "$RELEASE_NOTES" ]]; then
@@ -69,7 +76,7 @@ jobs:
             exit 64
           fi
           if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ || "$COMMIT" != "$GITHUB_SHA" ]]; then
-            echo "The requested commit must be the dispatched main commit." >&2
+            echo "The requested commit must be the dispatched release-branch commit." >&2
             exit 64
           fi
           manifest_version="$(

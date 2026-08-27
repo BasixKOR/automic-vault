@@ -1723,6 +1723,7 @@ public func validateCanonicalProjectDirectory(_ path: String) throws -> String {
     guard directory.path == path else {
         throw ProjectDirectoryValidationError.notCanonical(directory.path)
     }
+    guard path != "/" else { throw ProjectDirectoryValidationError.filesystemRoot }
     let parent = URL(fileURLWithPath: path, isDirectory: true)
         .deletingLastPathComponent().path
     guard parent != path else { throw ProjectDirectoryValidationError.filesystemRoot }
@@ -1741,6 +1742,9 @@ public func canonicalProjectDirectory(_ path: String) throws -> String {
 
 func physicalDirectoryAncestors(
     _ path: String,
+    parentPath: (String) -> String = {
+        URL(fileURLWithPath: $0, isDirectory: true).deletingLastPathComponent().path
+    },
     canonicalize: (String) throws -> (path: String, device: UInt64)
 ) throws -> [String] {
     let start = try canonicalize(path)
@@ -1751,8 +1755,8 @@ func physicalDirectoryAncestors(
     var seen = Set(result)
     var current = start.path
     while true {
-        let parent = URL(fileURLWithPath: current, isDirectory: true)
-            .deletingLastPathComponent().path
+        guard current != "/" else { break }
+        let parent = parentPath(current)
         guard parent != current else { break }
         let parentDirectory = try canonicalize(parent)
         guard parentDirectory.device == start.device else { break }

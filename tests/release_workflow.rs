@@ -20,7 +20,10 @@ fn release_workflow_binds_the_dmg_to_reviewed_source() {
     assert!(RELEASE_WORKFLOW.contains("commit:"));
     assert!(RELEASE_WORKFLOW.contains("notes:"));
     assert!(RELEASE_WORKFLOW.contains("Release notes must not be empty."));
-    assert!(RELEASE_WORKFLOW.contains("refs/heads/main"));
+    assert!(RELEASE_WORKFLOW.contains("refs/heads/*"));
+    assert!(RELEASE_WORKFLOW.contains("release_branch\" != \"main"));
+    assert!(RELEASE_WORKFLOW.contains("^v[0-9]+\\.[0-9]+$"));
+    assert!(RELEASE_WORKFLOW.contains("does not belong to maintenance branch"));
     assert!(RELEASE_WORKFLOW.contains("IMMUTABLE_RELEASES_ENABLED"));
     assert!(RELEASE_WORKFLOW.contains("--target \"$GITHUB_SHA\""));
     assert!(RELEASE_WORKFLOW.contains("targetCommitish"));
@@ -304,11 +307,15 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains(r#"select(.tag_name == \"$REQUESTED_VERSION\")"#));
     assert!(PUBLISH_SCRIPT.contains("multiple GitHub releases exist for $REQUESTED_VERSION"));
     assert!(PUBLISH_SCRIPT.contains("Resuming draft release $VERSION."));
-    assert!(PUBLISH_SCRIPT.contains("draft release $VERSION does not target a commit on main"));
     assert!(
         PUBLISH_SCRIPT
-            .contains("git -C \"$ROOT\" merge-base --is-ancestor \"$DRAFT_HEAD\" origin/main")
+            .contains("draft release $VERSION does not target a commit on $RELEASE_BRANCH")
     );
+    assert!(PUBLISH_SCRIPT.contains(
+        "git -C \"$ROOT\" merge-base --is-ancestor \"$DRAFT_HEAD\" \"origin/$RELEASE_BRANCH\""
+    ));
+    assert!(PUBLISH_SCRIPT.contains("version_matches_release_branch"));
+    assert!(PUBLISH_SCRIPT.contains("--ref \"$RELEASE_BRANCH\""));
     assert!(PUBLISH_SCRIPT.contains("if [[ \"$RESUMED_DRAFT\" -eq 0 ]] && ! command -v codex"));
     assert!(!PUBLISH_SCRIPT.contains("if resume_published_release; then"));
     let resume = PUBLISH_SCRIPT

@@ -2575,7 +2575,9 @@ private struct RetainedProcessProvenanceStore {
     ) {
         prune(isLive: isLive)
         guard !executions.isEmpty else { return }
-        for execution in executions where isLive(execution) {
+        for execution in executions
+            where execution.effectiveUserID == geteuid() && isLive(execution)
+        {
             records[gate, default: [:]][execution] = launcher
         }
     }
@@ -9065,8 +9067,15 @@ private func retainedProcessExecution(
     pid: pid_t,
     identity: AVProcessIdentity
 ) -> RetainedProcessExecution? {
+    guard identity.euid == geteuid() else { return nil }
+    return liveProcessExecution(pid: pid, identity: identity)
+}
+
+private func liveProcessExecution(
+    pid: pid_t,
+    identity: AVProcessIdentity
+) -> RetainedProcessExecution? {
     guard identity.pidversion > 0,
-          identity.euid == geteuid(),
           let codeIdentity = liveCodeIdentity(pid: pid)
     else { return nil }
 
@@ -9204,7 +9213,7 @@ private func approvalProcessIdentities(
     let callerNode = ApprovalProcessIdentity(
         pid: gateClientPID,
         path: pathString(caller),
-        execution: retainedProcessExecution(pid: gateClientPID, identity: caller)
+        execution: liveProcessExecution(pid: gateClientPID, identity: caller)
     )
     var chains: [[ApprovalProcessIdentity]] = []
     for startPID in launcherAncestorStartPIDs(caller) {
@@ -9220,7 +9229,7 @@ private func approvalProcessIdentities(
                 nodes.append(ApprovalProcessIdentity(
                     pid: currentPID,
                     path: path,
-                    execution: retainedProcessExecution(pid: currentPID, identity: identity)
+                    execution: liveProcessExecution(pid: currentPID, identity: identity)
                 ))
             }
             currentPID = identity.ppid
@@ -9321,7 +9330,7 @@ private func approvalProcessSecurity(
     {
         var identity = AVProcessIdentity()
         let execution = av_process_identity(launcher.pid, &identity)
-            ? retainedProcessExecution(pid: launcher.pid, identity: identity)
+            ? liveProcessExecution(pid: launcher.pid, identity: identity)
             : nil
         identities.append(ApprovalProcessIdentity(
             pid: launcher.pid,
@@ -13436,9 +13445,17 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
         pid: 200,
         pidVersion: 9,
         startUsec: 123,
-        effectiveUserID: 501,
+        effectiveUserID: geteuid(),
         auditSessionID: 10,
         codeIdentity: Data([1, 2, 3])
+    )
+    let crossUserHerdr = RetainedProcessExecution(
+        pid: herdr.pid,
+        pidVersion: herdr.pidVersion,
+        startUsec: herdr.startUsec,
+        effectiveUserID: geteuid() == 0 ? 1 : 0,
+        auditSessionID: herdr.auditSessionID,
+        codeIdentity: herdr.codeIdentity
     )
     let replacedHerdr = RetainedProcessExecution(
         pid: herdr.pid,
@@ -13481,7 +13498,7 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
     )
     var store = RetainedProcessProvenanceStore()
     store.remember(
-        [herdr],
+        [herdr, crossUserHerdr],
         at: .secretGate("gh"),
         launcher: launcher,
         isLive: { _ in true }
@@ -13491,6 +13508,15 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
         in: chains,
         isLive: { _ in true }
     )?.launcher.designatedRequirement == launcher.designatedRequirement,
+    store.match(
+        at: .secretGate("gh"),
+        in: [[RetainedProcessChainNode(
+            pid: crossUserHerdr.pid,
+            path: "/usr/local/bin/herdr",
+            execution: crossUserHerdr
+        )]],
+        isLive: { _ in true }
+    ) == nil,
     retainedProvenanceWouldAuthorize(
         request: request,
         configuredGate: gate,

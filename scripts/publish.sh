@@ -52,9 +52,15 @@ RECOVERED_RELEASE=0
 RESUMED_DRAFT=0
 DRAFT_HEAD=""
 DRAFT_URL=""
+RELEASE_BRANCH="$(git -C "$ROOT" branch --show-current)"
 if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" == "$CURRENT_VERSION" ]]; then
   RESUME_RELEASE=1
 fi
+
+version_matches_release_branch() {
+  local version="$1"
+  [[ "$RELEASE_BRANCH" == "main" || "$version" == "${RELEASE_BRANCH#v}."* ]]
+}
 
 cleanup_release_notes() {
   if [[ -n "$RELEASE_NOTES" ]]; then
@@ -503,11 +509,11 @@ resume_published_release() {
     echo "error: recovery requires an unmodified publish script" >&2
     exit 64
   fi
-  git -C "$ROOT" fetch --quiet origin main
+  git -C "$ROOT" fetch --quiet origin "$RELEASE_BRANCH"
   if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]] ||
     ! git -C "$ROOT" cat-file -e "$head^{commit}" 2>/dev/null ||
-    ! git -C "$ROOT" merge-base --is-ancestor "$head" origin/main; then
-    echo "error: release $REQUESTED_VERSION does not target a commit on main" >&2
+    ! git -C "$ROOT" merge-base --is-ancestor "$head" "origin/$RELEASE_BRANCH"; then
+    echo "error: release $REQUESTED_VERSION does not target a commit on $RELEASE_BRANCH" >&2
     exit 1
   fi
 
@@ -742,6 +748,14 @@ case "$(git -C "$ROOT" remote get-url origin)" in
     exit 64
     ;;
 esac
+if [[ "$RELEASE_BRANCH" != "main" && ! "$RELEASE_BRANCH" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+  echo "error: publish requires main or a vMAJOR.MINOR maintenance branch" >&2
+  exit 64
+fi
+if [[ -n "$REQUESTED_VERSION" ]] && ! version_matches_release_branch "$REQUESTED_VERSION"; then
+  echo "error: version $REQUESTED_VERSION does not belong to branch $RELEASE_BRANCH" >&2
+  exit 64
+fi
 resume_published_release
 if [[ "$RECOVERED_RELEASE" -eq 1 ]]; then
   exit 0
@@ -758,23 +772,19 @@ if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
   echo "error: publish requires a clean checkout" >&2
   exit 64
 fi
-if [[ "$(git -C "$ROOT" branch --show-current)" != "main" ]]; then
-  echo "error: publish requires the main branch" >&2
-  exit 64
-fi
 prepare_cask_publish
 prepare_website_publish
-git -C "$ROOT" fetch --quiet origin main
+git -C "$ROOT" fetch --quiet origin "$RELEASE_BRANCH"
 source_head="$(git -C "$ROOT" rev-parse HEAD)"
 if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
   if [[ ! "$DRAFT_HEAD" =~ ^[0-9a-f]{40}$ ]] ||
     ! git -C "$ROOT" cat-file -e "$DRAFT_HEAD^{commit}" 2>/dev/null ||
-    ! git -C "$ROOT" merge-base --is-ancestor "$DRAFT_HEAD" origin/main; then
-    echo "error: draft release $VERSION does not target a commit on main" >&2
+    ! git -C "$ROOT" merge-base --is-ancestor "$DRAFT_HEAD" "origin/$RELEASE_BRANCH"; then
+    echo "error: draft release $VERSION does not target a commit on $RELEASE_BRANCH" >&2
     exit 1
   fi
-elif [[ "$source_head" != "$(git -C "$ROOT" rev-parse origin/main)" ]]; then
-  echo "error: publish requires main to match origin/main" >&2
+elif [[ "$source_head" != "$(git -C "$ROOT" rev-parse "origin/$RELEASE_BRANCH")" ]]; then
+  echo "error: publish requires $RELEASE_BRANCH to match origin/$RELEASE_BRANCH" >&2
   exit 64
 fi
 if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
@@ -783,6 +793,10 @@ if [[ "$RESUMED_DRAFT" -eq 1 ]]; then
   echo "Resuming draft release $VERSION."
 else
   generate_release_metadata "$source_head"
+  if ! version_matches_release_branch "$VERSION"; then
+    echo "error: version $VERSION does not belong to branch $RELEASE_BRANCH" >&2
+    exit 64
+  fi
   if [[ "$RESUME_RELEASE" -eq 0 ]] && ! version_is_greater "$VERSION" "$CURRENT_VERSION"; then
     echo "error: release version $VERSION must be newer than $CURRENT_VERSION" >&2
     exit 64
@@ -807,13 +821,13 @@ else
   if [[ "$RESUME_RELEASE" -eq 0 || "${#INTERNAL_VERSION_FILES[@]}" -gt 0 ]]; then
     git -C "$ROOT" diff --cached --check
     git -C "$ROOT" commit -m "Release $VERSION"
-    git -C "$ROOT" push origin HEAD:main
+    git -C "$ROOT" push origin "HEAD:$RELEASE_BRANCH"
   fi
   head="$(git -C "$ROOT" rev-parse HEAD)"
   run_url="$(
     gh workflow run release.yml \
       --repo "$REPOSITORY" \
-      --ref main \
+      --ref "$RELEASE_BRANCH" \
       -f version="$VERSION" \
       -f commit="$head" \
       -f notes="$(<"$RELEASE_NOTES")"
@@ -826,7 +840,7 @@ else
   run_id="${BASH_REMATCH[1]}"
   echo "Release workflow: $run_url"
   if ! gh run watch "$run_id" --repo "$REPOSITORY" --compact --exit-status; then
-    echo "Release workflow failed; after fixing main, retry with: $0 --version $VERSION" >&2
+    echo "Release workflow failed; after fixing $RELEASE_BRANCH, retry with: $0 --version $VERSION" >&2
     exit 1
   fi
   read -r is_draft target_commitish release_url < <(
