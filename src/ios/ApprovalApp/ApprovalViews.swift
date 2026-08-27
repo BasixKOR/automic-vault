@@ -5,13 +5,14 @@ struct ApprovalRootView: View {
     @Bindable var model: ApprovalModel
     @Bindable var subscription: ApprovalSubscription
     @State private var showingSubscription = false
+    @State private var keepsPendingListVisible = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if model.pending.count == 1, let request = model.pending.first {
+                if model.pending.count == 1, !keepsPendingListVisible, let request = model.pending.first {
                     ApprovalDetailView(request: request, model: model, subscription: subscription)
-                } else if model.pending.count > 1 {
+                } else if !model.pending.isEmpty {
                     list
                 } else if subscription.state == .loading {
                     ProgressView("Checking subscription…")
@@ -59,6 +60,10 @@ struct ApprovalRootView: View {
                 guard state == .active, showingSubscription else { return }
                 showingSubscription = false
                 Task { await model.enable() }
+            }
+            .onChange(of: model.pending.count, initial: true) { _, count in
+                if count > 1 { keepsPendingListVisible = true }
+                if count == 0 { keepsPendingListVisible = false }
             }
         }
     }
@@ -133,6 +138,7 @@ struct ApprovalDetailView: View {
     let request: PhoneApprovalRequest
     @Bindable var model: ApprovalModel
     @Bindable var subscription: ApprovalSubscription
+    @Environment(\.dismiss) private var dismiss
     @State private var showingSubscription = false
 
     var body: some View {
@@ -217,6 +223,9 @@ struct ApprovalDetailView: View {
         .onChange(of: subscription.state) { _, state in
             guard state == .active else { return }
             showingSubscription = false
+        }
+        .onChange(of: model.pending.contains { $0.id == request.id }, initial: true) { _, isPending in
+            if !isPending { dismiss() }
         }
     }
 
