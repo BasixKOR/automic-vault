@@ -3467,7 +3467,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             let storedSecretNames: Set<String>
-            switch loadStoredSecretsResult() {
+            switch loadStoredSecretsForUseResult() {
             case .success(let secrets):
                 storedSecretNames = Set(secrets.map(\.account))
             case .failure(let status):
