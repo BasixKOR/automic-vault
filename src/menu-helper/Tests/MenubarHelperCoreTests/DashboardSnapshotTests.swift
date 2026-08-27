@@ -1230,24 +1230,35 @@ func protectionPolicyMatrix(
     let policyService = "com.automicvault.tests.policy.\(UUID().uuidString)"
     let accessLogService = "com.automicvault.tests.log.\(UUID().uuidString)"
     let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
+    let gpgSigningService = "com.automicvault.tests.gpg-config.\(UUID().uuidString)"
     let policyAccount = "policies"
     let accessLogAccount = "access-log"
+    let gpgSigningAccount = "configuration"
     defer { _ = deleteStoredSecret(account: policyAccount, service: policyService) }
     defer { _ = deleteStoredSecret(account: accessLogAccount, service: accessLogService) }
     defer { _ = deleteStoredSecret(account: "API_TOKEN", service: secretService) }
+    defer { _ = deleteStoredSecret(account: gpgSigningAccount, service: gpgSigningService) }
 
     #expect(saveStoredSecret(account: policyAccount, value: "[]", service: policyService) == errSecSuccess)
     #expect(saveStoredSecret(account: accessLogAccount, value: "[]", service: accessLogService) == errSecSuccess)
     #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: secretService) == errSecSuccess)
+    #expect(saveStoredSecret(
+        account: gpgSigningAccount,
+        value: "{}",
+        service: gpgSigningService
+    ) == errSecSuccess)
 
     #expect(migrateBackgroundKeychainItems(
         policyService: policyService,
         policyAccount: policyAccount,
         accessLogService: accessLogService,
-        accessLogAccount: accessLogAccount
+        accessLogAccount: accessLogAccount,
+        gpgSigningService: gpgSigningService,
+        gpgSigningAccount: gpgSigningAccount
     ) == errSecSuccess)
     #expect(keychainAccessibility(account: policyAccount, service: policyService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: accessLogAccount, service: accessLogService) == kSecAttrAccessibleAfterFirstUnlock as String)
+    #expect(keychainAccessibility(account: gpgSigningAccount, service: gpgSigningService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: "API_TOKEN", service: secretService) == kSecAttrAccessibleWhenUnlocked as String)
 }
 
@@ -1369,14 +1380,14 @@ private func temporaryDirectory() -> URL {
     return url
 }
 
-private func dataProtectionKeychainAvailable() -> Bool {
+func dataProtectionKeychainAvailable() -> Bool {
     let service = "com.automicvault.tests.probe.\(UUID().uuidString)"
     let status = saveStoredSecret(account: "PROBE", value: "secret", service: service)
     defer { _ = deleteStoredSecret(account: "PROBE", service: service) }
     return status != errSecMissingEntitlement
 }
 
-private func keychainAccessibility(account: String, service: String) -> String? {
+func keychainAccessibility(account: String, service: String) -> String? {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service,

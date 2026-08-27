@@ -1549,6 +1549,41 @@ public func loadStoredSecretsResult(
     service: String = automicVaultKeychainService,
     directAccessRules: [DirectAccessRule] = []
 ) -> StoredSecretsLoad {
+    loadStoredSecretsResult(
+        service: service,
+        directAccessRules: directAccessRules,
+        accessibility: nil
+    )
+}
+
+public func loadStoredSecretsForUseResult(
+    service: String = automicVaultKeychainService,
+    directAccessRules: [DirectAccessRule] = []
+) -> StoredSecretsLoad {
+    retryLockedSecretInventory { accessibility in
+        loadStoredSecretsResult(
+            service: service,
+            directAccessRules: directAccessRules,
+            accessibility: accessibility
+        )
+    }
+}
+
+func retryLockedSecretInventory(
+    _ load: (StoredSecretAccessibility?) -> StoredSecretsLoad
+) -> StoredSecretsLoad {
+    let result = load(nil)
+    if case .failure(errSecInteractionNotAllowed) = result {
+        return load(.afterFirstUnlock)
+    }
+    return result
+}
+
+private func loadStoredSecretsResult(
+    service: String,
+    directAccessRules: [DirectAccessRule],
+    accessibility: StoredSecretAccessibility?
+) -> StoredSecretsLoad {
     let directAccess = Dictionary(grouping: directAccessRules, by: \.secretName)
     var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -1557,6 +1592,9 @@ public func loadStoredSecretsResult(
         kSecReturnAttributes as String: true,
         kSecMatchLimit as String: kSecMatchLimitAll,
     ]
+    if let accessibility {
+        query[kSecAttrAccessible as String] = accessibility.keychainValue
+    }
     addCanonicalAccessGroup(to: &query)
     var result: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -2257,13 +2295,16 @@ public func migrateBackgroundKeychainItems(
     secretNameAccessService: String = secretNameAccessKeychainService,
     secretNameAccessAccount: String = secretNameAccessKeychainAccount,
     directAccessService: String = directAccessKeychainService,
-    directAccessAccount: String = directAccessKeychainAccount
+    directAccessAccount: String = directAccessKeychainAccount,
+    gpgSigningService: String = gpgSigningConfigurationService,
+    gpgSigningAccount: String = gpgSigningConfigurationAccount
 ) -> OSStatus {
     for (service, account) in [
         (policyService, policyAccount),
         (accessLogService, accessLogAccount),
         (secretNameAccessService, secretNameAccessAccount),
         (directAccessService, directAccessAccount),
+        (gpgSigningService, gpgSigningAccount),
     ] {
         let status = setKeychainAccessibility(.afterFirstUnlock, service: service, account: account)
         if status != errSecSuccess && status != errSecItemNotFound {
