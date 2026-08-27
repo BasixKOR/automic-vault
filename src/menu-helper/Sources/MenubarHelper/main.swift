@@ -10697,12 +10697,11 @@ private struct ApprovalPromptProcessNodeView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if node.isAutomicVaultSigned {
-                    Text("AV")
-                        .font(.system(.caption2, design: .rounded).weight(.black))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(.green, in: RoundedRectangle(cornerRadius: 4))
+                    Image("NSMenuItem", bundle: .main)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 10, height: 12)
                         .help("Signed by Automic Vault")
                         .accessibilityHidden(true)
                 }
