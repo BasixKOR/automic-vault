@@ -49,6 +49,7 @@ private func stripeRequestClassification(_ arguments: [String]) -> SecretGateReq
         } else if ["--help", "-h", "--version", "-v"].contains(argument)
             || argument == "--map" || argument.hasPrefix("--map=")
         {
+            // Stripe handles --map before command execution and returns after printing the map.
             return .readOnly
         } else if argument.hasPrefix("-") {
             return .unknown

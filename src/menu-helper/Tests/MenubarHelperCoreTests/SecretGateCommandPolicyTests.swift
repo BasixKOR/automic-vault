@@ -81,7 +81,7 @@ import Testing
         ["--config", "/tmp/config.toml", "payment_intents", "search", "--query", "status:'succeeded'"],
         ["--config", "/tmp/config.toml", "--help"],
         ["--config", "/tmp/config.toml", "--version"],
-        ["--config", "/tmp/config.toml", "--map=json"],
+        ["--config", "/tmp/config.toml", "--map=json", "customers", "create", "--name", "Jenny"],
         ["keys", "permissions", "GET /v1/customers"],
         ["agent", "setup", "--status"],
         ["login", "list"],
