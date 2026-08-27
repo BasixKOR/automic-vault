@@ -2575,7 +2575,9 @@ private struct RetainedProcessProvenanceStore {
     ) {
         prune(isLive: isLive)
         guard !executions.isEmpty else { return }
-        for execution in executions where isLive(execution) {
+        for execution in executions
+            where execution.effectiveUserID == geteuid() && isLive(execution)
+        {
             records[gate, default: [:]][execution] = launcher
         }
     }
@@ -12892,9 +12894,17 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
         pid: 200,
         pidVersion: 9,
         startUsec: 123,
-        effectiveUserID: 501,
+        effectiveUserID: geteuid(),
         auditSessionID: 10,
         codeIdentity: Data([1, 2, 3])
+    )
+    let crossUserHerdr = RetainedProcessExecution(
+        pid: herdr.pid,
+        pidVersion: herdr.pidVersion,
+        startUsec: herdr.startUsec,
+        effectiveUserID: geteuid() == 0 ? 1 : 0,
+        auditSessionID: herdr.auditSessionID,
+        codeIdentity: herdr.codeIdentity
     )
     let replacedHerdr = RetainedProcessExecution(
         pid: herdr.pid,
@@ -12937,7 +12947,7 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
     )
     var store = RetainedProcessProvenanceStore()
     store.remember(
-        [herdr],
+        [herdr, crossUserHerdr],
         at: .secretGate("gh"),
         launcher: launcher,
         isLive: { _ in true }
@@ -12947,6 +12957,15 @@ private func runRetainedProcessProvenanceSelfCheck() -> Int32 {
         in: chains,
         isLive: { _ in true }
     )?.launcher.designatedRequirement == launcher.designatedRequirement,
+    store.match(
+        at: .secretGate("gh"),
+        in: [[RetainedProcessChainNode(
+            pid: crossUserHerdr.pid,
+            path: "/usr/local/bin/herdr",
+            execution: crossUserHerdr
+        )]],
+        isLive: { _ in true }
+    ) == nil,
     retainedProvenanceWouldAuthorize(
         request: request,
         configuredGate: gate,
