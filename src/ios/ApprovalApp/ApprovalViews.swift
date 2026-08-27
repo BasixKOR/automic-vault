@@ -224,7 +224,7 @@ struct ApprovalDetailView: View {
             guard state == .active else { return }
             showingSubscription = false
         }
-        .onChange(of: model.pending.contains { $0.id == request.id }) { _, isPending in
+        .onChange(of: model.pending.contains { $0.id == request.id }, initial: true) { _, isPending in
             if !isPending { dismiss() }
         }
     }
