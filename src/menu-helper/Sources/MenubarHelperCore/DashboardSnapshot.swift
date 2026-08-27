@@ -1671,6 +1671,7 @@ public func validateCanonicalProjectDirectory(_ path: String) throws -> String {
     guard directory.path == path else {
         throw ProjectDirectoryValidationError.notCanonical(directory.path)
     }
+    guard path != "/" else { throw ProjectDirectoryValidationError.filesystemRoot }
     let parent = URL(fileURLWithPath: path, isDirectory: true)
         .deletingLastPathComponent().path
     guard parent != path else { throw ProjectDirectoryValidationError.filesystemRoot }
