@@ -9,7 +9,7 @@ private struct SecretGateCommandPolicy: Sendable {
         self.secretDump = Self.commands(secretDump)
     }
 
-    private static func commands(_ value: String) -> Set<String> {
+    static func commands(_ value: String) -> Set<String> {
         Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
     }
 }
@@ -20,6 +20,7 @@ public func genericSecretGateRequestClassification(
 ) -> SecretGateRequestClassification {
     let words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "stripe" { return stripeRequestClassification(words) }
     if words == ["help"] || words == ["--help"] || words == ["version"] || words == ["--version"] {
         return .readOnly
     }
@@ -34,6 +35,94 @@ public func genericSecretGateRequestClassification(
     }
     return .unknown
 }
+
+private func stripeRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    if ["--help", "-h", "--version", "-v", "version"].contains(arguments[0])
+        || arguments[0] == "--map" || arguments[0].hasPrefix("--map=")
+    {
+        return .readOnly
+    }
+
+    let optionsWithValues = ["--api-key", "--color", "--config", "--device-name", "--log-level", "--project-name", "-p"]
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if optionsWithValues.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") }) {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < arguments.count else { return .unknown }
+    let words = Array(arguments[index...])
+
+    switch words[0] {
+    case "completion", "community", "get", "open", "resources", "serve", "version", "whoami":
+        return .readOnly
+    case "feedback", "fixtures", "logout", "post", "delete", "reauth", "trigger":
+        return .mutating
+    case "config", "listen":
+        return .secretDump
+    case "agent":
+        guard words.dropFirst().first == "setup" else { return .unknown }
+        return words.contains("--status") ? .readOnly : .mutating
+    case "data":
+        return words.starts(with: ["data", "metrics", "run"]) ? .readOnly : .unknown
+    case "docs":
+        if words.starts(with: ["docs", "prefs", "set"]) || words.starts(with: ["docs", "prefs", "unset"]) {
+            return .mutating
+        }
+        return .readOnly
+    case "keys":
+        return words.starts(with: ["keys", "permissions"]) ? .readOnly : .unknown
+    case "login":
+        return words.starts(with: ["login", "list"]) ? .readOnly : .mutating
+    case "logs":
+        return words.starts(with: ["logs", "tail"]) ? .readOnly : .unknown
+    case "reporting":
+        if words.starts(with: ["reporting", "query-runs", "retrieve"]) { return .readOnly }
+        if words.starts(with: ["reporting", "query-runs", "create"]) { return .mutating }
+    case "samples":
+        if words.starts(with: ["samples", "list"]) { return .readOnly }
+        if words.starts(with: ["samples", "create"]) { return .mutating }
+        return .unknown
+    case "sandbox":
+        if words.starts(with: ["sandbox", "create"]) { return .secretDump }
+        if words.starts(with: ["sandbox", "claim"]) { return .mutating }
+        return .unknown
+    case "switch":
+        return words.starts(with: ["switch", "context"]) ? .mutating : .unknown
+    default:
+        break
+    }
+
+    guard stripeResourceRoots.contains(words[0]) else { return .unknown }
+    for word in words.dropFirst() {
+        if stripeReadOnlyOperations.contains(word) { return .readOnly }
+        if stripeMutatingOperations.contains(word) { return .mutating }
+        if word.hasPrefix("-") { return .unknown }
+    }
+    return .unknown
+}
+
+// Reviewed against Stripe CLI v1.50.6's generated command map. New roots and
+// operation names remain Unknown until their authority is reviewed.
+private let stripeResourceRoots = SecretGateCommandPolicy.commands("""
+account_links,account_sessions,accounts,apple_pay_domains,application_fees,balance,balance_settings,balance_transactions,bank_accounts,billing,billing_portal,capabilities,cards,cash_balances,charges,checkout,climate,confirmation_tokens,country_specs,coupons,credit_note_line_items,credit_notes,customer_balance_transactions,customer_cash_balance_transactions,customer_sessions,customers,disputes,entitlements,ephemeral_keys,events,exchange_rates,external_accounts,fee_refunds,file_links,files,financial_connections,forwarding,identity,invoice_line_items,invoice_payments,invoice_rendering_templates,invoiceitems,invoices,issuing,login_links,mandates,payment_attempt_records,payment_intent_amount_details_line_items,payment_intents,payment_links,payment_method_configurations,payment_method_domains,payment_methods,payment_records,payment_sources,payouts,persons,plans,preview,prices,product_features,products,promotion_codes,quotes,radar,refunds,reporting,reviews,scheduled_query_runs,setup_attempts,setup_intents,shipping_rates,sources,subscription_items,subscription_schedules,subscriptions,tax,tax_codes,tax_ids,tax_rates,terminal,test_helpers,tokens,topups,transfer_reversals,transfers,treasury,v2,webhook_endpoints
+""")
+
+private let stripeReadOnlyOperations = SecretGateCommandPolicy.commands("""
+balance_transactions,capabilities,find,get,list,list_computed_upfront_line_items,list_line_items,list_owners,list_payment_methods,me,pdf,persons,preview,preview_lines,retrieve,retrieve_features,retrieve_payment_method,search,show,source_transactions
+""")
+
+private let stripeMutatingOperations = SecretGateCommandPolicy.commands("""
+accept,acknowledge_confirmation_of_payee,activate,add_lines,advance,apply_customer_balance,approve,archive,attach,attach_payment,cancel,cancel_action,capture,close,collect_inputs,collect_payment_method,confirm,confirm_microdeposits,confirm_payment_intent,create,create_force_capture,create_from_calculation,create_funding_instructions,create_preview,create_reversal,create_unlinked_refund,credit,deactivate,delete,delete_discount,delete_where,deliver_card,detach,disable,disconnect,enable,expire,fail,fail_card,finalize_amount,finalize_invoice,finalize_quote,fund_cash_balance,generate_microdeposits,increment,increment_authorization,initiate_confirmation_of_payee,invoke,mark_uncollectible,migrate,pay,ping,post,present_payment_method,process_payment_intent,process_setup_intent,quickstart,reactivate,redact,refresh,refund,refund_payment,reject,release,remove_lines,report_payment,report_payment_attempt,report_payment_attempt_canceled,report_payment_attempt_failed,report_payment_attempt_guaranteed,report_payment_attempt_informational,report_refund,resend,respond,resume,return_card,return_inbound_transfer,return_outbound_payment,return_outbound_transfer,reverse,send_invoice,send_microdeposits,set_reader_display,ship_card,submit,submit_card,subscribe,succeed,succeed_input_collection,terminate,timeout_input_collection,unarchive,unreject,unsubscribe,update,update_features,update_lines,validate,verify,verify_microdeposits,void_credit_note,void_grant,void_invoice
+""")
 
 private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "akamai": .init("config list", "config set,config remove", secretDump: "config show"),
@@ -82,7 +171,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "virustotal-cli": .init("file,url,domain,ip,collection", "scan,upload"),
     "vultr": .init("instance list,instance get,region list,plan list", "instance create,instance delete,instance start,instance stop"),
     "wsk": .init("action list,action get,namespace list,package list,trigger list", "action create,action update,action delete,action invoke", secretDump: "property get"),
-    "stripe": .init("get,customers list,customers retrieve,products list,products retrieve,prices list,prices retrieve", "post,delete,trigger"),
+    "stripe": .init("", ""),
     "supabase": .init("projects list,functions list,status,inspect", "link,unlink,db push,db reset,functions deploy,secrets set,secrets unset"),
 ]
 
