@@ -1097,6 +1097,20 @@ func protectionPolicyMatrix(
     }
 }
 
+@Test func physicalDirectoryAncestorsStopsAtCanonicalRoot() throws {
+    let ancestors = try physicalDirectoryAncestors(
+        "/project",
+        parentPath: { $0 == "/project" ? "/" : "/.." }
+    ) { path in
+        switch path {
+        case "/project", "/": (path, 1)
+        case "/..": ("/", 1)
+        default: throw ProjectDirectoryValidationError.unavailable
+        }
+    }
+    #expect(ancestors == ["/project", "/"])
+}
+
 @Test func multiValueAvailabilityAndRenameCompleteAsForwardOperations() throws {
     guard dataProtectionKeychainAvailable() else { return }
     let service = "com.automicvault.tests.project-mutation.\(UUID().uuidString)"
