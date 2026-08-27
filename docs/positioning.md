@@ -47,6 +47,9 @@ Automic Vault decides whether a complete operation may use it.
 - An explicitly recognized, vendor-signed CLI sealed inside its vendor's app
   may represent that app as a Verified Launcher; unrelated bundled executables
   do not inherit the app's authority.
+- When Automic Vault discovers signed helpers while adding an app as a Verified
+  Launcher, the user may explicitly associate selected helpers with that app
+  after reviewing the cross-gate authority warning.
 - Git can keep its ordinary commit workflow while the GPG Signing Gate
   authorizes private-key use and may select an alternate credential for exact
   Verified Launchers.

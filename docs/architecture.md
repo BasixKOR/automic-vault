@@ -285,18 +285,26 @@ The policy identity is the Launcher's designated requirement, checked against th
 An app's declared main executable may represent the app after its code signature
 and exact membership in the app's resource seal are validated. A non-main
 executable may represent the app only as an enabled Verified Launcher Helper
-whose exact app and helper signing identities appear in the built-in positive
-catalog. Disabled catalog entries are stored in the Data Protection Keychain;
-missing or malformed stored configuration fails closed except that a genuinely
-absent record uses the built-in defaults. Runtime verification binds the live
-helper to the on-disk executable, validates the app executable, and validates
-the exact helper as a required, unaltered member of the app's resource seal.
+whose exact app and helper signing identities appear in the positive catalog.
+The catalog combines reviewed built-in associations with associations the user
+explicitly approves after signed, sealed helpers are discovered while adding an
+app as a Verified Launcher. Discovery grants no authority. The approval UI lists
+each exact helper identity and warns that enabling one makes it represent the
+app at every Authorization Gate where that app has a current or future rule.
+User-approved associations and disabled catalog entries are stored in the Data
+Protection Keychain; missing or malformed stored configuration fails closed
+except that a genuinely absent record uses the built-in defaults. Runtime
+verification binds the live helper to the on-disk executable, validates the app
+executable, and validates the exact helper as a required, unaltered member of
+the app's resource seal.
 Unrelated app resources are not Launcher Identity evidence and are not scanned.
 If targeted resource validation is unavailable, Automic Vault falls back to
 complete bundle validation. Other bundle-contained executables do not inherit
 the app identity. Launcher Bundles retain their complete enrolled-bundle and
 payload verification. See [ADR 0020](adr/0020-app-launcher-main-executable.md)
 and [ADR 0033](adr/0033-targeted-app-launcher-validation.md).
+User-approved associations are defined by
+[ADR 0034](adr/0034-user-approved-launcher-helpers.md).
 
 Eligible Launchers must enable Hardened Runtime or be Apple platform binaries
 signed as part of a macOS release, for which macOS applies the runtime

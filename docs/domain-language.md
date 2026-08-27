@@ -209,15 +209,22 @@ complete enrollment and integrity checks.
 A vendor-signed executable that may represent one exact containing app as its
 Launcher even though it is not that app's declared main executable. The
 association binds the helper and app signing identities and is enabled through
-an explicit positive catalog whose disabled entries are stored in the Data
-Protection Keychain. Bundle containment, a filename, a path, or a shared Team
-ID alone never creates the association.
+an explicit positive catalog. The catalog contains reviewed built-in
+associations and associations the user explicitly approves after Automic Vault
+discovers signed helpers sealed inside an app. User-approved associations and
+disabled entries are stored in the Data Protection Keychain. Discovery,
+bundle containment, a filename, a path, or a shared Team ID alone never creates
+an association.
 
 Automic Vault verifies the live helper, the app's signed executable, and that
 the exact helper file is a required unmodified resource in the app's resource
 seal before attributing the app's Launcher Identity. If any check fails, the
 helper does not receive the app identity; an independently eligible Developer
 ID executable may still qualify under its own standalone Launcher Identity.
+An enabled association applies wherever policy names the containing app's
+Launcher Identity, across every current and future Authorization Gate. The user
+must be warned about that authority expansion before approving an association
+and may disable it without changing the app's Launcher-specific rules.
 
 ### Retained Launcher Provenance
 
