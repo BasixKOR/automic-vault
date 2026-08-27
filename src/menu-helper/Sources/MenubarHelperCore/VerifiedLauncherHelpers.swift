@@ -134,14 +134,13 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
 }
 
 public func userApprovedVerifiedLauncherHelperID(_ helper: VerifiedLauncherHelper) -> String {
-    [
-        "user",
+    "user:" + [
         helper.appTeamIdentifier,
         helper.appBundleIdentifier,
         helper.helperTeamIdentifier,
         helper.helperSigningIdentifier,
         helper.relativePath ?? "",
-    ].joined(separator: ":")
+    ].map { "\($0.utf8.count):\($0)" }.joined()
 }
 
 @concurrent

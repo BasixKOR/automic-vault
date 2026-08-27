@@ -92,3 +92,14 @@ private func userApprovedHelper() -> VerifiedLauncherHelper {
         relativePath: helper.relativePath
     )
 }
+
+@Test(.enabled(if: FileManager.default.fileExists(
+    atPath: "/Applications/Package Manager Manager.app"
+)))
+func discoversInstalledPackageManagerManagerHelpers() async {
+    let helpers = await discoverVerifiedLauncherHelpers(
+        in: URL(fileURLWithPath: "/Applications/Package Manager Manager.app", isDirectory: true)
+    )
+    #expect(helpers.contains { $0.helperSigningIdentifier == "dev.mxcl.pmm.menu" })
+    #expect(helpers.contains { $0.helperSigningIdentifier == "pmmctl" })
+}

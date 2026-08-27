@@ -34,10 +34,11 @@ change and uses the configured human Approval surface.
 The positive catalog combines reviewed built-in associations with exact
 user-approved associations stored in the Data Protection Keychain. Each
 association binds the app bundle identifier and Team ID to the helper signing
-identifier and Team ID. Runtime authorization continues to verify the live
-helper, bind it to the on-disk executable, validate the app's signed executable,
-and validate the helper against the app's resource seal. Discovery results,
-paths, containment, and Team IDs alone never grant authority.
+identifier, Team ID, and exact relative path inside the app. Runtime
+authorization continues to verify the live helper, bind it to that on-disk
+executable, validate the app's signed executable, and validate the helper
+against the app's resource seal. Discovery results, paths, containment, and
+Team IDs alone never grant authority.
 
 A malformed stored configuration disables every helper association. A user may
 disable an association without deleting any Launcher-specific policy rule.
