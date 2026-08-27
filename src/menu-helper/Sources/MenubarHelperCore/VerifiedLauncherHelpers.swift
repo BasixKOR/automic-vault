@@ -81,7 +81,8 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     }
 
     public func isEnabled(_ helper: VerifiedLauncherHelper) -> Bool {
-        !disabledHelperIDs.contains(helper.id)
+        guard let helper = catalogHelper(matching: helper) else { return false }
+        return !disabledHelperIDs.contains(helper.id)
     }
 
     public var helpers: [VerifiedLauncherHelper] {

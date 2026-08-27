@@ -32,6 +32,10 @@ import Testing
     #expect(decodeVerifiedLauncherHelperConfiguration(data) == configuration)
 }
 
+@Test func discoveredHelperRequiresUserApprovalBeforeItIsEnabled() {
+    #expect(!VerifiedLauncherHelperConfiguration().isEnabled(userApprovedHelper()))
+}
+
 @Test func legacyConfigurationDecodesWithoutUserApprovedHelpers() {
     let configuration = decodeVerifiedLauncherHelperConfiguration(
         Data(#"{"disabledHelperIDs":["codex"]}"#.utf8)
