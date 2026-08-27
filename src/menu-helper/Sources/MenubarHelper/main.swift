@@ -9536,6 +9536,8 @@ private func launcherIdentities(
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
+    // Gate plumbing is never the operation's Launcher.
+    guard signing.identifier != "com.automicvault.av-gpg" else { return [] }
     var seenContainingApps = Set<String>()
     let containingAppURLs = (
         appBundleURLs(containing: path)
@@ -12732,6 +12734,40 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
     ].allSatisfy {
         !FileManager.default.fileExists(atPath: $0.path) || staticSigningInfo(url: $0) != nil
     }
+    let avGPG = LiveSigningInfo(
+        identifier: "com.automicvault.av-gpg",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.automicvault.av-gpg" and anchor apple generic"#,
+        mainExecutable: "/Applications/Automic Vault.app/Contents/MacOS/av-gpg",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let portalHelper = LiveSigningInfo(
+        identifier: "dev.mxcl.portal.sessiond",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "dev.mxcl.portal.sessiond" and anchor apple generic"#,
+        mainExecutable: "/Applications/Portal Session Helper.app/Contents/MacOS/portal-sessiond",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let portalHelperSigning = StaticSigningInfo(
+        identifier: portalHelper.identifier,
+        teamIdentifier: portalHelper.teamIdentifier,
+        designatedRequirement: portalHelper.designatedRequirement
+    )
+    let portalGPGLaunchers = launcherIdentities(
+        pid: 45,
+        path: avGPG.mainExecutable,
+        signing: avGPG,
+        appSigning: { _ in nil }
+    ) + launcherIdentities(
+        pid: 44,
+        path: portalHelper.mainExecutable,
+        signing: portalHelper,
+        appSigning: { _ in portalHelperSigning }
+    )
     let liveBundleFallback = launcherIdentities(
         pid: 44,
         path: bundledDeveloperID.mainExecutable,
@@ -12793,6 +12829,11 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
           ]) == "example → zsh → gh",
+          executionOrigin(
+              among: portalGPGLaunchers,
+              callerPID: 46,
+              ancestorFallbackPath: portalHelper.mainExecutable
+          )?.identifier == portalHelper.identifier,
           !appBundleMatchesMainExecutable(
               URL(fileURLWithPath: "/Applications/Xcode.app"),
               executablePaths: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"],
