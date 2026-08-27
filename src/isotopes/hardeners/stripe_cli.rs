@@ -34,33 +34,25 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     for (profile, account_id) in &profiles {
         for field in API_KEY_FIELDS {
-            let legacy_key = format!("{profile}.{field}");
             let key = vault_key(&logical_api_key(profile, account_id, field));
             if let Some(value) =
                 config_value(&config, profile, field).filter(|value| is_api_key(value))
             {
                 add_credential(&mut credentials, key.clone(), value, None)?;
             }
-            if let Some(value) = legacy_keychain_value(&legacy_key) {
-                add_credential(&mut credentials, key, value, Some(legacy_key))?;
-            }
-        }
-        let session_key = format!("{profile}.stripe_cli_session");
-        if let Some(value) = legacy_keychain_value(&session_key) {
-            add_credential(
-                &mut credentials,
-                vault_key(&session_key),
-                value,
-                Some(session_key),
-            )?;
         }
     }
-    if let Some(value) = legacy_keychain_value("uat") {
+
+    for legacy_key in legacy_keychain_accounts()? {
+        let Some(value) = legacy_keychain_value(&legacy_key)? else {
+            continue;
+        };
+        let logical_key = remap_api_key(&legacy_key, &profiles);
         add_credential(
             &mut credentials,
-            vault_key("uat"),
+            vault_key(&logical_key),
             value,
-            Some("uat".to_string()),
+            Some(legacy_key),
         )?;
     }
 
@@ -284,11 +276,31 @@ fn add_credential(
     Ok(())
 }
 
-fn legacy_keychain_value(account: &str) -> Option<String> {
+fn legacy_keychain_accounts() -> Result<BTreeSet<String>, String> {
     if let Some(json) = crate::test_env_string("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS") {
         return serde_json::from_str::<BTreeMap<String, String>>(&json)
-            .ok()?
-            .remove(account);
+            .map(|credentials| credentials.into_keys().collect())
+            .map_err(|err| format!("failed to parse Stripe legacy keychain fixture: {err}"));
+    }
+    let mut accounts = BTreeSet::new();
+    for item in
+        crate::isotopes::detectors::gh_cli::legacy_keychain_items(&[KEYCHAIN_SERVICE.to_string()])?
+    {
+        if !accounts.insert(item.account.clone()) {
+            return Err(format!(
+                "refusing ambiguous duplicate legacy keychain items (service {KEYCHAIN_SERVICE:?}, account {:?})",
+                item.account
+            ));
+        }
+    }
+    Ok(accounts)
+}
+
+fn legacy_keychain_value(account: &str) -> Result<Option<String>, String> {
+    if let Some(json) = crate::test_env_string("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS") {
+        return serde_json::from_str::<BTreeMap<String, String>>(&json)
+            .map(|mut credentials| credentials.remove(account))
+            .map_err(|err| format!("failed to parse Stripe legacy keychain fixture: {err}"));
     }
     super::gh_cli::security_find_generic_password(KEYCHAIN_SERVICE, Some(account))
 }
@@ -445,6 +457,39 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS");
         }
         assert!(!fallback.exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn harden_discovers_keychain_credentials_without_matching_config() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_path("stripe-orphaned-keychain");
+        let keychain = dir.join("keychain");
+        let stripe = dir.join("stripe-cli");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&stripe, "").unwrap();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+            std::env::set_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain);
+            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH", &stripe);
+            std::env::set_var(
+                "AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS",
+                r#"{"orphan.stripe_cli_session":"session_secret"}"#,
+            );
+        }
+
+        run(&mut Vec::new(), true).unwrap();
+
+        unsafe {
+            std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_LEGACY_KEYS");
+        }
+        assert_eq!(
+            fs::read_to_string(keychain.join(vault_key("orphan.stripe_cli_session"))).unwrap(),
+            "session_secret"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
