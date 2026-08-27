@@ -9992,30 +9992,38 @@ private func verifiedLauncherHelperAssociation(
     path: String,
     signing: LiveSigningInfo,
     containingAppURLs: [URL]? = nil,
-    helpers: [VerifiedLauncherHelper] = verifiedLauncherHelpers,
+    helpers: [VerifiedLauncherHelper]? = nil,
     configuration: VerifiedLauncherHelperConfiguration? = nil,
     bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
 ) -> VerifiedLauncherHelperAssociation? {
-    guard signing.isDeveloperID,
-          let helper = helpers.first(where: {
-              $0.helperSigningIdentifier == signing.identifier
-                  && $0.helperTeamIdentifier == signing.teamIdentifier
-          }),
-          (configuration ?? loadVerifiedLauncherHelperConfiguration()).isEnabled(helper)
-    else { return nil }
+    let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
+    let helpers = helpers ?? configuration.helpers
+    guard signing.isDeveloperID else { return nil }
     let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
     let executableURL = URL(fileURLWithPath: executablePath)
         .standardizedFileURL
         .resolvingSymlinksInPath()
     let appURLs = containingAppURLs ?? appBundleURLs(containing: executableURL.path)
-    guard let appURL = appURLs.first(where: {
-        bundleIdentifier($0) == helper.appBundleIdentifier
-    }) else { return nil }
-    return VerifiedLauncherHelperAssociation(
-        helper: helper,
-        appURL: appURL,
-        executableURL: executableURL
-    )
+    for helper in helpers where configuration.isEnabled(helper)
+        && helper.helperSigningIdentifier == signing.identifier
+        && helper.helperTeamIdentifier == signing.teamIdentifier
+    {
+        guard let appURL = appURLs.first(where: {
+            bundleIdentifier($0) == helper.appBundleIdentifier
+        }) else { continue }
+        if let relativePath = helper.relativePath {
+            let expectedURL = appURL.appendingPathComponent(relativePath)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+            guard expectedURL == executableURL else { continue }
+        }
+        return VerifiedLauncherHelperAssociation(
+            helper: helper,
+            appURL: appURL,
+            executableURL: executableURL
+        )
+    }
+    return nil
 }
 
 private func verifiedLauncherHelperSigningInfo(
@@ -12617,6 +12625,34 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         ),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
     )
+    let wrongPathCodexHelper = VerifiedLauncherHelper(
+        id: "wrong-path-codex",
+        name: "Wrong Codex",
+        appName: "ChatGPT",
+        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
+        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
+        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        relativePath: "Contents/Resources/not-codex"
+    )
+    let pathBoundCodexHelper = VerifiedLauncherHelper(
+        id: "path-bound-codex",
+        name: "Codex CLI",
+        appName: "ChatGPT",
+        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
+        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
+        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        relativePath: "Contents/Resources/codex"
+    )
+    let pathBoundCodexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        helpers: [wrongPathCodexHelper, pathBoundCodexHelper],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
     let xcodeGit = LiveSigningInfo(
         identifier: "com.apple.git",
         teamIdentifier: "Software Signing",
@@ -12685,6 +12721,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           targetedAppResourceValidationAvailable,
           codexAssociation?.helper == codexVerifiedLauncherHelper,
           codexAssociation?.appURL == chatGPTURL,
+          pathBoundCodexAssociation?.helper == pathBoundCodexHelper,
           disabledCodexAssociation == nil,
           xcodeHelperAssociation == nil,
           installedCodexValidation,
