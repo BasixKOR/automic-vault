@@ -11,8 +11,8 @@ It also reviews installed-artifact, persistence, protocol, and schema revisions,
 including the CLI install and Homebrew stub revisions, and applies any missing
 numeric increments before creating the release commit.
 The script updates `Cargo.toml` and `Cargo.lock`, commits and pushes that exact
-release commit to `main`, then dispatches the workflow. The workflow signs and
-notarizes the app, staples the notarization ticket, creates SHA-256 checksums
+release commit to the current release branch, then dispatches the workflow. The
+workflow signs and notarizes the app, staples the notarization ticket, creates SHA-256 checksums
 and an SPDX SBOM, attests the final DMG, and creates a draft GitHub release.
 After a human approves publication in `publish.sh`, the script publishes the
 draft and updates the local Homebrew tap. The website resolves its download
@@ -28,8 +28,8 @@ blocked, and the clone is deleted after the check.
 ## One-time GitHub setup
 
 Create a GitHub Actions environment named `release`. Protect it with required
-reviewers. If deployment branch rules are available, allow `main`; the draft
-build runs from `main`.
+reviewers. If deployment branch rules are available, allow `main` and any active
+`vMAJOR.MINOR` maintenance branches.
 
 Enable immutable releases:
 
@@ -114,7 +114,7 @@ gh variable set POSTHOG_API_KEY \
 
 ## Publish a release
 
-Run from a clean `main` checkout matching `origin/main`:
+Run from a clean `main` or `vMAJOR.MINOR` checkout matching its remote branch:
 
 ```sh
 scripts/publish.sh
@@ -122,12 +122,12 @@ scripts/publish.sh
 
 Pass `--version X.Y.Z` to require a particular version while still using Codex
 to write and validate the release notes. If a workflow fails after its release
-commit was pushed, fix and push `main`, then pass that same version to retry
+commit was pushed, fix and push the release branch, then pass that same version to retry
 without creating another version bump.
 
 The script prints Codex's selected version and release notes, updates the Cargo
 version metadata and any required internal revisions, pushes the resulting
-release commit, then dispatches that exact `main` commit. It waits for the
+release commit, then dispatches that exact release-branch commit. It waits for the
 workflow, verifies that the result is a draft targeting that commit, checks the
 updater against the draft, and launches the draft app in macOS 14. Only then
 does it print the draft URL and ask `release y/n?`. Answering `y` publishes the
@@ -136,7 +136,8 @@ Homebrew tap. Answering anything else leaves the draft unpublished. Draft
 creation never updates Homebrew. The website download redirects to GitHub's
 latest published release independently of this script.
 
-The run fails if local `main` differs from `origin/main`, Codex returns an
+The run fails if the local release branch differs from its remote, a maintenance
+branch does not match the version's major and minor components, Codex returns an
 invalid or non-increasing version, the tag or release already exists, required
 configuration is missing, or immutable releases are disabled.
 
