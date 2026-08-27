@@ -19,6 +19,7 @@ pub(crate) mod oxide_credential;
 pub(crate) mod plumber_credential;
 mod proxy;
 pub(crate) mod railway_credential;
+pub(crate) mod rclone_password;
 mod save;
 mod scan;
 mod shell_secrets;
@@ -55,7 +56,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 39;
+pub(crate) const INSTALL_REVISION: u32 = 40;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -423,6 +424,10 @@ where
                 let result = hardeners::wakatime_cli::run(stdout, yes);
                 return finish_hardening(result, "wakatime-cli", stdout, stderr);
             }
+            if target == "rclone" {
+                let result = hardeners::rclone::run(stdout, yes);
+                return finish_hardening(result, "rclone", stdout, stderr);
+            }
             if target == "gh" || target == "gh-cli" {
                 let result = hardeners::gh_cli::run(stdout, yes);
                 return finish_hardening(result, "gh", stdout, stderr);
@@ -487,6 +492,7 @@ where
         Some("uaa-credential") => uaa_credential::run(rest, stdout, stderr),
         Some("railway-credential") => railway_credential::run(rest, stdout, stderr),
         Some("wakatime-credential") => wakatime_credential::run(rest, stdout, stderr),
+        Some("rclone-password") => rclone_password::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {
