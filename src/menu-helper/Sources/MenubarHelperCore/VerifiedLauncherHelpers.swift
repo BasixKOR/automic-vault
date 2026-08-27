@@ -253,7 +253,7 @@ private func isValidVerifiedLauncherHelperConfiguration(
         == configuration.userApprovedHelpers.count
         && configuration.userApprovedHelpers.allSatisfy(isValidUserApprovedHelper)
         && configuration.userApprovedHelpers.allSatisfy { helper in
-            !verifiedLauncherHelpers.contains { $0.id == helper.id }
+            !verifiedLauncherHelpers.contains { $0.hasSameSigningAssociation(as: helper) }
         }
 }
 

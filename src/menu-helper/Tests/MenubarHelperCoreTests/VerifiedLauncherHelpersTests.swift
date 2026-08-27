@@ -80,6 +80,37 @@ import Testing
     #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
 }
 
+@Test func storedUserApprovedHelperCannotShadowABuiltInAssociation() throws {
+    let shadow = VerifiedLauncherHelper(
+        id: "",
+        name: codexVerifiedLauncherHelper.name,
+        appName: codexVerifiedLauncherHelper.appName,
+        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
+        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
+        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        relativePath: "Contents/Resources/codex"
+    )
+    let stored = VerifiedLauncherHelper(
+        id: userApprovedVerifiedLauncherHelperID(shadow),
+        name: shadow.name,
+        appName: shadow.appName,
+        appBundleIdentifier: shadow.appBundleIdentifier,
+        appTeamIdentifier: shadow.appTeamIdentifier,
+        helperSigningIdentifier: shadow.helperSigningIdentifier,
+        helperTeamIdentifier: shadow.helperTeamIdentifier,
+        relativePath: shadow.relativePath
+    )
+    let data = try JSONEncoder().encode(VerifiedLauncherHelperConfiguration(
+        userApprovedHelpers: [stored]
+    ))
+    let configuration = decodeVerifiedLauncherHelperConfiguration(data)
+
+    #expect(configuration.userApprovedHelpers.isEmpty)
+    #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
+    #expect(!configuration.isEnabled(claudeCodeVerifiedLauncherHelper))
+}
+
 @Test func helperRelativePathRejectsResolvedSymlinkEscape() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("av-helper-path-\(UUID().uuidString)", isDirectory: true)
