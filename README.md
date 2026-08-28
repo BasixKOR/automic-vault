@@ -332,27 +332,14 @@ long-running processes.
 
 #### Reentrant Blessed Scripts
 
-A reentrant Blessed Script is an implementation pattern, not a new policy or
-authorization type.
+A reentrant Blessed Script does deterministic work until it needs agent input,
+then prints a prompt and exits. The prompt names the required output, fixed
+subcommands that expose reviewed capabilities, and the command that continues
+the next deterministic step.
 
-A Blessed Script can pause for agent work and resume after the agent supplies
-the missing input. Keep secrets and privileged operations in the script. When
-the script needs judgment, print a prompt that gives the agent:
-
-- the exact output it must produce;
-- fixed script subcommands for tasks that need the script's capabilities; and
-- the exact command that resumes the next deterministic step.
-
-Automic Vault evaluates each invocation against the same Blessing and makes a
-new Authorization Decision. The agent cannot carry an earlier decision into
-reentry, and the prompt cannot expand the Script Declaration. Treat agent output
-as untrusted input, validate it before use, and never put a Secret Value or an
-arbitrary `gh` or `aws` command in the prompt.
-
-In this abbreviated publishing script, an agent writes release notes. The agent
-can reenter the script for GitHub or CDN context, then reenter it again to
-publish the GitHub release, mirror its assets to S3, and invalidate the
-CloudFront paths that serve them:
+Automic Vault authorizes every invocation separately. Keep Secret Values in the
+script and validate agent output before using it. This release example publishes
+to GitHub, copies the assets to S3, and invalidates their CloudFront paths:
 
 ```sh
 #!/usr/local/bin/av inject -- /bin/bash
@@ -363,137 +350,41 @@ CloudFront paths that serve them:
 # ---
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${AV_SCRIPT_PATH:-$0}")/.." && pwd)"
+# snip… constants and input validation
 SELF="${AV_SCRIPT_PATH:-$0}"
-ACTION="${1:-continue}"
-VERSION="${2:-}"
-REPOSITORY="example/widget"
-BUCKET="downloads.example.com"
-DISTRIBUTION_ID="E123EXAMPLE"
 
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-  echo "usage: $SELF {continue|agent:github-context|agent:cdn-status} VERSION" >&2
-  exit 64
-}
-
-NOTES="$ROOT/.release/$VERSION/notes.md"
-ASSETS=("$ROOT/dist/widget-$VERSION.tar.gz" "$ROOT/dist/SHA256SUMS")
-
-agent_prompt() {
-  mkdir -p "$(dirname "$NOTES")"
-  cat <<EOF
-Write concise release notes for $REPOSITORY $VERSION to:
-  $NOTES
-
-If you need GitHub release context, run:
-  "$SELF" agent:github-context "$VERSION"
-
-If you need the current S3 and CloudFront status, run:
-  "$SELF" agent:cdn-status "$VERSION"
-
-Do not run gh or aws directly. Do not include secrets. When the notes are ready,
-continue the deterministic publication with:
-  "$SELF" continue "$VERSION"
-EOF
-}
-
-verify_inputs() {
-  [[ -f "$NOTES" && ! -L "$NOTES" && -s "$NOTES" ]] || {
-    echo "error: release notes must be a nonempty regular file" >&2
-    exit 65
-  }
-  [[ $(wc -c <"$NOTES") -le 65536 ]] || {
-    echo "error: release notes exceed 64 KiB" >&2
-    exit 65
-  }
-  for asset in "${ASSETS[@]}"; do
-    [[ -f "$asset" && ! -L "$asset" ]] || {
-      echo "error: missing release asset: $asset" >&2
-      exit 65
-    }
-  done
-}
-
-verify_github_assets() {
-  local asset name expected actual
-  for asset in "${ASSETS[@]}"; do
-    name="$(basename "$asset")"
-    expected="sha256:$(shasum -a 256 "$asset" | awk '{print $1}')"
-    actual="$(gh release view "$VERSION" --repo "$REPOSITORY" --json assets \
-      --jq ".assets[] | select(.name == \"$name\") | .digest")"
-    [[ "$actual" == "$expected" ]] || {
-      echo "error: GitHub asset differs: $name" >&2
-      exit 1
-    }
-  done
-}
-
-publish_github() {
-  local is_draft
-  if ! gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1; then
-    gh release create "$VERSION" "${ASSETS[@]}" --repo "$REPOSITORY" \
-      --notes-file "$NOTES" --verify-tag
-  fi
-  is_draft="$(gh release view "$VERSION" --repo "$REPOSITORY" \
-    --json isDraft --jq .isDraft)"
-  [[ "$is_draft" == false ]] || {
-    echo "error: GitHub release is still a draft" >&2
-    exit 1
-  }
-  verify_github_assets
-}
-
-mirror_asset() {
-  local asset="$1" name key digest checksum remote
-  name="$(basename "$asset")"
-  key="releases/$VERSION/$name"
-  digest="$(shasum -a 256 "$asset" | awk '{print $1}')"
-  [[ "sha256:$digest" == "$(gh release view "$VERSION" --repo "$REPOSITORY" \
-    --json assets --jq ".assets[] | select(.name == \"$name\") | .digest")" ]] || {
-    echo "error: local asset no longer matches GitHub: $name" >&2
-    exit 1
-  }
-  checksum="$(printf '%s' "$digest" | xxd -r -p | base64)"
-  remote="$(aws s3api head-object --bucket "$BUCKET" --key "$key" \
-    --checksum-mode ENABLED --query ChecksumSHA256 --output text 2>/dev/null || true)"
-  case "$remote" in
-    "$checksum") return ;;
-    ""|None)
-      aws s3api put-object --bucket "$BUCKET" --key "$key" --body "$asset" \
-        --checksum-sha256 "$checksum" --if-none-match '*' >/dev/null
-      ;;
-    *) echo "error: S3 asset differs: $key" >&2; exit 1 ;;
-  esac
-}
-
-case "$ACTION" in
+case "${1:-continue}" in
   agent:github-context)
     gh release list --repo "$REPOSITORY" --limit 5
-    git -C "$ROOT" log -10 --oneline
     ;;
   agent:cdn-status)
     aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "releases/$VERSION/"
-    aws cloudfront list-invalidations --distribution-id "$DISTRIBUTION_ID" --max-items 5
     ;;
   continue)
     if [[ ! -s "$NOTES" ]]; then
-      agent_prompt
+      cat <<EOF
+Write release notes to $NOTES.
+For GitHub context: "$SELF" agent:github-context "$VERSION"
+For CDN context: "$SELF" agent:cdn-status "$VERSION"
+Then continue: "$SELF" continue "$VERSION"
+EOF
       exit 75
     fi
-    verify_inputs
-    publish_github
-    for asset in "${ASSETS[@]}"; do mirror_asset "$asset"; done
-    aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" \
-      --invalidation-batch "{\"Paths\":{\"Quantity\":1,\"Items\":[\"/releases/$VERSION/*\"]},\"CallerReference\":\"release-$VERSION\"}" \
-      >/dev/null
+
+    # snip… validate notes, assets, and matching remote state
+    gh release create "$VERSION" "${ASSETS[@]}" --notes-file "$NOTES"
+    for asset in "${ASSETS[@]}"; do
+      aws s3 cp "$asset" "s3://$BUCKET/releases/$VERSION/"
+    done
+    aws cloudfront create-invalidation \
+      --distribution-id "$DISTRIBUTION_ID" \
+      --paths "/releases/$VERSION/*"
     ;;
-  *) echo "error: unknown action: $ACTION" >&2; exit 64 ;;
 esac
 ```
 
-The script derives progress from validated files and remote state instead of
-trusting a mutable “current step” flag. A retry accepts matching GitHub and S3
-assets, rejects conflicting assets, and reuses CloudFront's caller reference.
+See the [full defensive script](docs/examples/reentrant-release.sh) for input
+validation, digest checks, conditional S3 writes, and idempotent retries.
 
 
 ### Temporary Access for Agent Tasks
