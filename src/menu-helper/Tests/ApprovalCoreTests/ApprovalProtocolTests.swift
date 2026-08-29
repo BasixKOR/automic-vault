@@ -131,7 +131,8 @@ import Testing
     #expect(activity.first?.command == "command-50")
     #expect(activity.last?.command == "command-1")
 
-    let replacement = try sampleRequest(id: activity.last!.id, command: "replacement")
+    let oldest = try #require(activity.last)
+    let replacement = try sampleRequest(id: oldest.id, command: "replacement")
     activity = PhoneApprovalActivity.adding(
         .init(request: replacement, outcome: .denied),
         to: activity

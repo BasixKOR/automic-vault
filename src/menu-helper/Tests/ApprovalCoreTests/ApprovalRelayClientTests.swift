@@ -27,7 +27,7 @@ func pongWaitPropagatesFailure() async {
     }
 }
 
-@Test
+@Test(.timeLimit(.seconds(5)))
 func canceledPongWaitDoesNotHang() async {
     let pingStarted = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let wait = Task {
