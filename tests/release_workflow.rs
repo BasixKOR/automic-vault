@@ -1,4 +1,6 @@
 const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
+const CI_WORKFLOW: &str = include_str!("../.github/workflows/ci.yml");
+const CARGO_MANIFEST: &str = include_str!("../Cargo.toml");
 const BUILD_SCRIPT: &str = include_str!("../scripts/build.sh");
 const PUBLISH_SCRIPT: &str = include_str!("../scripts/publish.sh");
 const HARDENER_SMOKE_SCRIPT: &str = include_str!("../scripts/smoke-test-hardeners.sh");
@@ -13,6 +15,30 @@ const ACCENT_COLOR: &str =
     include_str!("../src/menu-helper/Resources/Assets.xcassets/AccentColor.colorset/Contents.json");
 const SECRET_PROXY: &str =
     include_str!("../src/menu-helper/Sources/MenubarHelper/SecretProxy.swift");
+const MENU_HELPER_SELF_CHECKS: &str = include_str!("../scripts/test-menu-helper-self-checks.sh");
+
+#[test]
+fn ci_tests_optimized_and_executable_boundaries() {
+    assert!(CARGO_MANIFEST.contains("[profile.test-release]"));
+    assert!(CARGO_MANIFEST.contains("inherits = \"release\""));
+    assert!(CARGO_MANIFEST.contains("debug-assertions = true"));
+    assert!(
+        CI_WORKFLOW
+            .contains("cargo test --profile test-release --all-targets --all-features --locked")
+    );
+    assert!(CI_WORKFLOW.contains("scripts/test-menu-helper-self-checks.sh"));
+    assert!(CI_WORKFLOW.contains("scripts/test-varlock-plugin-helper.sh"));
+}
+
+#[test]
+fn signed_release_exercises_keychain_custody() {
+    assert!(MENU_HELPER_SELF_CHECKS.contains("--self-check-keychain-persistence"));
+    assert!(RELEASE_WORKFLOW.contains("scripts/test-menu-helper-self-checks.sh --signed"));
+    assert!(
+        RELEASE_WORKFLOW
+            .contains("target/swift/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar")
+    );
+}
 
 #[test]
 fn release_workflow_binds_the_dmg_to_reviewed_source() {
