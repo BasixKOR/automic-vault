@@ -10,6 +10,12 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
+# Exercise optimized code with isolated test fixtures. Shipped release binaries keep
+# debug assertions disabled and therefore continue to ignore AUTOMIC_VAULT_TEST_* overrides.
+[profile.test-release]
+inherits = "release"
+debug-assertions = true
+
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"

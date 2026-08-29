@@ -30,6 +30,9 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --all-features --locked
 
+      - name: Run optimized tests
+        run: cargo test --profile test-release --all-targets --all-features --locked
+
   swift:
     name: Swift
     runs-on: macos-26
