@@ -46,5 +46,11 @@ jobs:
       - name: Run tests
         run: swift test --package-path src/menu-helper --disable-automatic-resolution
 
+      - name: Test menu helper executable boundaries
+        run: scripts/test-menu-helper-self-checks.sh
+
       - name: Test Launcher Bundle runner
         run: scripts/test-launcher-bundle-runner.sh
+
+      - name: Test Varlock plugin helper
+        run: scripts/test-varlock-plugin-helper.sh

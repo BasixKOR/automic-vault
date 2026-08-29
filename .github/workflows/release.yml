@@ -203,6 +203,12 @@ jobs:
           codesign --verify "$dmg"
           xcrun stapler validate "$dmg"
 
+      - name: Test signed release boundaries
+        shell: bash
+        run: >-
+          scripts/test-menu-helper-self-checks.sh --signed
+          "target/swift/Automic Vault.app/Contents/MacOS/AutomicVaultMenubar"
+
       - name: Stage release inputs
         shell: bash
         run: |

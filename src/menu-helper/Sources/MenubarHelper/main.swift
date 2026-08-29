@@ -9635,9 +9635,16 @@ private func launcherIdentity(
     pid: pid_t,
     path: String,
     signing: LiveSigningInfo,
-    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
+    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL }
 ) -> LauncherIdentity? {
-    launcherIdentities(pid: pid, path: path, signing: signing, appSigning: appSigning).first
+    launcherIdentities(
+        pid: pid,
+        path: path,
+        signing: signing,
+        appSigning: appSigning,
+        bundleExecutableURL: bundleExecutableURL
+    ).first
 }
 
 private func launcherIdentities(
@@ -9645,6 +9652,7 @@ private func launcherIdentities(
     path: String,
     signing: LiveSigningInfo,
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL },
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
     // Gate plumbing is never the operation's Launcher.
@@ -9659,7 +9667,8 @@ private func launcherIdentities(
         containingAppURLs.filter {
             appBundleMatchesMainExecutable(
                 $0,
-                executablePaths: [path, signing.mainExecutable]
+                executablePaths: [path, signing.mainExecutable],
+                bundleExecutableURL: bundleExecutableURL
             )
         }
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
@@ -11783,6 +11792,43 @@ private func runSecretMutationSelfCheck() -> Int32 {
     return 0
 }
 
+private func runKeychainPersistenceSelfCheck() -> Int32 {
+    let service = "com.automicvault.self-check.\(UUID().uuidString)"
+    let account = "KEYCHAIN_SELF_CHECK"
+    let value = UUID().uuidString
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecAttrAccessGroup as String: "ZU76A67LGU.com.automicvault",
+        kSecUseDataProtectionKeychain as String: true,
+    ]
+    defer { SecItemDelete(query as CFDictionary) }
+
+    guard saveStoredSecret(
+        account: account,
+        value: value,
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess,
+        loadStoredSecret(account: account, service: service) == value,
+        storedSecretExists(account: account, service: service)
+    else { return 1 }
+
+    var attributesQuery = query
+    attributesQuery[kSecReturnAttributes as String] = true
+    attributesQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+    var attributesResult: CFTypeRef?
+    guard SecItemCopyMatching(attributesQuery as CFDictionary, &attributesResult) == errSecSuccess,
+          let attributes = attributesResult as? [String: Any],
+          attributes[kSecAttrAccessible as String] as? String
+              == kSecAttrAccessibleAfterFirstUnlock as String,
+          deleteStoredSecret(account: account, service: service) == errSecSuccess,
+          !storedSecretExists(account: account, service: service)
+    else { return 1 }
+    return 0
+}
+
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
@@ -12186,7 +12232,8 @@ private func runApprovalSelfCheck() -> Int32 {
         pid: 43,
         path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
         signing: vaulttySigning,
-        appSigning: { _ in vaulttyAppSigning }
+        appSigning: { _ in vaulttyAppSigning },
+        bundleExecutableURL: { _ in URL(fileURLWithPath: vaulttySigning.mainExecutable) }
     )
     let vaulttyBridgeLauncher = launcherIdentity(
         pid: 44,
@@ -12207,7 +12254,8 @@ private func runApprovalSelfCheck() -> Int32 {
                 teamIdentifier: "TEAM",
                 designatedRequirement: "identifier \"\(identifier)\" and anchor apple generic"
             )
-        }
+        },
+        bundleExecutableURL: { _ in URL(fileURLWithPath: nestedMenuSigning.mainExecutable) }
     )
     guard parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
@@ -14489,6 +14537,10 @@ if CommandLine.arguments.contains("--self-check-standalone-launchers") {
 
 if CommandLine.arguments.contains("--self-check-secret-mutations") {
     exit(MainActor.assumeIsolated { runSecretMutationSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-keychain-persistence") {
+    exit(runKeychainPersistenceSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-gh-read-only") {
