@@ -1128,6 +1128,29 @@ public func loadSecretGates(
     .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
 }
 
+public func reloadSecretGatePolicy(
+    for gate: SecretGate,
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> SecretGate {
+    let descriptor = SecretGateDescriptor(
+        id: gate.id,
+        keyPatterns: gate.keyPatterns,
+        routes: gate.routes
+    )
+    return loadSecretGates(
+        descriptors: [descriptor],
+        service: service,
+        account: account
+    ).first ?? SecretGate(
+        id: gate.id,
+        keyPatterns: gate.keyPatterns,
+        routes: gate.routes,
+        defaultProtection: .noAccess,
+        appPolicies: []
+    )
+}
+
 public func normalizedExecutablePath(_ path: String) -> String {
     normalizedExecutablePath(path) {
         try? FileManager.default.destinationOfSymbolicLink(atPath: $0)
