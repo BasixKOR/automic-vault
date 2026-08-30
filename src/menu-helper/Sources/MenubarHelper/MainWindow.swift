@@ -1039,7 +1039,7 @@ final class DashboardModel: ObservableObject {
         }
         errorMessage = nil
         var updatedSnapshot = snapshot
-        updatedSnapshot.secretGates[index] = reloadSecretGatePolicy(for: gate)
+        updatedSnapshot.secretGates[index] = reloadSecretGatePolicy(for: snapshot.secretGates[index])
         snapshot = updatedSnapshot
         normalizeSelection()
     }
