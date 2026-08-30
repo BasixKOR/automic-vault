@@ -1091,41 +1091,48 @@ public func loadSecretGates(
     account: String = secretGatePoliciesKeychainAccount
 ) -> [SecretGate] {
     let loadedRecords = loadSecretGatePolicyRecords(service: service, account: account)
+    return descriptors.map {
+        loadedSecretGate(from: $0, policyRecords: loadedRecords)
+    }
+    .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+}
+
+private func loadedSecretGate(
+    from descriptor: SecretGateDescriptor,
+    policyRecords loadedRecords: SecretGatePolicyRecordsLoad
+) -> SecretGate {
     let records: [SecretGatePolicyRecord] = switch loadedRecords {
     case .success(let records): records
     case .failure: []
     }
     let policiesAreReadable = if case .success = loadedRecords { true } else { false }
-    return descriptors.map { descriptor in
-        let gateRecords = records.filter { $0.gateID == descriptor.id }
-        let prototype = SecretGate(
-            id: descriptor.id,
-            keyPatterns: descriptor.keyPatterns.uniqueSorted(),
-            routes: descriptor.routes,
-            defaultProtection: .noAccess,
-            appPolicies: []
-        )
-        return SecretGate(
-            id: prototype.id,
-            keyPatterns: prototype.keyPatterns,
-            routes: prototype.routes,
-            defaultProtection: prototype.normalizedProtection(
-                gateRecords.last(where: { $0.requirement == nil })?.protection
-                    ?? (policiesAreReadable ? prototype.initialProtection : .noAccess)
-            ),
-            appPolicies: gateRecords.compactMap { record in
-                record.requirement.map {
-                    SecretGatePolicy(
-                        bundleIdentifier: appIdentifier(from: $0) ?? "unknown",
-                        requirement: $0,
-                        protection: prototype.normalizedProtection(record.protection),
-                        runtimeRequirement: record.resolvedRuntimeRequirement
-                    )
-                }
-            }.uniqueSorted()
-        )
-    }
-    .sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+    let gateRecords = records.filter { $0.gateID == descriptor.id }
+    let prototype = SecretGate(
+        id: descriptor.id,
+        keyPatterns: descriptor.keyPatterns.uniqueSorted(),
+        routes: descriptor.routes,
+        defaultProtection: .noAccess,
+        appPolicies: []
+    )
+    return SecretGate(
+        id: prototype.id,
+        keyPatterns: prototype.keyPatterns,
+        routes: prototype.routes,
+        defaultProtection: prototype.normalizedProtection(
+            gateRecords.last(where: { $0.requirement == nil })?.protection
+                ?? (policiesAreReadable ? prototype.initialProtection : .noAccess)
+        ),
+        appPolicies: gateRecords.compactMap { record in
+            record.requirement.map {
+                SecretGatePolicy(
+                    bundleIdentifier: appIdentifier(from: $0) ?? "unknown",
+                    requirement: $0,
+                    protection: prototype.normalizedProtection(record.protection),
+                    runtimeRequirement: record.resolvedRuntimeRequirement
+                )
+            }
+        }.uniqueSorted()
+    )
 }
 
 public func reloadSecretGatePolicy(
@@ -1138,16 +1145,9 @@ public func reloadSecretGatePolicy(
         keyPatterns: gate.keyPatterns,
         routes: gate.routes
     )
-    return loadSecretGates(
-        descriptors: [descriptor],
-        service: service,
-        account: account
-    ).first ?? SecretGate(
-        id: gate.id,
-        keyPatterns: gate.keyPatterns,
-        routes: gate.routes,
-        defaultProtection: .noAccess,
-        appPolicies: []
+    return loadedSecretGate(
+        from: descriptor,
+        policyRecords: loadSecretGatePolicyRecords(service: service, account: account)
     )
 }
 
