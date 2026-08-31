@@ -1,16 +1,26 @@
 import StoreKit
 import SwiftUI
 
+private enum ApprovalRoute: Hashable {
+    case pending(UUID)
+    case history(UUID)
+    case settings
+    case subscription
+}
+
 struct ApprovalRootView: View {
     @Bindable var model: ApprovalModel
     @Bindable var subscription: ApprovalSubscription
+    @State private var path: [ApprovalRoute] = []
     @State private var showingSubscription = false
     @State private var keepsPendingListVisible = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
-                if model.pending.count == 1, !keepsPendingListVisible, let request = model.pending.first {
+                if let request = notificationRequest {
+                    ApprovalDetailView(request: request, model: model, subscription: subscription)
+                } else if model.pending.count == 1, !keepsPendingListVisible, let request = model.pending.first {
                     ApprovalDetailView(request: request, model: model, subscription: subscription)
                 } else if !model.pending.isEmpty {
                     list
@@ -25,9 +35,12 @@ struct ApprovalRootView: View {
                 }
             }
             .navigationTitle(showsActivity ? "Request History" : "Approvals")
+            .navigationDestination(for: ApprovalRoute.self) { route in
+                destination(for: route)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { ApprovalSettingsView(model: model, subscription: subscription) } label: {
+                    NavigationLink(value: ApprovalRoute.settings) {
                         Label("Settings", systemImage: "gear")
                     }
                 }
@@ -62,11 +75,44 @@ struct ApprovalRootView: View {
                 if count > 1 { keepsPendingListVisible = true }
                 if count == 0 { keepsPendingListVisible = false }
             }
+            .onChange(of: model.notificationReviewSequence, initial: true) { _, sequence in
+                guard sequence > 0 else { return }
+                path.removeAll()
+                showingSubscription = false
+                keepsPendingListVisible = false
+            }
         }
+    }
+
+    private var notificationRequest: PhoneApprovalRequest? {
+        guard let id = model.notificationReviewRequestID else { return nil }
+        return model.pending.first { $0.id == id }
     }
 
     private var showsActivity: Bool {
         model.pending.isEmpty && model.state == .connected && subscription.state == .active
+    }
+
+    @ViewBuilder
+    private func destination(for route: ApprovalRoute) -> some View {
+        switch route {
+        case .pending(let id):
+            if let request = model.pending.first(where: { $0.id == id }) {
+                ApprovalDetailView(request: request, model: model, subscription: subscription)
+            } else {
+                ContentUnavailableView("Approval No Longer Pending", systemImage: "checkmark.shield")
+            }
+        case .history(let id):
+            if let item = model.activity.first(where: { $0.id == id }) {
+                ApprovalActivityDetailView(item: item)
+            } else {
+                ContentUnavailableView("History Entry Unavailable", systemImage: "clock.badge.xmark")
+            }
+        case .settings:
+            ApprovalSettingsView(model: model, subscription: subscription)
+        case .subscription:
+            ApprovalSubscriptionView(subscription: subscription)
+        }
     }
 
     private var setup: some View {
@@ -115,9 +161,7 @@ struct ApprovalRootView: View {
         List {
             Section {
                 ForEach(model.pending) { request in
-                    NavigationLink {
-                        ApprovalDetailView(request: request, model: model, subscription: subscription)
-                    } label: {
+                    NavigationLink(value: ApprovalRoute.pending(request.id)) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(request.launcher).font(.headline)
                             Text(request.command).font(.callout.monospaced()).lineLimit(2)
@@ -276,9 +320,7 @@ struct ApprovalSettingsView: View {
                 if subscription.state == .active {
                     Button("Manage Subscription") { showingManageSubscriptions = true }
                 } else {
-                    NavigationLink("Subscribe") {
-                        ApprovalSubscriptionView(subscription: subscription)
-                    }
+                    NavigationLink("Subscribe", value: ApprovalRoute.subscription)
                 }
             }
             Section("Connection") { Text(connectionLabel) }
@@ -311,23 +353,22 @@ struct ApprovalActivityView: View {
                 )
             } else {
                 List(model.activity) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(item.responseTitle, systemImage: item.responseSystemImage)
-                            .font(.headline)
-                            .foregroundStyle(item.responseColor)
-                        Text(item.command)
-                            .font(.callout.monospaced())
-                            .lineLimit(2)
-                        HStack {
-                            Text("\(item.launcher) · \(item.tool) · \(item.macName)")
-                            Spacer()
-                            Text(
-                                Date(timeIntervalSince1970: TimeInterval(item.respondedAtMilliseconds) / 1_000),
-                                style: .relative
-                            )
+                    NavigationLink(value: ApprovalRoute.history(item.id)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(item.responseTitle, systemImage: item.responseSystemImage)
+                                .font(.headline)
+                                .foregroundStyle(item.responseColor)
+                            Text(item.command)
+                                .font(.callout.monospaced())
+                                .lineLimit(2)
+                            HStack {
+                                Text("\(item.launcher) · \(item.tool) · \(item.macName)")
+                                Spacer()
+                                Text(item.recordedAt, style: .relative)
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -344,7 +385,47 @@ struct ApprovalActivityView: View {
     }
 }
 
+struct ApprovalActivityDetailView: View {
+    let item: PhoneApprovalActivity
+
+    var body: some View {
+        Form {
+            Section {
+                Label(item.responseTitle, systemImage: item.responseSystemImage)
+                    .foregroundStyle(item.responseColor)
+                LabeledContent("Recorded") {
+                    Text(item.recordedAt, format: .dateTime)
+                }
+            }
+
+            Section("Request") {
+                LabeledContent("Mac", value: item.macName)
+                LabeledContent("Launcher", value: item.launcher)
+                LabeledContent("Tool", value: item.tool)
+            }
+
+            Section("Command") {
+                Text(item.command)
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+            }
+
+            Section("Request ID") {
+                Text(item.id.uuidString)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle("Request Details")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private extension PhoneApprovalActivity {
+    var recordedAt: Date {
+        Date(timeIntervalSince1970: TimeInterval(respondedAtMilliseconds) / 1_000)
+    }
+
     var responseTitle: String {
         switch outcome {
         case .approved: "Approve Once sent"

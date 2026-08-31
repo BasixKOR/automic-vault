@@ -109,6 +109,8 @@ final class ApprovalModel {
     private(set) var activity: [PhoneApprovalActivity] = []
     private(set) var state: ConnectionState = .setup
     private(set) var notificationPreferences = ApprovalNotificationPreferences()
+    private(set) var notificationReviewRequestID: UUID?
+    private(set) var notificationReviewSequence: UInt64 = 0
     var errorMessage: String?
     var biometricProtectionEnabled = UserDefaults.standard.bool(forKey: biometricDefaultsKey) {
         didSet {
@@ -240,6 +242,13 @@ final class ApprovalModel {
                 guard await authenticateBiometrically() else { return }
             }
             await respond(to: ticket, outcome: .approved)
+        case "AV_REVIEW", UNNotificationDefaultActionIdentifier:
+            notificationReviewRequestID = ticket.requestID
+            notificationReviewSequence &+= 1
+            if !pending.contains(where: { $0.id == ticket.requestID }) {
+                if relay == nil { await connect() }
+                if let relay { try? await relay.send(.sync) }
+            }
         default: break
         }
     }
