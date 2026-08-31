@@ -4688,7 +4688,6 @@ private struct SecretGateDetailView: View {
                         .controlSize(.small)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Inspecting the selected app for Verified Launcher Helpers")
                         .accessibilityIdentifier("verified-launcher-helper-inspection-progress")
                 }
 
