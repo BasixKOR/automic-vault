@@ -66,7 +66,7 @@ The harness launches signed app A, replaces A's bundle path with independently v
 2. static inspection at the original path now reports B's identity;
 3. targeted main-executable validation succeeds for B.
 
-This is correct SPI behavior because `SecStaticCodeValidateResourceWithErrors` accepts static code. The ordinary app-Launcher path in `launcherIdentities` currently combines live runtime posture from A with `staticSigningInfo` from B and does not compare the live code identifier with the current main executable's code identifier. If B has an existing Launcher-specific rule, A can be attributed B's Launcher Identity after same-user bundle-path substitution.
+This is correct SPI behavior because `SecStaticCodeValidateResourceWithErrors` accepts static code. The ordinary app Launcher path in `launcherIdentities` currently combines live runtime posture from A with `staticSigningInfo` from B and does not compare the live code identifier with the current main executable's code identifier. If B has an existing Launcher-specific rule, A can be attributed B's Launcher Identity after same-user bundle-path substitution.
 
 Verified Launcher Helpers already make the required live-to-disk code-identifier comparison before accepting app attribution. Ordinary app Launchers should apply the same fail-closed invariant. A mismatch should deny app attribution until the updated app is relaunched. This issue predates targeted validation; complete static bundle validation also validates B rather than the already-running A.
 
