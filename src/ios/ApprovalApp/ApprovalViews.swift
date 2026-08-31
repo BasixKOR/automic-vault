@@ -18,17 +18,14 @@ struct ApprovalRootView: View {
                     ProgressView("Checking subscription…")
                 } else if model.state == .setup || subscription.state == .inactive {
                     setup
+                } else if showsActivity {
+                    ApprovalActivityView(model: model)
                 } else {
                     empty
                 }
             }
-            .navigationTitle("Approvals")
+            .navigationTitle(showsActivity ? "iPhone Activity" : "Approvals")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    NavigationLink { ApprovalActivityView(model: model) } label: {
-                        Label("iPhone Activity", systemImage: "clock.arrow.circlepath")
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { ApprovalSettingsView(model: model, subscription: subscription) } label: {
                         Label("Settings", systemImage: "gear")
@@ -66,6 +63,10 @@ struct ApprovalRootView: View {
                 if count == 0 { keepsPendingListVisible = false }
             }
         }
+    }
+
+    private var showsActivity: Bool {
+        model.pending.isEmpty && model.state == .connected && subscription.state == .active
     }
 
     private var setup: some View {
@@ -331,7 +332,6 @@ struct ApprovalActivityView: View {
                 }
             }
         }
-        .navigationTitle("iPhone Activity")
         .safeAreaInset(edge: .bottom) {
             Text("Up to 50 responses and canceled requests. The Mac's Authorization History is authoritative.")
                 .font(.footnote)
