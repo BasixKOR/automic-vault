@@ -38,6 +38,10 @@ final class ApprovalAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
         Task { ApprovalModel.shared.registrationFailed(error) }
     }
 
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
