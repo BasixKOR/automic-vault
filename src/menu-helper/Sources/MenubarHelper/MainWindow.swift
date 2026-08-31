@@ -1885,13 +1885,15 @@ struct DashboardRootView: View {
                         if model.isDiscoveringLauncherHelpers {
                             ProgressView()
                                 .controlSize(.small)
-                                .help("Inspecting the selected app for signed helpers")
+                                .help("Inspecting the selected app for Verified Launcher Helpers")
+                                .accessibilityLabel("Inspecting the selected app for Verified Launcher Helpers")
                             Button {
                                 model.cancelLauncherHelperDiscovery()
                             } label: {
                                 Image(systemName: "xmark")
                             }
                             .help("Cancel App Inspection")
+                            .accessibilityLabel("Cancel App Inspection")
                         } else {
                             Button {
                                 model.addApp(to: gate)
@@ -4703,6 +4705,14 @@ private struct SecretGateDetailView: View {
                 Text("App Access")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
+
+                if model.isDiscoveringLauncherHelpers {
+                    ProgressView("Inspecting the selected app for Verified Launcher Helpers…")
+                        .controlSize(.small)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("verified-launcher-helper-inspection-progress")
+                }
 
                 VStack(spacing: 0) {
                     DefaultAppPolicyRow(gate: gate, protection: gate.defaultProtection) {
