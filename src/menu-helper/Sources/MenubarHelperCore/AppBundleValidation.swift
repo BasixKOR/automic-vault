@@ -6,7 +6,7 @@ private typealias ValidateSealedResource = @convention(c) (
     SecStaticCode,
     CFURL,
     UInt32,
-    UnsafeMutableRawPointer?
+    UnsafeMutablePointer<Unmanaged<CFError>?>?
 ) -> OSStatus
 
 // Resolve the private SPI dynamically and retain strict complete-bundle validation as fallback.
