@@ -1151,6 +1151,21 @@ public func reloadSecretGatePolicy(
     )
 }
 
+public func reloadDashboardAuthorizationState(
+    from snapshot: DashboardSnapshot,
+    blessedScripts: [BlessedScript] = loadBlessedScripts(),
+    secretNameAccessApps: [BlessedScriptLauncher] = loadSecretNameAccessApps(),
+    secrets: [StoredSecret]? = nil,
+    reloadGatePolicy: (SecretGate) -> SecretGate = { reloadSecretGatePolicy(for: $0) }
+) -> DashboardSnapshot {
+    var refreshed = snapshot
+    refreshed.blessedScripts = blessedScripts
+    refreshed.secretNameAccessApps = secretNameAccessApps
+    refreshed.secrets = secrets ?? loadStoredSecrets(directAccessRules: loadDirectAccessRules())
+    refreshed.secretGates = snapshot.secretGates.map(reloadGatePolicy)
+    return refreshed
+}
+
 public func normalizedExecutablePath(_ path: String) -> String {
     normalizedExecutablePath(path) {
         try? FileManager.default.destinationOfSymbolicLink(atPath: $0)

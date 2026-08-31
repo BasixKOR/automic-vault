@@ -523,6 +523,58 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(refreshed.appPolicies.isEmpty)
 }
 
+@Test func targetedAuthorizationReloadReplacesOnlyAuthorizationState() {
+    let oldLauncher = BlessedScriptLauncher(bundleIdentifier: "old", requirement: "old")
+    let newLauncher = BlessedScriptLauncher(bundleIdentifier: "new", requirement: "new")
+    let oldGate = SecretGate(
+        id: "test",
+        keyPatterns: ["TOKEN"],
+        routes: [],
+        defaultProtection: .readOnly,
+        appPolicies: []
+    )
+    let snapshot = DashboardSnapshot(
+        detectors: [DetectorMetadata(name: "detector", homepage: "", docsURL: "")],
+        detectorFindings: [],
+        hardenedTools: [HardenedTool(name: "tool", targetPath: nil)],
+        secretGates: [oldGate],
+        blessedScripts: [],
+        secretNameAccessApps: [oldLauncher],
+        secrets: [StoredSecret(account: "OLD")],
+        doctorIssues: [DoctorIssue(
+            hardener: "tool",
+            kind: "test",
+            message: "keep",
+            remediation: "keep"
+        )]
+    )
+    let newSecret = StoredSecret(
+        account: "NEW",
+        directAccessLaunchers: [newLauncher]
+    )
+    let refreshed = reloadDashboardAuthorizationState(
+        from: snapshot,
+        blessedScripts: [],
+        secretNameAccessApps: [newLauncher],
+        secrets: [newSecret]
+    ) { gate in
+        SecretGate(
+            id: gate.id,
+            keyPatterns: gate.keyPatterns,
+            routes: gate.routes,
+            defaultProtection: .noAccess,
+            appPolicies: []
+        )
+    }
+
+    #expect(refreshed.detectors == snapshot.detectors)
+    #expect(refreshed.hardenedTools == snapshot.hardenedTools)
+    #expect(refreshed.doctorIssues == snapshot.doctorIssues)
+    #expect(refreshed.secretNameAccessApps == [newLauncher])
+    #expect(refreshed.secrets == [newSecret])
+    #expect(refreshed.secretGates[0].defaultProtection == .noAccess)
+}
+
 @Test(.enabled(if: dataProtectionKeychainAvailable(), "requires an entitled Keychain test host"))
 func brewGateBroadensPersistedReadOnlyPoliciesToReadAndUpdate() throws {
     let service = "com.automicvault.tests.\(UUID().uuidString)"
