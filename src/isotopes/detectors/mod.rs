@@ -427,7 +427,12 @@ pub(crate) fn findings_for(
 
 fn merge_duplicate_owned_shell_path_findings(findings: Vec<DetectorResult>) -> Vec<DetectorResult> {
     let mut merged: Vec<DetectorResult> = Vec::with_capacity(findings.len());
-    for finding in findings {
+    for mut finding in findings {
+        // Shell docs cover credential assignments and PATH hazards, but each
+        // finding needs only the mitigation for the condition it reports.
+        if shell_path_entry(&finding.finding).is_some() {
+            finding.finding.solution = SHELL_PATH_SOLUTION.to_string();
+        }
         let existing = shell_path_entry(&finding.finding).and_then(|entry| {
             merged.iter_mut().find(|candidate| {
                 candidate.finding.source != finding.finding.source
@@ -447,7 +452,7 @@ fn merge_duplicate_owned_shell_path_findings(findings: Vec<DetectorResult>) -> V
 
 const SHELL_PATH_FINDING_SOURCES: &[&str] = &["bash", "zsh"];
 const MERGED_SHELL_PATH_SOURCE: &str = "bash+zsh";
-const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary user programs and shared environment configuration. Automic Vault cannot rewrite them without changing shell behavior or guessing which commands need each secret. Move the reported value with `av save KEY`, then inject it only into the command that needs it. For an unsafe `PATH`, move every protected system directory before the reported user-writable directories and remove empty or relative entries.";
+const SHELL_PATH_SOLUTION: &str = "Version managers commonly prepend user-writable tool directories to `PATH`; this is expected, but those directories can still shadow later commands. Remove empty, relative, and unexpected entries. If the ordering is intentional, use absolute paths for security-sensitive commands and keep reusable secrets out of the shell environment with `av inject` or `av proxy`; these reduce exposure but do not make the `PATH` safe.";
 
 /// `bash` and `zsh` each detect the same process-wide `$PATH` independently,
 /// so an insecure directory is reported once per shell. Collapse those
@@ -455,19 +460,18 @@ const MERGED_SHELL_PATH_SOLUTION: &str = "Shell startup files contain arbitrary 
 /// of doubling the audit for anyone with both shells configured.
 #[cfg(test)]
 fn merge_duplicate_shell_path_findings(findings: Vec<Finding>) -> Vec<Finding> {
-    let mut merged: Vec<Finding> = Vec::with_capacity(findings.len());
-    for finding in findings {
-        let existing = shell_path_entry(&finding).and_then(|entry| {
-            merged.iter_mut().find(|candidate| {
-                candidate.source != finding.source && shell_path_entry(candidate) == Some(entry)
+    merge_duplicate_owned_shell_path_findings(
+        findings
+            .into_iter()
+            .map(|finding| DetectorResult {
+                detectors: vec![finding.source.to_string()],
+                finding,
             })
-        });
-        match existing {
-            Some(existing) => merge_shell_path_finding(existing),
-            None => merged.push(finding),
-        }
-    }
-    merged
+            .collect(),
+    )
+    .into_iter()
+    .map(|result| result.finding)
+    .collect()
 }
 
 /// The PATH entry a shell PATH finding reports, taken from the explanation
@@ -492,7 +496,7 @@ fn merge_shell_path_finding(existing: &mut Finding) {
         );
     }
     existing.source = MERGED_SHELL_PATH_SOURCE;
-    existing.solution = MERGED_SHELL_PATH_SOLUTION.to_string();
+    existing.solution = SHELL_PATH_SOLUTION.to_string();
 }
 
 pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
@@ -733,6 +737,11 @@ mod tests {
             "{} PATH has a user-writable directory before protected system directories: {path}",
             if shell == "bash" { "Bash" } else { "Zsh" },
         );
+        let documentation = if shell == "bash" {
+            include_str!("bash/detector.md")
+        } else {
+            include_str!("zsh/detector.md")
+        };
         Finding {
             source: shell,
             homepage: "https://example.test/",
@@ -741,9 +750,18 @@ mod tests {
             // empty entries have no affected path here either.
             affected: super::radioisotope::affected(&explanation),
             explanation,
-            solution: format!("{shell} startup files contain arbitrary user programs."),
+            solution: documented_solution(documentation).unwrap(),
             docs_url: "https://example.test/docs.md",
         }
+    }
+
+    #[test]
+    fn gives_a_lone_shell_path_finding_path_specific_mitigation() {
+        let findings = vec![shell_path_finding("bash", "/Users/tester/.local/bin")];
+
+        let merged = merge_duplicate_shell_path_findings(findings);
+
+        assert_eq!(merged[0].solution, SHELL_PATH_SOLUTION);
     }
 
     #[test]
@@ -757,6 +775,7 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].source, "bash+zsh");
+        assert_eq!(merged[0].solution, SHELL_PATH_SOLUTION);
         assert_eq!(
             merged[0].explanation,
             "Bash and zsh PATH have a user-writable directory before protected system directories: /opt/homebrew/bin"
