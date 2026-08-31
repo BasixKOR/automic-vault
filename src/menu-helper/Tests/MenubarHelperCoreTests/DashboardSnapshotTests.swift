@@ -498,6 +498,31 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(secretGate.protectionTitle(.fullExceptSecretDumps) == "Write Access")
 }
 
+@Test func targetedSecretGatePolicyReloadPreservesTheGateDefinition() throws {
+    let gate = SecretGate(
+        id: "gh",
+        keyPatterns: ["GH_TOKEN_*"],
+        routes: try #require(testGateMetadata().secretGate).routes,
+        defaultProtection: .fullIncludingSecretDumps,
+        appPolicies: [SecretGatePolicy(
+            bundleIdentifier: "com.example.app",
+            requirement: #"identifier "com.example.app""#,
+            protection: .fullIncludingSecretDumps,
+            runtimeRequirement: .hardened
+        )]
+    )
+    let refreshed = reloadSecretGatePolicy(
+        for: gate,
+        service: "com.automicvault.tests.\(UUID().uuidString)"
+    )
+
+    #expect(refreshed.id == gate.id)
+    #expect(refreshed.keyPatterns == gate.keyPatterns)
+    #expect(refreshed.routes == gate.routes)
+    #expect(refreshed.defaultProtection == .readOnly)
+    #expect(refreshed.appPolicies.isEmpty)
+}
+
 @Test(.enabled(if: dataProtectionKeychainAvailable(), "requires an entitled Keychain test host"))
 func brewGateBroadensPersistedReadOnlyPoliciesToReadAndUpdate() throws {
     let service = "com.automicvault.tests.\(UUID().uuidString)"

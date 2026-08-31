@@ -1093,8 +1093,9 @@ final class DashboardModel: ObservableObject {
     func setDefaultProtection(_ protection: SecretGateProtection, for gate: SecretGate) {
         let update = { [weak self] in
             guard let self else { return }
-            self.finishPolicyUpdate(
+            self.finishSecretGatePolicyUpdate(
                 setSecretGateDefaultProtection(protection, for: gate),
+                gate: gate,
                 error: "Could not update the default protection"
             )
         }
@@ -1109,13 +1110,15 @@ final class DashboardModel: ObservableObject {
     func setProtection(_ protection: SecretGateProtection, for app: SecretGatePolicy, in gate: SecretGate) {
         let update = { [weak self] in
             guard let self else { return }
-            self.finishPolicyUpdate(setSecretGateAppProtection(
-                requirement: app.requirement,
-                protection: protection,
-                for: gate,
-                runtimeRequirement: app.runtimeRequirement
-            ),
-            error: "Could not update \(app.bundleIdentifier)"
+            self.finishSecretGatePolicyUpdate(
+                setSecretGateAppProtection(
+                    requirement: app.requirement,
+                    protection: protection,
+                    for: gate,
+                    runtimeRequirement: app.runtimeRequirement
+                ),
+                gate: gate,
+                error: "Could not update \(app.bundleIdentifier)"
             )
         }
         guard protection.addsAuthority(over: app.protection) else { update(); return }
@@ -1127,10 +1130,30 @@ final class DashboardModel: ObservableObject {
     }
 
     func removeAppPolicy(_ app: SecretGatePolicy, from gate: SecretGate) {
-        finishPolicyUpdate(
+        finishSecretGatePolicyUpdate(
             removeSecretGateAppPolicy(app, from: gate),
+            gate: gate,
             error: "Could not delete the Launcher-specific rule for \(app.bundleIdentifier)"
         )
+    }
+
+    private func finishSecretGatePolicyUpdate(_ status: OSStatus, gate: SecretGate, error: String) {
+        guard status == errSecSuccess else {
+            errorMessage = "\(error): \(status)"
+            return
+        }
+        reloadTask?.cancel()
+        reloadTask = nil
+        isReloading = false
+        guard let index = snapshot.secretGates.firstIndex(where: { $0.id == gate.id }) else {
+            errorMessage = "The policy was saved, but the Authorization Gate is no longer available"
+            return
+        }
+        errorMessage = nil
+        var updatedSnapshot = snapshot
+        updatedSnapshot.secretGates[index] = reloadSecretGatePolicy(for: snapshot.secretGates[index])
+        snapshot = updatedSnapshot
+        normalizeSelection()
     }
 
     private func finishPolicyUpdate(_ status: OSStatus, error: String) {
