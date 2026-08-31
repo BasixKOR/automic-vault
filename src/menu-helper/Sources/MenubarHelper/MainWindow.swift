@@ -3689,6 +3689,7 @@ private struct BlessedScriptDiffView: View {
                 }
                 .padding(12)
             }
+            .defaultScrollAnchor(.topLeading)
             .frame(height: 280)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay {
