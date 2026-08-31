@@ -410,14 +410,15 @@ Authorization Decision may receive memory-only transient reuse. Reuse is bound
 to the same live process and complete Authorization Request identity and does
 not reuse the phone response itself.
 
-### iPhone Activity
+### Request History
 
-A bounded, device-local convenience list of Approval responses successfully
-sent from one iPhone and pending requests that the Mac canceled while the
-iPhone was connected. An iPhone Activity entry is not an Authorization Record
-and does not establish that the Mac accepted a response, allowed an operation,
-or why it canceled a request. It contains no Secret Values and does not replace
-the Mac's authoritative Authorization History.
+A bounded, device-local convenience list of Authorization Request summaries
+observed by one iPhone. It records Approval responses successfully sent from
+that phone and pending requests that the Mac canceled while the phone was
+connected. A Request History entry is not an Authorization Record and does not
+establish that the Mac accepted a response, allowed an operation, or why it
+canceled a request. It contains no Secret Values and does not replace the Mac's
+authoritative Authorization History.
 
 ### Touch ID Approval
 
@@ -637,6 +638,7 @@ The following identifiers remain in storage or code for compatibility. New produ
 | `secretDump` | Secret Disclosure or Elevated Secret Application, according to the operation |
 | `mutating` | Local Write, System Write, Remote Write, or a combination |
 | Secret Usage, access log, audit log | Authorization History |
+| iPhone Activity | Request History |
 | automatic approval | automic authorization |
 | isotope key | Secret or Secret Name |
 | caller | Launcher, Gate Client, or Target, according to the role |

@@ -137,7 +137,7 @@ final class ApprovalModel {
         do {
             activity = try PhoneApprovalActivityStore.load()
         } catch {
-            errorMessage = "iPhone Activity could not be loaded."
+            errorMessage = "Request History could not be loaded."
         }
         notificationPreferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
     }
@@ -441,7 +441,7 @@ final class ApprovalModel {
         do {
             try PhoneApprovalActivityStore.save(activity)
         } catch {
-            errorMessage = "iPhone Activity could not be saved."
+            errorMessage = "Request History could not be saved."
         }
     }
 }

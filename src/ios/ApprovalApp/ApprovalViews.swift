@@ -24,7 +24,7 @@ struct ApprovalRootView: View {
                     empty
                 }
             }
-            .navigationTitle(showsActivity ? "iPhone Activity" : "Approvals")
+            .navigationTitle(showsActivity ? "Request History" : "Approvals")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink { ApprovalSettingsView(model: model, subscription: subscription) } label: {
@@ -305,7 +305,7 @@ struct ApprovalActivityView: View {
         Group {
             if model.activity.isEmpty {
                 ContentUnavailableView(
-                    "No iPhone Activity",
+                    "No Request History",
                     systemImage: "clock.arrow.circlepath",
                     description: Text("Responses and canceled requests will appear here.")
                 )
