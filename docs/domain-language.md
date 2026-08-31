@@ -413,10 +413,11 @@ not reuse the phone response itself.
 ### iPhone Activity
 
 A bounded, device-local convenience list of Approval responses successfully
-sent from one iPhone. An iPhone Activity entry is not an Authorization Record
-and does not establish that the Mac accepted the response or allowed the
-operation. It contains no Secret Values and does not replace the Mac's
-authoritative Authorization History.
+sent from one iPhone and pending requests that the Mac canceled while the
+iPhone was connected. An iPhone Activity entry is not an Authorization Record
+and does not establish that the Mac accepted a response, allowed an operation,
+or why it canceled a request. It contains no Secret Values and does not replace
+the Mac's authoritative Authorization History.
 
 ### Touch ID Approval
 

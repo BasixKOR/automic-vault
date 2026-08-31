@@ -294,6 +294,9 @@ final class ApprovalModel {
                     pending.removeAll { $0.id == response.requestID }
                     await removeDeliveredNotifications(for: response.requestID)
                 case .cancel(let requestID):
+                    if let request = pending.first(where: { $0.id == requestID }) {
+                        recordActivity(.init(canceled: request))
+                    }
                     pending.removeAll { $0.id == requestID }
                     await removeDeliveredNotifications(for: requestID)
                 case .presence:
@@ -438,7 +441,7 @@ final class ApprovalModel {
         do {
             try PhoneApprovalActivityStore.save(activity)
         } catch {
-            errorMessage = "The response was delivered, but iPhone Activity could not be saved."
+            errorMessage = "iPhone Activity could not be saved."
         }
     }
 }

@@ -140,6 +140,17 @@ import Testing
     #expect(activity.count == PhoneApprovalActivity.maximumItems)
     #expect(activity.first?.command == "replacement")
     #expect(activity.first?.outcome == .denied)
+
+    let canceled = try sampleRequest(id: activity.last!.id, command: "canceled")
+    activity = PhoneApprovalActivity.adding(.init(canceled: canceled, at: 42), to: activity)
+    let restored = try JSONDecoder().decode(
+        [PhoneApprovalActivity].self,
+        from: JSONEncoder().encode(activity)
+    )
+    #expect(restored.count == PhoneApprovalActivity.maximumItems)
+    #expect(restored.first?.command == "canceled")
+    #expect(restored.first?.outcome == .canceled)
+    #expect(restored.first?.respondedAtMilliseconds == 42)
 }
 
 private func sampleRequest(

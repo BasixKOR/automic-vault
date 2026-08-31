@@ -306,7 +306,7 @@ struct ApprovalActivityView: View {
                 ContentUnavailableView(
                     "No iPhone Activity",
                     systemImage: "clock.arrow.circlepath",
-                    description: Text("Responses sent from this iPhone will appear here.")
+                    description: Text("Responses and canceled requests will appear here.")
                 )
             } else {
                 List(model.activity) { item in
@@ -333,7 +333,7 @@ struct ApprovalActivityView: View {
         }
         .navigationTitle("iPhone Activity")
         .safeAreaInset(edge: .bottom) {
-            Text("Up to 50 responses sent from this iPhone. The Mac's Authorization History is authoritative.")
+            Text("Up to 50 responses and canceled requests. The Mac's Authorization History is authoritative.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -350,6 +350,7 @@ private extension PhoneApprovalActivity {
         case .approved: "Approve Once sent"
         case .denied: "Deny sent"
         case .temporaryWriteAccess: "10-minute Write Access sent"
+        case .canceled: "Request canceled"
         }
     }
 
@@ -358,6 +359,7 @@ private extension PhoneApprovalActivity {
         case .approved: "checkmark.shield"
         case .denied: "xmark.shield"
         case .temporaryWriteAccess: "clock.badge.checkmark"
+        case .canceled: "xmark.circle"
         }
     }
 
@@ -365,6 +367,7 @@ private extension PhoneApprovalActivity {
         switch outcome {
         case .approved, .temporaryWriteAccess: .green
         case .denied: .red
+        case .canceled: .secondary
         }
     }
 }

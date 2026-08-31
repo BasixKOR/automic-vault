@@ -486,9 +486,10 @@ Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
 values. The iPhone does not persist Authorization History. It may keep at most
 50 protected, device-local iPhone Activity entries for responses successfully
-sent from that phone. These summaries omit Secret Names, working directories,
-and expanded request details, are excluded from backup, and do not claim that
-the Mac accepted a response.
+sent from that phone and pending requests that the Mac canceled while the phone
+was connected. These summaries omit Secret Names, working directories, and
+expanded request details, are excluded from backup, and do not claim that the
+Mac accepted a response, allowed an operation, or why it canceled a request.
 
 Before signing and transmitting any allow response, the iPhone app verifies a
 current iPhone Approval subscription from StoreKit's signed transaction ledger.
