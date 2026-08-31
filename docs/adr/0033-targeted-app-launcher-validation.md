@@ -41,3 +41,6 @@ sealed resource no longer invalidates Launcher Identity because that resource
 does not contribute authority. Removal of the private API degrades performance
 by selecting the strict complete-bundle fallback rather than weakening
 validation.
+
+Validation evidence and known integration limits are recorded in
+[Targeted App Resource Validation](../targeted-app-resource-validation.md).

@@ -64,7 +64,11 @@ private func sign(_ url: URL, identity: String, identifier: String) throws {
     _ = try run("/usr/bin/codesign", arguments)
 }
 
-private func makeFixture(identity: String) throws -> Fixture {
+private func makeFixture(
+    identity: String,
+    appIdentifier: String = "com.automicvault.targeted-validation",
+    executableSource: String = "/usr/bin/true"
+) throws -> Fixture {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("av-targeted-validation-\(UUID().uuidString)", isDirectory: true)
     let app = root.appendingPathComponent("Example.app", isDirectory: true)
@@ -81,7 +85,7 @@ private func makeFixture(identity: String) throws -> Fixture {
     try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
-    try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: executable)
+    try FileManager.default.copyItem(at: URL(fileURLWithPath: executableSource), to: executable)
     try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: helper)
     try Data("target".utf8).write(to: target)
     try Data("unrelated".utf8).write(to: unrelated)
@@ -91,12 +95,12 @@ private func makeFixture(identity: String) throws -> Fixture {
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
     <plist version="1.0"><dict>
     <key>CFBundleExecutable</key><string>Example</string>
-    <key>CFBundleIdentifier</key><string>com.automicvault.targeted-validation</string>
+    <key>CFBundleIdentifier</key><string>\(appIdentifier)</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     </dict></plist>
     """.utf8).write(to: contents.appendingPathComponent("Info.plist"))
-    try sign(helper, identity: identity, identifier: "com.automicvault.targeted-validation.helper")
-    try sign(app, identity: identity, identifier: "com.automicvault.targeted-validation")
+    try sign(helper, identity: identity, identifier: "\(appIdentifier).helper")
+    try sign(app, identity: identity, identifier: appIdentifier)
     return Fixture(
         root: root,
         app: app,
@@ -156,6 +160,28 @@ private func designatedRequirement(_ app: URL) throws -> SecRequirement {
         throw CommandError(command: "SecCodeCopyDesignatedRequirement", output: "OSStatus \(status)")
     }
     return requirement
+}
+
+private func signingIdentifier(_ code: SecStaticCode) throws -> String {
+    var information: CFDictionary?
+    let status = SecCodeCopySigningInformation(code, [], &information)
+    guard status == errSecSuccess,
+          let dictionary = information as? [CFString: Any],
+          let identifier = dictionary[kSecCodeInfoIdentifier] as? String
+    else {
+        throw CommandError(command: "SecCodeCopySigningInformation", output: "OSStatus \(status)")
+    }
+    return identifier
+}
+
+private func liveSigningIdentifier(_ pid: pid_t) throws -> String {
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: pid)] as CFDictionary
+    let status = SecCodeCopyGuestWithAttributes(nil, attributes, [], &code)
+    guard status == errSecSuccess, let code else {
+        throw CommandError(command: "SecCodeCopyGuestWithAttributes", output: "OSStatus \(status)")
+    }
+    return try signingIdentifier(unsafeBitCast(code, to: SecStaticCode.self))
 }
 
 private func requirement(_ source: String) throws -> SecRequirement {
@@ -356,6 +382,38 @@ harness.check("a valid main-executable replacement is rejected by the stored ide
             && targetedStatus(app: $0.app, resource: $0.executable, requirement: original)
                 != errSecSuccess
     }
+}
+
+harness.check("SPI validation is static and does not bind a live process to its current bundle path") {
+    let runningIdentifier = "com.automicvault.targeted-validation.running"
+    let replacementIdentifier = "com.automicvault.targeted-validation.replacement"
+    let running = try makeFixture(
+        identity: identity,
+        appIdentifier: runningIdentifier,
+        executableSource: "/bin/sleep"
+    )
+    let replacement = try makeFixture(identity: identity, appIdentifier: replacementIdentifier)
+    defer {
+        try? FileManager.default.removeItem(at: running.root)
+        try? FileManager.default.removeItem(at: replacement.root)
+    }
+    let process = Process()
+    process.executableURL = running.executable
+    process.arguments = ["30"]
+    try process.run()
+    defer {
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
+    }
+    let originalApp = running.root.appendingPathComponent("Running.app")
+    try FileManager.default.moveItem(at: running.app, to: originalApp)
+    try FileManager.default.moveItem(at: replacement.app, to: running.app)
+    let currentExecutable = running.app.appendingPathComponent("Contents/MacOS/Example")
+    return try liveSigningIdentifier(process.processIdentifier) == runningIdentifier
+        && signingIdentifier(staticCode(running.app)) == replacementIdentifier
+        && directStatus(app: running.app, resource: currentExecutable) == errSecSuccess
 }
 
 harness.check("Info.plist modification fails main-executable validation") {
