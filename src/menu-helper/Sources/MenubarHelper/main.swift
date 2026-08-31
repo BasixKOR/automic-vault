@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var baseStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
+    private var dailyHeartbeatTask: Task<Void, Never>?
     private var lastTelemetryFindingCount: Int?
     #endif
 
@@ -143,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         startServicesAndOpenMainWindowIfRequested()
         startAutomaticUpdateChecks()
+        #if !DEBUG
+        startDailyHeartbeat()
+        #endif
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -357,6 +361,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         automaticUpdateCheckTask?.cancel()
+        #if !DEBUG
+        dailyHeartbeatTask?.cancel()
+        #endif
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         stopServices()
     }
@@ -542,6 +549,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    #if !DEBUG
+    private func startDailyHeartbeat() {
+        dailyHeartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = self?.postHogTelemetry.captureDailyHeartbeat() else { return }
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+    #endif
 
     private func refreshAvailableUpdate() async {
         guard !isCheckingForUpdates else { return }
