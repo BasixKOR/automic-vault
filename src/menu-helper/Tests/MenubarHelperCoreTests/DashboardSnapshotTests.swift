@@ -524,8 +524,21 @@ private func secretlessGateMetadata() -> HardenerMetadata {
 }
 
 @Test func targetedAuthorizationReloadReplacesOnlyAuthorizationState() {
+    func script(_ path: String) -> BlessedScript {
+        BlessedScript(
+            path: path,
+            checksum: "checksum",
+            keys: [],
+            target: "/bin/true",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            capabilities: [:],
+            launchers: []
+        )
+    }
     let oldLauncher = BlessedScriptLauncher(bundleIdentifier: "old", requirement: "old")
     let newLauncher = BlessedScriptLauncher(bundleIdentifier: "new", requirement: "new")
+    let newScript = script("/new")
     let oldGate = SecretGate(
         id: "test",
         keyPatterns: ["TOKEN"],
@@ -538,7 +551,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
         detectorFindings: [],
         hardenedTools: [HardenedTool(name: "tool", targetPath: nil)],
         secretGates: [oldGate],
-        blessedScripts: [],
+        blessedScripts: [script("/old")],
         secretNameAccessApps: [oldLauncher],
         secrets: [StoredSecret(account: "OLD")],
         doctorIssues: [DoctorIssue(
@@ -554,7 +567,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     )
     let refreshed = reloadDashboardAuthorizationState(
         from: snapshot,
-        blessedScripts: [],
+        blessedScripts: [newScript],
         secretNameAccessApps: [newLauncher],
         secrets: [newSecret]
     ) { gate in
@@ -570,6 +583,7 @@ private func secretlessGateMetadata() -> HardenerMetadata {
     #expect(refreshed.detectors == snapshot.detectors)
     #expect(refreshed.hardenedTools == snapshot.hardenedTools)
     #expect(refreshed.doctorIssues == snapshot.doctorIssues)
+    #expect(refreshed.blessedScripts == [newScript])
     #expect(refreshed.secretNameAccessApps == [newLauncher])
     #expect(refreshed.secrets == [newSecret])
     #expect(refreshed.secretGates[0].defaultProtection == .noAccess)

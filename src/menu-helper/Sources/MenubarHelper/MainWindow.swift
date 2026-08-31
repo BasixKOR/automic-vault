@@ -522,7 +522,7 @@ final class DashboardModel: ObservableObject {
             }
             self.finishPendingBlessing(.approved)
             self.selectedItemID = script.path
-            self.reload()
+            self.reloadAuthorizationState()
         }
     }
 
@@ -540,7 +540,7 @@ final class DashboardModel: ObservableObject {
             let scriptData = try readBlessedScript(path: script.path)
             let declaration = try blessedScriptDeclaration(data: scriptData)
             guard declaration.checksum != script.checksum else {
-                reload()
+                reloadAuthorizationState()
                 return
             }
             reviewBlessing(BlessedScriptReviewRequest(
@@ -646,7 +646,7 @@ final class DashboardModel: ObservableObject {
         let status = removeBlessedScript(path: script.path)
         if status == errSecSuccess {
             selectedItemID = nil
-            reload()
+            reloadAuthorizationState()
         } else {
             errorMessage = "Could not revoke blessing: \(status)"
         }
@@ -694,6 +694,20 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    private func reloadAuthorizationState() {
+        reloadTask?.cancel()
+        reloadTask = nil
+        isReloading = false
+        snapshot = reloadDashboardAuthorizationState(from: snapshot)
+        launcherBundles = loadLauncherBundleEnrollments()
+        normalizeSelection()
+    }
+
+    private func reloadAfterSecretMutation() {
+        reloadAuthorizationState()
+        reload()
+    }
+
     func createLauncherBundle(_ options: LauncherBundleOptions) {
         guard !isBuildingLauncherBundle else { return }
         isBuildingLauncherBundle = true
@@ -730,7 +744,7 @@ final class DashboardModel: ObservableObject {
                 NSWorkspace.shared.activateFileViewerSelecting([
                     URL(fileURLWithPath: creation.enrollment.bundlePath)
                 ])
-                reload()
+                reloadAuthorizationState()
             case .failure(let error):
                 errorMessage = error.localizedDescription
             }
@@ -771,7 +785,7 @@ final class DashboardModel: ObservableObject {
                 errorMessage = "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)"
             }
             selectedItemID = nil
-            reload()
+            reloadAuthorizationState()
         }
     }
 
@@ -804,7 +818,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = nil
             selectedSection = .allSecrets
             selectedItemID = account
-            reload()
+            reloadAfterSecretMutation()
             return true
         } else {
             errorMessage = "Could not save \(account): \(status)"
@@ -822,7 +836,7 @@ final class DashboardModel: ObservableObject {
         }
         if status == errSecSuccess {
             errorMessage = nil
-            reload()
+            reloadAfterSecretMutation()
             return true
         }
         errorMessage = "Could not update \(secret.account): \(status)"
@@ -880,7 +894,7 @@ final class DashboardModel: ObservableObject {
         }
         if status == errSecSuccess || status == errSecItemNotFound {
             selectedItemID = nil
-            reload()
+            reloadAfterSecretMutation()
         } else {
             errorMessage = "Could not delete \(account): \(status)"
         }
@@ -906,7 +920,7 @@ final class DashboardModel: ObservableObject {
             return false
         }
         errorMessage = nil
-        reload()
+        reloadAfterSecretMutation()
         return true
     }
 
@@ -921,7 +935,7 @@ final class DashboardModel: ObservableObject {
         if status == errSecSuccess || status == errSecItemNotFound {
             if secret.values.count == 1 { selectedItemID = nil }
             errorMessage = nil
-            reload()
+            reloadAfterSecretMutation()
         } else {
             errorMessage = "Could not delete \(secret.account) Value: \(status)"
         }
@@ -941,7 +955,7 @@ final class DashboardModel: ObservableObject {
         if status == errSecSuccess {
             errorMessage = nil
             selectedItemID = newAccount
-            reload()
+            reloadAfterSecretMutation()
             return true
         } else {
             errorMessage = "Could not rename \(account): \(status)"
@@ -1077,7 +1091,7 @@ final class DashboardModel: ObservableObject {
             }
             guard !helpers.isEmpty else {
                 self.errorMessage = nil
-                self.reload()
+                self.reloadAuthorizationState()
                 return
             }
             var configuration = loadVerifiedLauncherHelperConfiguration()
@@ -1086,7 +1100,7 @@ final class DashboardModel: ObservableObject {
             self.errorMessage = helperStatus == errSecSuccess
                 ? nil
                 : "The Launcher was added, but its helper associations could not be saved: \(helperStatus)"
-            self.reload()
+            self.reloadAuthorizationState()
         }
     }
 
@@ -1159,7 +1173,7 @@ final class DashboardModel: ObservableObject {
     private func finishPolicyUpdate(_ status: OSStatus, error: String) {
         if status == errSecSuccess {
             errorMessage = nil
-            reload()
+            reloadAuthorizationState()
         } else {
             errorMessage = "\(error): \(status)"
         }
