@@ -2,13 +2,13 @@
 
 ## Trigger Conditions
 
-- A `gh:<host>` Keychain item authorizes `/usr/bin/security` to read its
-  secret non-interactively.
+- The access-control list for a `gh:<host>` Keychain item authorizes
+  `/usr/bin/security` to read its secret non-interactively.
 
 The official macOS `gh` executable is Developer ID signed, but its upstream
 Keychain integration delegates credential reads to `/usr/bin/security`. The
-signature does not restrict retrieval to `gh` when that tool is in the item's
-access list.
+signature does not restrict retrieval to `gh` when `/usr/bin/security` is in
+the item's access list.
 
 Confirm the finding in a private terminal:
 

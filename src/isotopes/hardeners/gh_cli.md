@@ -11,7 +11,7 @@ We provide a [patched version] of `gh`. `av harden gh` installs it from our
 [tap] when Homebrew is available, or installs the same signed release directly
 at `/usr/local/bin/gh`. The Isotope:
 
-1. Uses its Automic Vault signature to bind the Gate Client and Target.
+1. Is Automic Vault-signed so the gate can bind the Gate Client and Target.
 2. Keeps the credential in Automic Vault custody instead of an upstream
    `gh:<host>` Keychain item accessible through `/usr/bin/security`.
 3. Routes authenticated operations through the `gh` Secret Gate.
