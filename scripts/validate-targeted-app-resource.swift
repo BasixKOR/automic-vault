@@ -181,9 +181,32 @@ private func overwriteFirstByte(_ url: URL) throws {
     try handle.write(contentsOf: Data([0]))
 }
 
+private func flipByte(_ url: URL, offset: UInt64) throws {
+    let handle = try FileHandle(forUpdating: url)
+    defer { try? handle.close() }
+    try handle.seek(toOffset: offset)
+    guard let byte = try handle.read(upToCount: 1)?.first else {
+        throw CommandError(command: "flip byte", output: "\(url.path) is too short")
+    }
+    try handle.seek(toOffset: offset)
+    try handle.write(contentsOf: Data([byte ^ 0xff]))
+}
+
 private func replaceExecutable(_ url: URL) throws {
     try FileManager.default.removeItem(at: url)
     try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/false"), to: url)
+}
+
+private func tamperX86Slice(_ fixture: Fixture) throws {
+    let x86 = fixture.root.appendingPathComponent("x86_64")
+    let arm = fixture.root.appendingPathComponent("arm64e")
+    let replacement = fixture.root.appendingPathComponent("tampered-universal")
+    _ = try run("/usr/bin/lipo", [fixture.executable.path, "-thin", "x86_64", "-output", x86.path])
+    _ = try run("/usr/bin/lipo", [fixture.executable.path, "-thin", "arm64e", "-output", arm.path])
+    try flipByte(x86, offset: 4_096)
+    _ = try run("/usr/bin/lipo", ["-create", x86.path, arm.path, "-output", replacement.path])
+    try FileManager.default.removeItem(at: fixture.executable)
+    try FileManager.default.moveItem(at: replacement, to: fixture.executable)
 }
 
 private func codesignAccepts(_ app: URL, reportFailure: Bool = false) -> Bool {
@@ -279,6 +302,14 @@ harness.check("mismatched requirement fails closed") {
     }
 }
 
+harness.check("successful validation leaves the CFError pointer empty") {
+    try withFixture(identity: identity) {
+        var unmanagedError: Unmanaged<CFError>?
+        let status = try directStatus(app: $0.app, resource: $0.target, error: &unmanagedError)
+        return status == errSecSuccess && unmanagedError == nil
+    }
+}
+
 harness.check("unrelated sealed-resource damage is ignored only by targeted validation") {
     try withFixture(identity: identity) {
         try Data("changed".utf8).write(to: $0.unrelated)
@@ -341,6 +372,25 @@ harness.check("resource seal modification fails selected-resource validation") {
     }
 }
 
+harness.check("a forged matching CodeResources file cannot bless modified resource bytes") {
+    try withFixture(identity: identity) { original in
+        let resigned = try makeFixture(identity: identity)
+        defer { try? FileManager.default.removeItem(at: resigned.root) }
+        try Data("attacker-selected".utf8).write(to: original.target)
+        try Data("attacker-selected".utf8).write(to: resigned.target)
+        try sign(
+            resigned.app,
+            identity: identity,
+            identifier: "com.automicvault.targeted-validation"
+        )
+        let originalSeal = original.app.appendingPathComponent("Contents/_CodeSignature/CodeResources")
+        let forgedSeal = resigned.app.appendingPathComponent("Contents/_CodeSignature/CodeResources")
+        try FileManager.default.removeItem(at: originalSeal)
+        try FileManager.default.copyItem(at: forgedSeal, to: originalSeal)
+        return try directStatus(app: original.app, resource: original.target) != errSecSuccess
+    }
+}
+
 harness.check("signed nested helper validates") {
     try withFixture(identity: identity) {
         try directStatus(app: $0.app, resource: $0.helper) == errSecSuccess
@@ -373,7 +423,46 @@ harness.check("failure returns a retained CFError matching the OSStatus") {
     }
 }
 
+#if arch(arm64)
+harness.check("production flags reject a damaged non-native architecture") {
+    try withFixture(identity: identity) {
+        try tamperX86Slice($0)
+        return try directStatus(app: $0.app, resource: $0.executable) == errSecSuccess
+            && targetedStatus(app: $0.app, resource: $0.executable) != errSecSuccess
+    }
+}
+#endif
+
 if identity != "-" {
+    harness.check("an app update signed by the same Developer ID satisfies the stored requirement") {
+        try withFixture(identity: identity) {
+            let original = try designatedRequirement($0.app)
+            try replaceExecutable($0.executable)
+            try sign(
+                $0.app,
+                identity: identity,
+                identifier: "com.automicvault.targeted-validation"
+            )
+            return try targetedStatus(
+                app: $0.app,
+                resource: $0.executable,
+                requirement: original
+            ) == errSecSuccess
+        }
+    }
+
+    harness.check("a helper update signed by the same Developer ID satisfies its sealed requirement") {
+        try withFixture(identity: identity) {
+            try replaceExecutable($0.helper)
+            try sign(
+                $0.helper,
+                identity: identity,
+                identifier: "com.automicvault.targeted-validation.helper"
+            )
+            return try directStatus(app: $0.app, resource: $0.helper) == errSecSuccess
+        }
+    }
+
     harness.check("re-signing the app ad hoc no longer satisfies its Developer ID requirement") {
         try withFixture(identity: identity) {
             let original = try designatedRequirement($0.app)
