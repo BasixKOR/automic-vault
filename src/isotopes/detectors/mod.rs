@@ -431,7 +431,7 @@ fn merge_duplicate_owned_shell_path_findings(findings: Vec<DetectorResult>) -> V
         // Shell docs cover credential assignments and PATH hazards, but each
         // finding needs only the mitigation for the condition it reports.
         if shell_path_entry(&finding.finding).is_some() {
-            finding.finding.solution = SHELL_PATH_SOLUTION.to_string();
+            finding.finding.solution = shell_path_solution(finding.finding.source);
         }
         let existing = shell_path_entry(&finding.finding).and_then(|entry| {
             merged.iter_mut().find(|candidate| {
@@ -452,7 +452,6 @@ fn merge_duplicate_owned_shell_path_findings(findings: Vec<DetectorResult>) -> V
 
 const SHELL_PATH_FINDING_SOURCES: &[&str] = &["bash", "zsh"];
 const MERGED_SHELL_PATH_SOURCE: &str = "bash+zsh";
-const SHELL_PATH_SOLUTION: &str = "Version managers commonly prepend user-writable tool directories to `PATH`; this is expected, but those directories can still shadow later commands. Remove empty, relative, and unexpected entries. If the ordering is intentional, use absolute paths for security-sensitive commands and keep reusable secrets out of the shell environment with `av inject` or `av proxy`; these reduce exposure but do not make the `PATH` safe.";
 
 /// `bash` and `zsh` each detect the same process-wide `$PATH` independently,
 /// so an insecure directory is reported once per shell. Collapse those
@@ -489,6 +488,18 @@ fn shell_path_entry(finding: &Finding) -> Option<&str> {
         .strip_prefix(": ")
 }
 
+fn shell_path_solution(source: &str) -> String {
+    let documentation = DETECTORS
+        .iter()
+        .find(|detector| detector.module == source)
+        .expect("shell PATH findings have a registered detector")
+        .documentation;
+    documented_section(documentation, "## PATH Mitigation")
+        .map(first_paragraph)
+        .filter(|solution| !solution.is_empty())
+        .expect("shell detector documentation has a PATH mitigation")
+}
+
 fn merge_shell_path_finding(existing: &mut Finding) {
     if let Some(entry) = shell_path_entry(existing) {
         existing.explanation = format!(
@@ -496,15 +507,10 @@ fn merge_shell_path_finding(existing: &mut Finding) {
         );
     }
     existing.source = MERGED_SHELL_PATH_SOURCE;
-    existing.solution = SHELL_PATH_SOLUTION.to_string();
 }
 
 pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
-    if let Some(mitigation) = documentation
-        .split_once("## Mitigation")
-        .map(|(_, section)| section)
-        .and_then(|section| section.split("\n## ").next())
-    {
+    if let Some(mitigation) = documented_section(documentation, "## Mitigation") {
         if let Some(command) = mitigation.lines().find(|line| line.contains("av harden ")) {
             return Some(format!("Run `{}`.", command.trim()));
         }
@@ -519,6 +525,13 @@ pub(crate) fn documented_solution(documentation: &str) -> Option<String> {
         .and_then(|section| section.split("\n## ").next())
         .map(first_paragraph)
         .filter(|solution| !solution.is_empty())
+}
+
+fn documented_section<'a>(documentation: &'a str, heading: &str) -> Option<&'a str> {
+    documentation
+        .split_once(heading)
+        .map(|(_, section)| section)
+        .and_then(|section| section.split("\n## ").next())
 }
 
 fn first_paragraph(section: &str) -> String {
@@ -761,7 +774,12 @@ mod tests {
 
         let merged = merge_duplicate_shell_path_findings(findings);
 
-        assert_eq!(merged[0].solution, SHELL_PATH_SOLUTION);
+        assert_eq!(merged[0].solution, shell_path_solution("bash"));
+    }
+
+    #[test]
+    fn bash_and_zsh_share_the_same_path_mitigation() {
+        assert_eq!(shell_path_solution("bash"), shell_path_solution("zsh"));
     }
 
     #[test]
@@ -775,7 +793,7 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].source, "bash+zsh");
-        assert_eq!(merged[0].solution, SHELL_PATH_SOLUTION);
+        assert_eq!(merged[0].solution, shell_path_solution("bash"));
         assert_eq!(
             merged[0].explanation,
             "Bash and zsh PATH have a user-writable directory before protected system directories: /opt/homebrew/bin"

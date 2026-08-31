@@ -22,6 +22,8 @@ configuration. Automic Vault cannot rewrite them without changing shell
 behavior or guessing which commands need each secret. Move the reported value
 with `av save KEY`, then inject it only into the command that needs it.
 
+## PATH Mitigation
+
 Version managers commonly prepend user-writable tool directories to `PATH`;
 this is expected, but those directories can still shadow later commands. Remove
 empty, relative, and unexpected entries. If the ordering is intentional, use
