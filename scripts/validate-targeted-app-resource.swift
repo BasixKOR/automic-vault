@@ -181,7 +181,12 @@ private func liveSigningIdentifier(_ pid: pid_t) throws -> String {
     guard status == errSecSuccess, let code else {
         throw CommandError(command: "SecCodeCopyGuestWithAttributes", output: "OSStatus \(status)")
     }
-    return try signingIdentifier(unsafeBitCast(code, to: SecStaticCode.self))
+    var staticCode: SecStaticCode?
+    let staticStatus = SecCodeCopyStaticCode(code, [], &staticCode)
+    guard staticStatus == errSecSuccess, let staticCode else {
+        throw CommandError(command: "SecCodeCopyStaticCode", output: "OSStatus \(staticStatus)")
+    }
+    return try signingIdentifier(staticCode)
 }
 
 private func requirement(_ source: String) throws -> SecRequirement {
