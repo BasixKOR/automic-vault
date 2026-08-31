@@ -466,7 +466,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Install \(update.assetName) and relaunch Automic Vault?"
             alert.addButton(withTitle: "Install and Relaunch")
             alert.addButton(withTitle: "Later")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            alert.addButton(withTitle: "View Release Notes")
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn {
+                NSWorkspace.shared.open(URL(
+                    string: "https://github.com/automic-vault/automic-vault/releases/tag/\(update.version)"
+                )!)
+                return
+            }
+            guard response == .alertFirstButtonReturn else { return }
 
             readyUpdate = nil
             restoreMainWindow = beginUpdating(with: alert)
