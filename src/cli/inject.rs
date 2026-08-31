@@ -1241,20 +1241,17 @@ fn xpc_approve_request(
 
     let result = unsafe {
         if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
-            let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
-            let error = if error.is_null() {
-                "approval XPC connection failed".into()
+            if crate::approval_service_connection_invalid(reply) {
+                Err(crate::approval_service_unavailable_message(&service).into())
             } else {
-                std::ffi::CStr::from_ptr(error)
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            if error == "Connection invalid" {
-                Err(
-                    approval_service_unavailable_message(sandbox_denies_mach_lookup(&service))
-                        .into(),
-                )
-            } else {
+                let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+                let error = if error.is_null() {
+                    "approval XPC connection failed".into()
+                } else {
+                    std::ffi::CStr::from_ptr(error)
+                        .to_string_lossy()
+                        .into_owned()
+                };
                 Err(error)
             }
         } else {
@@ -1302,34 +1299,6 @@ fn xpc_approve_request(
     result
 }
 
-#[cfg(target_os = "macos")]
-fn sandbox_denies_mach_lookup(service: &std::ffi::CStr) -> bool {
-    use std::os::raw::{c_char, c_int};
-
-    #[link(name = "sandbox")]
-    unsafe extern "C" {
-        fn sandbox_check(pid: libc::pid_t, operation: *const c_char, filter: c_int, ...) -> c_int;
-    }
-
-    const SANDBOX_FILTER_GLOBAL_NAME: c_int = 2;
-    unsafe {
-        sandbox_check(
-            libc::getpid(),
-            c"mach-lookup".as_ptr(),
-            SANDBOX_FILTER_GLOBAL_NAME,
-            service.as_ptr(),
-        ) != 0
-    }
-}
-
-fn approval_service_unavailable_message(sandbox_denied: bool) -> &'static str {
-    if sandbox_denied {
-        "Automic Vault approval service is blocked by this process's sandbox; retry with elevated permissions"
-    } else {
-        "Automic Vault approval service is not running; open the menu bar app"
-    }
-}
-
 fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
     match decision {
         b"approved" => Some("approved"),
@@ -1347,14 +1316,6 @@ mod tests {
         assert_eq!(human_approval_message(b"approved"), Some("approved"));
         assert_eq!(human_approval_message(b"denied"), Some("denied"));
         assert_eq!(human_approval_message(b"unexpected"), None);
-    }
-
-    #[test]
-    fn connection_error_explains_sandbox_denial() {
-        assert_eq!(
-            approval_service_unavailable_message(true),
-            "Automic Vault approval service is blocked by this process's sandbox; retry with elevated permissions"
-        );
     }
 
     fn os(values: &[&str]) -> Vec<OsString> {

@@ -503,17 +503,17 @@ fn xpc_authorize(request: &AuthorizationRequest) -> Result<(), String> {
 
     let result = unsafe {
         if xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() {
-            let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
-            let error = if error.is_null() {
-                "approval XPC connection failed".into()
+            if av::approval_service_connection_invalid(reply) {
+                Err(av::approval_service_unavailable_message(&service).into())
             } else {
-                std::ffi::CStr::from_ptr(error)
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            if error == "Connection invalid" {
-                Err("Automic Vault approval service is not running; open the menu bar app".into())
-            } else {
+                let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+                let error = if error.is_null() {
+                    "approval XPC connection failed".into()
+                } else {
+                    std::ffi::CStr::from_ptr(error)
+                        .to_string_lossy()
+                        .into_owned()
+                };
                 Err(error)
             }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
