@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var readyUpdate: Update?
     private var isCheckingForUpdates = false
     private var isUpdating = false
+    private var isStatusMenuOpen = false
     private var menuBeforeUpdate: NSMenu?
     private var automaticApprovalFlashWorkItem: DispatchWorkItem?
     private var preFlashStatusImage: NSImage?
@@ -881,6 +882,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setDoctorStatus(count: Int) {
+        guard !isStatusMenuOpen else { return }
         guard let title = doctorStatusTitle(count: count) else {
             doctorStatusItem.isHidden = true
             return
@@ -906,6 +908,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scanQueue.async { [weak self] in
             let isCurrent = currentCLIInstallState() == .current
             Task { @MainActor in
+                guard self?.isStatusMenuOpen == false else { return }
                 self?.installCLIItem.isHidden = isCurrent
             }
         }
@@ -1015,7 +1018,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshAutoApprovalMenuItems() {
-        guard !isUpdating else { return }
+        guard !isUpdating, !isStatusMenuOpen else { return }
         guard let menu = statusItem.menu else { return }
         for item in autoApprovalItems {
             menu.removeItem(item)
@@ -1084,7 +1087,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshTemporaryAccessGrantMenuItems() {
-        guard !isUpdating, let menu = statusItem.menu else { return }
+        guard !isUpdating, !isStatusMenuOpen, let menu = statusItem.menu else { return }
         temporaryAccessGrantMenuItems.forEach(menu.removeItem)
         temporaryAccessGrantMenuItems.removeAll()
         if let temporaryAccessGrantHeadingItem {
@@ -1200,7 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshLiveSecretUseMenuItems() {
-        guard !isUpdating, let menu = statusItem.menu else { return }
+        guard !isUpdating, !isStatusMenuOpen, let menu = statusItem.menu else { return }
         liveSecretUseMenuItems.forEach(menu.removeItem)
         liveSecretUseMenuItems.removeAll()
         if let liveSecretUseHeadingItem {
@@ -1367,6 +1370,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.representedObject = record.accessRequestID.uuidString
         return item
     }
+
+    fileprivate func statusMenuTrackingSelfCheck() -> Bool {
+        installStatusMenu()
+        defer { NSStatusBar.system.removeStatusItem(statusItem) }
+        guard let menu = statusItem.menu else { return false }
+
+        menuWillOpen(menu)
+        let presentedItems = menu.items
+        let process = LiveSecretUseProcess(
+            pid: 42,
+            startUsec: 1,
+            effectiveUserID: geteuid(),
+            auditSessionID: 1
+        )
+        liveSecretUses.record(
+            process: process,
+            launcherDesignatedRequirement: nil,
+            launcherName: "Self Check",
+            targetPath: "/usr/bin/true",
+            processID: process.pid,
+            secretNames: ["TEST_SECRET"]
+        )
+        liveSecretUseSnapshots = liveSecretUses.snapshots(isLive: { _ in true })
+        refreshLiveSecretUseMenuItems()
+        let stayedStable = menu.items.count == presentedItems.count
+            && zip(menu.items, presentedItems).allSatisfy { $0 === $1 }
+
+        menuDidClose(menu)
+        return stayedStable
+            && !isStatusMenuOpen
+            && liveSecretUseMenuItems.count == 1
+            && liveSecretUseHeadingItem != nil
+    }
 }
 
 private func scanDetectorGroup(_ detectors: Set<String>) -> Set<String> {
@@ -1376,11 +1412,23 @@ private func scanDetectorGroup(_ detectors: Set<String>) -> Set<String> {
 
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
+        if !isStartingUp, !isUpdating {
+            refreshAutoApprovalMenuItems()
+            refreshTemporaryAccessGrantMenuItems()
+            refreshLiveSecretUses()
+            refreshDoctorStatus()
+        }
+        isStatusMenuOpen = true
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isStatusMenuOpen = false
         guard !isStartingUp, !isUpdating else { return }
         refreshAutoApprovalMenuItems()
         refreshTemporaryAccessGrantMenuItems()
-        refreshLiveSecretUses()
+        refreshLiveSecretUseMenuItems()
         refreshDoctorStatus()
+        refreshCLIInstallState()
     }
 }
 
@@ -13945,6 +13993,7 @@ private func runLaunchAgentHandoffSelfCheck() -> Int32 {
 
 @MainActor
 private func runMenuStatusSelfCheck() -> Int32 {
+    guard AppDelegate().statusMenuTrackingSelfCheck() else { return 1 }
     let statusItem = makeStatusMenuItem(title: "Starting Automic Vault")
     let actionItem = NSMenuItem(title: "Open Automic Vault", action: nil, keyEquivalent: "")
     setVersionBadge("1.2.3", on: actionItem)
