@@ -330,6 +330,63 @@ long-running processes.
 
 <img src="./docs/img/blessed-script.png" alt="Automic Vault Blessed Script review" style="width: 589px; height: auto" />
 
+#### Reentrant Blessed Scripts
+
+A reentrant Blessed Script does deterministic work until it needs agent input,
+then prints a prompt and exits. The prompt names the required output, fixed
+subcommands that expose reviewed capabilities, and the command that continues
+the next deterministic step.
+
+Automic Vault authorizes every invocation separately. Keep Secret Values in the
+script and validate agent output before using it. This release example publishes
+to GitHub, copies the assets to S3, and invalidates their CloudFront paths:
+
+```sh
+#!/usr/local/bin/av inject -- /bin/bash
+# --- automic-vault
+# capabilities:
+#   gh: write
+#   aws: write
+# ---
+set -euo pipefail
+
+# snip… constants and input validation
+SELF="${AV_SCRIPT_PATH:-$0}"
+
+case "${1:-continue}" in
+  agent:github-context)
+    gh release list --repo "$REPOSITORY" --limit 5
+    ;;
+  agent:cdn-status)
+    aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "releases/$VERSION/"
+    ;;
+  continue)
+    if [[ ! -s "$NOTES" ]]; then
+      cat <<EOF
+Write release notes to $NOTES.
+For GitHub context: "$SELF" agent:github-context "$VERSION"
+For CDN context: "$SELF" agent:cdn-status "$VERSION"
+Then continue: "$SELF" continue "$VERSION"
+EOF
+      exit 75
+    fi
+
+    # snip… validate notes, assets, and matching remote state
+    gh release create "$VERSION" "${ASSETS[@]}" --notes-file "$NOTES"
+    for asset in "${ASSETS[@]}"; do
+      aws s3 cp "$asset" "s3://$BUCKET/releases/$VERSION/"
+    done
+    aws cloudfront create-invalidation \
+      --distribution-id "$DISTRIBUTION_ID" \
+      --paths "/releases/$VERSION/*"
+    ;;
+esac
+```
+
+See the [full defensive script](docs/examples/reentrant-release.sh) for input
+validation, digest checks, conditional S3 writes, and idempotent retries.
+
+
 ### Temporary Access for Agent Tasks
 
 When an eligible Codex task or Claude Code session requests a write, the
