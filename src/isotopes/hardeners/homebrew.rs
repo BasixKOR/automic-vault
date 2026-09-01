@@ -48,6 +48,22 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 
     writeln!(stdout, "╭─ harden brew").ok();
     writeln!(stdout, "│").ok();
+    writeln!(stdout, "◆ defense in depth for most Isotopes").ok();
+    writeln!(
+        stdout,
+        "│  Automic Vault already verifies their code-signing identity before Secret Application."
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "│  Hardening still gates brew writes and prevents same-user code from modifying installed tools."
+    )
+    .ok();
+    writeln!(
+        stdout,
+        "│  Environment-wrapper hardeners are the exception and are being phased out."
+    )
+    .ok();
     writeln!(stdout, "◆ casks are (mostly) UNSUPPORTED").ok();
     writeln!(
         stdout,

@@ -17,6 +17,11 @@ import Testing
     #expect(ApprovalServiceOperation.terraformGet.rawValue == "terraform-get")
 }
 
+@Test func aliyunCredentialGetHasADedicatedWireOperation() {
+    #expect(ApprovalServiceOperation.aliyunHelperVersion.rawValue == "aliyun-helper-version")
+    #expect(ApprovalServiceOperation.aliyunGet.rawValue == "aliyun-get")
+}
+
 @Test func oxideCredentialsHaveDedicatedWireOperations() {
     #expect(ApprovalServiceOperation.oxideGet.rawValue == "oxide-get")
     #expect(ApprovalServiceOperation.oxideSave.rawValue == "oxide-save")
@@ -25,6 +30,8 @@ import Testing
 
 @Test func goatCredentialsHaveDedicatedWireOperations() {
     #expect(ApprovalServiceOperation.goatGet.rawValue == "goat-get")
+    #expect(ApprovalServiceOperation.wakatimeHelperVersion.rawValue == "wakatime-helper-version")
+    #expect(ApprovalServiceOperation.wakatimeGet.rawValue == "wakatime-get")
     #expect(ApprovalServiceOperation.goatSave.rawValue == "goat-save")
     #expect(ApprovalServiceOperation.goatDelete.rawValue == "goat-delete")
 }
@@ -33,6 +40,11 @@ import Testing
     #expect(ApprovalServiceOperation.railwayGet.rawValue == "railway-get")
     #expect(ApprovalServiceOperation.railwaySave.rawValue == "railway-save")
     #expect(ApprovalServiceOperation.railwayDelete.rawValue == "railway-delete")
+}
+
+@Test func rclonePasswordHasDedicatedWireOperations() {
+    #expect(ApprovalServiceOperation.rcloneHelperVersion.rawValue == "rclone-helper-version")
+    #expect(ApprovalServiceOperation.rcloneGet.rawValue == "rclone-get")
 }
 
 @Test func ordercliCredentialsHaveDedicatedWireOperations() {

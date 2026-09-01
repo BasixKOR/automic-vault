@@ -207,6 +207,21 @@ public enum PhoneApprovalOutcome: String, Codable, Equatable, Sendable {
     case temporaryWriteAccess
 }
 
+public enum PhoneApprovalActivityOutcome: String, Codable, Equatable, Sendable {
+    case approved
+    case denied
+    case temporaryWriteAccess
+    case canceled
+
+    fileprivate init(_ outcome: PhoneApprovalOutcome) {
+        switch outcome {
+        case .approved: self = .approved
+        case .denied: self = .denied
+        case .temporaryWriteAccess: self = .temporaryWriteAccess
+        }
+    }
+}
+
 public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable {
     public static let maximumItems = 50
 
@@ -216,7 +231,7 @@ public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable 
     public let launcher: String
     public let tool: String
     public let command: String
-    public let outcome: PhoneApprovalOutcome
+    public let outcome: PhoneApprovalActivityOutcome
 
     public init(
         request: PhoneApprovalRequest,
@@ -230,7 +245,7 @@ public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable 
             launcher: request.launcher,
             tool: request.tool,
             command: request.command,
-            outcome: outcome
+            outcome: .init(outcome)
         )
     }
 
@@ -246,7 +261,22 @@ public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable 
             launcher: ticket.launcher,
             tool: ticket.tool,
             command: ticket.command,
-            outcome: outcome
+            outcome: .init(outcome)
+        )
+    }
+
+    public init(
+        canceled request: PhoneApprovalRequest,
+        at milliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
+    ) {
+        self.init(
+            id: request.id,
+            respondedAtMilliseconds: milliseconds,
+            macName: request.macName,
+            launcher: request.launcher,
+            tool: request.tool,
+            command: request.command,
+            outcome: .canceled
         )
     }
 
@@ -261,7 +291,7 @@ public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable 
         launcher: String,
         tool: String,
         command: String,
-        outcome: PhoneApprovalOutcome
+        outcome: PhoneApprovalActivityOutcome
     ) {
         self.id = id
         self.respondedAtMilliseconds = respondedAtMilliseconds

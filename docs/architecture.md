@@ -43,6 +43,11 @@ Developer tools and agent harnesses use their existing commands. Automic Vault d
 ### Exposure Detection
 
 Detectors inspect the developer environment without changing it. A Scan produces Findings for supported Exposures and Hazards. It cannot certify the whole environment.
+Detectors do not initiate Secret Use, invoke configured credential helpers, or
+cross an Authorization Gate. They may run trusted configuration-only plumbing
+that cannot apply or disclose a Secret. When passive evidence cannot establish
+runtime behavior, the Detector reports a Hazard rather than performing the
+protected operation.
 
 ### Tool Hardening
 
@@ -282,6 +287,31 @@ Authorization Record.
 
 The policy identity is the Launcher's designated requirement, checked against the live process and its launch chain. Paths, process identifiers, names, and icons help the user recognize software but do not establish identity. Hardened Runtime requirements and rejected entitlements form part of launcher eligibility.
 
+An app's declared main executable may represent the app after its code signature
+and exact membership in the app's resource seal are validated. A non-main
+executable may represent the app only as an enabled Verified Launcher Helper
+whose exact app and helper signing identities appear in the positive catalog.
+The catalog combines reviewed built-in associations with associations the user
+explicitly approves after signed, sealed helpers are discovered while adding an
+app as a Verified Launcher. Discovery grants no authority. The approval UI lists
+each exact helper identity and relative path. User-approved associations bind
+both, and the UI warns that enabling one makes it represent the app at every
+Authorization Gate where that app has a current or future rule.
+User-approved associations and disabled catalog entries are stored in the Data
+Protection Keychain; missing or malformed stored configuration fails closed
+except that a genuinely absent record uses the built-in defaults. Runtime
+verification binds the live helper to the on-disk executable, validates the app
+executable, and validates the exact helper as a required, unaltered member of
+the app's resource seal.
+Unrelated app resources are not Launcher Identity evidence and are not scanned.
+If targeted resource validation is unavailable, Automic Vault falls back to
+complete bundle validation. Other bundle-contained executables do not inherit
+the app identity. Launcher Bundles retain their complete enrolled-bundle and
+payload verification. See [ADR 0020](adr/0020-app-launcher-main-executable.md)
+and [ADR 0033](adr/0033-targeted-app-launcher-validation.md).
+User-approved associations are defined by
+[ADR 0034](adr/0034-user-approved-launcher-helpers.md).
+
 Eligible Launchers must enable Hardened Runtime or be Apple platform binaries
 signed as part of a macOS release, for which macOS applies the runtime
 protections intrinsically. JIT executable-memory exceptions and disabled
@@ -460,10 +490,11 @@ with Unknown operation risk, Secret Disclosure, Unconstrained Secret
 Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
 values. The iPhone does not persist Authorization History. It may keep at most
-50 protected, device-local iPhone Activity entries for responses successfully
-sent from that phone. These summaries omit Secret Names, working directories,
-and expanded request details, are excluded from backup, and do not claim that
-the Mac accepted a response.
+50 protected, device-local Request History entries for responses successfully
+sent from that phone and pending requests that the Mac canceled while the phone
+was connected. These summaries omit Secret Names, working directories, and
+expanded request details, are excluded from backup, and do not claim that the
+Mac accepted a response, allowed an operation, or why it canceled a request.
 
 Before signing and transmitting any allow response, the iPhone app verifies a
 current iPhone Approval subscription from StoreKit's signed transaction ledger.

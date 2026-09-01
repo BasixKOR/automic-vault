@@ -29,8 +29,8 @@ import Testing
     ) == [gpgDefaultPrivateKeySecretName])
 }
 
-@Test func gpgSigningConfigurationIsAvailableAfterFirstUnlock() {
-    guard dataProtectionKeychainAvailable() else { return }
+@Test(.enabled(if: dataProtectionKeychainAvailable(), "requires an entitled Keychain test host"))
+func gpgSigningConfigurationIsAvailableAfterFirstUnlock() {
     let service = "com.automicvault.tests.gpg-config.\(UUID().uuidString)"
     let account = "configuration"
     defer { _ = deleteStoredSecret(account: account, service: service) }

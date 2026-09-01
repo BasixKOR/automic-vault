@@ -38,6 +38,10 @@ final class ApprovalAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
         Task { ApprovalModel.shared.registrationFailed(error) }
     }
 
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
@@ -109,6 +113,8 @@ final class ApprovalModel {
     private(set) var activity: [PhoneApprovalActivity] = []
     private(set) var state: ConnectionState = .setup
     private(set) var notificationPreferences = ApprovalNotificationPreferences()
+    private(set) var notificationReviewRequestID: UUID?
+    private(set) var notificationReviewSequence: UInt64 = 0
     var errorMessage: String?
     var biometricProtectionEnabled = UserDefaults.standard.bool(forKey: biometricDefaultsKey) {
         didSet {
@@ -137,7 +143,7 @@ final class ApprovalModel {
         do {
             activity = try PhoneApprovalActivityStore.load()
         } catch {
-            errorMessage = "iPhone Activity could not be loaded."
+            errorMessage = "Request History could not be loaded."
         }
         notificationPreferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
     }
@@ -240,6 +246,13 @@ final class ApprovalModel {
                 guard await authenticateBiometrically() else { return }
             }
             await respond(to: ticket, outcome: .approved)
+        case "AV_REVIEW", UNNotificationDefaultActionIdentifier:
+            notificationReviewRequestID = ticket.requestID
+            notificationReviewSequence &+= 1
+            if !pending.contains(where: { $0.id == ticket.requestID }) {
+                if relay == nil { await connect() }
+                if let relay { try? await relay.send(.sync) }
+            }
         default: break
         }
     }
@@ -294,6 +307,9 @@ final class ApprovalModel {
                     pending.removeAll { $0.id == response.requestID }
                     await removeDeliveredNotifications(for: response.requestID)
                 case .cancel(let requestID):
+                    if let request = pending.first(where: { $0.id == requestID }) {
+                        recordActivity(.init(canceled: request))
+                    }
                     pending.removeAll { $0.id == requestID }
                     await removeDeliveredNotifications(for: requestID)
                 case .presence:
@@ -438,7 +454,7 @@ final class ApprovalModel {
         do {
             try PhoneApprovalActivityStore.save(activity)
         } catch {
-            errorMessage = "The response was delivered, but iPhone Activity could not be saved."
+            errorMessage = "Request History could not be saved."
         }
     }
 }

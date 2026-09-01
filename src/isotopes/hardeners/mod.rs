@@ -1,3 +1,4 @@
+pub(crate) mod aliyun_cli;
 pub(crate) mod aws_cli;
 pub(crate) mod aws_release;
 pub(crate) mod codex;
@@ -13,12 +14,14 @@ pub(crate) mod ordercli;
 pub(crate) mod oxide_cli;
 pub(crate) mod plumber;
 pub(crate) mod railway;
+pub(crate) mod rclone;
 pub(crate) mod stripe_cli;
 pub(crate) mod sudo;
 pub(crate) mod supabase;
 pub(crate) mod terraform;
 pub(crate) mod terraform_release;
 pub(crate) mod uaa_cli;
+pub(crate) mod wakatime_cli;
 
 unsafe extern "C" {
     fn geteuid() -> u32;
@@ -295,6 +298,7 @@ macro_rules! ungated_hardener {
 
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
     let mut metadata = vec![
+        gated_hardener!(aliyun_cli, "aliyun-cli"),
         gated_hardener!(aws_cli, "aws"),
         ungated_hardener!(codex, "codex"),
         gated_hardener!(docker, "docker"),
@@ -304,12 +308,14 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(plumber, "plumber"),
         gated_hardener!(uaa_cli, "uaa-cli"),
         gated_hardener!(railway, "railway"),
+        gated_hardener!(rclone, "rclone"),
         gated_hardener!(oxide_cli, "oxide-cli"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
         gated_hardener!(stripe_cli, "stripe"),
         ungated_hardener!(sudo, "sudo"),
         gated_hardener!(supabase, "supabase"),
+        gated_hardener!(wakatime_cli, "wakatime-cli"),
         HardenerMetadata {
             name: "terraform",
             documentation: include_str!("terraform.md"),
@@ -330,6 +336,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
 pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
     let mut gates = vec![
         gpg_signing_gate(),
+        aliyun_cli::secret_gate(),
         aws_cli::secret_gate(),
         docker::secret_gate(),
         goat::secret_gate(),
@@ -338,11 +345,13 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         plumber::secret_gate(),
         uaa_cli::secret_gate(),
         railway::secret_gate(),
+        rclone::secret_gate(),
         oxide_cli::secret_gate(),
         homebrew::secret_gate(),
         gh_cli::secret_gate(),
         stripe_cli::secret_gate(),
         supabase::secret_gate(),
+        wakatime_cli::secret_gate(),
         terraform::secret_gate(terraform::Tool::Terraform),
         terraform::secret_gate(terraform::Tool::OpenTofu),
     ];

@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var baseStatusImage: NSImage?
     #if !DEBUG
     private let postHogTelemetry = PostHogTelemetry.shared
+    private var dailyHeartbeatTask: Task<Void, Never>?
     private var lastTelemetryFindingCount: Int?
     #endif
 
@@ -143,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         startServicesAndOpenMainWindowIfRequested()
         startAutomaticUpdateChecks()
+        #if !DEBUG
+        startDailyHeartbeat()
+        #endif
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -357,6 +361,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         automaticUpdateCheckTask?.cancel()
+        #if !DEBUG
+        dailyHeartbeatTask?.cancel()
+        #endif
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         stopServices()
     }
@@ -459,7 +466,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Install \(update.assetName) and relaunch Automic Vault?"
             alert.addButton(withTitle: "Install and Relaunch")
             alert.addButton(withTitle: "Later")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            alert.addButton(withTitle: "View Release Notes")
+            let response = alert.runModal()
+            if response == .alertThirdButtonReturn {
+                NSWorkspace.shared.open(URL(
+                    string: "https://github.com/automic-vault/automic-vault/releases/tag/\(update.version)"
+                )!)
+                return
+            }
+            guard response == .alertFirstButtonReturn else { return }
 
             readyUpdate = nil
             restoreMainWindow = beginUpdating(with: alert)
@@ -542,6 +557,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    #if !DEBUG
+    private func startDailyHeartbeat() {
+        dailyHeartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = self?.postHogTelemetry.captureDailyHeartbeat() else { return }
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+    #endif
 
     private func refreshAvailableUpdate() async {
         guard !isCheckingForUpdates else { return }
@@ -2792,14 +2822,15 @@ private func temporaryAccessGrantCandidate(
     launcher: LauncherIdentity?,
     agentTaskContext: AgentTaskContext?
 ) -> TemporaryAccessGrantCandidate? {
-    guard let gate, let classification, let launcher, let agentTaskContext else { return nil }
-    switch classification {
-    case .localWrite, .update, .mutating:
-        break
-    case .readOnly, .secretDump, .unknown:
-        return nil
-    }
-    guard let runtimeRequirement = launcher.runtimeProtection.secretGateAdmissionRequirement else {
+    guard temporaryAccessGrantUnavailableReason(
+        hasToolSpecificGate: gate != nil,
+        classification: classification,
+        launcherRuntimeProtection: launcher?.runtimeProtection,
+        agentTaskContext: agentTaskContext
+    ) == nil,
+    let gate, let launcher, let agentTaskContext,
+    let runtimeRequirement = launcher.runtimeProtection.secretGateAdmissionRequirement
+    else {
         return nil
     }
     let launcherName = temporaryAccessGrantLauncherName(launcher)
@@ -2927,6 +2958,8 @@ private struct ApprovedFulfillmentMaterial: Sendable {
     let payload: ApprovedPayload
     let awsRegistration: AWSRegistration?
 }
+
+private let dockerHelperProtocolVersion: UInt64 = 2
 
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
@@ -3125,11 +3158,11 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: true, error: nil, value: String(negotiated))
         case .dockerHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
-            guard requested == 1 else {
+            guard requested == dockerHelperProtocolVersion else {
                 reply(peer, to: message, ok: false, error: "Docker helper protocol upgrade is required")
                 return
             }
-            reply(peer, to: message, ok: true, error: nil, value: "1")
+            reply(peer, to: message, ok: true, error: nil, value: String(dockerHelperProtocolVersion))
         case .goatHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3186,6 +3219,27 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .aliyunHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "Alibaba Cloud helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .wakatimeHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "WakaTime helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
+        case .rcloneHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == 1 else {
+                reply(peer, to: message, ok: false, error: "rclone helper protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: "1")
         case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
             handleInject(
                 message,
@@ -3197,7 +3251,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing
             )
         case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .plumberGet, .uaaGet, .railwayGet,
-             .oxideGet, .terraformGet:
+             .oxideGet, .terraformGet, .aliyunGet, .wakatimeGet, .rcloneGet:
             handleInject(
                 message,
                 on: peer,
@@ -3581,22 +3635,42 @@ private final class ApprovalServer: @unchecked Sendable {
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let oxideRequest = try oxideCredentialRequest(
+            let aliyunRequest = try aliyunCredentialRequest(
                 from: message,
                 request: helperRequest,
                 helperIdentity: identity,
                 helperPath: callerPath,
                 helperSigning: signing
             )
-            let conflicts = Set(oxideRequest.envConflicts)
-            let selectionNames = oxideRequest.keys.filter {
-                oxideRequest.replaceExistingEnv || !conflicts.contains($0)
+            let oxideRequest = try oxideCredentialRequest(
+                from: message,
+                request: aliyunRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let wakatimeRequest = try wakatimeCredentialRequest(
+                from: message,
+                request: oxideRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let rcloneRequest = try rclonePasswordRequest(
+                request: wakatimeRequest,
+                helperIdentity: identity,
+                helperPath: callerPath,
+                helperSigning: signing
+            )
+            let conflicts = Set(rcloneRequest.envConflicts)
+            let selectionNames = rcloneRequest.keys.filter {
+                rcloneRequest.replaceExistingEnv || !conflicts.contains($0)
             }
             let selected = try secretValueCustody.bind(
                 names: selectionNames,
-                cwd: oxideRequest.cwd
+                cwd: rcloneRequest.cwd
             )
-            request = approvalRequestWithCredentialContext(oxideRequest.selecting(selected))
+            request = approvalRequestWithCredentialContext(rcloneRequest.selecting(selected))
         } catch {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
@@ -3997,6 +4071,17 @@ private final class ApprovalServer: @unchecked Sendable {
             launcher: launcher,
             agentTaskContext: currentAgentTaskContext
         )
+        let temporaryGrantUnavailableReason = temporaryAccessGrantUnavailableReason(
+            hasToolSpecificGate: configuredGate != nil,
+            classification: classification,
+            launcherRuntimeProtection: launcher?.runtimeProtection,
+            agentTaskContext: currentAgentTaskContext
+        )
+        let promptAccessLevel = if let configuredGate, let resolvedPolicy {
+            configuredGate.protectionTitle(resolvedPolicy.protection)
+        } else {
+            SecretGateProtection.noAccess.title
+        }
         let transientApproval = request.decisionReuseRequest(
             clientIdentity: identity,
             callerPath: callerPath,
@@ -4172,7 +4257,9 @@ private final class ApprovalServer: @unchecked Sendable {
                 automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
                     ?? retainedProcessExplanation
                     ?? automaticApprovalExplanation,
+                accessLevel: promptAccessLevel,
                 temporaryGrantCandidate: temporaryGrantCandidate,
+                temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
                 classification: classification,
                 cancellation: cancellation
             )
@@ -6464,6 +6551,133 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func wakatimeCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "wakatime-get" else { return request }
+        guard request.tool == "wakatime-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys == [wakatimeCredentialSecretName],
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let urlPointer = xpc_dictionary_get_string(message, "wakatime_api_url"),
+              String(cString: urlPointer) == wakatimeOfficialAPIURL
+        else { throw AppError("invalid WakaTime credential request") }
+        let parent = try wakatimeCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "wakatime-cli",
+            title: "Use the WakaTime API key?",
+            detail: "The verified WakaTime Target will receive the global API key for WakaTime's official API endpoint.",
+            credentialScope: wakatimeOfficialAPIURL,
+            credentialParent: parent
+        )
+    }
+
+    private func wakatimeCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("WakaTime credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard wakatimeTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible WakaTime Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
+    private func rclonePasswordRequest(
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "rclone-get" else { return request }
+        guard request.tool == "rclone",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys == [rcloneConfigPasswordSecretName],
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil
+        else { throw AppError("invalid rclone password request") }
+        let parent = try rcloneCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: "/",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "rclone",
+            title: "Unlock the rclone configuration?",
+            detail: "The verified rclone Target will receive one wrapping password that unlocks every configured remote for this process.",
+            credentialScope: rcloneAllRemotesScope,
+            credentialParent: parent
+        )
+    }
+
+    private func rcloneCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("rclone password helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard rcloneTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible rclone Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
     private func terraformCredentialParent(
         for helperIdentity: AVProcessIdentity
     ) throws -> CredentialHelperParent {
@@ -6488,8 +6702,77 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func aliyunCredentialRequest(
+        from message: xpc_object_t,
+        request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity,
+        helperPath: String,
+        helperSigning: SigningInfo
+    ) throws -> ApprovalRequest {
+        guard request.op == "aliyun-get" else { return request }
+        guard request.tool == "aliyun-cli",
+              isTrustedAvCaller(path: helperPath, signing: helperSigning),
+              request.target.isEmpty,
+              request.args.isEmpty,
+              request.keys.count == 1,
+              !request.replaceExistingEnv,
+              !request.allowMissingKeys,
+              request.envConflicts.isEmpty,
+              request.shebangScript == nil,
+              request.scriptData == nil,
+              let profilePointer = xpc_dictionary_get_string(message, "aliyun_profile")
+        else { throw AppError("invalid Alibaba Cloud credential request") }
+        let profile = String(cString: profilePointer)
+        guard normalizeAliyunProfile(profile) == profile,
+              request.keys == [aliyunCredentialSecretName(profile)]
+        else { throw AppError("Alibaba Cloud Secret Name does not match its profile") }
+        let parent = try aliyunCredentialParent(for: helperIdentity)
+        return ApprovalRequest(
+            op: request.op,
+            keys: request.keys,
+            target: parent.target,
+            args: Array(parent.arguments.dropFirst()),
+            cwd: request.cwd,
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: nil,
+            scriptData: nil,
+            tool: "aliyun-cli",
+            title: "Use Alibaba Cloud credential for profile \(profile)?",
+            detail: "The verified Alibaba Cloud CLI Target will receive the credential in plaintext, as required by the External credential-provider protocol.",
+            credentialScope: profile,
+            credentialParent: parent
+        )
+    }
+
+    private func aliyunCredentialParent(
+        for helperIdentity: AVProcessIdentity
+    ) throws -> CredentialHelperParent {
+        let parentPID = helperIdentity.ppid
+        var parentIdentity = AVProcessIdentity()
+        guard parentPID > 1,
+              av_process_identity(parentPID, &parentIdentity),
+              parentIdentity.euid == helperIdentity.euid,
+              let arguments = processArguments(parentPID),
+              !arguments.isEmpty
+        else { throw AppError("Alibaba Cloud credential helper has no live parent") }
+        let target = pathString(parentIdentity)
+        guard aliyunTargetIdentityValid(pid: parentPID, path: target) else {
+            throw AppError("credential helper parent is not an eligible Alibaba Cloud CLI Target")
+        }
+        return CredentialHelperParent(
+            pid: parentPID,
+            startUsec: parentIdentity.start_usec,
+            euid: parentIdentity.euid,
+            target: target,
+            arguments: arguments
+        )
+    }
+
     private func credentialHelperTool(_ parent: CredentialHelperParent) -> String {
         switch URL(fileURLWithPath: parent.target).lastPathComponent {
+        case "aliyun": "aliyun-cli"
         case "docker": "docker"
         case "goat": "goat"
         case "openhue": "openhue-cli"
@@ -6497,9 +6780,11 @@ private final class ApprovalServer: @unchecked Sendable {
         case "oxide": "oxide-cli"
         case "plumber": "plumber"
         case "railway": "railway"
+        case "rclone": "rclone"
         case "tofu": "opentofu"
         case "terraform": "terraform"
         case "uaa": "uaa-cli"
+        case "wakatime-cli": "wakatime-cli"
         default: ""
         }
     }
@@ -6516,6 +6801,9 @@ private final class ApprovalServer: @unchecked Sendable {
               processArguments(parent.pid) == parent.arguments
         else { return false }
         switch tool {
+        case "aliyun-cli":
+            return credentialHelperTool(parent) == tool
+                && aliyunTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "docker": return dockerTargetIdentityValid(pid: parent.pid, path: parent.target)
         case "goat":
             return credentialHelperTool(parent) == tool
@@ -6541,6 +6829,12 @@ private final class ApprovalServer: @unchecked Sendable {
         case "terraform", "opentofu":
             return credentialHelperTool(parent) == tool
                 && terraformTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "wakatime-cli":
+            return credentialHelperTool(parent) == tool
+                && wakatimeTargetIdentityValid(pid: parent.pid, path: parent.target)
+        case "rclone":
+            return credentialHelperTool(parent) == tool
+                && rcloneTargetIdentityValid(pid: parent.pid, path: parent.target)
         default: return false
         }
     }
@@ -6550,6 +6844,16 @@ private final class ApprovalServer: @unchecked Sendable {
               let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
         else { return false }
         return signing.identifier == "goat"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection.allowsSecretGateAccess
+    }
+
+    private func aliyunTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard configuredSecretGateTarget("aliyun-cli", matches: path),
+              let signing = liveSigningInfo(pid: pid), signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "aliyun"
             && signing.teamIdentifier == "ZU76A67LGU"
             && signing.isDeveloperID
             && signing.runtimeProtection.allowsSecretGateAccess
@@ -6637,6 +6941,30 @@ private final class ApprovalServer: @unchecked Sendable {
             && signing.runtimeProtection.allowsSecretGateAccess
     }
 
+    private func wakatimeTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard configuredSecretGateTarget("wakatime-cli", matches: path),
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "wakatime-cli"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection == .hardened
+            && liveProcessHasNoEntitlements(pid: pid)
+    }
+
+    private func rcloneTargetIdentityValid(pid: pid_t, path: String) -> Bool {
+        guard configuredSecretGateTarget("rclone", matches: path),
+              let signing = liveSigningInfo(pid: pid),
+              signing.mainExecutable == path
+        else { return false }
+        return signing.identifier == "rclone"
+            && signing.teamIdentifier == "ZU76A67LGU"
+            && signing.isDeveloperID
+            && signing.runtimeProtection == .hardened
+            && liveProcessHasNoEntitlements(pid: pid)
+    }
+
     private func configuredSecretGateTarget(_ gateID: String, matches path: String) -> Bool {
         secretGateDescriptors.first(where: { $0.id == gateID })?.routes.contains {
             normalizedExecutablePath($0.targetPath) == normalizedExecutablePath(path)
@@ -6648,7 +6976,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         let credentialParent: CredentialHelperParent?
-        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get"]
+        if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "terraform-get", "aliyun-get", "wakatime-get", "rclone-get"]
             .contains(request.op)
         {
             guard let scope = request.credentialScope,
@@ -6660,6 +6988,7 @@ private final class ApprovalServer: @unchecked Sendable {
             else { throw AppError("invalid credential-helper request") }
             let expected: String
             switch request.op {
+            case "aliyun-get": expected = aliyunCredentialSecretName(scope)
             case "docker-get": expected = dockerCredentialSecretName(scope)
             case "goat-get":
                 guard let goat = parseGoatCredentialScope(scope) else {
@@ -6680,6 +7009,16 @@ private final class ApprovalServer: @unchecked Sendable {
                     throw AppError("Oxide credential scope changed before Secret Application")
                 }
                 expected = oxide.secretName
+            case "wakatime-get":
+                guard scope == wakatimeOfficialAPIURL else {
+                    throw AppError("WakaTime API endpoint changed before Secret Application")
+                }
+                expected = wakatimeCredentialSecretName
+            case "rclone-get":
+                guard scope == rcloneAllRemotesScope else {
+                    throw AppError("rclone credential scope changed before Secret Application")
+                }
+                expected = rcloneConfigPasswordSecretName
             default: expected = terraformCredentialSecretName(scope)
             }
             guard request.keys == [expected] else {
@@ -6735,6 +7074,20 @@ private final class ApprovalServer: @unchecked Sendable {
                       let value = secrets[scope.secretName],
                       parseOxideCredential(value) != nil
                 else { throw AppError("Oxide credential changed before Secret Application") }
+            } else if request.op == "aliyun-get" {
+                guard let value = secrets[aliyunCredentialSecretName(scope)],
+                      parseAliyunCredential(value)
+                else { throw AppError("Alibaba Cloud credential changed before Secret Application") }
+            } else if request.op == "wakatime-get" {
+                guard scope == wakatimeOfficialAPIURL,
+                      let value = secrets[wakatimeCredentialSecretName],
+                      validWakaTimeAPIKey(value)
+                else { throw AppError("WakaTime credential changed before Secret Application") }
+            } else if request.op == "rclone-get" {
+                guard scope == rcloneAllRemotesScope,
+                      let value = secrets[rcloneConfigPasswordSecretName],
+                      validRcloneConfigPassword(value)
+                else { throw AppError("rclone config password changed before Secret Application") }
             } else {
                 guard let value = secrets[terraformCredentialSecretName(scope)],
                       parseTerraformCredential(value) != nil
@@ -7112,7 +7465,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let op = String(cString: opPointer)
         guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
             || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
-            || op == "oxide-get" || op == "terraform-get"
+            || op == "oxide-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
             || op == "proxy-start"
         else { return nil }
         let scriptData: Data?
@@ -7524,6 +7877,12 @@ private func classifySecretGateRequest(
         return oxideRequestClassification(request.args)
     case "terraform", "opentofu":
         return terraformRequestClassification(request.args)
+    case "aliyun-cli":
+        return aliyunRequestClassification(request.args)
+    case "wakatime-cli":
+        return wakatimeRequestClassification(request.args)
+    case "rclone":
+        return .unknown
     case "aws":
         if awsRequestMayUseLongLivedCredentials(request) { return .secretDump }
         return awsRequestIsReadOnly(awsCommandWords(request)) ? .readOnly : .mutating
@@ -7535,6 +7894,24 @@ private func classifySecretGateRequest(
             arguments: secretGateCommandWords(request)
         )
     }
+}
+
+private func wakatimeRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    if words.contains(where: {
+        $0 == "--entity" || $0.hasPrefix("--entity=") || $0 == "--extra-heartbeats"
+            || $0 == "--sync-offline-activity" || $0.hasPrefix("--sync-offline-activity=")
+            || $0 == "--sync-ai-activity" || $0 == "--sync-ai-heartbeats"
+    }) {
+        return .mutating
+    }
+    if words.contains(where: {
+        $0 == "--today" || $0 == "--file-experts" || $0 == "--today-goal"
+            || $0.hasPrefix("--today-goal=")
+    }) {
+        return .readOnly
+    }
+    return .unknown
 }
 
 private func goatRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -7711,6 +8088,17 @@ private func terraformRequestClassification(_ args: [String]) -> SecretGateReque
     default:
         return .unknown
     }
+}
+
+private func aliyunRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
+    let words = args.map { $0.lowercased() }
+    if words == ["--version"] || words == ["version"] || words == ["help"] {
+        return .readOnly
+    }
+    if words.starts(with: ["sts", "getcalleridentity"]) {
+        return .readOnly
+    }
+    return .unknown
 }
 
 private func dockerRequestClassification(_ args: [String]) -> SecretGateRequestClassification {
@@ -8535,6 +8923,45 @@ private func terraformCredentialSecretName(_ hostname: String) -> String {
     return "TERRAFORM_HOST_CREDENTIAL_\(hash)"
 }
 
+private func normalizeAliyunProfile(_ profile: String) -> String? {
+    guard !profile.isEmpty,
+          profile.utf8.count <= 128,
+          profile.unicodeScalars.allSatisfy({
+              $0.isASCII && !((0...31).contains($0.value) || $0.value == 127)
+          })
+    else { return nil }
+    return profile.trimmingCharacters(in: .whitespacesAndNewlines) == profile ? profile : nil
+}
+
+private func aliyunCredentialSecretName(_ profile: String) -> String {
+    let hash = SHA256.hash(data: Data(profile.utf8)).map { String(format: "%02X", $0) }.joined()
+    return "ALIYUN_PROFILE_CREDENTIAL_\(hash)"
+}
+
+private func parseAliyunCredential(_ value: String) -> Bool {
+    guard value.utf8.count <= 64 * 1024,
+          let data = value.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let mode = object["mode"] as? String,
+          let accessKeyID = object["access_key_id"] as? String,
+          let accessKeySecret = object["access_key_secret"] as? String,
+          validAliyunCredentialValue(accessKeyID),
+          validAliyunCredentialValue(accessKeySecret)
+    else { return false }
+    if mode == "AK" {
+        return Set(object.keys) == Set(["mode", "access_key_id", "access_key_secret"])
+    }
+    guard mode == "StsToken", let token = object["sts_token"] as? String,
+          validAliyunCredentialValue(token)
+    else { return false }
+    return Set(object.keys) == Set(["mode", "access_key_id", "access_key_secret", "sts_token"])
+}
+
+private func validAliyunCredentialValue(_ value: String) -> Bool {
+    !value.isEmpty && value.utf8.count <= 64 * 1024
+        && !value.unicodeScalars.contains(where: { [0, 10, 13].contains($0.value) })
+}
+
 private func parseTerraformCredential(_ value: String) -> String? {
     guard value.utf8.count <= 64 * 1024,
           let data = value.data(using: .utf8),
@@ -8545,6 +8972,31 @@ private func parseTerraformCredential(_ value: String) -> String? {
           !token.unicodeScalars.contains(where: { $0.value == 0 })
     else { return nil }
     return token
+}
+
+private let wakatimeCredentialSecretName = "WAKATIME_API_KEY"
+private let wakatimeOfficialAPIURL = "https://api.wakatime.com/api/v1"
+
+private func validWakaTimeAPIKey(_ value: String) -> Bool {
+    let key = value.hasPrefix("waka_") ? String(value.dropFirst(5)) : value
+    let bytes = Array(key.utf8)
+    let hyphens = Set([8, 13, 18, 23])
+    guard bytes.count == 36, bytes[14] == 52, [56, 57, 97, 98].contains(bytes[19]) else {
+        return false
+    }
+    return bytes.enumerated().allSatisfy { index, byte in
+        hyphens.contains(index)
+            ? byte == 45
+            : (48...57).contains(byte) || (97...102).contains(byte)
+    }
+}
+
+private let rcloneConfigPasswordSecretName = "RCLONE_CONFIG_PASSWORD"
+private let rcloneAllRemotesScope = "all-remotes"
+
+private func validRcloneConfigPassword(_ value: String) -> Bool {
+    !value.isEmpty && value.utf8.count <= 1024
+        && !value.unicodeScalars.contains(where: { [0, 10, 13].contains($0.value) })
 }
 
 private func isGhTokenKey(_ key: String) -> Bool {
@@ -8991,6 +9443,7 @@ private struct ApprovalProcessSecurityNode: Identifiable {
     let roles: [String]
     let posture: ApprovalProcessPosture
     let explanation: String
+    let isAutomicVaultSigned: Bool
 
     var id: String { "\(pid ?? -1):\(path)" }
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
@@ -8998,6 +9451,13 @@ private struct ApprovalProcessSecurityNode: Identifiable {
 
 private struct ApprovalProcessSecurity {
     let nodes: [ApprovalProcessSecurityNode]
+}
+
+private func isAutomicVaultSigned(
+    _ signing: LiveSigningInfo?,
+    teamIdentifier: String?
+) -> Bool {
+    signing?.isDeveloperID == true && signing?.teamIdentifier == teamIdentifier
 }
 
 private func approvalProcessIdentities(
@@ -9117,6 +9577,7 @@ private func approvalProcessSecurity(
     targetPID: pid_t? = nil,
     launcher: LauncherIdentity?
 ) -> ApprovalProcessSecurity {
+    let automicVaultTeamIdentifier = selfTeamIdentifier()
     var identities = approvalProcessIdentities(
         gateClientPID: gateClientPID,
         launcherPID: launcher?.pid
@@ -9175,7 +9636,11 @@ private func approvalProcessSecurity(
             path: identity.path,
             roles: roles,
             posture: result.0,
-            explanation: result.1
+            explanation: result.1,
+            isAutomicVaultSigned: isAutomicVaultSigned(
+                signing,
+                teamIdentifier: automicVaultTeamIdentifier
+            )
         )
     }
 
@@ -9190,7 +9655,11 @@ private func approvalProcessSecurity(
             path: request.target,
             roles: [request.keys.isEmpty ? "Target (not started)" : "Secret recipient (not started)"],
             posture: result.0,
-            explanation: result.1
+            explanation: result.1,
+            isAutomicVaultSigned: isAutomicVaultSigned(
+                signing,
+                teamIdentifier: automicVaultTeamIdentifier
+            )
         ), at: 0)
     }
     return ApprovalProcessSecurity(nodes: nodes)
@@ -9258,9 +9727,16 @@ private func launcherIdentity(
     pid: pid_t,
     path: String,
     signing: LiveSigningInfo,
-    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo
+    appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL }
 ) -> LauncherIdentity? {
-    launcherIdentities(pid: pid, path: path, signing: signing, appSigning: appSigning).first
+    launcherIdentities(
+        pid: pid,
+        path: path,
+        signing: signing,
+        appSigning: appSigning,
+        bundleExecutableURL: bundleExecutableURL
+    ).first
 }
 
 private func launcherIdentities(
@@ -9268,8 +9744,11 @@ private func launcherIdentities(
     path: String,
     signing: LiveSigningInfo,
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
+    bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL },
     allowsStandaloneFallback: Bool = true
 ) -> [LauncherIdentity] {
+    // Gate plumbing is never the operation's Launcher.
+    guard signing.identifier != "com.automicvault.av-gpg" else { return [] }
     var seenContainingApps = Set<String>()
     let containingAppURLs = (
         appBundleURLs(containing: path)
@@ -9280,11 +9759,17 @@ private func launcherIdentities(
         containingAppURLs.filter {
             appBundleMatchesMainExecutable(
                 $0,
-                executablePaths: [path, signing.mainExecutable]
+                executablePaths: [path, signing.mainExecutable],
+                bundleExecutableURL: bundleExecutableURL
             )
         }
         + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
     ).filter { seenApps.insert($0.path).inserted }
+    let helperAssociation = verifiedLauncherHelperAssociation(
+        path: path,
+        signing: signing,
+        containingAppURLs: containingAppURLs
+    )
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
         || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
     if claimsLauncherBundleIdentity {
@@ -9310,7 +9795,7 @@ private func launcherIdentities(
         )]
     }
     guard !signing.isAdHoc else { return [] }
-    let apps: [LauncherIdentity] = appURLs.compactMap { appURL in
+    var apps: [LauncherIdentity] = appURLs.compactMap { appURL in
         guard let app = appSigning(appURL) else { return nil }
         return LauncherIdentity(
             pid: pid,
@@ -9320,6 +9805,18 @@ private func launcherIdentities(
             designatedRequirement: app.designatedRequirement,
             runtimeProtection: signing.runtimeProtection
         )
+    }
+    if let helperAssociation,
+       seenApps.insert(helperAssociation.appURL.path).inserted,
+       let app = verifiedLauncherHelperSigningInfo(helperAssociation, pid: pid) {
+        apps.append(LauncherIdentity(
+            pid: pid,
+            path: path,
+            identifier: app.identifier,
+            teamIdentifier: app.teamIdentifier,
+            designatedRequirement: app.designatedRequirement,
+            runtimeProtection: signing.runtimeProtection
+        ))
     }
     if !apps.isEmpty { return apps }
     guard allowsStandaloneFallback,
@@ -9390,7 +9887,7 @@ private extension ApprovalServiceOperation {
         case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
              .ordercliHelperVersion, .openhueHelperVersion, .plumberHelperVersion, .uaaHelperVersion,
              .railwayHelperVersion, .oxideHelperVersion,
-             .terraformHelperVersion: false
+             .terraformHelperVersion, .aliyunHelperVersion: false
         default: true
         }
     }
@@ -9410,6 +9907,12 @@ private struct StaticSigningInfo {
     let identifier: String
     let teamIdentifier: String
     let designatedRequirement: String
+}
+
+private struct VerifiedLauncherHelperAssociation {
+    let helper: VerifiedLauncherHelper
+    let appURL: URL
+    let executableURL: URL
 }
 
 private func runtimeProtection(_ dictionary: [CFString: Any]) -> LauncherRuntimeProtection {
@@ -9545,11 +10048,15 @@ private func staticSigningInfo(url: URL) -> StaticSigningInfo? {
     var staticCode: SecStaticCode?
     guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
           let staticCode,
-          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+          validateAppBundleMainExecutable(staticCode) == errSecSuccess
     else {
         return nil
     }
 
+    return staticSigningInfo(staticCode)
+}
+
+private func staticSigningInfo(_ staticCode: SecStaticCode) -> StaticSigningInfo? {
     var info: CFDictionary?
     let flags = SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)
     guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
@@ -9582,14 +10089,29 @@ private func launcherAppVerificationFailure(
             guard av_process_identity(pid, &ancestor) else { break }
             let path = pathString(ancestor)
             if let signing = liveSigningInfo(pid: pid) ?? executableSigningInfo(path: path) {
-                let appURLs = (
+                let containingAppURLs = (
                     appBundleURLs(containing: path)
                     + appBundleURLs(containing: signing.mainExecutable)
-                ).filter {
-                    appBundleMatchesMainExecutable(
-                        $0,
-                        executablePaths: [path, signing.mainExecutable]
+                )
+                let helperAssociation = verifiedLauncherHelperAssociation(
+                    path: path,
+                    signing: signing,
+                    containingAppURLs: containingAppURLs
+                )
+                if let helperAssociation,
+                   checkedApps.insert(helperAssociation.appURL.path).inserted,
+                   verifiedLauncherHelperSigningInfo(helperAssociation, pid: pid) == nil {
+                    return LauncherAppVerificationFailure(
+                        appName: helperAssociation.helper.appName,
+                        resourcesUnreadable: false
                     )
+                }
+                let appURLs = containingAppURLs.filter {
+                    $0.path != helperAssociation?.appURL.path
+                        && appBundleMatchesMainExecutable(
+                            $0,
+                            executablePaths: [path, signing.mainExecutable]
+                        )
                 }
                     + [associatedAppBundleURL(path: path, signing: signing)].compactMap { $0 }
                 for appURL in appURLs where checkedApps.insert(appURL.path).inserted {
@@ -9609,7 +10131,7 @@ private func appBundleVerificationFailure(_ url: URL) -> LauncherAppVerification
     else {
         return nil
     }
-    let status = SecStaticCodeCheckValidity(staticCode, [], nil)
+    let status = validateAppBundleMainExecutable(staticCode)
     guard status != errSecSuccess else { return nil }
     let name = url.deletingPathExtension().lastPathComponent
     let executableOnly = SecCSFlags(
@@ -9697,6 +10219,113 @@ private func associatedAppBundleURL(path: String, signing: LiveSigningInfo) -> U
         ?? URL(fileURLWithPath: "/Applications/Vaultty.app")
 }
 
+private func verifiedLauncherHelperAssociation(
+    path: String,
+    signing: LiveSigningInfo,
+    containingAppURLs: [URL]? = nil,
+    helpers: [VerifiedLauncherHelper]? = nil,
+    configuration: VerifiedLauncherHelperConfiguration? = nil,
+    bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
+) -> VerifiedLauncherHelperAssociation? {
+    let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
+    let helpers = helpers ?? configuration.helpers
+    guard signing.isDeveloperID else { return nil }
+    let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
+    let executableURL = URL(fileURLWithPath: executablePath)
+        .standardizedFileURL
+        .resolvingSymlinksInPath()
+    let appURLs = containingAppURLs ?? appBundleURLs(containing: executableURL.path)
+    for helper in helpers where configuration.isEnabled(helper)
+        && helper.helperSigningIdentifier == signing.identifier
+        && helper.helperTeamIdentifier == signing.teamIdentifier
+    {
+        guard let appURL = appURLs.first(where: {
+            bundleIdentifier($0) == helper.appBundleIdentifier
+        }) else { continue }
+        if let relativePath = helper.relativePath {
+            let expectedURL = appURL.appendingPathComponent(relativePath)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+            guard expectedURL == executableURL else { continue }
+        }
+        return VerifiedLauncherHelperAssociation(
+            helper: helper,
+            appURL: appURL,
+            executableURL: executableURL
+        )
+    }
+    return nil
+}
+
+private func verifiedLauncherHelperSigningInfo(
+    _ association: VerifiedLauncherHelperAssociation,
+    pid: pid_t
+) -> StaticSigningInfo? {
+    guard let liveCodeIdentifier = liveCodeIdentity(pid: pid),
+          let fileCodeIdentifier = staticCodeIdentity(association.executableURL),
+          liveCodeIdentifier == fileCodeIdentifier
+    else { return nil }
+
+    return verifiedLauncherHelperAppSigningInfo(association)
+}
+
+private func verifiedLauncherHelperAppSigningInfo(
+    _ association: VerifiedLauncherHelperAssociation
+) -> StaticSigningInfo? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(
+        association.appURL as CFURL,
+        [],
+        &staticCode
+    ) == errSecSuccess,
+        let staticCode,
+        let requirement = verifiedLauncherHelperAppRequirement(association.helper)
+    else { return nil }
+
+    guard validateAppBundleResource(
+        staticCode,
+        resourceURL: association.executableURL,
+        requirement: requirement
+    ) == errSecSuccess,
+          let app = staticSigningInfo(staticCode),
+          app.identifier == association.helper.appBundleIdentifier,
+          app.teamIdentifier == association.helper.appTeamIdentifier
+    else { return nil }
+    return app
+}
+
+private func verifiedLauncherHelperAppRequirement(
+    _ helper: VerifiedLauncherHelper
+) -> SecRequirement? {
+    let source = """
+    identifier "\(helper.appBundleIdentifier)" and \
+    anchor apple generic and \
+    certificate 1[field.1.2.840.113635.100.6.2.6] exists and \
+    certificate leaf[field.1.2.840.113635.100.6.1.13] exists and \
+    certificate leaf[subject.OU] = "\(helper.appTeamIdentifier)"
+    """
+    var requirement: SecRequirement?
+    guard SecRequirementCreateWithString(
+        source as CFString,
+        [],
+        &requirement
+    ) == errSecSuccess else { return nil }
+    return requirement
+}
+
+private func staticCodeIdentity(_ url: URL) -> Data? {
+    var staticCode: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+          let staticCode,
+          SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess
+    else { return nil }
+    var info: CFDictionary?
+    guard SecCodeCopySigningInformation(staticCode, [], &info) == errSecSuccess,
+          let dictionary = info as? [CFString: Any]
+    else { return nil }
+    return dictionary[kSecCodeInfoUnique] as? Data
+}
+
 private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     guard let script = request.shebangScript else { return nil }
     let url = script.hasPrefix("/")
@@ -9782,7 +10411,9 @@ private func showApprovalAlert(
     launcher: LauncherIdentity?,
     launcherFallbackPath: String,
     automaticApprovalExplanation: String?,
+    accessLevel: String? = nil,
     temporaryGrantCandidate: TemporaryAccessGrantCandidate? = nil,
+    temporaryGrantUnavailableReason: String? = nil,
     allowsPersistentApproval: Bool = false,
     persistentApprovalLabel: String = "Always Allow",
     classification: SecretGateRequestClassification? = nil,
@@ -9807,6 +10438,9 @@ private func showApprovalAlert(
         title: request.title,
         detail: request.detail,
         automaticApprovalExplanation: automaticApprovalExplanation,
+        operation: classification.map(operationClassificationTitle),
+        accessLevel: accessLevel,
+        temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
         cwd: escapedSecurityPath(request.cwd),
         keys: approvalPromptSecretNames(
             requested: request.keys,
@@ -10114,6 +10748,9 @@ private struct ApprovalPromptContent {
     let title: String?
     let detail: String?
     let automaticApprovalExplanation: String?
+    let operation: String?
+    let accessLevel: String?
+    let temporaryGrantUnavailableReason: String?
     let cwd: String
     let keys: String
     let blessing: BlessedScriptPromptContext?
@@ -10334,6 +10971,18 @@ private struct ApprovalPromptProcessNodeView: View {
                     .font(.system(.headline, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if node.isAutomicVaultSigned,
+                   let imageURL = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png"),
+                   let image = NSImage(contentsOf: imageURL)
+                {
+                    Image(nsImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 10, height: 12)
+                        .help("Signed by Automic Vault")
+                        .accessibilityHidden(true)
+                }
                 if node.posture != .meetsRequirements {
                     Image(systemName: presentation.image)
                         .font(.body)
@@ -10355,7 +11004,9 @@ private struct ApprovalPromptProcessNodeView: View {
         }
         .frame(width: 150)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(node.displayRoles), \(node.name), \(presentation.title)")
+        .accessibilityLabel(
+            "\(node.displayRoles), \(node.name), \(presentation.title)\(node.isAutomicVaultSigned ? ", signed by Automic Vault" : "")"
+        )
     }
 }
 
@@ -10536,6 +11187,14 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
+            if let reason = content.temporaryGrantUnavailableReason {
+                Text(reason)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if usesIPhoneApproval {
                 VStack(spacing: 10) {
                     HStack(spacing: 10) {
@@ -10706,6 +11365,20 @@ private struct ApprovalPromptCommandView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
+                    if let operation = content.operation {
+                        ApprovalPromptInlineMeta(
+                            label: "Operation",
+                            value: operation,
+                            systemImage: "list.bullet"
+                        )
+                    }
+                    if let accessLevel = content.accessLevel {
+                        ApprovalPromptInlineMeta(
+                            label: "Access Level",
+                            value: accessLevel,
+                            systemImage: "shield.lefthalf.filled"
+                        )
+                    }
                     ApprovalPromptInlineMeta(
                         label: "Secret Names",
                         value: content.keys,
@@ -11241,6 +11914,43 @@ private func runSecretMutationSelfCheck() -> Int32 {
     return 0
 }
 
+private func runKeychainPersistenceSelfCheck() -> Int32 {
+    let service = "com.automicvault.self-check.\(UUID().uuidString)"
+    let account = "KEYCHAIN_SELF_CHECK"
+    let value = UUID().uuidString
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+        kSecAttrAccessGroup as String: "ZU76A67LGU.com.automicvault",
+        kSecUseDataProtectionKeychain as String: true,
+    ]
+    defer { SecItemDelete(query as CFDictionary) }
+
+    guard saveStoredSecret(
+        account: account,
+        value: value,
+        accessibility: .afterFirstUnlock,
+        service: service
+    ) == errSecSuccess,
+        loadStoredSecret(account: account, service: service) == value,
+        storedSecretExists(account: account, service: service)
+    else { return 1 }
+
+    var attributesQuery = query
+    attributesQuery[kSecReturnAttributes as String] = true
+    attributesQuery[kSecMatchLimit as String] = kSecMatchLimitOne
+    var attributesResult: CFTypeRef?
+    guard SecItemCopyMatching(attributesQuery as CFDictionary, &attributesResult) == errSecSuccess,
+          let attributes = attributesResult as? [String: Any],
+          attributes[kSecAttrAccessible as String] as? String
+              == kSecAttrAccessibleAfterFirstUnlock as String,
+          deleteStoredSecret(account: account, service: service) == errSecSuccess,
+          !storedSecretExists(account: account, service: service)
+    else { return 1 }
+    return 0
+}
+
 @MainActor
 private func runApprovalSelfCheck() -> Int32 {
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
@@ -11462,14 +12172,16 @@ private func runApprovalSelfCheck() -> Int32 {
             path: "/Applications/Example.app/Contents/MacOS/Example",
             roles: ["Verified Launcher"],
             posture: .meetsRequirements,
-            explanation: "Valid code signature; Hardened Runtime"
+            explanation: "Valid code signature; Hardened Runtime",
+            isAutomicVaultSigned: false
         ),
         ApprovalProcessSecurityNode(
             pid: 41,
             path: "/opt/homebrew/bin/gh",
             roles: ["Secret recipient", "Verified Gate Client"],
             posture: .meetsRequirements,
-            explanation: "Valid code signature; Hardened Runtime"
+            explanation: "Valid code signature; Hardened Runtime",
+            isAutomicVaultSigned: true
         ),
     ])
     let promptContent = ApprovalPromptContent(
@@ -11480,6 +12192,9 @@ private func runApprovalSelfCheck() -> Int32 {
         title: "GitHub token requested",
         detail: "gh needs the GitHub token",
         automaticApprovalExplanation: automaticApprovalExplanation,
+        operation: operationClassificationTitle(.unknown),
+        accessLevel: SecretGateProtection.noAccess.title,
+        temporaryGrantUnavailableReason: "10-minute Write Access excludes Unknown operations.",
         cwd: "/tmp",
         keys: "GH_TOKEN_GITHUB_COM",
         blessing: promptBlessing,
@@ -11516,6 +12231,9 @@ private func runApprovalSelfCheck() -> Int32 {
                 title: nil,
                 detail: nil,
                 automaticApprovalExplanation: nil,
+                operation: nil,
+                accessLevel: nil,
+                temporaryGrantUnavailableReason: nil,
                 cwd: "/tmp",
                 keys: "GH_TOKEN_GITHUB_COM",
                 blessing: nil,
@@ -11642,7 +12360,8 @@ private func runApprovalSelfCheck() -> Int32 {
         pid: 43,
         path: "/Applications/Vaultty.app/Contents/Helpers/vaultty-sessiond",
         signing: vaulttySigning,
-        appSigning: { _ in vaulttyAppSigning }
+        appSigning: { _ in vaulttyAppSigning },
+        bundleExecutableURL: { _ in URL(fileURLWithPath: vaulttySigning.mainExecutable) }
     )
     let vaulttyBridgeLauncher = launcherIdentity(
         pid: 44,
@@ -11663,13 +12382,17 @@ private func runApprovalSelfCheck() -> Int32 {
                 teamIdentifier: "TEAM",
                 designatedRequirement: "identifier \"\(identifier)\" and anchor apple generic"
             )
-        }
+        },
+        bundleExecutableURL: { _ in URL(fileURLWithPath: nestedMenuSigning.mainExecutable) }
     )
     guard parentlessVaulttyLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           vaulttyBridgeLauncher?.designatedRequirement == vaulttyAppSigning.designatedRequirement,
           nestedLaunchers.map(\.identifier) == ["dev.mxcl.pmm.menu", "dev.mxcl.pmm"],
           launcherAncestorStartPIDs(detachedCaller) == [43],
           hardenedPosture.0 == .meetsRequirements,
+          isAutomicVaultSigned(unbundledSigning, teamIdentifier: "TEAM"),
+          !isAutomicVaultSigned(unbundledSigning, teamIdentifier: "OTHER"),
+          !isAutomicVaultSigned(pythonSigning, teamIdentifier: "unknown"),
           nodePosture.0 == .needsAttention,
           nodePosture.1.contains("mutable JavaScript"),
           unsafePosture.0 == .doesNotMeetRequirements,
@@ -12201,6 +12924,137 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         runtimeProtection: .hardened,
         isDeveloperID: true
     )
+    let bundledCodex = LiveSigningInfo(
+        identifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        teamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        designatedRequirement: #"identifier "codex" and anchor apple generic"#,
+        mainExecutable: "/Applications/ChatGPT.app/Contents/Resources/codex",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let chatGPTURL = URL(fileURLWithPath: "/Applications/ChatGPT.app")
+    let codexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let disabledCodexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(
+            disabledHelperIDs: [codexVerifiedLauncherHelper.id]
+        ),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let wrongPathCodexHelper = VerifiedLauncherHelper(
+        id: "wrong-path-codex",
+        name: "Wrong Codex",
+        appName: "ChatGPT",
+        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
+        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
+        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        relativePath: "Contents/Resources/not-codex"
+    )
+    let pathBoundCodexHelper = VerifiedLauncherHelper(
+        id: "path-bound-codex",
+        name: "Codex CLI",
+        appName: "ChatGPT",
+        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
+        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
+        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
+        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
+        relativePath: "Contents/Resources/codex"
+    )
+    let pathBoundCodexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        helpers: [wrongPathCodexHelper, pathBoundCodexHelper],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let xcodeGit = LiveSigningInfo(
+        identifier: "com.apple.git",
+        teamIdentifier: "Software Signing",
+        designatedRequirement: #"identifier "com.apple.git" and anchor apple"#,
+        mainExecutable: "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: false
+    )
+    let xcodeHelperAssociation = verifiedLauncherHelperAssociation(
+        path: xcodeGit.mainExecutable,
+        signing: xcodeGit,
+        containingAppURLs: [URL(fileURLWithPath: "/Applications/Xcode.app")],
+        configuration: VerifiedLauncherHelperConfiguration(),
+        bundleIdentifier: { _ in "com.apple.dt.Xcode" }
+    )
+    let installedCodexValidation: Bool = {
+        let executableURL = URL(
+            fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"
+        )
+        guard FileManager.default.fileExists(atPath: executableURL.path) else { return true }
+        guard let signing = executableSigningInfo(path: executableURL.path),
+              let association = verifiedLauncherHelperAssociation(
+                  path: executableURL.path,
+                  signing: signing,
+                  helpers: [codexVerifiedLauncherHelper],
+                  configuration: VerifiedLauncherHelperConfiguration()
+              ),
+              verifiedLauncherHelperAppSigningInfo(association) != nil
+        else { return false }
+        let outsideResource = VerifiedLauncherHelperAssociation(
+            helper: codexVerifiedLauncherHelper,
+            appURL: association.appURL,
+            executableURL: URL(fileURLWithPath: "/bin/ls")
+        )
+        return verifiedLauncherHelperAppSigningInfo(outsideResource) == nil
+    }()
+    let installedMainAppValidation = [
+        URL(fileURLWithPath: "/Applications/ChatGPT.app"),
+        URL(fileURLWithPath: "/Applications/Xcode.app"),
+    ].allSatisfy {
+        !FileManager.default.fileExists(atPath: $0.path) || staticSigningInfo(url: $0) != nil
+    }
+    let avGPG = LiveSigningInfo(
+        identifier: "com.automicvault.av-gpg",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "com.automicvault.av-gpg" and anchor apple generic"#,
+        mainExecutable: "/Applications/Automic Vault.app/Contents/MacOS/av-gpg",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let portalHelper = LiveSigningInfo(
+        identifier: "dev.mxcl.portal.sessiond",
+        teamIdentifier: "TEAM",
+        designatedRequirement: #"identifier "dev.mxcl.portal.sessiond" and anchor apple generic"#,
+        mainExecutable: "/Applications/Portal Session Helper.app/Contents/MacOS/portal-sessiond",
+        isAdHoc: false,
+        runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let portalHelperSigning = StaticSigningInfo(
+        identifier: portalHelper.identifier,
+        teamIdentifier: portalHelper.teamIdentifier,
+        designatedRequirement: portalHelper.designatedRequirement
+    )
+    let portalGPGLaunchers = launcherIdentities(
+        pid: 45,
+        path: avGPG.mainExecutable,
+        signing: avGPG,
+        appSigning: { _ in nil }
+    ) + launcherIdentities(
+        pid: 44,
+        path: portalHelper.mainExecutable,
+        signing: portalHelper,
+        appSigning: { _ in portalHelperSigning }
+    )
     let liveBundleFallback = launcherIdentities(
         pid: 44,
         path: bundledDeveloperID.mainExecutable,
@@ -12223,6 +13077,14 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           ),
           launcher.isStandalone,
           launcher.designatedRequirement == requirement,
+          targetedAppResourceValidationAvailable,
+          codexAssociation?.helper == codexVerifiedLauncherHelper,
+          codexAssociation?.appURL == chatGPTURL,
+          pathBoundCodexAssociation?.helper == pathBoundCodexHelper,
+          disabledCodexAssociation == nil,
+          xcodeHelperAssociation == nil,
+          installedCodexValidation,
+          installedMainAppValidation,
           let liveBundleFallback,
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,
@@ -12254,6 +13116,11 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
               "/bin/zsh",
               "/opt/homebrew/bin/gh",
           ]) == "example → zsh → gh",
+          executionOrigin(
+              among: portalGPGLaunchers,
+              callerPID: 46,
+              ancestorFallbackPath: portalHelper.mainExecutable
+          )?.identifier == portalHelper.identifier,
           !appBundleMatchesMainExecutable(
               URL(fileURLWithPath: "/Applications/Xcode.app"),
               executablePaths: ["/Applications/Xcode.app/Contents/Developer/usr/bin/git"],
@@ -12647,6 +13514,43 @@ private func runTerraformCredentialSelfCheck() -> Int32 {
               == "TERRAFORM_HOST_CREDENTIAL_E3078C0B1928EE1F19EBBD26404E4C6B5FC1D639629DB0345330C0ECA3FEFC42",
           parseTerraformCredential(#"{"token":"secret"}"#) == "secret",
           parseTerraformCredential(#"{"token":"secret","future":true}"#) == nil
+    else { return 1 }
+    return 0
+}
+
+private func runAliyunCredentialSelfCheck() -> Int32 {
+    guard aliyunRequestClassification(["sts", "GetCallerIdentity"]) == .readOnly,
+          aliyunRequestClassification(["ecs", "DescribeInstances"]) == .unknown,
+          normalizeAliyunProfile("prod") == "prod",
+          normalizeAliyunProfile(" prod") == nil,
+          normalizeAliyunProfile("prod\n") == nil,
+          aliyunCredentialSecretName("prod")
+              == "ALIYUN_PROFILE_CREDENTIAL_6754AF9632A2745E85C293E5AAC0863370D9BD3330B9938C00CADFD215227D77",
+          parseAliyunCredential(
+              #"{"mode":"AK","access_key_id":"id","access_key_secret":"secret"}"#
+          ),
+          parseAliyunCredential(
+              #"{"mode":"StsToken","access_key_id":"id","access_key_secret":"secret","sts_token":"token"}"#
+          ),
+          !parseAliyunCredential(
+              #"{"mode":"AK","access_key_id":"id","access_key_secret":"secret","future":true}"#
+          )
+    else { return 1 }
+    return 0
+}
+
+private func runWakaTimeCredentialSelfCheck() -> Int32 {
+    let valid = ["waka_01234567", "89ab", "4cde", "8fab", "0123456789ab"].joined(separator: "-")
+    let bare = ["01234567", "89ab", "4cde", "bfab", "0123456789ab"].joined(separator: "-")
+    let wrongVersion = ["01234567", "89ab", "3cde", "8fab", "0123456789ab"].joined(separator: "-")
+    guard wakatimeRequestClassification(["--today"]) == .readOnly,
+          wakatimeRequestClassification(["--today-goal=123"]) == .readOnly,
+          wakatimeRequestClassification(["--entity", "/tmp/main.rs"]) == .mutating,
+          wakatimeRequestClassification(["--sync-offline-activity=100"]) == .mutating,
+          wakatimeRequestClassification(["--future-operation"]) == .unknown,
+          validWakaTimeAPIKey(valid),
+          validWakaTimeAPIKey(bare),
+          !validWakaTimeAPIKey(wrongVersion)
     else { return 1 }
     return 0
 }
@@ -13764,6 +14668,10 @@ if CommandLine.arguments.contains("--self-check-secret-mutations") {
     exit(MainActor.assumeIsolated { runSecretMutationSelfCheck() })
 }
 
+if CommandLine.arguments.contains("--self-check-keychain-persistence") {
+    exit(runKeychainPersistenceSelfCheck())
+}
+
 if CommandLine.arguments.contains("--self-check-gh-read-only") {
     exit(runGhReadOnlySelfCheck())
 }
@@ -13774,6 +14682,14 @@ if CommandLine.arguments.contains("--self-check-docker-credentials") {
 
 if CommandLine.arguments.contains("--self-check-terraform-credentials") {
     exit(runTerraformCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-aliyun-credentials") {
+    exit(runAliyunCredentialSelfCheck())
+}
+
+if CommandLine.arguments.contains("--self-check-wakatime-credentials") {
+    exit(runWakaTimeCredentialSelfCheck())
 }
 
 if CommandLine.arguments.contains("--self-check-oxide-credentials") {

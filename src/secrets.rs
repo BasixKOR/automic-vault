@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
+const ALIYUN_HELPER_PROTOCOL_VERSION: u64 = 1;
 const DOCKER_HELPER_PROTOCOL_VERSION: u64 = 2;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const GOAT_HELPER_PROTOCOL_VERSION: u64 = 1;
@@ -8,12 +9,41 @@ const ORDERCLI_HELPER_PROTOCOL_VERSION: u64 = 1;
 const OPENHUE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const PLUMBER_HELPER_PROTOCOL_VERSION: u64 = 1;
 const RAILWAY_HELPER_PROTOCOL_VERSION: u64 = 1;
+const RCLONE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const TERRAFORM_HELPER_PROTOCOL_VERSION: u64 = 1;
 const UAA_HELPER_PROTOCOL_VERSION: u64 = 1;
+const WAKATIME_HELPER_PROTOCOL_VERSION: u64 = 1;
 
 struct XpcReply {
     value: Option<String>,
     names: Vec<String>,
+}
+
+pub(crate) fn ensure_aliyun_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "aliyun-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", ALIYUN_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "Alibaba Cloud credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported Alibaba Cloud helper version {version}"
+        )),
+        None => {
+            Err("the running Automic Vault app returned no Alibaba Cloud helper version".into())
+        }
+    }
 }
 
 pub(crate) fn store_secret(account: &str, value: &str) -> Result<(), String> {
@@ -170,7 +200,7 @@ pub(crate) fn ensure_docker_helper_ready() -> Result<(), String> {
         )
     })?;
     match reply.value.as_deref() {
-        Some("1") => Ok(()),
+        Some(version) if version == DOCKER_HELPER_PROTOCOL_VERSION.to_string() => Ok(()),
         Some(version) => Err(format!(
             "the running Automic Vault app reported unsupported Docker helper version {version}"
         )),
@@ -236,6 +266,56 @@ pub(crate) fn ensure_terraform_helper_ready() -> Result<(), String> {
             "the running Automic Vault app reported unsupported Terraform helper version {version}"
         )),
         None => Err("the running Automic Vault app returned no Terraform helper version".into()),
+    }
+}
+
+pub(crate) fn ensure_wakatime_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "wakatime-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", WAKATIME_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "WakaTime credential-helper protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported WakaTime helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no WakaTime helper version".into()),
+    }
+}
+
+pub(crate) fn ensure_rclone_helper_ready() -> Result<(), String> {
+    if crate::test_keychain_dir().is_some() {
+        return Ok(());
+    }
+    let reply = xpc_request(
+        "rclone-helper-version",
+        None,
+        None,
+        None,
+        Some((b"requested_version\0", RCLONE_HELPER_PROTOCOL_VERSION)),
+    )
+    .map_err(|error| {
+        format!(
+            "rclone password-command protocol negotiation failed; update and open the Automic Vault app: {error}"
+        )
+    })?;
+    match reply.value.as_deref() {
+        Some("1") => Ok(()),
+        Some(version) => Err(format!(
+            "the running Automic Vault app reported unsupported rclone helper version {version}"
+        )),
+        None => Err("the running Automic Vault app returned no rclone helper version".into()),
     }
 }
 
@@ -775,17 +855,17 @@ fn xpc_request_with_project_directory(
 
     let result = unsafe {
         if reply_is_error {
-            let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
-            let error = if error.is_null() {
-                "approval XPC connection failed".into()
+            if crate::approval_service_connection_invalid(reply) {
+                Err(crate::approval_service_unavailable_message(&service).into())
             } else {
-                std::ffi::CStr::from_ptr(error)
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            if error == "Connection invalid" {
-                Err("Automic Vault approval service is not running; open the menu bar app".into())
-            } else {
+                let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+                let error = if error.is_null() {
+                    "approval XPC connection failed".into()
+                } else {
+                    std::ffi::CStr::from_ptr(error)
+                        .to_string_lossy()
+                        .into_owned()
+                };
                 Err(error)
             }
         } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {

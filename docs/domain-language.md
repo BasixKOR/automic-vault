@@ -197,6 +197,36 @@ History or telemetry.
 
 The designated requirement stored when the user establishes trust and revalidated for each request. A path, display name, process identifier, or icon is metadata, not identity.
 
+For an ordinary app Launcher, integrity validation covers the app's signed main
+executable and the exact executable representing the Launcher. Other resources
+in the app bundle are outside the Launcher Identity and are not evidence for or
+against it. If targeted resource validation is unavailable, Automic Vault
+validates the complete bundle. Launcher Bundles retain their separately defined
+complete enrollment and integrity checks.
+
+### Verified Launcher Helper
+
+A vendor-signed executable that may represent one exact containing app as its
+Launcher even though it is not that app's declared main executable. The
+association binds the helper and app signing identities and is enabled through
+an explicit positive catalog. The catalog contains reviewed built-in
+associations and associations the user explicitly approves after Automic Vault
+discovers signed helpers sealed inside an app. A user-approved association also
+binds the helper's relative path inside that app. User-approved associations
+and disabled entries are stored in the Data Protection Keychain. Discovery,
+bundle containment, a filename, a path, or a shared Team ID alone never creates
+an association.
+
+Automic Vault verifies the live helper, the app's signed executable, and that
+the exact helper file is a required unmodified resource in the app's resource
+seal before attributing the app's Launcher Identity. If any check fails, the
+helper does not receive the app identity; an independently eligible Developer
+ID executable may still qualify under its own standalone Launcher Identity.
+An enabled association applies wherever policy names the containing app's
+Launcher Identity, across every current and future Authorization Gate. The user
+must be warned about that authority expansion before approving an association
+and may disable it without changing the app's Launcher-specific rules.
+
 ### Retained Launcher Provenance
 
 Ephemeral evidence that Automic Vault recorded one exact live process execution
@@ -380,12 +410,14 @@ Authorization Decision may receive memory-only transient reuse. Reuse is bound
 to the same live process and complete Authorization Request identity and does
 not reuse the phone response itself.
 
-### iPhone Activity
+### Request History
 
-A bounded, device-local convenience list of Approval responses successfully
-sent from one iPhone. An iPhone Activity entry is not an Authorization Record
-and does not establish that the Mac accepted the response or allowed the
-operation. It contains no Secret Values and does not replace the Mac's
+A bounded, device-local convenience list of Authorization Request summaries
+observed by one iPhone. It records Approval responses successfully sent from
+that phone and pending requests that the Mac canceled while the phone was
+connected. A Request History entry is not an Authorization Record and does not
+establish that the Mac accepted a response, allowed an operation, or why it
+canceled a request. It contains no Secret Values and does not replace the Mac's
 authoritative Authorization History.
 
 ### Touch ID Approval
@@ -481,6 +513,9 @@ The Homebrew Execution Gate does not expose Read Only. Homebrew may update itsel
 ### Detector
 
 A read-only check for one supported Exposure or Hazard in the developer environment.
+A Detector never initiates Secret Use or executes a configured credential helper.
+When runtime behavior cannot be established without crossing an Authorization
+Gate, it relies on passive evidence and may report the uncertainty as a Hazard.
 
 ### Scan
 
@@ -606,6 +641,7 @@ The following identifiers remain in storage or code for compatibility. New produ
 | `secretDump` | Secret Disclosure or Elevated Secret Application, according to the operation |
 | `mutating` | Local Write, System Write, Remote Write, or a combination |
 | Secret Usage, access log, audit log | Authorization History |
+| iPhone Activity | Request History |
 | automatic approval | automic authorization |
 | isotope key | Secret or Secret Name |
 | caller | Launcher, Gate Client, or Target, according to the role |
