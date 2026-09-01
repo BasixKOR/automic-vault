@@ -2680,7 +2680,6 @@ private struct StoredSecretDetailView: View {
     let secret: StoredSecret
     @State private var isAvailableWhileLocked: Bool
     @State private var isConfirmingDelete = false
-    @State private var isConfirmingDirectAccess = false
     @State private var pendingDirectAccessLauncher: DirectAccessLauncherSelection?
     @State private var replacingValue: StoredSecretValue?
     @State private var deletingValue: StoredSecretValue?
@@ -2774,7 +2773,6 @@ private struct StoredSecretDetailView: View {
                     model.chooseDirectAccessLauncher { launcher in
                         guard let launcher else { return }
                         pendingDirectAccessLauncher = launcher
-                        isConfirmingDirectAccess = true
                     }
                 } label: {
                     Label("Allow Launcher…", systemImage: "app.badge.checkmark")
@@ -2856,18 +2854,14 @@ private struct StoredSecretDetailView: View {
         .sheet(item: $replacingValue) { value in
             ReplaceSecretValueView(model: model, secret: secret, storedValue: value)
         }
-        .sheet(isPresented: $isConfirmingDirectAccess, onDismiss: {
-            pendingDirectAccessLauncher = nil
-        }) {
-            if let selection = pendingDirectAccessLauncher {
-                DirectAccessConfirmationView(
-                    secretName: secret.account,
-                    launcherName: selection.launcher.bundleIdentifier,
-                    runtimeWarning: launcherRuntimeWarning(selection.runtimeRequirement)
-                ) {
-                    isConfirmingDirectAccess = false
-                    model.addDirectAccessLauncher(selection, to: secret)
-                }
+        .sheet(item: $pendingDirectAccessLauncher) { selection in
+            DirectAccessConfirmationView(
+                secretName: secret.account,
+                launcherName: selection.launcher.bundleIdentifier,
+                runtimeWarning: launcherRuntimeWarning(selection.runtimeRequirement)
+            ) {
+                pendingDirectAccessLauncher = nil
+                model.addDirectAccessLauncher(selection, to: secret)
             }
         }
     }
@@ -4982,9 +4976,11 @@ struct LauncherHelperReview: Identifiable, Sendable {
     let helpers: [VerifiedLauncherHelper]
 }
 
-struct DirectAccessLauncherSelection {
+struct DirectAccessLauncherSelection: Identifiable {
     let launcher: BlessedScriptLauncher
     let runtimeRequirement: LauncherRuntimeRequirement
+
+    var id: String { launcher.requirement }
 }
 
 private let libraryValidationWarning = "This Launcher permits third-party libraries and plug-ins to run inside its process. That code can inherit the Launcher’s Secret Gate authority."
