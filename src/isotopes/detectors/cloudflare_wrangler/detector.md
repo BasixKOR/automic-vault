@@ -15,6 +15,8 @@
 - `~/.wrangler/config/*.enc`
 - `~/.config/.wrangler/config/*.toml`
 - `~/.config/.wrangler/config/*.enc`
+- `$XDG_CONFIG_HOME/.wrangler/config/*.toml`
+- `$XDG_CONFIG_HOME/.wrangler/config/*.enc`
 
 ## Why This is not Yet Hardened
 
@@ -26,7 +28,7 @@ the same tool for the key and decrypt the credentials without crossing an
 Authorization Gate.
 
 This mode reduces plaintext-at-rest exposure, but it does not establish the
-Secret custody and authorization boundary required for Hardened State. The
+Secret Custody and authorization boundary required for Hardened State. The
 detector inspects the Keychain access-control list without retrieving the key or
 credentials and reports inspection uncertainty as a Hazard.
 
