@@ -77,6 +77,8 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     .ok();
     writeln!(stdout, "◆ `brew services` is UNSUPPORTED").ok();
     writeln!(stdout, "│").ok();
+    writeln!(stdout, "◆ this hardener will:").ok();
+    writeln!(stdout, "│").ok();
     writeln!(
         stdout,
         "├─ ensure {AUTOMIC_USER} user and {VAULT_GROUP} group"
