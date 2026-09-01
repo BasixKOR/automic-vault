@@ -57,7 +57,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 42;
+pub(crate) const INSTALL_REVISION: u32 = 43;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -274,6 +274,15 @@ where
                 }
             }
         }
+        Some("__install-podman-helper") if rest.is_empty() => {
+            match hardeners::podman::install_privileged() {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = writeln!(stderr, "av: {err}");
+                    1
+                }
+            }
+        }
         Some("__install-env-wrapper") if rest.len() >= 2 => {
             let Some(target) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid env-wrapper hardener name");
@@ -378,6 +387,10 @@ where
             if target == "docker" {
                 let result = hardeners::docker::run(stdout, yes);
                 return finish_hardening(result, "docker", stdout, stderr);
+            }
+            if target == "podman" {
+                let result = hardeners::podman::run(stdout, yes);
+                return finish_hardening(result, "podman", stdout, stderr);
             }
             if target == "terraform" || target == "terraform-core" {
                 let result =
@@ -487,6 +500,7 @@ where
             aws::credentials(Some("official-v2"), stdout, stderr)
         }
         Some("docker-credential") => docker_credential::run(rest, stdout, stderr),
+        Some("podman-credential") => docker_credential::run_podman(rest, stdout, stderr),
         Some("terraform-credential") => terraform_credential::run(rest, stdout, stderr),
         Some("aliyun-credential") => aliyun_credential::run(rest, stdout, stderr),
         Some("oxide-credential") => oxide_credential::run(rest, stdout, stderr),
