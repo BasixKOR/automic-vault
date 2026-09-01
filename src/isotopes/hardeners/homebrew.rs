@@ -777,7 +777,7 @@ fn account_diagnostics(expected_gid: u32) -> Vec<HardenerDiagnostic> {
             shell.as_deref().unwrap_or("missing"),
         ),
         remediation: format!(
-            "Repair it with `sudo dscl . -create /Users/automic PrimaryGroupID {expected_gid}`, `sudo dscl . -create /Users/automic NFSHomeDirectory /opt/homebrew/var/automic`, and `sudo dscl . -create /Users/automic UserShell /usr/bin/false`, then rerun `av doctor brew`."
+            "Repair it with:\n  `sudo dscl . -create /Users/automic PrimaryGroupID {expected_gid}`\n  `sudo dscl . -create /Users/automic NFSHomeDirectory /opt/homebrew/var/automic`\n  `sudo dscl . -create /Users/automic UserShell /usr/bin/false`\nThen rerun:\n  `av doctor brew`"
         ),
         path: None,
     }]

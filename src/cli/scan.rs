@@ -396,7 +396,11 @@ pub(super) fn write_wrapped_with_continuation<W: Write + ?Sized>(
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in text.lines() {
-        wrap_paragraph(paragraph, width, &mut lines);
+        if paragraph.trim_start() != paragraph {
+            lines.push(paragraph.to_string());
+        } else {
+            wrap_paragraph(paragraph, width, &mut lines);
+        }
     }
     if lines.is_empty() {
         lines.push(String::new());
@@ -711,6 +715,24 @@ mod tests {
             vec![
                 "Run `examplectl harden very-long-target-name` or",
                 "edit the affected configuration file.",
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_indented_command_lines() {
+        let lines = wrap_text(
+            "Repair it with:\n  `sudo examplectl repair a-command-that-must-not-wrap`\nThen rerun:\n  `av doctor example`",
+            24,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "Repair it with:",
+                "  `sudo examplectl repair a-command-that-must-not-wrap`",
+                "Then rerun:",
+                "  `av doctor example`",
             ]
         );
     }
