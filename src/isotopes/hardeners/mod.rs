@@ -8,6 +8,7 @@ pub(crate) mod gh_cli;
 pub(crate) mod goat;
 pub(crate) mod homebrew;
 pub(crate) mod isotope;
+pub(crate) mod kubectl;
 mod migrations;
 pub(crate) mod openhue_cli;
 pub(crate) mod ordercli;
@@ -134,7 +135,9 @@ pub(crate) struct RequiredIdentity {
 }
 
 pub(crate) fn write_secret_gate_notice(stdout: &mut dyn std::io::Write, gate_id: &str) {
-    let protection = if gate_id == "brew" {
+    let protection = if gate_id == "kubectl" {
+        "Approval Required"
+    } else if gate_id == "brew" {
         "Read & Update"
     } else {
         "Read Only"
@@ -309,6 +312,7 @@ pub(crate) fn metadata() -> Vec<HardenerMetadata> {
         gated_hardener!(uaa_cli, "uaa-cli"),
         gated_hardener!(railway, "railway"),
         gated_hardener!(rclone, "rclone"),
+        gated_hardener!(kubectl, "kubectl"),
         gated_hardener!(oxide_cli, "oxide-cli"),
         gated_hardener!(homebrew, "brew"),
         gated_hardener!(gh_cli, "gh"),
@@ -346,6 +350,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         uaa_cli::secret_gate(),
         railway::secret_gate(),
         rclone::secret_gate(),
+        kubectl::secret_gate(),
         oxide_cli::secret_gate(),
         homebrew::secret_gate(),
         gh_cli::secret_gate(),
@@ -401,6 +406,13 @@ mod tests {
         assert_eq!(
             String::from_utf8(brew).unwrap(),
             "\n◇ `brew` defaults to Read & Update, adjust this in the app: `av open --secret-gate brew`\n"
+        );
+
+        let mut kubectl = Vec::new();
+        super::write_secret_gate_notice(&mut kubectl, "kubectl");
+        assert_eq!(
+            String::from_utf8(kubectl).unwrap(),
+            "\n◇ `kubectl` defaults to Approval Required, adjust this in the app: `av open --secret-gate kubectl`\n"
         );
     }
 

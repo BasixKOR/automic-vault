@@ -51,6 +51,7 @@ struct ApprovalRequest {
     openhue_scope: Option<String>,
     uaa_scope: Option<String>,
     railway_scope: Option<String>,
+    kubectl_scope: Option<String>,
     wakatime_api_url: Option<String>,
 }
 
@@ -367,6 +368,7 @@ fn approval_request(
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     })
 }
@@ -395,6 +397,7 @@ pub(super) fn docker_credential(key: String, server_url: String) -> Result<Strin
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -430,6 +433,7 @@ pub(super) fn terraform_credential(key: String, hostname: String) -> Result<Stri
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -465,6 +469,7 @@ pub(super) fn aliyun_credential(key: String, profile: String) -> Result<String, 
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -500,6 +505,7 @@ pub(super) fn wakatime_credential(key: String, api_url: String) -> Result<String
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: Some(api_url),
     };
     if crate::test_keychain_dir().is_some() {
@@ -535,6 +541,7 @@ pub(super) fn rclone_password(key: String) -> Result<String, String> {
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -544,6 +551,42 @@ pub(super) fn rclone_password(key: String) -> Result<String, String> {
     xpc_approve_injection(&request)?
         .remove(&key)
         .ok_or_else(|| format!("Automic Vault returned no rclone config password for {key}"))
+}
+
+pub(super) fn kubectl_credential(key: String, scope: String) -> Result<String, String> {
+    validate_key_name(&key)?;
+    let request = ApprovalRequest {
+        op: "kubectl-get",
+        keys: vec![key.clone()],
+        target: String::new(),
+        args: Vec::new(),
+        cwd: crate::path_security::current_working_directory_utf8()?,
+        replace_existing_env: false,
+        allow_missing_keys: false,
+        env_conflicts: Vec::new(),
+        shebang_script: None,
+        script_data: None,
+        snapshot_incompatible_interpreter: None,
+        tool: Some("kubectl"),
+        docker_server_url: None,
+        terraform_hostname: None,
+        aliyun_profile: None,
+        oxide_scope: None,
+        goat_scope: None,
+        ordercli_scope: None,
+        openhue_scope: None,
+        uaa_scope: None,
+        railway_scope: None,
+        kubectl_scope: Some(scope),
+        wakatime_api_url: None,
+    };
+    if crate::test_keychain_dir().is_some() {
+        return load_test_secret_if_present(&key)?
+            .ok_or_else(|| format!("failed to load secret {key}: -25300"));
+    }
+    xpc_approve_injection(&request)?
+        .remove(&key)
+        .ok_or_else(|| format!("Automic Vault returned no kubectl credential for {key}"))
 }
 
 pub(super) fn oxide_credential(key: String, scope: String) -> Result<String, String> {
@@ -570,6 +613,7 @@ pub(super) fn oxide_credential(key: String, scope: String) -> Result<String, Str
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -605,6 +649,7 @@ pub(super) fn goat_credential(key: String, scope: String) -> Result<String, Stri
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -640,6 +685,7 @@ pub(super) fn railway_credential(key: String, scope: String) -> Result<String, S
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: Some(scope),
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -675,6 +721,7 @@ pub(super) fn ordercli_credential(key: String, scope: String) -> Result<String, 
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -710,6 +757,7 @@ pub(super) fn uaa_credential(key: String, scope: String) -> Result<String, Strin
         openhue_scope: None,
         uaa_scope: Some(scope),
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -745,6 +793,7 @@ pub(super) fn openhue_credential(key: String, scope: String) -> Result<String, S
         openhue_scope: Some(scope),
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -781,6 +830,7 @@ pub(super) fn plumber_credential(key: String, scope: String) -> Result<String, S
         openhue_scope: None,
         uaa_scope: None,
         railway_scope: None,
+        kubectl_scope: None,
         wakatime_api_url: None,
     };
     if crate::test_keychain_dir().is_some() {
@@ -1040,6 +1090,7 @@ pub(super) fn approve_gpg_signing(
             openhue_scope: None,
             uaa_scope: None,
             railway_scope: None,
+            kubectl_scope: None,
             wakatime_api_url: None,
         },
         response_keys,
@@ -1201,6 +1252,9 @@ fn xpc_approve_request(
         }
         if let Some(scope) = &request.railway_scope {
             set_string(message, b"railway_scope\0", scope)?;
+        }
+        if let Some(scope) = &request.kubectl_scope {
+            set_string(message, b"kubectl_scope\0", scope)?;
         }
         if let Some(api_url) = &request.wakatime_api_url {
             set_string(message, b"wakatime_api_url\0", api_url)?;
