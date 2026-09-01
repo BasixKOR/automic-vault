@@ -225,7 +225,7 @@ final class DashboardModel: ObservableObject {
                     kind: issue.command == nil || issue.command == issue.hardener ? nil : issue.hardener,
                     subtitle: issue.message,
                     detail: ([issue.message, "Remediation: \(issue.remediation)"] + paths)
-                        .joined(separator: "\n")
+                        .joined(separator: "\n\n")
                 )
             }
         case .hardenedTools:
@@ -1754,7 +1754,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard model.selectedItem?.title == "aws",
           model.selectedItem?.kind == nil,
           model.selectedItem?.detail.contains("Resolved: /opt/homebrew/bin/aws") == true,
-          model.selectedItem?.detail.contains("Remediation:") == true
+          model.selectedItem?.detail.contains("\n\nRemediation:") == true
     else { return 1 }
     model.showAccessRequest(id: accessRequest.id, records: [accessRequest])
     guard model.selectedSection == .secretUsage,
@@ -2220,7 +2220,11 @@ private struct DashboardDetailView: View {
                     Text(item.subtitle)
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
-                    InfoBlock(title: model.selectedSection.title, text: item.detail)
+                    InfoBlock(
+                        title: model.selectedSection.title,
+                        text: item.detail,
+                        rendersMarkdown: model.selectedSection == .doctor
+                    )
                     if let error = model.errorMessage {
                         InfoBlock(title: "Error", text: error)
                     }
@@ -3198,6 +3202,7 @@ private func isMediumDetectorSeverity(_ severity: String) -> Bool {
 private struct InfoBlock: View {
     let title: String
     let text: String
+    var rendersMarkdown = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -3205,7 +3210,13 @@ private struct InfoBlock: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .tracking(0.7)
-            Text(text)
+            Group {
+                if rendersMarkdown {
+                    RenderedMarkdown(markdown: text)
+                } else {
+                    Text(text)
+                }
+            }
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
