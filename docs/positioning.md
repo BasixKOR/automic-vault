@@ -42,7 +42,8 @@ Automic Vault decides whether a complete operation may use it.
   Write Access to one Verified Launcher, Tool-specific Authorization Gate, and
   agent task. A persistent strip shows the grant and lets the user add ten
   minutes, suspend its countdown, or end it; suspension also suspends its
-  authority.
+  authority. The user may opt to collapse the strip after five seconds to a
+  visible warning tab while the menu-bar shield remains orange.
 - Existing developer commands continue to work above the security boundary.
 - An explicitly recognized, vendor-signed CLI sealed inside its vendor's app
   may represent that app as a Verified Launcher; unrelated bundled executables

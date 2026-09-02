@@ -6,7 +6,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+let autoCollapseTemporaryAccessGrantStripDefaultsKey = "autoCollapseTemporaryAccessGrantStrip"
 let keepLauncherAccessForDetachedProcessesDefaultsKey = "keepLauncherAccessForDetachedProcesses"
+let temporaryAccessGrantStripPresentationDidChange = Notification.Name(
+    "TemporaryAccessGrantStripPresentationDidChange"
+)
 private let directAccessDocumentationURL = URL(
     string: "https://github.com/automic-vault/automic-vault/blob/main/docs/direct-secret-access.md#safer-alternatives"
 )!
@@ -4034,6 +4038,8 @@ private struct TouchIDApprovalSettingsView: View {
 private struct AutomaticApprovalFeedbackSettingsView: View {
     @AppStorage(automaticApprovalFeedbackDefaultsKey)
     private var feedback = AutomaticApprovalFeedback.notification
+    @AppStorage(autoCollapseTemporaryAccessGrantStripDefaultsKey)
+    private var autoCollapseTemporaryAccessGrantStrip = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -4054,6 +4060,25 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Temporary Write Access")
+                    .font(.headline)
+                Toggle(
+                    "Auto-collapse Temporary Access Grant Strip",
+                    isOn: $autoCollapseTemporaryAccessGrantStrip
+                )
+                Text("After five seconds, the strip becomes a warning tab at the nearest screen edge. Select the tab or use the menu bar to restore it. New grants always show the complete strip.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onChange(of: autoCollapseTemporaryAccessGrantStrip) {
+            NotificationCenter.default.post(
+                name: temporaryAccessGrantStripPresentationDidChange,
+                object: nil
+            )
         }
     }
 }
