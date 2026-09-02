@@ -1410,7 +1410,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let frame = isTemporaryAccessGrantStripCollapsed
             ? temporaryAccessGrantTabFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
             : autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
-        panel.setFrame(frame, display: true)
+        if shouldAnimateTemporaryAccessGrantPanelTransition(
+            isVisible: panel.isVisible,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            from: panel.frame,
+            to: frame
+        ) {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+        }
         temporaryAccessGrantStripFrame = frame
         panel.orderFrontRegardless()
         reanchorToastWindows(below: frame, visibleFrame: visibleFrame)
@@ -12468,7 +12480,7 @@ private struct CollapsedTemporaryAccessGrantStripView: View {
                     .font(.caption2.monospacedDigit().weight(.semibold))
             }
             .foregroundStyle(.orange)
-            .frame(width: 44, height: 44)
+            .frame(width: 52, height: 44)
             .background {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(reduceTransparency
@@ -12569,11 +12581,21 @@ private func temporaryAccessGrantTabFrame(
     size: NSSize
 ) -> NSRect {
     let margin: CGFloat = 8
+    let peek: CGFloat = 8
     let x = anchor.midX < visibleFrame.midX
-        ? visibleFrame.minX
-        : visibleFrame.maxX - size.width
+        ? visibleFrame.minX - peek
+        : visibleFrame.maxX - size.width + peek
     let y = max(visibleFrame.minY + margin, visibleFrame.maxY - size.height - margin)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
+}
+
+private func shouldAnimateTemporaryAccessGrantPanelTransition(
+    isVisible: Bool,
+    reduceMotion: Bool,
+    from: NSRect,
+    to: NSRect
+) -> Bool {
+    isVisible && !reduceMotion && from != to
 }
 
 @MainActor
@@ -15253,18 +15275,30 @@ private func runMenuStatusSelfCheck() -> Int32 {
               monotonicNow: grantMonotonicNow
           ).contains("Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 · Write Access: 1 use · Last used "),
           stripView.fittingSize.width == 430,
-          collapsedStripView.fittingSize == NSSize(width: 44, height: 44),
+          collapsedStripView.fittingSize == NSSize(width: 52, height: 44),
           stackedToastFrame.maxY == sampleStripFrame.minY - 4,
           temporaryAccessGrantTabFrame(
               anchor: NSRect(x: 100, y: 576, width: 24, height: 24),
               visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
               size: collapsedStripView.fittingSize
-          ) == NSRect(x: 0, y: 548, width: 44, height: 44),
+          ) == NSRect(x: -8, y: 548, width: 52, height: 44),
           temporaryAccessGrantTabFrame(
               anchor: NSRect(x: 700, y: 576, width: 24, height: 24),
               visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
               size: collapsedStripView.fittingSize
-          ) == NSRect(x: 756, y: 548, width: 44, height: 44),
+          ) == NSRect(x: 756, y: 548, width: 52, height: 44),
+          shouldAnimateTemporaryAccessGrantPanelTransition(
+              isVisible: true,
+              reduceMotion: false,
+              from: .zero,
+              to: sampleStripFrame
+          ),
+          !shouldAnimateTemporaryAccessGrantPanelTransition(
+              isVisible: true,
+              reduceMotion: true,
+              from: .zero,
+              to: sampleStripFrame
+          ),
           grantPanel.styleMask.contains(.borderless),
           grantPanel.styleMask.contains(.nonactivatingPanel),
           grantPanel.level == .statusBar,
