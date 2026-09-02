@@ -4,7 +4,8 @@ set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 package="$repo/src/menu-helper"
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+alias_work=$(mktemp -d /tmp/varlock-plugin-helper.XXXXXX)
+trap 'rm -rf "$work" "$alias_work"' EXIT
 
 swift build \
   --package-path "$package" \
@@ -21,6 +22,17 @@ if [[ "$($helper --protocol-version)" != "1" ]]; then
   echo "error: Varlock helper reported the wrong protocol version" >&2
   exit 1
 fi
+
+for test_cwd in "$alias_work" "/private$alias_work"; do
+  expected_cwd=$(cd "$test_cwd" && /bin/pwd -P)
+  actual_cwd=$(cd "$test_cwd" && "$helper" --test-canonical-working-directory)
+  if [[ "$actual_cwd" != "$expected_cwd" ]]; then
+    echo "error: Varlock helper reported a non-canonical working directory" >&2
+    echo "expected: $expected_cwd" >&2
+    echo "actual:   $actual_cwd" >&2
+    exit 1
+  fi
+done
 
 assert_rejected() {
   local expected=$1
