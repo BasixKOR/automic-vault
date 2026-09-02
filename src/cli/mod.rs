@@ -59,7 +59,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 43;
+pub(crate) const INSTALL_REVISION: u32 = 44;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -244,12 +244,17 @@ where
                 }
             }
         }
-        Some("__install-aws-release") if rest.len() == 2 => {
-            let Some(sha256) = rest[0].to_str() else {
+        Some("__install-aws-release") if rest.len() == 3 => {
+            let Some(version) = rest[0].to_str() else {
+                let _ = writeln!(stderr, "av: invalid AWS release version");
+                return 2;
+            };
+            let Some(sha256) = rest[1].to_str() else {
                 let _ = writeln!(stderr, "av: invalid AWS release digest");
                 return 2;
             };
-            match hardeners::aws_cli::install_aws_release(sha256, &PathBuf::from(&rest[1])) {
+            match hardeners::aws_cli::install_aws_release(version, sha256, &PathBuf::from(&rest[2]))
+            {
                 Ok(()) => 0,
                 Err(err) => {
                     let _ = writeln!(stderr, "av: {err}");
