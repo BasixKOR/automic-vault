@@ -17,11 +17,9 @@ private func fail(_ message: String) -> Never {
 private func canonicalWorkingDirectory() -> String? {
     var resolved = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard realpath(FileManager.default.currentDirectoryPath, &resolved) != nil else { return nil }
-    let end = resolved.firstIndex(of: 0) ?? resolved.endIndex
-    return String(
-        data: Data(resolved[..<end].map { UInt8(bitPattern: $0) }),
-        encoding: .utf8
-    )
+    return resolved.withUnsafeBytes { bytes in
+        String(bytes: bytes.prefix { $0 != 0 }, encoding: .utf8)
+    }
 }
 
 if CommandLine.arguments.dropFirst().elementsEqual(["--protocol-version"]) {
