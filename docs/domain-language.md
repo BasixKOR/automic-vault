@@ -453,11 +453,14 @@ Secret Gate, and Secret mutation operations remain outside the grant.
 
 A Temporary Access Grant can begin only when the user selects its explicit
 action in an eligible live write-request Approval. It is not a
-durable Authorization Policy or Blessing. Automic Vault shows every active
-grant continuously with its successful-use count and last-use time, lets the
-user add ten minutes of active countdown time, lets the user suspend or resume
-its countdown, lets the user end each grant immediately, and revokes all grants
-when the user session becomes inactive, displays sleep, an update begins, or the
+durable Authorization Policy or Blessing. Automic Vault continuously indicates
+every active grant. By default, a persistent strip shows each grant's
+successful-use count and last-use time. The user may opt to collapse the strip
+after five seconds into a visible warning tab at the nearest screen edge; the
+menu-bar item remains orange and continues to expose every grant and action.
+The user can add ten minutes of active countdown time, suspend or resume its
+countdown, or end each grant immediately. Automic Vault revokes all grants when
+the user session becomes inactive, displays sleep, an update begins, or the
 service terminates. A suspended countdown also suspends the grant's authority:
 requests cannot match it until the user resumes it. The remaining active time is
 preserved while suspended. Running countdowns and resumed deadlines use both

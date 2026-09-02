@@ -652,13 +652,19 @@ recurring mutable or injectable harness up to Verified Launcher requirements.
 An enrolled Launcher Bundle payload representing its own bundle is not Retained
 Launcher Provenance and does not require this setting.
 
-While any Temporary Access Grant exists, a non-activating strip remains visible
-directly below the menu-bar item with every scoped grant, second-accurate
-remaining active time, suspension state, successful-use count, last-use time,
-and Add 10 Minutes, End, and countdown-toggle actions. The menu mirrors these
-actions and the shield turns orange. Automatic-request notifications stack
-below the strip. This continuous presentation is part of the temporary
-escalation's safety model, not a source of authority.
+While any Temporary Access Grant exists, a non-activating strip shows directly
+below the menu-bar item with every scoped grant, second-accurate remaining active
+time, suspension state, successful-use count, last-use time, and Add 10 Minutes,
+End, and countdown-toggle actions. The menu mirrors these actions and the shield
+turns orange. Automatic-request notifications stack below the strip.
+
+An off-by-default setting may collapse the strip after five seconds into a
+visible warning tab at the nearest horizontal screen edge. Selecting that tab,
+or the matching menu action, restores the complete strip and restarts the delay.
+A newly created grant always restores the complete strip. The orange menu-bar
+shield, active-grant menu entries, and immediate End action remain continuously
+available. This continuous indication is part of the temporary escalation's
+safety model, not a source of authority. See [ADR 0041](adr/0041-collapsible-temporary-access-grant-strip.md).
 
 ## Source of truth
 
