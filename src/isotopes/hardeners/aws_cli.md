@@ -20,6 +20,10 @@ config with the menu app before replacing itself with
 Automic Vault's `credential_process`; that helper only works as an immediate
 child of the registered, still-running AWS process.
 
+Credential-free metadata invocations (`aws --version`, `aws help`, and
+`aws <service> [operation] help`) skip Secret Use and run with an empty AWS
+configuration and a fixed system executable path.
+
 The menu app implements STS `GetSessionToken` and `AssumeRole` directly. It
 caches resulting credentials only for the lifetime of that registered AWS
 process. Nothing is written to disk and credentials are not shared between AWS

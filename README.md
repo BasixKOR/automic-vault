@@ -96,7 +96,8 @@ Verified Launcher.
 
 Access Levels include:
 
-1. **Approval Required:** Automic Vault asks for Approval on every operation.
+1. **Approval Required:** Automic Vault asks for Approval on every Secret Use or
+   gated execution request.
 2. **Read Only:** Automic Vault automically authorizes recognized reads.
 3. **Read & Update:** Automic Vault automically authorizes Homebrew reads and
    `brew update`.
