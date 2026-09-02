@@ -20,6 +20,7 @@ private let varlockProtocolVersion: UInt64 = 1
 let secCodeSignatureAdHoc: UInt32 = 0x2
 private let scanMaximumDelay: TimeInterval = 5
 private let scanQueue = DispatchQueue(label: "com.automicvault.av2.scan")
+private let temporaryAccessGrantCollapseDelay: TimeInterval = 5
 private let updateCheckInterval: Duration = .seconds(24 * 60 * 60)
 private var toastWindows: [NSWindow] = []
 private var temporaryAccessGrantStripFrame: NSRect?
@@ -114,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var temporaryAccessGrantSeparator: NSMenuItem?
     private var temporaryAccessGrantPanel: TemporaryAccessGrantPanel?
     private var temporaryAccessGrantTimer: Timer?
+    private var temporaryAccessGrantCollapseWorkItem: DispatchWorkItem?
+    private var isTemporaryAccessGrantStripCollapsed = false
     private let liveSecretUses = LiveSecretUseController<LiveSecretUseProcess>()
     private var liveSecretUseSnapshots: [LiveSecretUseSnapshot] = []
     private var liveSecretUseMenuItems: [NSMenuItem] = []
@@ -175,6 +178,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(temporaryAccessGrantStripPresentationChanged(_:)),
+            name: temporaryAccessGrantStripPresentationDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func temporaryAccessGrantStripPresentationChanged(_ notification: Notification) {
+        refreshTemporaryAccessGrantPanel()
+        refreshTemporaryAccessGrantMenuItems()
     }
 
     @objc private func userSessionDidResignActive(_ notification: Notification) {
@@ -365,6 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dailyHeartbeatTask?.cancel()
         #endif
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
         stopServices()
     }
 
@@ -373,6 +388,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshTemporaryAccessGrants()
         temporaryAccessGrantTimer?.invalidate()
         temporaryAccessGrantTimer = nil
+        temporaryAccessGrantCollapseWorkItem?.cancel()
+        temporaryAccessGrantCollapseWorkItem = nil
         liveSecretUses.cancelAll()
         refreshLiveSecretUses()
         liveSecretUseTimer?.invalidate()
@@ -1098,7 +1115,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshTemporaryAccessGrants() {
+        let previousGenerations = Set(temporaryAccessGrantSnapshots.map(\.generation))
         temporaryAccessGrantSnapshots = temporaryAccessGrants.snapshots()
+        if temporaryAccessGrantSnapshots.contains(where: {
+            !previousGenerations.contains($0.generation)
+        }) {
+            isTemporaryAccessGrantStripCollapsed = false
+            temporaryAccessGrantCollapseWorkItem?.cancel()
+            temporaryAccessGrantCollapseWorkItem = nil
+        } else if temporaryAccessGrantSnapshots.isEmpty {
+            isTemporaryAccessGrantStripCollapsed = false
+            temporaryAccessGrantCollapseWorkItem?.cancel()
+            temporaryAccessGrantCollapseWorkItem = nil
+        }
         if temporaryAccessGrantSnapshots.allSatisfy(\.isCountdownSuspended) {
             temporaryAccessGrantTimer?.invalidate()
             temporaryAccessGrantTimer = nil
@@ -1157,6 +1186,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             addTenMinutes.representedObject = grant.id.uuidString
             submenu.addItem(addTenMinutes)
             submenu.addItem(.separator())
+            if isTemporaryAccessGrantStripCollapsed {
+                let showStrip = NSMenuItem(
+                    title: "Show Temporary Access Grant Strip",
+                    action: #selector(showTemporaryAccessGrantStrip(_:)),
+                    keyEquivalent: ""
+                )
+                showStrip.target = self
+                submenu.addItem(showStrip)
+                submenu.addItem(.separator())
+            }
             let toggle = NSMenuItem(
                 title: grant.isCountdownSuspended
                     ? "Resume Write Access"
@@ -1195,6 +1234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         _ = temporaryAccessGrants.cancel(id: id)
         refreshTemporaryAccessGrants()
+    }
+
+    @objc private func showTemporaryAccessGrantStrip(_ sender: NSMenuItem) {
+        revealTemporaryAccessGrantStrip()
     }
 
     @objc private func addTenMinutesToTemporaryAccessGrant(_ sender: NSMenuItem) {
@@ -1307,49 +1350,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let button = statusItem.button,
               let statusWindow = button.window
         else {
+            temporaryAccessGrantCollapseWorkItem?.cancel()
+            temporaryAccessGrantCollapseWorkItem = nil
+            isTemporaryAccessGrantStripCollapsed = false
             temporaryAccessGrantPanel?.orderOut(nil)
             temporaryAccessGrantPanel = nil
             temporaryAccessGrantStripFrame = nil
             return
         }
+        let autoCollapse = UserDefaults.standard.bool(
+            forKey: autoCollapseTemporaryAccessGrantStripDefaultsKey
+        )
+        if !autoCollapse {
+            temporaryAccessGrantCollapseWorkItem?.cancel()
+            temporaryAccessGrantCollapseWorkItem = nil
+            isTemporaryAccessGrantStripCollapsed = false
+        }
         let panel = temporaryAccessGrantPanel ?? makeTemporaryAccessGrantPanel()
         temporaryAccessGrantPanel = panel
         let wallNow = Date()
         let monotonicNow = ProcessInfo.processInfo.systemUptime
-        let hostingView = NSHostingView(rootView: TemporaryAccessGrantStripView(
-            grants: temporaryAccessGrantSnapshots,
-            wallNow: wallNow,
-            monotonicNow: monotonicNow,
-            addTenMinutes: { [weak self] id in
-                guard let self else { return }
-                _ = self.temporaryAccessGrants.addTenMinutes(id: id)
-                self.refreshTemporaryAccessGrants()
-            },
-            end: { [weak self] id in
-                guard let self else { return }
-                _ = self.temporaryAccessGrants.cancel(id: id)
-                self.refreshTemporaryAccessGrants()
-            },
-            setCountdownSuspended: { [weak self] id, suspended in
-                guard let self else { return }
-                _ = self.temporaryAccessGrants.setCountdownSuspended(
-                    id: id,
-                    suspended: suspended
-                )
-                self.refreshTemporaryAccessGrants()
-            }
-        ))
+        let hostingView: NSView
+        if isTemporaryAccessGrantStripCollapsed {
+            hostingView = NSHostingView(rootView: CollapsedTemporaryAccessGrantStripView(
+                grantCount: temporaryAccessGrantSnapshots.count,
+                show: { [weak self] in self?.revealTemporaryAccessGrantStrip() }
+            ))
+        } else {
+            hostingView = NSHostingView(rootView: TemporaryAccessGrantStripView(
+                grants: temporaryAccessGrantSnapshots,
+                wallNow: wallNow,
+                monotonicNow: monotonicNow,
+                addTenMinutes: { [weak self] id in
+                    guard let self else { return }
+                    _ = self.temporaryAccessGrants.addTenMinutes(id: id)
+                    self.refreshTemporaryAccessGrants()
+                },
+                end: { [weak self] id in
+                    guard let self else { return }
+                    _ = self.temporaryAccessGrants.cancel(id: id)
+                    self.refreshTemporaryAccessGrants()
+                },
+                setCountdownSuspended: { [weak self] id, suspended in
+                    guard let self else { return }
+                    _ = self.temporaryAccessGrants.setCountdownSuspended(
+                        id: id,
+                        suspended: suspended
+                    )
+                    self.refreshTemporaryAccessGrants()
+                }
+            ))
+        }
         let size = hostingView.fittingSize
         hostingView.frame.size = size
         panel.contentView = hostingView
         let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
+        let frame = isTemporaryAccessGrantStripCollapsed
+            ? temporaryAccessGrantTabFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
+            : autoApprovalToastFrame(anchor: anchor, visibleFrame: visibleFrame, size: size)
         panel.setFrame(frame, display: true)
         temporaryAccessGrantStripFrame = frame
         panel.orderFrontRegardless()
         reanchorToastWindows(below: frame, visibleFrame: visibleFrame)
+        if autoCollapse, !isTemporaryAccessGrantStripCollapsed,
+           temporaryAccessGrantCollapseWorkItem == nil
+        {
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.temporaryAccessGrantCollapseWorkItem = nil
+                guard UserDefaults.standard.bool(
+                    forKey: autoCollapseTemporaryAccessGrantStripDefaultsKey
+                ), !self.temporaryAccessGrantSnapshots.isEmpty
+                else { return }
+                self.isTemporaryAccessGrantStripCollapsed = true
+                self.refreshTemporaryAccessGrantPanel()
+                self.refreshTemporaryAccessGrantMenuItems()
+            }
+            temporaryAccessGrantCollapseWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + temporaryAccessGrantCollapseDelay,
+                execute: workItem
+            )
+        }
+    }
+
+    private func revealTemporaryAccessGrantStrip() {
+        temporaryAccessGrantCollapseWorkItem?.cancel()
+        temporaryAccessGrantCollapseWorkItem = nil
+        isTemporaryAccessGrantStripCollapsed = false
+        refreshTemporaryAccessGrantPanel()
+        refreshTemporaryAccessGrantMenuItems()
     }
 
     private func setBaseStatusImage(_ image: NSImage?) {
@@ -12362,6 +12454,42 @@ private struct TemporaryAccessGrantStripView: View {
     }
 }
 
+private struct CollapsedTemporaryAccessGrantStripView: View {
+    let grantCount: Int
+    let show: () -> Void
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        Button(action: show) {
+            VStack(spacing: 1) {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.headline)
+                Text("\(grantCount)")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+            }
+            .foregroundStyle(.orange)
+            .frame(width: 44, height: 44)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(reduceTransparency
+                        ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
+                        : AnyShapeStyle(.regularMaterial))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.separator.opacity(0.8), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Show Temporary Access Grant Strip")
+        .accessibilityLabel(
+            "Show \(grantCount) active Temporary Access \(grantCount == 1 ? "Grant" : "Grants")"
+        )
+        .accessibilityHint("Opens the complete Temporary Access Grant Strip")
+    }
+}
+
 private struct TemporaryAccessGrantRow: View {
     let grant: TemporaryAccessGrantSnapshot
     let remaining: TimeInterval
@@ -12432,6 +12560,19 @@ private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: 
     let margin: CGFloat = 8
     let x = min(max(anchor.midX - size.width / 2, visibleFrame.minX + margin), visibleFrame.maxX - size.width - margin)
     let y = max(visibleFrame.minY + margin, min(anchor.minY - 4, visibleFrame.maxY) - size.height)
+    return NSRect(origin: NSPoint(x: x, y: y), size: size)
+}
+
+private func temporaryAccessGrantTabFrame(
+    anchor: NSRect,
+    visibleFrame: NSRect,
+    size: NSSize
+) -> NSRect {
+    let margin: CGFloat = 8
+    let x = anchor.midX < visibleFrame.midX
+        ? visibleFrame.minX
+        : visibleFrame.maxX - size.width
+    let y = max(visibleFrame.minY + margin, visibleFrame.maxY - size.height - margin)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
 }
 
@@ -15094,6 +15235,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
         end: { _ in },
         setCountdownSuspended: { _, _ in }
     ))
+    let collapsedStripView = NSHostingView(rootView: CollapsedTemporaryAccessGrantStripView(
+        grantCount: grantSnapshots.count,
+        show: {}
+    ))
     let grantPanel = makeTemporaryAccessGrantPanel()
     let sampleStripFrame = NSRect(x: 200, y: 400, width: 430, height: 120)
     let stackedToastFrame = autoApprovalToastFrame(
@@ -15108,7 +15253,18 @@ private func runMenuStatusSelfCheck() -> Int32 {
               monotonicNow: grantMonotonicNow
           ).contains("Codex → AWS Authorization Gate · Codex task 11111111 · 10:00 · Write Access: 1 use · Last used "),
           stripView.fittingSize.width == 430,
+          collapsedStripView.fittingSize == NSSize(width: 44, height: 44),
           stackedToastFrame.maxY == sampleStripFrame.minY - 4,
+          temporaryAccessGrantTabFrame(
+              anchor: NSRect(x: 100, y: 576, width: 24, height: 24),
+              visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+              size: collapsedStripView.fittingSize
+          ) == NSRect(x: 0, y: 548, width: 44, height: 44),
+          temporaryAccessGrantTabFrame(
+              anchor: NSRect(x: 700, y: 576, width: 24, height: 24),
+              visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+              size: collapsedStripView.fittingSize
+          ) == NSRect(x: 756, y: 548, width: 44, height: 44),
           grantPanel.styleMask.contains(.borderless),
           grantPanel.styleMask.contains(.nonactivatingPanel),
           grantPanel.level == .statusBar,
@@ -15127,6 +15283,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
                 monotonicNow: grantMonotonicNow
             ),
             stripView.fittingSize,
+            collapsedStripView.fittingSize,
             stackedToastFrame,
             grantPanel.styleMask.rawValue,
             grantPanel.level.rawValue,
