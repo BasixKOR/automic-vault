@@ -4061,7 +4061,7 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
             .pickerStyle(.radioGroup)
             Toggle("Compact Notifications", isOn: $compactNotifications)
                 .disabled(feedback != .notification)
-            Text("Shows each command on one truncated line. Authorization History keeps the full formatted command.")
+            Text("Shows each command without continuation formatting, wrapped to at most five lines. Authorization History keeps the full formatted command.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
