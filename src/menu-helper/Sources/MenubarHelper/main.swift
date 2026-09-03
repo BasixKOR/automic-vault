@@ -12287,20 +12287,31 @@ private func automaticAccessDecisionSymbol(wasDenied: Bool) -> String {
     wasDenied ? "xmark.shield.fill" : "checkmark.shield.fill"
 }
 
-private func automaticAccessToastAccessibilityLabel(_ record: AutoApprovalRecord) -> String {
-    "Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(record.displayCommand)"
+private func automaticAccessToastCommand(_ command: String, compact: Bool) -> String {
+    compact ? command.replacingOccurrences(of: " \\\n  ", with: " ") : command
+}
+
+private func automaticAccessToastAccessibilityLabel(
+    _ record: AutoApprovalRecord,
+    compact: Bool
+) -> String {
+    "Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(automaticAccessToastCommand(record.displayCommand, compact: compact))"
 }
 
 private struct AutomaticAccessToastView: View {
     let record: AutoApprovalRecord
     let dismiss: () -> Void
+    @AppStorage(compactAutomaticApprovalNotificationsDefaultsKey)
+    private var compact = true
+
+    private var compactCommand: Bool { compact && !record.wasDenied }
 
     var body: some View {
         Button(action: dismiss) {
             content
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(automaticAccessToastAccessibilityLabel(record))
+        .accessibilityLabel(automaticAccessToastAccessibilityLabel(record, compact: compactCommand))
     }
 
     private var content: some View {
@@ -12329,9 +12340,11 @@ private struct AutomaticAccessToastView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(record.displayCommand)
+                Text(automaticAccessToastCommand(record.displayCommand, compact: compactCommand))
                     .font(.system(.callout, design: .monospaced).weight(.medium))
                     .foregroundStyle(.white)
+                    .lineLimit(compactCommand ? 5 : nil)
+                    .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(record.keys.joined(separator: ", "))
                     .font(.system(.caption, design: .monospaced))
@@ -15348,6 +15361,10 @@ private func runMenuStatusSelfCheck() -> Int32 {
           automaticApprovalFeedback(rawValue: "menuBarFlash") == .menuBarFlash,
           automaticApprovalFeedback(rawValue: "none") == .none,
           automaticApprovalFeedback(rawValue: "tampered") == .notification,
+          automaticAccessToastCommand(groupedMenuRecords[0].record.displayCommand, compact: true)
+            == "gh repo view",
+          automaticAccessToastCommand(groupedMenuRecords[0].record.displayCommand, compact: false)
+            == groupedMenuRecords[0].record.displayCommand,
           AutomaticApprovalFlashSide.left.next == .right,
           AutomaticApprovalFlashSide.right.next == .left,
           autoApprovalToolName(request) == "aws",
@@ -15367,8 +15384,14 @@ private func runMenuStatusSelfCheck() -> Int32 {
           sensitiveRetrospectiveRecord.displayCommand.contains("<redacted>"),
           !sensitiveMenuTitle.contains(rawCredential),
           sensitiveMenuTitle.contains("<redacted>"),
-          !automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains(rawCredential),
-          automaticAccessToastAccessibilityLabel(sensitiveRetrospectiveRecord).contains("<redacted>"),
+          !automaticAccessToastAccessibilityLabel(
+              sensitiveRetrospectiveRecord,
+              compact: true
+          ).contains(rawCredential),
+          automaticAccessToastAccessibilityLabel(
+              sensitiveRetrospectiveRecord,
+              compact: true
+          ).contains("<redacted>"),
           scanAlertLevel(["medium"]) == .medium,
           scanAlertLevel(["medium", "high"]) == .high,
           doctorStatusTitle(count: 0) == nil,

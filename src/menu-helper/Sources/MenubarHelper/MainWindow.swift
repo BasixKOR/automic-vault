@@ -6,6 +6,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let automaticApprovalFeedbackDefaultsKey = "automaticApprovalFeedback"
+let compactAutomaticApprovalNotificationsDefaultsKey = "compactAutomaticApprovalNotifications"
 let autoCollapseTemporaryAccessGrantStripDefaultsKey = "autoCollapseTemporaryAccessGrantStrip"
 let keepLauncherAccessForDetachedProcessesDefaultsKey = "keepLauncherAccessForDetachedProcesses"
 let temporaryAccessGrantStripPresentationDidChange = Notification.Name(
@@ -4038,6 +4039,8 @@ private struct TouchIDApprovalSettingsView: View {
 private struct AutomaticApprovalFeedbackSettingsView: View {
     @AppStorage(automaticApprovalFeedbackDefaultsKey)
     private var feedback = AutomaticApprovalFeedback.notification
+    @AppStorage(compactAutomaticApprovalNotificationsDefaultsKey)
+    private var compactNotifications = true
     @AppStorage(autoCollapseTemporaryAccessGrantStripDefaultsKey)
     private var autoCollapseTemporaryAccessGrantStrip = false
 
@@ -4056,6 +4059,12 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
                 }
             }
             .pickerStyle(.radioGroup)
+            Toggle("Compact Notifications", isOn: $compactNotifications)
+                .disabled(feedback != .notification)
+            Text("Shows each command without continuation formatting, wrapped to at most five lines. Authorization History keeps the full formatted command.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Automic authorizations are recorded in Authorization History. Approval prompts and policy-denial notifications are unaffected.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
