@@ -85,6 +85,16 @@ import Testing
     ) == .secretDump)
 }
 
+@Test func grafanactlPolicyClassifiesReviewedCommands() {
+    #expect(genericSecretGateRequestClassification(gateID: "grafanactl", arguments: ["config", "check"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "grafanactl", arguments: ["resources", "pull"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "grafanactl", arguments: ["resources", "push"]) == .mutating)
+    #expect(genericSecretGateRequestClassification(
+        gateID: "grafanactl",
+        arguments: ["config", "view", "--raw"]
+    ) == .secretDump)
+}
+
 @Test func stripePolicyClassifiesGeneratedBuiltInAndPluginCommands() {
     let readOnly = [
         ["customers", "list"],
