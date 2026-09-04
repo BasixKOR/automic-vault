@@ -1863,8 +1863,9 @@ struct DashboardRootView: View {
                             Button {
                                 model.isAddingSecret = true
                             } label: {
-                                Image(systemName: "plus")
+                                Label("Add Secret", systemImage: "plus")
                             }
+                            .labelStyle(.titleAndIcon)
                             .help("Add Secret")
                         }
                     }
@@ -1873,8 +1874,9 @@ struct DashboardRootView: View {
                             Button {
                                 model.isCreatingLauncherBundle = true
                             } label: {
-                                Image(systemName: "plus")
+                                Label("Create Launcher Bundle", systemImage: "plus")
                             }
+                            .labelStyle(.titleAndIcon)
                             .help("Create Launcher Bundle")
                         }
                     }
@@ -1917,8 +1919,9 @@ struct DashboardRootView: View {
                             Button {
                                 model.addApp(to: gate)
                             } label: {
-                                Image(systemName: "plus")
+                                Label("Add Calling App", systemImage: "plus")
                             }
+                            .labelStyle(.titleAndIcon)
                             .help("Add Calling App")
                         }
                     }
@@ -1928,8 +1931,9 @@ struct DashboardRootView: View {
                                 model.addApp(to: script)
                             }
                         } label: {
-                            Image(systemName: "plus")
+                            Label("Add Calling App", systemImage: "plus")
                         }
+                        .labelStyle(.titleAndIcon)
                         .help("Add Calling App")
                     }
                     if model.selectedSection == .settings,
@@ -1937,8 +1941,9 @@ struct DashboardRootView: View {
                         Button {
                             model.addSecretNameAccessApp()
                         } label: {
-                            Image(systemName: "plus")
+                            Label("Allow App to List Secret Names", systemImage: "plus")
                         }
+                        .labelStyle(.titleAndIcon)
                         .help("Allow App to List Secret Names")
                     }
                     Button {
@@ -2774,7 +2779,7 @@ private struct StoredSecretDetailView: View {
                 launcherList(
                     secret.directAccessLaunchers,
                     title: "Direct Secret Access",
-                    empty: "No Launchers have Direct Access to this Secret."
+                    empty: "No Verified Launchers have Direct Access to this Secret."
                 ) {
                     model.removeDirectAccessLauncher($0, from: secret)
                 }
@@ -2784,7 +2789,7 @@ private struct StoredSecretDetailView: View {
                         pendingDirectAccessLauncher = launcher
                     }
                 } label: {
-                    Label("Allow Launcher…", systemImage: "app.badge.checkmark")
+                    Label("Allow Verified Launcher…", systemImage: "app.badge.checkmark")
                 }
                 .buttonStyle(.bordered)
                 Text("Hardening a Tool or blessing an exact script grants narrower authority.")
