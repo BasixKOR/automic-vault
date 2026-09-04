@@ -463,7 +463,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "config set,config unset,config use-context,config use,resources delete,resources edit,resources push,resources serve",
         secretDump: "config view --raw"
     ),
-    "heroku": .init("apps,apps info,ps,addons", "apps create,apps destroy,config set,config unset,ps scale", secretDump: "auth token,config"),
+    "heroku": .init(
+        "apps,apps:info,info,ps,addons,status,auth:whoami,whoami,regions,releases,logs,pg:info,pg,webhooks",
+        "apps:create,create,apps:destroy,destroy,auth:logout,logout,config:set,config:unset,ps:scale,scale,run,container:push,container:release",
+        secretDump: "auth:token,config,config:get,git:credentials"
+    ),
     "hcloud": .init("server list,server describe,network list,network describe", "server create,server delete,network create,network delete"),
     "huggingface-cli": .init(
         "auth whoami,cache verify,env,download,buckets list,buckets ls,buckets info,collections list,collections ls,collections info,datasets list,datasets ls,datasets leaderboard,datasets info,datasets parquet,datasets sql,datasets card,discussions list,discussions ls,discussions info,discussions diff,endpoints list,endpoints ls,endpoints hardware,endpoints describe,endpoints catalog list,endpoints catalog ls,endpoints list-catalog,jobs logs,jobs stats,jobs list,jobs ls,jobs ps,jobs hardware,jobs inspect,jobs wait,jobs scheduled list,jobs scheduled ls,jobs scheduled ps,jobs scheduled inspect,models list,models ls,models info,models card,papers list,papers ls,papers search,papers info,papers read,repo list,repo ls,repos list,repos ls,repo tag list,repo tag ls,repos tag list,repos tag ls,sandbox pool ls,sandbox pool list,sandbox process ls,sandbox process list,spaces list,spaces ls,spaces info,spaces card,spaces templates,spaces search,spaces wait,spaces hardware,spaces logs,spaces volumes list,spaces volumes ls,spaces secrets list,spaces secrets ls,spaces variables list,spaces variables ls,webhooks list,webhooks ls,webhooks info",
