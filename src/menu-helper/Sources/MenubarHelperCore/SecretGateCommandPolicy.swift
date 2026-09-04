@@ -24,6 +24,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "netlify-cli" { return netlifyRequestClassification(words) }
     if gateID == "node" { return npmRequestClassification(arguments) }
+    if gateID == "pulumi" { return pulumiRequestClassification(arguments) }
     if gateID == "pnpm", words.first == "audit" {
         if words.dropFirst().contains(where: { $0 == "--fix" || $0.hasPrefix("--fix=") }) {
             return .mutating
@@ -120,6 +121,78 @@ private func npmRequestClassification(_ arguments: [String]) -> SecretGateReques
     }
     guard index < arguments.count, let policy = secretGateCommandPolicies["node"] else { return .unknown }
     return commandPolicyClassification(policy, arguments[index...].map { $0.lowercased() })
+}
+
+private func pulumiRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let booleanOptions: Set<String> = [
+        "--disable-integrity-checking", "--emoji", "--fully-qualify-stack-names", "--help",
+        "--logflow", "--logtostderr", "--non-interactive", "--version", "-Q", "-e", "-h",
+    ]
+    let valueOptions: Set<String> = [
+        "--color", "--cwd", "--memprofilerate", "--otel-traces", "--profiling",
+        "--tracing", "--tracing-header", "--verbose", "-C", "-v",
+    ]
+    let optionArguments = arguments.prefix { $0 != "--" }
+    if optionArguments.contains(where: {
+        ["--help", "-h", "--version", "--help=true", "-h=true", "--version=true"].contains($0)
+    }) {
+        return .readOnly
+    }
+
+    var index = 0
+    while index < optionArguments.count {
+        let argument = optionArguments[index]
+        if !argument.hasPrefix("-") { break }
+        let hasAttachedShortValue = ["-C", "-v"].contains {
+            argument.hasPrefix($0) && argument.count > $0.count
+        }
+        let optionName = argument.split(separator: "=", maxSplits: 1).first.map(String.init)
+        let hasKnownInlineValue = argument.contains("=") && (optionName.map {
+            booleanOptions.contains($0) || valueOptions.contains($0)
+        } ?? false)
+        if booleanOptions.contains(argument) || hasKnownInlineValue || hasAttachedShortValue
+        {
+            index += 1
+        } else if valueOptions.contains(argument) {
+            guard index + 1 < optionArguments.count else { return .unknown }
+            index += 2
+        } else {
+            return .unknown
+        }
+    }
+    guard index < optionArguments.count else { return .unknown }
+    let words = optionArguments[index...].map { $0.lowercased() }
+
+    if words.count == 1 && [
+        "api", "deployment", "env", "insights", "org", "package", "plugin",
+        "policy", "project", "schema", "state", "template",
+    ].contains(words[0]) {
+        return .readOnly
+    }
+
+    if words.starts(with: ["about", "env"])
+        || words.starts(with: ["plugin", "list"])
+        || words.starts(with: ["plugin", "ls"])
+    {
+        return .readOnly
+    }
+    if words.starts(with: ["stack", "unselect"])
+        || words.starts(with: ["plugin", "remove"])
+        || words.starts(with: ["plugin", "rm"])
+        || words.starts(with: ["plugin", "delete"])
+        || words.starts(with: ["package", "new"])
+        || words.starts(with: ["package", "create"])
+        || words.starts(with: ["package", "setup"])
+        || words.starts(with: ["policy", "new"])
+        || words.starts(with: ["policy", "create"])
+        || words.starts(with: ["policy", "setup"])
+        || words.first == "logout"
+    {
+        return .mutating
+    }
+
+    guard let policy = secretGateCommandPolicies["pulumi"] else { return .unknown }
+    return commandPolicyClassification(policy, words)
 }
 
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
@@ -635,7 +708,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "publish,unpublish,deprecate,undeprecate,add,remove,update,up,upgrade,dist-tag add,dist-tag rm,dist-tags add,dist-tags rm,stage publish,stage approve,stage reject,star,unstar",
         secretDump: "config get"
     ),
-    "pulumi": .init("whoami,stack ls,preview,about,config get", "up,destroy,refresh,import,cancel", secretDump: "config get --show-secrets,stack export --show-secrets"),
+    "pulumi": .init("whoami,stack list,stack ls,preview,about,config get", "up,destroy,refresh,import,cancel", secretDump: "config get --show-secrets,stack export --show-secrets"),
     "qwen-code": .init("", "chat,run"),
     "runpodctl": .init("get,list", "create,remove,start,stop", secretDump: "config view"),
     "s3cmd": .init("ls,la,info,du", "put,get,del,rm,sync,cp,mv,mb,rb", secretDump: "--dump-config"),
