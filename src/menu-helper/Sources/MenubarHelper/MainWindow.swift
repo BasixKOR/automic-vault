@@ -249,11 +249,13 @@ final class DashboardModel: ObservableObject {
         case .secretGates:
             snapshot.secretGates.map {
                 let secrets = $0.keyPatterns.count == 1 ? "1 secret" : "\($0.keyPatterns.count) secrets"
-                let apps = $0.appPolicies.count == 1 ? "1 app" : "\($0.appPolicies.count) apps"
+                let launcherRules = $0.appPolicies.count == 1
+                    ? "1 Launcher rule"
+                    : "\($0.appPolicies.count) Launcher rules"
                 return DashboardItem(
                     id: $0.id,
                     title: $0.displayName,
-                    subtitle: "\(secrets) • \(apps)",
+                    subtitle: "\(secrets) • \(launcherRules)",
                     detail: [
                         "Scripts: \($0.scriptPaths.joined(separator: ", "))",
                         "Secrets: \($0.keyPatterns.joined(separator: ", "))",
@@ -281,7 +283,7 @@ final class DashboardModel: ObservableObject {
             snapshot.accessRequests.map {
                 DashboardItem(
                     id: $0.id.uuidString,
-                    title: "\($0.launcher ?? "Unknown app") used \($0.tool)",
+                    title: "\($0.launcher ?? "Launcher unavailable") used \($0.tool)",
                     subtitle: $0.decision,
                     detail: $0.reason,
                     date: $0.date
@@ -342,8 +344,8 @@ final class DashboardModel: ObservableObject {
                 DashboardItem(
                     id: "secret-name-access",
                     title: "Secret Name Access",
-                    subtitle: "Apps allowed to run av list",
-                    detail: "Manage verified apps that may list saved secret names without prompting."
+                    subtitle: "Verified Launchers allowed to run av list",
+                    detail: "Manage Verified Launchers that may list saved Secret Names without Approval."
                 ),
                 DashboardItem(
                     id: "about",
@@ -602,7 +604,7 @@ final class DashboardModel: ObservableObject {
                     "Access: \(script.capabilities.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.title)" }.joined(separator: ", "))",
                 ].joined(separator: "\n")
             ) {
-                self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add calling app")
+                self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add Verified Launcher")
             }
         }
     }
@@ -644,7 +646,7 @@ final class DashboardModel: ObservableObject {
             blessedAt: script.blessedAt,
             reviewedContents: script.reviewedContents
         )
-        finishPolicyUpdate(saveBlessedScript(updated), error: "Could not remove calling app")
+        finishPolicyUpdate(saveBlessedScript(updated), error: "Could not remove Verified Launcher")
     }
 
     func revoke(_ script: BlessedScript) {
@@ -1919,10 +1921,10 @@ struct DashboardRootView: View {
                             Button {
                                 model.addApp(to: gate)
                             } label: {
-                                Label("Add Calling App", systemImage: "plus")
+                                Label("Add Verified Launcher", systemImage: "plus")
                             }
                             .labelStyle(.titleAndIcon)
-                            .help("Add Calling App")
+                            .help("Add Verified Launcher")
                         }
                     }
                     if model.selectedSection == .blessedScripts {
@@ -1931,20 +1933,20 @@ struct DashboardRootView: View {
                                 model.addApp(to: script)
                             }
                         } label: {
-                            Label("Add Calling App", systemImage: "plus")
+                            Label("Add Verified Launcher", systemImage: "plus")
                         }
                         .labelStyle(.titleAndIcon)
-                        .help("Add Calling App")
+                        .help("Add Verified Launcher")
                     }
                     if model.selectedSection == .settings,
                        model.selectedItem?.id == "secret-name-access" {
                         Button {
                             model.addSecretNameAccessApp()
                         } label: {
-                            Label("Allow App to List Secret Names", systemImage: "plus")
+                            Label("Allow Verified Launcher to List Secret Names", systemImage: "plus")
                         }
                         .labelStyle(.titleAndIcon)
-                        .help("Allow App to List Secret Names")
+                        .help("Allow Verified Launcher to List Secret Names")
                     }
                     Button {
                         requestScan()
@@ -2338,7 +2340,7 @@ private struct EmptyListView: View {
         case .doctor: "Doctor identifies problems with your Automic Vault installation and explains how to fix them"
         case .hardenedTools: "Hardened Tools secure developer tools with granular access to secrets"
         case .secretGates: "Authorization Gates control which operations Verified Launchers may perform through specific Tools"
-        case .blessedScripts: "Blessed Scripts allow specific apps access to specific secrets and tools at defined access levels"
+        case .blessedScripts: "Blessed Scripts bind exact scripts to declared Secrets, Targets, and per-Gate capabilities"
         case .launcherBundles: "Create a Verified Launcher from one unsigned Mach-O command-line tool"
         case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
         case .proxySessions: "Active `av proxy` sessions appear here while their target process is running"
@@ -2649,7 +2651,7 @@ private struct AddSecretView: View {
             ), !existing.directAccessLaunchers.isEmpty {
                 InfoBlock(
                     title: "Direct Access",
-                    text: "Already-authorized Launchers can use this new Value immediately: "
+                    text: "Verified Launchers with Direct Access can use this new Value immediately: "
                         + existing.directAccessLaunchers.map(\.bundleIdentifier).joined(separator: ", ")
                 )
             }
@@ -2662,7 +2664,7 @@ private struct AddSecretView: View {
             } else {
                 Toggle("Available While Locked", isOn: $isAvailableWhileLocked)
                     .toggleStyle(.switch)
-                Text("Allows already-approved apps to use this Secret while your Mac is locked, after the first unlock following a restart.")
+                Text("Allows an authorized operation to load this Secret while your Mac is locked, after the first unlock following a restart. Authorization is still required.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2763,7 +2765,7 @@ private struct StoredSecretDetailView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Available While Locked", isOn: availabilityBinding)
                     .toggleStyle(.switch)
-                Text("Allows already-approved apps to use this secret while your Mac is locked, after the first unlock following a restart.")
+                Text("Allows an authorized operation to load this Secret while your Mac is locked, after the first unlock following a restart. Authorization is still required.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2954,7 +2956,7 @@ private struct ReplaceSecretValueView: View {
             if !secret.directAccessLaunchers.isEmpty {
                 InfoBlock(
                     title: "Direct Access",
-                    text: "Already-authorized Launchers can use this replacement immediately: "
+                    text: "Verified Launchers with Direct Access can use this replacement immediately: "
                         + secret.directAccessLaunchers.map(\.bundleIdentifier).joined(separator: ", ")
                 )
             }
@@ -2989,7 +2991,7 @@ private struct DirectAccessConfirmationView: View {
                 Label("This grants broad authority", systemImage: "exclamationmark.shield.fill")
                     .font(.headline)
                     .foregroundStyle(.orange)
-                Text("The verified Launcher “\(launcherName)” will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
+                Text("The Verified Launcher “\(launcherName)” will be able to apply \(secretName) to any Target and arguments it chooses through direct av inject requests.")
                     .fixedSize(horizontal: false, vertical: true)
                 if let runtimeWarning {
                     InfoBlock(title: "Warning", text: runtimeWarning)
@@ -3564,7 +3566,7 @@ private struct BlessedScriptReviewView: View {
                     Button {
                         model.addAppToPendingBlessing()
                     } label: {
-                        Label("Add Calling App…", systemImage: "plus")
+                        Label("Add Verified Launcher…", systemImage: "plus")
                     }
                     .buttonStyle(.bordered)
                     if request.declaration.manifest.capabilities.values.contains(.fullIncludingSecretDumps) {
@@ -3653,7 +3655,10 @@ private struct LauncherHelperReviewView: View {
                     Button("Cancel") { model.cancelLauncherHelperReview() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(selectedHelperIDs.isEmpty ? "Add Launcher Only" : "Add Launcher and Helpers") {
+                    Button(selectedHelperIDs.isEmpty
+                        ? "Add Verified Launcher"
+                        : "Add Verified Launcher with Helpers"
+                    ) {
                         model.confirmLauncherHelperReview(selectedHelperIDs: selectedHelperIDs)
                     }
                 }
@@ -3811,8 +3816,8 @@ private struct BlessedScriptFields: View {
 @MainActor
 private func launcherList(
     _ launchers: [BlessedScriptLauncher],
-    title: String = "Calling Apps",
-    empty: String = "No calling apps endorsed.",
+    title: String = "Launcher Endorsements",
+    empty: String = "No Verified Launchers endorsed.",
     remove: @escaping (BlessedScriptLauncher) -> Void
 ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -3840,7 +3845,7 @@ private func launcherList(
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.plain)
-                .help("Remove Launcher")
+                .help("Remove Verified Launcher")
             }
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
@@ -3856,14 +3861,14 @@ private struct SecretNameAccessSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Secret Name Access")
                     .font(.system(size: 24, weight: .semibold))
-                Text("These verified apps may run av list without an approval window.")
+                Text("These Verified Launchers may run av list without Approval.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
             launcherList(
                 model.snapshot.secretNameAccessApps,
-                title: "Always Allowed Apps",
-                empty: "No apps are always allowed. Other apps must request approval."
+                title: "Verified Launchers",
+                empty: "No Verified Launchers have Secret Name Access."
             ) {
                 model.removeSecretNameAccessApp($0)
             }
@@ -4273,7 +4278,7 @@ private struct GPGSigningSettingsView: View {
             launcherList(
                 configuration.alternateKeyLaunchers,
                 title: "Verified Launchers using the alternate key",
-                empty: "No Launchers use the alternate key."
+                empty: "No Verified Launchers use the alternate key."
             ) { launcher in
                 updateLaunchers(
                     configuration.alternateKeyLaunchers.filter {
@@ -4283,7 +4288,7 @@ private struct GPGSigningSettingsView: View {
                 )
             }
 
-            Button("Add App…") {
+            Button("Add Verified Launcher…") {
                 chooseLauncher { launcher in
                     guard let launcher,
                           !configuration.alternateKeyLaunchers.contains(where: {
@@ -4745,15 +4750,13 @@ private struct SecretGateDetailView: View {
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(3)
-                Text("\(countLabel(gate.keyPatterns.count, "secret")) protected with \(countLabel(gate.appPolicies.count, "app override"))")
+                Text("\(countLabel(gate.keyPatterns.count, "secret")) protected with \(countLabel(gate.appPolicies.count, "Launcher rule"))")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                if gate.scriptPaths.isEmpty {
-                    SecretGateField("Request", "Direct key access")
-                } else {
+                if !gate.scriptPaths.isEmpty {
                     SecretGateField("Scripts", gate.scriptPaths.joined(separator: ", "))
                 }
                 SecretGateField("Secrets", gate.keyPatterns.joined(separator: ", "))
@@ -4761,7 +4764,7 @@ private struct SecretGateDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("App Access")
+                Text("Verified Launcher Access")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
 
@@ -5091,7 +5094,7 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
             return
         }
         let alert = NSAlert()
-        alert.messageText = "Allow \(signing.identifier)?"
+        alert.messageText = "Select \(signing.identifier) as a Verified Launcher?"
         alert.informativeText = """
         Identifier: \(signing.identifier)
         Team ID: \(signing.teamIdentifier)
@@ -5104,7 +5107,7 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
             alert.alertStyle = .warning
             alert.informativeText += "\n\nWarning:\n\(warning)"
         }
-        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Select")
         alert.addButton(withTitle: "Cancel")
         completion(alert.runModal() == .alertFirstButtonReturn ? signing : nil)
     }
@@ -5113,7 +5116,7 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
 @MainActor
 private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
     let panel = NSOpenPanel()
-    panel.title = "Allow Launcher"
+    panel.title = "Choose Verified Launcher"
     panel.message = "Choose a .app, or press ⇧⌘G to enter the path to a CLI executable."
     panel.prompt = "Choose"
     panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
