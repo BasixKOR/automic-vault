@@ -23,6 +23,7 @@ public func genericSecretGateRequestClassification(
     guard !words.isEmpty else { return .unknown }
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "netlify-cli" { return netlifyRequestClassification(words) }
+    if gateID == "node" { return npmRequestClassification(arguments) }
     if gateID == "pnpm", words.first == "audit" {
         if words.dropFirst().contains(where: { $0 == "--fix" || $0.hasPrefix("--fix=") }) {
             return .mutating
@@ -57,6 +58,13 @@ public func genericSecretGateRequestClassification(
         }
     }
     guard let policy = secretGateCommandPolicies[gateID] else { return .unknown }
+    return commandPolicyClassification(policy, words)
+}
+
+private func commandPolicyClassification(
+    _ policy: SecretGateCommandPolicy,
+    _ words: some Collection<String>
+) -> SecretGateRequestClassification {
     let candidates = (1...min(3, words.count)).reversed().map {
         words.prefix($0).joined(separator: " ")
     }
@@ -66,6 +74,52 @@ public func genericSecretGateRequestClassification(
         if policy.mutating.contains(candidate) { return .mutating }
     }
     return .unknown
+}
+
+private func npmRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let booleanShortOptions = "DEOPSadfglpqsy"
+    let booleanOptions: Set<String> = [
+        "--all", "--dry-run", "--force", "--fund", "--global", "--ignore-scripts",
+        "--include-workspace-root", "--json", "--local", "--long", "--offline", "--parseable",
+        "--prefer-offline", "--prefer-online", "--quiet", "--readonly", "--silent", "--timing",
+        "--verbose", "--workspaces", "--yes", "-D", "-E", "-O", "-P", "-S", "-a", "-d",
+        "-dd", "-ddd", "-f", "-g", "-l", "-p", "-q", "-s", "-y",
+    ]
+    let valueOptions: Set<String> = [
+        "--cache", "--call", "--location", "--loglevel", "--otp", "--prefix", "--reg",
+        "--registry", "--scope", "--tag", "--userconfig", "--workspace", "-C", "-L", "-c", "-m", "-w",
+    ]
+    let valueShortOptions = ["-C", "-L", "-c", "-m", "-w"]
+    let optionArguments = arguments.prefix { $0 != "--" }
+    if optionArguments.contains(where: { ["--help", "-h", "-H", "-?"].contains($0) }) {
+        return .readOnly
+    }
+    if optionArguments.contains(where: { ["--version", "--versions", "-v"].contains($0) }) {
+        return .readOnly
+    }
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if !argument.hasPrefix("-") { break }
+        let shortOptions = argument.dropFirst()
+        let isBooleanShortCluster = shortOptions.count > 1
+            && shortOptions.allSatisfy { booleanShortOptions.contains($0) }
+        let hasAttachedShortValue = valueShortOptions.contains {
+            argument.hasPrefix($0) && argument.count > $0.count
+        }
+        if argument.contains("=") || argument.hasPrefix("--no-")
+            || booleanOptions.contains(argument) || isBooleanShortCluster || hasAttachedShortValue
+        {
+            index += 1
+        } else if valueOptions.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else {
+            return .unknown
+        }
+    }
+    guard index < arguments.count, let policy = secretGateCommandPolicies["node"] else { return .unknown }
+    return commandPolicyClassification(policy, arguments[index...].map { $0.lowercased() })
 }
 
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
