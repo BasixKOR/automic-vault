@@ -453,7 +453,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         secretDump: "auth status --show-token,auth credential-helper,auth git-credential get,auth docker-helper get,auth dpop-gen,config get token,config get gitlab_token,config get oauth_token,artifact-registry get-token"
     ),
     "gotify": .init("version", "push,watch"),
-    "gptcommit": .init("", "prepare,commit"),
+    "gptcommit": .init(
+        "config keys,config get",
+        "install,uninstall,config set,config delete,prepare-commit-msg",
+        secretDump: "config list,config get openai.api_key"
+    ),
     "grafanactl": .init("resources get,resources list", "resources create,resources delete,resources apply"),
     "heroku": .init("apps,apps info,ps,addons", "apps create,apps destroy,config set,config unset,ps scale", secretDump: "auth token,config"),
     "hcloud": .init("server list,server describe,network list,network describe", "server create,server delete,network create,network delete"),
