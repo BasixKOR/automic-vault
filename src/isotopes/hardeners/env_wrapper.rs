@@ -91,6 +91,7 @@ pub(crate) fn invocation_is_secretless(
     let args = &args[1..];
     match stub.command {
         "npm" => npm_invocation_is_secretless(args),
+        "cloudsmith" => cloudsmith_invocation_is_secretless(args),
         "pnpm" => {
             local_command(
                 args,
@@ -205,6 +206,390 @@ fn npm_invocation_is_secretless(args: &[OsString]) -> bool {
             | "v"
             | "whoami"
     )
+}
+
+// Reviewed against cloudsmith-cli v1.26.0 (aac8c040). Keep this positive:
+// unknown commands and local credential-management flows must not inherit the
+// protected API key.
+fn cloudsmith_invocation_is_secretless(args: &[OsString]) -> bool {
+    let Some(arguments) = args
+        .iter()
+        .map(|argument| argument.to_str())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return true;
+    };
+    if arguments.is_empty()
+        || arguments.contains(&"--")
+        || std::env::var_os("CLOUDSMITH_API_KEY").is_some()
+    {
+        return true;
+    }
+
+    let Some((words, credentials_file, profile, has_api_key)) =
+        cloudsmith_command_words(&arguments)
+    else {
+        return true;
+    };
+    if has_api_key || !cloudsmith_command_uses_api(&words) {
+        return true;
+    }
+    if cloudsmith_credentials_have_key(credentials_file.as_deref(), profile.as_deref()) {
+        return true;
+    }
+    if matches!(words.as_slice(), ["domains" | "domain", "list" | "ls"])
+        && !cloudsmith_has_workspace(&arguments, profile.as_deref())
+    {
+        return true;
+    }
+    false
+}
+
+fn cloudsmith_command_words<'a>(
+    arguments: &[&'a str],
+) -> Option<(Vec<&'a str>, Option<PathBuf>, Option<String>, bool)> {
+    let mut words = Vec::new();
+    let mut credentials_file = std::env::var_os("CLOUDSMITH_CREDENTIALS_FILE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let mut profile = std::env::var("CLOUDSMITH_PROFILE")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let mut has_api_key = false;
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = arguments[index];
+        if matches!(argument, "--help" | "-h" | "--version" | "-V") {
+            return None;
+        }
+        if let Some(name) = cloudsmith_value_option(argument) {
+            let value = *arguments.get(index + 1)?;
+            match name {
+                "credentials" => credentials_file = (!value.is_empty()).then(|| value.into()),
+                "profile" => profile = (!value.is_empty()).then(|| value.to_string()),
+                "api-key" => has_api_key = !value.trim().is_empty(),
+                _ => {}
+            }
+            index += 2;
+            continue;
+        }
+        if let Some((name, value)) = cloudsmith_inline_value_option(argument) {
+            match name {
+                "credentials" => credentials_file = (!value.is_empty()).then(|| value.into()),
+                "profile" => profile = (!value.is_empty()).then(|| value.to_string()),
+                "api-key" => has_api_key = !value.trim().is_empty(),
+                _ => {}
+            }
+            index += 1;
+            continue;
+        }
+        if cloudsmith_boolean_option(argument) {
+            index += 1;
+            continue;
+        }
+        words.push(argument);
+        index += 1;
+    }
+    Some((words, credentials_file, profile, has_api_key))
+}
+
+fn cloudsmith_value_option(argument: &str) -> Option<&'static str> {
+    Some(match argument {
+        "--credentials-file" => "credentials",
+        "-P" | "--profile" => "profile",
+        "-k" | "--api-key" => "api-key",
+        "-C"
+        | "--config-file"
+        | "-F"
+        | "--output-format"
+        | "--api-host"
+        | "--api-proxy"
+        | "--api-user-agent"
+        | "--api-headers"
+        | "--allowed-api-host-suffixes"
+        | "--allowed-api-proxy-suffixes"
+        | "--oidc-audience"
+        | "-w"
+        | "--workspace"
+        | "--org"
+        | "--organization"
+        | "--oidc-org"
+        | "-o"
+        | "--owner"
+        | "--oidc-service-slug"
+        | "--oidc-detector-order"
+        | "--rate-limit-warning"
+        | "--error-retry-max"
+        | "--error-retry-backoff"
+        | "--error-retry-codes" => "other",
+        _ => return None,
+    })
+}
+
+fn cloudsmith_inline_value_option(argument: &str) -> Option<(&'static str, &str)> {
+    for (option, name) in [
+        ("--credentials-file", "credentials"),
+        ("--profile", "profile"),
+        ("--api-key", "api-key"),
+        ("--config-file", "other"),
+        ("--output-format", "other"),
+        ("--api-host", "other"),
+        ("--api-proxy", "other"),
+        ("--api-user-agent", "other"),
+        ("--api-headers", "other"),
+        ("--allowed-api-host-suffixes", "other"),
+        ("--allowed-api-proxy-suffixes", "other"),
+        ("--oidc-audience", "other"),
+        ("--workspace", "other"),
+        ("--org", "other"),
+        ("--organization", "other"),
+        ("--oidc-org", "other"),
+        ("--owner", "other"),
+        ("--oidc-service-slug", "other"),
+        ("--oidc-detector-order", "other"),
+        ("--rate-limit-warning", "other"),
+        ("--error-retry-max", "other"),
+        ("--error-retry-backoff", "other"),
+        ("--error-retry-codes", "other"),
+    ] {
+        if let Some(value) = argument
+            .strip_prefix(option)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
+            return Some((name, value));
+        }
+    }
+    for (option, name) in [
+        ("-P", "profile"),
+        ("-k", "api-key"),
+        ("-C", "other"),
+        ("-F", "other"),
+        ("-w", "other"),
+        ("-o", "other"),
+    ] {
+        if let Some(value) = argument
+            .strip_prefix(option)
+            .filter(|value| !value.is_empty())
+        {
+            return Some((name, value));
+        }
+    }
+    None
+}
+
+fn cloudsmith_boolean_option(argument: &str) -> bool {
+    matches!(
+        argument,
+        "-d" | "--debug"
+            | "-v"
+            | "--verbose"
+            | "-S"
+            | "--without-api-ssl-verify"
+            | "-R"
+            | "--without-rate-limit"
+            | "--oidc-discovery-disabled"
+    ) || [
+        "--debug=",
+        "--verbose=",
+        "--without-api-ssl-verify=",
+        "--without-rate-limit=",
+        "--oidc-discovery-disabled=",
+    ]
+    .iter()
+    .any(|prefix| argument.starts_with(prefix))
+}
+
+fn cloudsmith_command_uses_api(words: &[&str]) -> bool {
+    let Some(root) = words.first().copied() else {
+        return false;
+    };
+    let action = words.get(1).copied();
+    match root {
+        "copy" | "cp" | "delete" | "rm" | "dependencies" | "deps" | "download" | "move" | "mv"
+        | "promote" | "resync" | "status" | "vulnerabilities" | "whoami" => true,
+        "check" => cloudsmith_action(action, "rates limits"),
+        "domains" | "domain" => cloudsmith_action(action, "list ls"),
+        "entitlements" | "ents" => cloudsmith_action(
+            action,
+            "create new delete rm list ls refresh restrict sync update set",
+        ),
+        "list" | "ls" => cloudsmith_action(
+            action,
+            "dependencies deps distros entitlements ents packages pkgs repos",
+        ),
+        "mcp" => action == Some("start"),
+        "metadata" => cloudsmith_action(action, "add list ls remove rm update"),
+        "metrics" => cloudsmith_action(action, "entitlements ents tokens packages pkgs"),
+        "policy" => cloudsmith_policy_command_uses_api(words),
+        "push" | "upload" | "deploy" => cloudsmith_action(
+            action,
+            "alpine cargo cocoapods composer conan conda cran dart deb docker generic go helm hex huggingface luarocks maven mcp nix npm nuget p2 python raw rpm ruby swift terraform vagrant vsx",
+        ),
+        "quarantine" | "block" => cloudsmith_action(action, "add remove rm restore"),
+        "quota" => cloudsmith_action(action, "history limits"),
+        "repositories" | "repos" => cloudsmith_repositories_command_uses_api(words),
+        "tags" | "tag" => cloudsmith_action(action, "add clear list ls remove rm replace"),
+        "tokens" => cloudsmith_action(action, "create list ls refresh"),
+        "upstream" => cloudsmith_upstream_command_uses_api(words),
+        "credential-helper" => match action {
+            Some("cargo" | "generic" | "pnpm") => true,
+            Some("docker") => matches!(words.get(2), None | Some(&"get")),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn cloudsmith_policy_command_uses_api(words: &[&str]) -> bool {
+    let action = words.get(2).copied();
+    match words.get(1).copied() {
+        Some("deny") => cloudsmith_action(action, "create new delete rm get list ls update set"),
+        Some("license" | "vulnerability") => {
+            cloudsmith_action(action, "create new delete rm list ls update")
+        }
+        _ => false,
+    }
+}
+
+fn cloudsmith_repositories_command_uses_api(words: &[&str]) -> bool {
+    match words.get(1).copied() {
+        Some("create" | "new" | "delete" | "rm" | "get" | "list" | "ls" | "update") => true,
+        Some("gpg") => cloudsmith_action(
+            words.get(2).copied(),
+            "get list ls regenerate regen upload set",
+        ),
+        Some("privileges" | "privilege") => {
+            cloudsmith_action(words.get(2).copied(), "list ls get replace revoke set")
+        }
+        _ => false,
+    }
+}
+
+fn cloudsmith_upstream_command_uses_api(words: &[&str]) -> bool {
+    cloudsmith_action(
+        words.get(1).copied(),
+        "alpine cargo conda cran dart deb docker generic go helm hex huggingface maven nix npm nuget python rpm ruby swift",
+    ) && cloudsmith_action(words.get(2).copied(), "create new delete rm list ls update")
+}
+
+fn cloudsmith_action(action: Option<&str>, allowed: &str) -> bool {
+    action.is_some_and(|action| allowed.split_ascii_whitespace().any(|item| item == action))
+}
+
+fn cloudsmith_credentials_have_key(explicit: Option<&Path>, profile: Option<&str>) -> bool {
+    cloudsmith_config_paths(explicit, "credentials.ini")
+        .iter()
+        .any(|path| {
+            fs::read_to_string(path)
+                .is_ok_and(|contents| cloudsmith_ini_has_value(&contents, profile, &["api_key"]))
+        })
+}
+
+fn cloudsmith_has_workspace(arguments: &[&str], profile: Option<&str>) -> bool {
+    if [
+        ("-w", "--workspace"),
+        ("-w", "--org"),
+        ("-w", "--organization"),
+        ("-w", "--oidc-org"),
+        ("-o", "--owner"),
+    ]
+    .iter()
+    .any(|(short, long)| cloudsmith_option_path(arguments, short, long).is_some())
+        || ["CLOUDSMITH_WORKSPACE", "CLOUDSMITH_ORG"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
+    {
+        return true;
+    }
+    let explicit = cloudsmith_option_path(arguments, "-C", "--config-file").or_else(|| {
+        std::env::var_os("CLOUDSMITH_CONFIG_FILE")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    });
+    cloudsmith_config_paths(explicit.as_deref(), "config.ini")
+        .iter()
+        .any(|path| {
+            fs::read_to_string(path).is_ok_and(|contents| {
+                cloudsmith_ini_has_value(
+                    &contents,
+                    profile,
+                    &["workspace", "org", "organization", "oidc_org"],
+                )
+            })
+        })
+}
+
+fn cloudsmith_option_path(arguments: &[&str], short: &str, long: &str) -> Option<PathBuf> {
+    arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| {
+            if *argument == short || *argument == long {
+                return arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from);
+            }
+            argument
+                .strip_prefix(long)
+                .and_then(|rest| rest.strip_prefix('='))
+                .or_else(|| {
+                    argument
+                        .strip_prefix(short)
+                        .filter(|value| !value.is_empty())
+                })
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
+        .last()
+}
+
+fn cloudsmith_config_paths(explicit: Option<&Path>, filename: &str) -> Vec<PathBuf> {
+    if let Some(path) = explicit {
+        return vec![if path.is_dir() {
+            path.join(filename)
+        } else {
+            path.to_path_buf()
+        }];
+    }
+    let mut paths = std::env::current_dir()
+        .ok()
+        .map(|path| vec![path.join(filename)])
+        .unwrap_or_default();
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        paths.push(
+            home.join("Library/Application Support/cloudsmith")
+                .join(filename),
+        );
+        paths.push(home.join(".cloudsmith").join(filename));
+    }
+    paths
+}
+
+fn cloudsmith_ini_has_value(contents: &str, profile: Option<&str>, names: &[&str]) -> bool {
+    let mut selected = true;
+    for line in contents.lines() {
+        let line = line.split(['#', ';']).next().unwrap_or("").trim();
+        if let Some(section) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
+            selected = section == "default"
+                || profile.is_some_and(|profile| section == format!("profile:{profile}"));
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if selected
+            && names.contains(&name.trim())
+            && !value.trim().trim_matches(['\'', '"']).trim().is_empty()
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn secret_gate(wrapper: &EnvWrapper) -> SecretGateDescriptor {
@@ -791,6 +1176,7 @@ const fn stub(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::ffi::OsStringExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -982,6 +1368,205 @@ mod tests {
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cloudsmith_requests_its_key_only_for_reviewed_api_commands() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_dir("env-wrapper-secretless-cloudsmith");
+        let stub_dir = dir.join("stubs");
+        let credentials = dir.join("credentials.ini");
+        let environment_credentials = dir.join("environment-credentials.ini");
+        let config = dir.join("config.ini");
+        fs::create_dir_all(&stub_dir).unwrap();
+
+        let env_names = [
+            "AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR",
+            "CLOUDSMITH_API_KEY",
+            "CLOUDSMITH_CONFIG_FILE",
+            "CLOUDSMITH_CREDENTIALS_FILE",
+            "CLOUDSMITH_ORG",
+            "CLOUDSMITH_PROFILE",
+            "CLOUDSMITH_WORKSPACE",
+            "HOME",
+        ];
+        let previous = env_names.map(|name| (name, std::env::var_os(name)));
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR", &stub_dir);
+            std::env::set_var("HOME", &dir);
+            for name in &env_names[1..7] {
+                std::env::remove_var(name);
+            }
+        }
+
+        let script_path = stub_dir.join("cloudsmith");
+        let script = stub_script(
+            &wrapper("cloudsmith-cli").unwrap().primary,
+            Path::new("/opt/homebrew/bin/cloudsmith"),
+        );
+        let invocation = |values: Vec<OsString>| {
+            std::iter::once(script_path.clone().into_os_string())
+                .chain(values)
+                .collect::<Vec<_>>()
+        };
+        let args = |values: &[&str]| values.iter().map(OsString::from).collect::<Vec<_>>();
+
+        for values in [
+            vec![],
+            vec!["help"],
+            vec!["repositories", "list", "--help"],
+            vec!["--version"],
+            vec!["-V"],
+            vec!["docs"],
+            vec!["authenticate"],
+            vec!["login"],
+            vec!["logout"],
+            vec!["check", "service"],
+            vec!["domains", "list"],
+            vec!["mcp", "configure"],
+            vec!["mcp", "list_tools"],
+            vec!["credential-helper", "list"],
+            vec!["credential-helper", "install", "pnpm"],
+            vec!["credential-helper", "uninstall", "docker"],
+            vec!["credential-helper", "docker", "store"],
+            vec!["credential-helper", "docker", "erase"],
+            vec!["credential-helper", "docker", "list"],
+            vec!["credential-helper", "docker", "future-operation"],
+            vec!["policy", "license", "get"],
+            vec!["future-command"],
+            vec!["repositories"],
+            vec!["repositories", "future-command"],
+            vec!["whoami", "--", "anything"],
+        ] {
+            assert!(
+                invocation_is_secretless(
+                    &script_path,
+                    script.as_bytes(),
+                    &invocation(args(&values)),
+                ),
+                "cloudsmith {values:?}",
+            );
+        }
+        assert!(invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(vec![OsString::from_vec(vec![0xff])]),
+        ));
+
+        for values in [
+            vec!["whoami"],
+            vec!["-F", "json", "-Pprod", "repositories", "list"],
+            vec!["check", "rates"],
+            vec!["list", "packages", "workspace/repo"],
+            vec!["entitlements", "list", "workspace/repo"],
+            vec!["metadata", "add", "workspace/repo/package"],
+            vec!["metrics", "packages", "workspace/repo"],
+            vec!["policy", "deny", "get", "workspace", "policy"],
+            vec!["push", "npm", "workspace/repo", "package.tgz"],
+            vec!["repositories", "gpg", "get", "workspace/repo"],
+            vec!["repositories", "privileges", "set", "workspace/repo"],
+            vec!["tokens", "refresh"],
+            vec!["upstream", "python", "list", "workspace/repo"],
+            vec!["mcp", "start"],
+            vec!["credential-helper", "cargo"],
+            vec!["credential-helper", "docker"],
+            vec!["credential-helper", "docker", "get"],
+            vec!["credential-helper", "generic"],
+            vec!["credential-helper", "pnpm"],
+            vec!["domains", "list", "--workspace", "workspace"],
+        ] {
+            assert!(
+                !invocation_is_secretless(
+                    &script_path,
+                    script.as_bytes(),
+                    &invocation(args(&values)),
+                ),
+                "cloudsmith {values:?}",
+            );
+        }
+
+        assert!(invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&["repositories", "list", "--api-key=explicit"])),
+        ));
+        unsafe { std::env::set_var("CLOUDSMITH_API_KEY", "") };
+        assert!(invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&["whoami"])),
+        ));
+        unsafe { std::env::remove_var("CLOUDSMITH_API_KEY") };
+
+        fs::write(
+            &credentials,
+            "[default]\napi_key = default-key\n[profile:prod]\napi_key = prod-key\n",
+        )
+        .unwrap();
+        assert!(invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&[
+                "--credentials-file",
+                credentials.to_str().unwrap(),
+                "--profile",
+                "prod",
+                "whoami",
+            ])),
+        ));
+        fs::write(
+            &environment_credentials,
+            "[default]\napi_key = environment-key\n",
+        )
+        .unwrap();
+        unsafe { std::env::set_var("CLOUDSMITH_CREDENTIALS_FILE", &environment_credentials) };
+        assert!(invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&["whoami"])),
+        ));
+        fs::write(&credentials, "[profile:other]\napi_key = other-key\n").unwrap();
+        assert!(!invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&[
+                "--credentials-file",
+                credentials.to_str().unwrap(),
+                "--profile",
+                "prod",
+                "whoami",
+            ])),
+        ));
+        unsafe { std::env::remove_var("CLOUDSMITH_CREDENTIALS_FILE") };
+
+        fs::write(&config, "[profile:prod]\nworkspace = configured\n").unwrap();
+        assert!(!invocation_is_secretless(
+            &script_path,
+            script.as_bytes(),
+            &invocation(args(&[
+                "--config-file",
+                config.to_str().unwrap(),
+                "--profile=prod",
+                "domains",
+                "list",
+            ])),
+        ));
+
+        assert!(!invocation_is_secretless(
+            &script_path,
+            format!("{script}# changed\n").as_bytes(),
+            &invocation(args(&["--help"])),
+        ));
+
+        for (name, value) in previous {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
