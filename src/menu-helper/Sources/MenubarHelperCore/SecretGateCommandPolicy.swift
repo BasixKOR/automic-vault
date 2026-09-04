@@ -24,6 +24,10 @@ public func genericSecretGateRequestClassification(
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "netlify-cli" { return netlifyRequestClassification(words) }
     if gateID == "node" { return npmRequestClassification(arguments) }
+    if gateID == "runpodctl" {
+        guard let normalized = runpodctlCommandWords(words) else { return .unknown }
+        words = normalized
+    }
     if gateID == "pulumi" { return pulumiRequestClassification(arguments) }
     if gateID == "pnpm", words.first == "audit" {
         if words.dropFirst().contains(where: { $0 == "--fix" || $0.hasPrefix("--fix=") }) {
@@ -193,6 +197,32 @@ private func pulumiRequestClassification(_ arguments: [String]) -> SecretGateReq
 
     guard let policy = secretGateCommandPolicies["pulumi"] else { return .unknown }
     return commandPolicyClassification(policy, words)
+}
+
+// Keep global-option handling aligned with runpodctl 2.8.0 so the prompt can
+// describe gated API commands without treating their output format as a verb.
+private func runpodctlCommandWords(_ arguments: [String]) -> [String]? {
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if argument == "--output" || argument == "-o" {
+            guard index + 1 < arguments.count else { return nil }
+            index += 2
+        } else if argument.hasPrefix("--output=") || argument.hasPrefix("-o=")
+            || (argument.hasPrefix("-o") && argument.count > 2)
+        {
+            index += 1
+        } else if ["--help", "-h", "--help=true", "-h=true", "--version", "-v", "--version=true", "-v=true"].contains(argument) {
+            return ["help"]
+        } else if argument == "--help=false" || argument == "-h=false" {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return nil
+        } else {
+            return Array(arguments[index...])
+        }
+    }
+    return []
 }
 
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
@@ -712,7 +742,10 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     // Qwen has no `chat` command and treats arbitrary positionals (including
     // "chat" and "run") as agent prompts whose authority cannot be inferred.
     "qwen-code": .init("", ""),
-    "runpodctl": .init("get,list", "create,remove,start,stop", secretDump: "config view"),
+    "runpodctl": .init(
+        "pod list,pod get,pods list,pods get,serverless list,serverless get,sls list,sls get,template list,template search,template get,tpl list,tpl search,tpl get,templates list,templates search,templates get,model list,model ls,network-volume list,network-volume get,nv list,nv get,registry list,registry get,reg list,reg get,hub list,hub search,hub get,gpu list,gpus list,datacenter list,dc list,datacenters list,billing pods,billing serverless,billing sls,billing endpoints,billing network-volume,billing nv,user,account,me,ssh list-keys,ssh info,ssh connect,get cloud,get pod,get models,get model",
+        "pod create,pod update,pod start,pod stop,pod restart,pod reset,pod delete,pod rm,pod remove,pods create,pods update,pods start,pods stop,pods restart,pods reset,pods delete,pods rm,pods remove,serverless create,serverless update,serverless delete,serverless rm,serverless remove,sls create,sls update,sls delete,sls rm,sls remove,template create,template update,template delete,template rm,template remove,tpl create,tpl update,tpl delete,tpl rm,tpl remove,templates create,templates update,templates delete,templates rm,templates remove,model add,model remove,model rm,model delete,network-volume create,network-volume update,network-volume delete,network-volume rm,network-volume remove,nv create,nv update,nv delete,nv rm,nv remove,registry create,registry delete,registry rm,registry remove,reg create,reg delete,reg rm,reg remove,ssh add-key,ssh remove-key,doctor,exec python,project dev,project start,project deploy,create pod,create pods,create model,remove pod,remove pods,remove model,start pod,stop pod"
+    ),
     "s3cmd": .init("ls,la,info,du", "put,get,del,rm,sync,cp,mv,mb,rb", secretDump: "--dump-config"),
     "sentry-cli": .init("projects list,organizations list,releases list", "send-event,releases new,releases deploys new,upload-dif"),
     "snowflake-cli": .init("object list,object describe,connection test", "object create,object drop,stage copy"),
