@@ -447,7 +447,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "composer": .init("", ""),
     "doctl": .init("account get,compute droplet list,compute droplet get,kubernetes cluster list,kubernetes cluster get", "compute droplet create,compute droplet delete,kubernetes cluster create,kubernetes cluster delete", secretDump: "auth token"),
     "flyctl": .init("status,apps list,machine list,machine status,secrets list,auth whoami", "deploy,scale,apps create,apps destroy,machine run,machine destroy,secrets set,secrets unset,secrets import,auth logout", secretDump: "auth token"),
-    "glab": .init("repo view,repo list,issue list,issue view,mr list,mr view,pipeline list,pipeline view", "repo create,repo delete,issue create,mr create,pipeline run", secretDump: "auth token,auth status --show-token"),
+    "glab": .init(
+        "repo view,repo list,issue list,issue view,mr list,mr view,ci list,ci view,pipeline list,pipeline view,auth status",
+        "repo create,repo delete,issue create,mr create,ci run,pipeline run",
+        secretDump: "auth status --show-token,auth credential-helper,auth git-credential get,auth docker-helper get,auth dpop-gen,config get token,config get gitlab_token,config get oauth_token,artifact-registry get-token"
+    ),
     "gotify": .init("health,version", "push"),
     "gptcommit": .init("", "prepare,commit"),
     "grafanactl": .init("resources get,resources list", "resources create,resources delete,resources apply"),
