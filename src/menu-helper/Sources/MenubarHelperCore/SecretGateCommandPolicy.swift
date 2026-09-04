@@ -452,7 +452,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "repo create,repo delete,issue create,mr create,ci run,pipeline run",
         secretDump: "auth status --show-token,auth credential-helper,auth git-credential get,auth docker-helper get,auth dpop-gen,config get token,config get gitlab_token,config get oauth_token,artifact-registry get-token"
     ),
-    "gotify": .init("health,version", "push"),
+    "gotify": .init("version", "push,watch"),
     "gptcommit": .init("", "prepare,commit"),
     "grafanactl": .init("resources get,resources list", "resources create,resources delete,resources apply"),
     "heroku": .init("apps,apps info,ps,addons", "apps create,apps destroy,config set,config unset,ps scale", secretDump: "auth token,config"),

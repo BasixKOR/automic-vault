@@ -17,7 +17,7 @@ import Testing
         "doctl": ["account", "get"],
         "flyctl": ["apps", "list"],
         "glab": ["repo", "view"],
-        "gotify": ["health"],
+        "gotify": ["version"],
         "gptcommit": ["--version"],
         "grafanactl": ["resources", "list"],
         "heroku": ["apps"],
@@ -346,4 +346,8 @@ import Testing
     #expect(genericSecretGateRequestClassification(gateID: "glab", arguments: ["auth", "dpop-gen"]) == .secretDump)
     #expect(genericSecretGateRequestClassification(gateID: "glab", arguments: ["config", "get", "token"]) == .secretDump)
     #expect(genericSecretGateRequestClassification(gateID: "glab", arguments: ["artifact-registry", "get-token"]) == .secretDump)
+}
+
+@Test func gotifyPolicyClassifiesWatchAsMutating() {
+    #expect(genericSecretGateRequestClassification(gateID: "gotify", arguments: ["watch", "date"]) == .mutating)
 }
