@@ -535,7 +535,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         secretDump: "access-token-create,rt access-token-create"
     ),
     "k6": .init("", ""),
-    "luarocks": .init("search,show,list,which", "install,remove,upload,publish"),
+    "luarocks": .init("", "upload"),
     "minio-mc": .init("ls,stat,find,du,tree", "cp,mv,rm,mb,rb,mirror", secretDump: "alias export"),
     "netlify-cli": .init("status,sites list,functions list", "deploy,sites create,sites delete,functions create", secretDump: "env list,env get"),
     "node": .init(
