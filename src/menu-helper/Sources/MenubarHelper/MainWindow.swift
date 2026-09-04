@@ -1867,7 +1867,7 @@ struct DashboardRootView: View {
                             } label: {
                                 Label("Add Secret", systemImage: "plus")
                             }
-                            .labelStyle(.titleAndIcon)
+                            .labelStyle(.iconOnly)
                             .help("Add Secret")
                         }
                     }
@@ -1878,7 +1878,7 @@ struct DashboardRootView: View {
                             } label: {
                                 Label("Create Launcher Bundle", systemImage: "plus")
                             }
-                            .labelStyle(.titleAndIcon)
+                            .labelStyle(.iconOnly)
                             .help("Create Launcher Bundle")
                         }
                     }
