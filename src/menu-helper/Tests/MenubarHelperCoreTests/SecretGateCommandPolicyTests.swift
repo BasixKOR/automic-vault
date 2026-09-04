@@ -421,6 +421,13 @@ import Testing
     #expect(genericSecretGateRequestClassification(gateID: "jfrog-cli", arguments: ["config", "export"]) == .unknown)
 }
 
+@Test func minioPolicyTreatsAliasListingAsASecretDump() {
+    #expect(genericSecretGateRequestClassification(gateID: "minio-mc", arguments: ["alias", "list"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "minio-mc", arguments: ["ls", "private/bucket"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "minio-mc", arguments: ["put", "file", "private/bucket"]) == .mutating)
+    #expect(genericSecretGateRequestClassification(gateID: "minio-mc", arguments: ["alias", "export", "private"]) == .unknown)
+}
+
 @Test func luarocksPolicyOnlyClassifiesUploadBecauseOtherCommandsAreTokenless() {
     #expect(genericSecretGateRequestClassification(gateID: "luarocks", arguments: ["upload", "example.rockspec"]) == .mutating)
     #expect(genericSecretGateRequestClassification(gateID: "luarocks", arguments: ["install", "example"]) == .unknown)

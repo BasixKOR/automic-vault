@@ -536,7 +536,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     ),
     "k6": .init("", ""),
     "luarocks": .init("", "upload"),
-    "minio-mc": .init("ls,stat,find,du,tree", "cp,mv,rm,mb,rb,mirror", secretDump: "alias export"),
+    "minio-mc": .init("ls,stat,find,du,tree,ping,ready", "cp,mv,rm,mb,rb,mirror,put", secretDump: "alias list,alias ls"),
     "netlify-cli": .init("status,sites list,functions list", "deploy,sites create,sites delete,functions create", secretDump: "env list,env get"),
     "node": .init(
         "access list,access get,audit,audit signatures,diff,dist-tag ls,doctor,org ls,outdated,owner ls,ping,profile get,search,find,s,se,stage list,stage view,stars,team ls,token list,trust list,view,info,show,v,whoami",
