@@ -19,7 +19,7 @@ public func genericSecretGateRequestClassification(
     arguments: [String]
 ) -> SecretGateRequestClassification {
     if gateID == "composer" { return composerRequestClassification(arguments) }
-    let words = arguments.map { $0.lowercased() }
+    var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "pnpm", words.first == "audit" {
@@ -36,6 +36,24 @@ public func genericSecretGateRequestClassification(
     if gateID == "vagrant" { return vagrantRequestClassification(words) }
     if words == ["help"] || words == ["--help"] || words == ["version"] || words == ["--version"] {
         return .readOnly
+    }
+    if gateID == "hcloud" {
+        let commandArguments = Array(words.prefix { $0 != "--" })
+        guard let normalized = hcloudArgumentsWithoutPersistentFlags(commandArguments) else { return .unknown }
+        words = normalized
+        if words.contains("--help") || words.contains("-h") || words.first == "version" { return .readOnly }
+        let positionals = words.filter { !$0.hasPrefix("-") }
+        if hcloudFlagEnabled(words, "--allow-sensitive")
+            && (positionals.starts(with: ["config", "list"])
+                || positionals.starts(with: ["config", "get", "token"]))
+        {
+            return .secretDump
+        }
+        if hcloudFlagEnabled(words, "--token-from-env")
+            && positionals.starts(with: ["context", "create"])
+        {
+            return .mutating
+        }
     }
     guard let policy = secretGateCommandPolicies[gateID] else { return .unknown }
     let candidates = (1...min(3, words.count)).reversed().map {
@@ -346,6 +364,39 @@ private let composerAuthConfigRoots = Set([
     "custom-headers", "bearer", "client-certificate", "forgejo-token",
 ])
 
+private func hcloudArgumentsWithoutPersistentFlags(_ arguments: [String]) -> [String]? {
+    let valueFlags = [
+        "--config", "--context", "--debug-file", "--endpoint", "--hetzner-endpoint", "--http-timeout",
+        "--poll-interval",
+    ]
+    let booleanFlags = ["--debug", "--no-experimental-warnings", "--quiet"]
+    var result: [String] = []
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if valueFlags.contains(argument) {
+            guard index + 1 < arguments.count else { return nil }
+            index += 2
+        } else if valueFlags.contains(where: { argument.hasPrefix("\($0)=") })
+            || booleanFlags.contains(argument)
+            || booleanFlags.contains(where: { argument.hasPrefix("\($0)=") })
+        {
+            index += 1
+        } else {
+            result.append(argument)
+            index += 1
+        }
+    }
+    return result
+}
+
+private func hcloudFlagEnabled(_ arguments: [String], _ flag: String) -> Bool {
+    arguments.contains(flag) || arguments.contains { argument in
+        guard argument.hasPrefix("\(flag)=") else { return false }
+        return ["1", "t", "true"].contains(argument.dropFirst(flag.count + 1).lowercased())
+    }
+}
+
 private func stripeRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     let optionsWithValues = ["--api-key", "--color", "--config", "--device-name", "--log-level", "--project-name", "-p"]
     var index = 0
@@ -468,7 +519,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "apps:create,create,apps:destroy,destroy,auth:logout,logout,config:set,config:unset,ps:scale,scale,run,container:push,container:release",
         secretDump: "auth:token,config,config:get,git:credentials"
     ),
-    "hcloud": .init("server list,server describe,network list,network describe", "server create,server delete,network create,network delete"),
+    "hcloud": .init(
+        "all list,server list,server describe,network list,network describe,datacenter list,location list",
+        "server create,server delete,network create,network delete,context create",
+        secretDump: "config get token,config list --allow-sensitive"
+    ),
     "huggingface-cli": .init(
         "auth whoami,cache verify,env,download,buckets list,buckets ls,buckets info,collections list,collections ls,collections info,datasets list,datasets ls,datasets leaderboard,datasets info,datasets parquet,datasets sql,datasets card,discussions list,discussions ls,discussions info,discussions diff,endpoints list,endpoints ls,endpoints hardware,endpoints describe,endpoints catalog list,endpoints catalog ls,endpoints list-catalog,jobs logs,jobs stats,jobs list,jobs ls,jobs ps,jobs hardware,jobs inspect,jobs wait,jobs scheduled list,jobs scheduled ls,jobs scheduled ps,jobs scheduled inspect,models list,models ls,models info,models card,papers list,papers ls,papers search,papers info,papers read,repo list,repo ls,repos list,repos ls,repo tag list,repo tag ls,repos tag list,repos tag ls,sandbox pool ls,sandbox pool list,sandbox process ls,sandbox process list,spaces list,spaces ls,spaces info,spaces card,spaces templates,spaces search,spaces wait,spaces hardware,spaces logs,spaces volumes list,spaces volumes ls,spaces secrets list,spaces secrets ls,spaces variables list,spaces variables ls,webhooks list,webhooks ls,webhooks info",
         "upload,upload-large-folder,buckets create,buckets delete,buckets remove,buckets rm,buckets move,buckets settings,buckets sync,collections create,collections update,collections delete,collections add-item,collections update-item,collections delete-item,discussions create,discussions comment,discussions edit,discussions close,discussions reopen,discussions rename,discussions merge,endpoints deploy,endpoints catalog deploy,endpoints update,endpoints delete,endpoints pause,endpoints resume,endpoints scale-to-zero,jobs run,jobs cancel,jobs labels,jobs ssh,jobs uv run,jobs scheduled run,jobs scheduled delete,jobs scheduled suspend,jobs scheduled resume,jobs scheduled trigger,jobs scheduled labels,jobs scheduled uv,repo create,repo duplicate,repo delete,repo move,repo settings,repo delete-files,repo branch create,repo branch delete,repo tag create,repo tag delete,repos create,repos duplicate,repos delete,repos move,repos settings,repos delete-files,repos branch create,repos branch delete,repos tag create,repos tag delete,repo-files delete,sandbox create,sandbox exec,sandbox spawn,sandbox cp,sandbox kill,sandbox pool create,sandbox pool delete,sandbox pool rm,sandbox process kill,spaces dev-mode,spaces ssh,spaces pause,spaces restart,spaces settings,spaces hot-reload,spaces volumes set,spaces volumes delete,spaces secrets add,spaces secrets delete,spaces variables add,spaces variables delete,webhooks create,webhooks update,webhooks enable,webhooks disable,webhooks delete",
