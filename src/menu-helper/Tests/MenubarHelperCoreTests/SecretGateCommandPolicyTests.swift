@@ -319,3 +319,11 @@ import Testing
         arguments: ["-V"]
     ) == .readOnly)
 }
+
+@Test func doctlPolicySeparatesLocalAndCredentialedCommands() {
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["account", "get"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["compute", "droplet", "create"]) == .mutating)
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["auth", "token"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["auth", "list"]) == .unknown)
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["version"]) == .readOnly)
+}
