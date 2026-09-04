@@ -327,3 +327,12 @@ import Testing
     #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["auth", "list"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: ["version"]) == .readOnly)
 }
+
+@Test func flyctlPolicySeparatesLocalAndCredentialedCommands() {
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["apps", "list"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["deploy"]) == .mutating)
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["auth", "logout"]) == .mutating)
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["auth", "token"]) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["docs"]) == .unknown)
+    #expect(genericSecretGateRequestClassification(gateID: "flyctl", arguments: ["version"]) == .readOnly)
+}
