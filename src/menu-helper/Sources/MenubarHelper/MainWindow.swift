@@ -2247,6 +2247,7 @@ private struct DashboardDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .contentMargins(.top, 8, for: .scrollContent)
         .ignoresSafeArea(.container, edges: .top)
         .background(.ultraThinMaterial)
         .sheet(isPresented: $model.isRenamingSecret) {
