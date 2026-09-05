@@ -26,6 +26,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "ast-cli" { return astCLIRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "checkov" { return checkovRequestClassification(words) }
     if gateID == "censys" { return censysRequestClassification(words) }
     if gateID == "buf" { return bufRequestClassification(words) }
     if gateID == "algolia" { return algoliaRequestClassification(words) }
@@ -1408,6 +1409,29 @@ private func censysRequestClassification(_ arguments: [String]) -> SecretGateReq
     }
 }
 
+private func checkovRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    if arguments.contains("--") { return .unknown }
+    if arguments.contains("--help") || arguments.contains("-h")
+        || arguments.contains("--version") || arguments.contains("-v")
+        || arguments.contains("--show-config")
+    {
+        return .readOnly
+    }
+    if arguments.contains("--support") { return .mutating }
+    let hasRepository = arguments.contains("--repo-id")
+        || arguments.contains(where: { $0.hasPrefix("--repo-id=") })
+    if hasRepository {
+        let hasScanTarget = arguments.contains(where: {
+            ["-d", "--directory", "-f", "--file", "--docker-image", "--image"].contains($0)
+                || $0.hasPrefix("--directory=") || $0.hasPrefix("--file=")
+                || $0.hasPrefix("--docker-image=") || $0.hasPrefix("--image=")
+        })
+        return arguments.contains("--skip-results-upload") || !hasScanTarget ? .readOnly : .mutating
+    }
+    if arguments.contains("--list") || arguments.contains("-l") { return .readOnly }
+    return .unknown
+}
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1871,7 +1895,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     ),
     "buf": .init("", ""),
     "censys": .init("", ""),
-    "checkov": .init("frameworks", "submit"),
+    "checkov": .init("", ""),
     "circleci": .init("project list,pipeline list,config validate", "pipeline run,context create,context delete,context store-secret"),
     "civo": .init("instance list,instance show,kubernetes list,kubernetes show", "instance create,instance remove,kubernetes create,kubernetes remove", secretDump: "apikey show"),
     "cloudsmith-cli": .init("whoami,repos list,packages list,packages search", "push,packages delete,repos create,repos delete"),
