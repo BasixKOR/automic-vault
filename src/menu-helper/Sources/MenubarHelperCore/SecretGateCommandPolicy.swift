@@ -19,6 +19,7 @@ public func genericSecretGateRequestClassification(
     arguments: [String]
 ) -> SecretGateRequestClassification {
     if gateID == "composer" { return composerRequestClassification(arguments) }
+    if gateID == "transifex-cli" { return transifexRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
     if gateID == "stripe" { return stripeRequestClassification(words) }
@@ -451,6 +452,68 @@ private func snykRequestClassification(_ arguments: [String]) -> SecretGateReque
 
 private func snykAlias(_ argument: String, _ command: String, minimum: Int) -> Bool {
     argument.count >= minimum && command.hasPrefix(argument)
+}
+
+private func transifexRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let words = Array(arguments.prefix { $0 != "--" })
+    if words.contains(where: { ["--help", "-h", "--version", "-v"].contains($0) }) {
+        return .readOnly
+    }
+
+    let optionsWithValues = ["--root-config", "--config", "-c", "--token", "-t", "--hostname", "-H", "--cacert"]
+    let optionsWithJoinedValues = ["--root-config=", "--config=", "-c=", "--token=", "--hostname=", "-H=", "--cacert="]
+    var index = 0
+    while index < words.count {
+        let argument = words[index]
+        if optionsWithValues.contains(argument) {
+            guard index + 1 < words.count else { return .unknown }
+            index += 2
+        } else if optionsWithJoinedValues.contains(where: { argument.hasPrefix($0) }) {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < words.count else { return .unknown }
+
+    switch words[index].lowercased() {
+    case "status":
+        return .readOnly
+    case "merge", "push", "pull", "delete":
+        return .mutating
+    case "add", "a":
+        return transifexAddRequestClassification(Array(words.dropFirst(index + 1)))
+    default:
+        return .unknown
+    }
+}
+
+private func transifexAddRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let localOptions = ["--organization", "--project", "--resource", "--file-filter", "--type"]
+    var index = 0
+    var hasLocalOption = false
+    var firstPositional: String?
+    while index < arguments.count {
+        let argument = arguments[index]
+        if localOptions.contains(argument) || argument == "--resource-name" {
+            hasLocalOption = hasLocalOption || localOptions.contains(argument)
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if localOptions.contains(where: { argument.hasPrefix("\($0)=") })
+            || argument.hasPrefix("--resource-name=")
+        {
+            hasLocalOption = hasLocalOption || !argument.hasPrefix("--resource-name=")
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            if firstPositional == nil { firstPositional = argument.lowercased() }
+            index += 1
+        }
+    }
+    return firstPositional == "remote" || !hasLocalOption ? .mutating : .unknown
 }
 
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
@@ -985,7 +1048,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     ),
     "snowflake-cli": .init("", ""),
     "snyk": .init("", ""),
-    "transifex-cli": .init("status", "pull,push"),
+    "transifex-cli": .init("", ""),
     "travis": .init("whoami,repos,history,show,logs", "restart,cancel,enable,disable", secretDump: "token"),
     "twine": .init("", ""),
     "vagrant": .init("", ""),
