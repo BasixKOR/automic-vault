@@ -101,6 +101,10 @@ pub(super) fn names() -> impl Iterator<Item = &'static str> {
     MIGRATIONS.iter().map(|(name, _)| *name)
 }
 
+pub(super) fn wsk_selected_props_have_auth() -> bool {
+    wsk::selected_props_have_auth()
+}
+
 pub(super) fn vultr_config_has_api_key(path: Option<&std::path::Path>) -> bool {
     vultr::config_has_api_key(path)
 }
