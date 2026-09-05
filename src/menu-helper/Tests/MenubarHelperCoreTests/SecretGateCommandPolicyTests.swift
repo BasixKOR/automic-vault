@@ -12,7 +12,7 @@ import Testing
         "checkov": ["--list"],
         "circleci": ["pipeline", "list"],
         "civo": ["instance", "list"],
-        "cloudsmith-cli": ["packages", "list"],
+        "cloudsmith-cli": ["list", "packages"],
         "composer": ["audit"],
         "doctl": ["account", "get"],
         "flyctl": ["apps", "list"],
@@ -770,6 +770,90 @@ import Testing
     #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["projects", "add", "database"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["customers", "future-operation"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "stripe", arguments: ["future-resource", "list"]) == .unknown)
+}
+
+@Test func cloudsmithPolicyClassifiesReviewedCommandEffects() {
+    let readOnly = [
+        ["-V"],
+        ["help"],
+        ["check", "service"],
+        ["check", "rates"],
+        ["dependencies", "workspace/repo/package"],
+        ["domains", "list"],
+        ["download", "workspace/repo", "package"],
+        ["list", "packages", "workspace/repo"],
+        ["entitlements", "list", "workspace/repo"],
+        ["metadata", "list", "workspace/repo/package"],
+        ["metrics", "packages", "workspace/repo"],
+        ["policy", "deny", "get", "workspace", "policy"],
+        ["quota", "history", "workspace"],
+        ["repositories", "gpg", "get", "workspace/repo"],
+        ["repositories", "privileges", "list", "workspace/repo"],
+        ["tags", "list", "workspace/repo/package"],
+        ["upstream", "python", "list", "workspace/repo"],
+        ["vulnerabilities", "workspace/repo/package"],
+        ["whoami"],
+        ["-F", "json", "-Pprod", "repositories", "list"],
+        ["credential-helper", "list"],
+        ["credential-helper", "docker", "list"],
+        ["mcp", "list_tools"],
+    ]
+    for arguments in readOnly {
+        #expect(genericSecretGateRequestClassification(gateID: "cloudsmith-cli", arguments: arguments) == .readOnly)
+    }
+
+    let mutating = [
+        ["copy", "workspace/repo/package", "workspace/other"],
+        ["delete", "workspace/repo/package"],
+        ["entitlements", "refresh", "workspace/repo/token"],
+        ["metadata", "add", "workspace/repo/package"],
+        ["policy", "license", "create", "workspace"],
+        ["push", "npm", "workspace/repo", "package.tgz"],
+        ["push", "npm", "--api-key", "-h", "workspace/repo", "package.tgz"],
+        ["quarantine", "add", "workspace/repo/package"],
+        ["repositories", "privileges", "set", "workspace/repo"],
+        ["tags", "replace", "workspace/repo/package"],
+        ["upstream", "ruby", "delete", "workspace/repo/upstream"],
+        ["credential-helper", "install", "pnpm"],
+        ["credential-helper", "docker", "store"],
+        ["credential-helper", "docker", "erase"],
+        ["mcp", "configure"],
+        ["logout"],
+    ]
+    for arguments in mutating {
+        #expect(genericSecretGateRequestClassification(gateID: "cloudsmith-cli", arguments: arguments) == .mutating)
+    }
+
+    let secretDump = [
+        ["authenticate", "--request-api-key"],
+        ["login"],
+        ["tokens", "list"],
+        ["tokens", "create"],
+        ["entitlements", "list", "workspace/repo", "--show-tokens"],
+        ["entitlements", "refresh", "workspace/repo/token", "--show-tokens"],
+        ["credential-helper", "cargo"],
+        ["credential-helper", "docker"],
+        ["credential-helper", "docker", "get"],
+        ["credential-helper", "generic"],
+        ["credential-helper", "pnpm"],
+    ]
+    for arguments in secretDump {
+        #expect(genericSecretGateRequestClassification(gateID: "cloudsmith-cli", arguments: arguments) == .secretDump)
+    }
+
+    for arguments in [
+        ["docs"],
+        ["mcp", "start"],
+        ["future-command"],
+        ["repositories", "future-command"],
+        ["push", "future-format"],
+        ["policy", "license", "get"],
+        ["credential-helper", "docker", "future-operation"],
+        ["--credentials-file"],
+        ["-v"],
+    ] {
+        #expect(genericSecretGateRequestClassification(gateID: "cloudsmith-cli", arguments: arguments) == .unknown)
+    }
 }
 
 @Test func npmPolicyUsesSpecificSubcommandsBeforeBroadFallbacks() {

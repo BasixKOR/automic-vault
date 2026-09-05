@@ -18,6 +18,7 @@ public func genericSecretGateRequestClassification(
     gateID: String,
     arguments: [String]
 ) -> SecretGateRequestClassification {
+    if gateID == "cloudsmith-cli" { return cloudsmithRequestClassification(arguments) }
     if gateID == "composer" { return composerRequestClassification(arguments) }
     if gateID == "transifex-cli" { return transifexRequestClassification(arguments) }
     if gateID == "travis" { return travisRequestClassification(arguments) }
@@ -1565,6 +1566,149 @@ private let civoCommandPolicy = SecretGateCommandPolicy(
     secretDump: "apikey show,database credential,instance show,instance password,instance console status,kubernetes show,kubernetes config,objectstore credential secret,objectstore credential export"
 )
 
+// Reviewed against cloudsmith-cli v1.26.0 (aac8c040). Unknown command paths
+// stay Unknown so temporary authority cannot broaden when the CLI grows.
+private func cloudsmithRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    guard let parsed = cloudsmithCommandWords(arguments) else { return .unknown }
+    let words = parsed.map { $0.lowercased() }
+    guard let root = words.first else {
+        return .unknown
+    }
+    let action = words.dropFirst().first
+    let showsEntitlementTokens = arguments.contains("--show-tokens")
+
+    switch root {
+    case "help", "version": return .readOnly
+    case "docs": return .unknown // launches a browser
+    case "authenticate", "auth", "login", "token": return .secretDump
+    case "logout": return .mutating
+    case "copy", "cp", "delete", "rm", "move", "mv", "promote", "resync": return .mutating
+    case "dependencies", "deps", "download", "status", "vulnerabilities", "whoami": return .readOnly
+    case "check": return action.map { $0 == "service" || $0 == "rates" || $0 == "limits" ? .readOnly : .unknown } ?? .unknown
+    case "domains", "domain": return ["list", "ls"].contains(action) ? .readOnly : .unknown
+    case "entitlements", "ents":
+        guard let action else { return .unknown }
+        let known = ["create", "new", "delete", "rm", "list", "ls", "refresh", "restrict", "sync", "update", "set"]
+        guard known.contains(action) else { return .unknown }
+        if showsEntitlementTokens { return .secretDump }
+        return ["list", "ls"].contains(action) ? .readOnly : .mutating
+    case "list", "ls":
+        guard let action else { return .unknown }
+        if ["dependencies", "deps", "distros", "packages", "pkgs", "repos"].contains(action) { return .readOnly }
+        if ["entitlements", "ents"].contains(action) { return showsEntitlementTokens ? .secretDump : .readOnly }
+        return .unknown
+    case "mcp":
+        if action == "configure" { return .mutating }
+        if ["list_groups", "list_tools"].contains(action) { return .readOnly }
+        return .unknown
+    case "metadata": return cloudsmithSimpleEffect(action, reads: ["list", "ls"], writes: ["add", "remove", "rm", "update"])
+    case "metrics": return ["entitlements", "ents", "tokens", "packages", "pkgs"].contains(action) ? .readOnly : .unknown
+    case "policy": return cloudsmithPolicyEffect(words)
+    case "push", "upload", "deploy": return cloudsmithPushFormats.contains(action ?? "") ? .mutating : .unknown
+    case "quarantine", "block": return ["add", "remove", "rm", "restore"].contains(action) ? .mutating : .unknown
+    case "quota": return ["history", "limits"].contains(action) ? .readOnly : .unknown
+    case "repositories", "repos": return cloudsmithRepositoryEffect(words)
+    case "tags", "tag": return cloudsmithSimpleEffect(action, reads: ["list", "ls"], writes: ["add", "clear", "remove", "rm", "replace"])
+    case "tokens": return ["create", "list", "ls", "refresh"].contains(action) ? .secretDump : .unknown
+    case "upstream": return cloudsmithUpstreamEffect(words)
+    case "credential-helper": return cloudsmithCredentialHelperEffect(words)
+    default: return .unknown
+    }
+}
+
+private func cloudsmithCommandWords(_ arguments: [String]) -> [String]? {
+    let valued = Set([
+        "--credentials-file", "-P", "--profile", "-k", "--api-key", "-C", "--config-file",
+        "-F", "--output-format", "--api-host", "--api-proxy", "--api-user-agent", "--api-headers",
+        "--allowed-api-host-suffixes", "--allowed-api-proxy-suffixes", "--oidc-audience", "-w",
+        "--workspace", "--org", "--organization", "--oidc-org", "-o", "--owner",
+        "--oidc-service-slug", "--oidc-detector-order", "--rate-limit-warning", "--error-retry-max",
+        "--error-retry-backoff", "--error-retry-codes",
+    ])
+    let booleans = Set(["-d", "--debug", "-v", "--verbose", "-S", "--without-api-ssl-verify", "-R", "--without-rate-limit", "--oidc-discovery-disabled"])
+    let longValued = valued.filter { $0.hasPrefix("--") }
+    let shortValued = valued.filter { $0.hasPrefix("-") && !$0.hasPrefix("--") }
+    var words: [String] = []
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if ["--help", "-h"].contains(argument) { return ["help"] }
+        if ["--version", "-V"].contains(argument) { return ["version"] }
+        if valued.contains(argument) {
+            guard index + 1 < arguments.count else { return nil }
+            index += 2
+        } else if longValued.contains(where: { argument.hasPrefix("\($0)=") })
+            || shortValued.contains(where: { argument.hasPrefix($0) && argument.count > $0.count })
+            || booleans.contains(argument)
+            || booleans.contains(where: { argument.hasPrefix("\($0)=") })
+        {
+            index += 1
+        } else {
+            words.append(argument)
+            index += 1
+        }
+    }
+    return words
+}
+
+private func cloudsmithSimpleEffect(
+    _ action: String?, reads: Set<String>, writes: Set<String>
+) -> SecretGateRequestClassification {
+    guard let action else { return .unknown }
+    if reads.contains(action) { return .readOnly }
+    if writes.contains(action) { return .mutating }
+    return .unknown
+}
+
+private func cloudsmithPolicyEffect(_ words: [String]) -> SecretGateRequestClassification {
+    guard words.count >= 3 else { return .unknown }
+    switch words[1] {
+    case "deny": return cloudsmithSimpleEffect(words[2], reads: ["get", "list", "ls"], writes: ["create", "new", "delete", "rm", "update", "set"])
+    case "license", "vulnerability": return cloudsmithSimpleEffect(words[2], reads: ["list", "ls"], writes: ["create", "new", "delete", "rm", "update"])
+    default: return .unknown
+    }
+}
+
+private func cloudsmithRepositoryEffect(_ words: [String]) -> SecretGateRequestClassification {
+    guard words.count >= 2 else { return .unknown }
+    if ["get", "list", "ls"].contains(words[1]) { return .readOnly }
+    if ["create", "new", "delete", "rm", "update"].contains(words[1]) { return .mutating }
+    guard words.count >= 3 else { return .unknown }
+    if words[1] == "gpg" {
+        return cloudsmithSimpleEffect(words[2], reads: ["get", "list", "ls"], writes: ["regenerate", "regen", "upload", "set"])
+    }
+    if ["privileges", "privilege"].contains(words[1]) {
+        return cloudsmithSimpleEffect(words[2], reads: ["list", "ls", "get"], writes: ["replace", "revoke", "set"])
+    }
+    return .unknown
+}
+
+private func cloudsmithUpstreamEffect(_ words: [String]) -> SecretGateRequestClassification {
+    guard words.count >= 3, cloudsmithUpstreamFormats.contains(words[1]) else { return .unknown }
+    return cloudsmithSimpleEffect(words[2], reads: ["list", "ls"], writes: ["create", "new", "delete", "rm", "update"])
+}
+
+private func cloudsmithCredentialHelperEffect(_ words: [String]) -> SecretGateRequestClassification {
+    guard words.count >= 2 else { return .unknown }
+    if ["cargo", "generic", "pnpm"].contains(words[1]) { return .secretDump }
+    if words[1] == "docker" {
+        if words.count == 2 || words[2] == "get" { return .secretDump }
+        if ["store", "erase"].contains(words[2]) { return .mutating }
+        return words[2] == "list" ? .readOnly : .unknown
+    }
+    if words[1] == "list" { return .readOnly }
+    if ["install", "uninstall"].contains(words[1]) { return .mutating }
+    return .unknown
+}
+
+private let cloudsmithPushFormats = SecretGateCommandPolicy.commands("""
+alpine,cargo,cocoapods,composer,conan,conda,cran,dart,deb,docker,generic,go,helm,hex,huggingface,luarocks,maven,mcp,nix,npm,nuget,p2,python,raw,rpm,ruby,swift,terraform,vagrant,vsx
+""")
+
+private let cloudsmithUpstreamFormats = SecretGateCommandPolicy.commands("""
+alpine,cargo,conda,cran,dart,deb,docker,generic,go,helm,hex,huggingface,maven,nix,npm,nuget,python,rpm,ruby,swift
+""")
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -2031,7 +2175,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "checkov": .init("", ""),
     "circleci": .init("", ""),
     "civo": .init("", ""),
-    "cloudsmith-cli": .init("whoami,repos list,packages list,packages search", "push,packages delete,repos create,repos delete"),
+    "cloudsmith-cli": .init("", ""),
     "composer": .init("", ""),
     "doctl": .init("account get,compute droplet list,compute droplet get,kubernetes cluster list,kubernetes cluster get", "compute droplet create,compute droplet delete,kubernetes cluster create,kubernetes cluster delete", secretDump: "auth token"),
     "flyctl": .init("status,apps list,machine list,machine status,secrets list,auth whoami", "deploy,scale,apps create,apps destroy,machine run,machine destroy,secrets set,secrets unset,secrets import,auth logout", secretDump: "auth token"),
