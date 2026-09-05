@@ -24,6 +24,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "vault" { return vaultRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "vultr" { return vultrRequestClassification(words) }
     if gateID == "virustotal-cli" { return virustotalRequestClassification(words) }
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "netlify-cli" { return netlifyRequestClassification(words) }
@@ -790,6 +791,145 @@ private func virustotalInvocationSelectsCustomHost(_ arguments: [String]) -> Boo
     }
 }
 
+// Reviewed against vultr-cli v3.11.0. New command paths remain Unknown until
+// their authority and response fields are reviewed.
+private func vultrRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let arguments = Array(arguments.prefix { $0 != "--" })
+
+    let optionsWithValues = ["--config", "--output", "-o"]
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if ["-h", "--help"].contains(argument) {
+            return .readOnly
+        } else if optionsWithValues.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") })
+            || (argument.hasPrefix("-o") && argument.count > 2)
+        {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < arguments.count else { return .unknown }
+    let root = vultrCanonicalRoot(arguments[index])
+    let path = Array(arguments.dropFirst(index + 1))
+    if vultrPublicRoots.contains(root) { return .readOnly }
+    guard vultrAuthenticatedRoots.contains(root), let commandPath = vultrCommandPath(root: root, path: path),
+          let operation = commandPath.last
+    else {
+        return .unknown
+    }
+
+    if vultrUsesOrReturnsSecret(root: root, commandPath: commandPath, arguments: path) { return .secretDump }
+    if vultrReadOnlyOperations.contains(operation) { return .readOnly }
+    if vultrMutatingOperations.contains(operation) { return .mutating }
+    return .unknown
+}
+
+private func vultrCanonicalRoot(_ root: String) -> String {
+    switch root {
+    case "a", "app", "application", "applications": "apps"
+    case "b", "backup": "backups"
+    case "bm": "bare-metal"
+    case "bs": "block-storage"
+    case "cr": "container-registry"
+    case "fw": "firewall"
+    case "k": "kubernetes"
+    case "log": "logs"
+    case "o": "os"
+    case "p", "plan": "plans"
+    case "r", "region": "regions"
+    case "rip": "reserved-ip"
+    case "sn": "snapshot"
+    case "ss", "startup-script": "script"
+    case "ssh", "ssh-keys", "sshkeys": "ssh-key"
+    case "u", "users": "user"
+    case "v": "version"
+    default: root
+    }
+}
+
+private func vultrCommandPath(root: String, path: [String]) -> [String]? {
+    var commandPath: [String] = []
+    var index = 0
+    while index < path.count {
+        let word = path[index]
+        if ["--config", "--output", "-o"].contains(word) {
+            guard index + 1 < path.count else { return nil }
+            index += 2
+            continue
+        }
+        if word.hasPrefix("--config=") || word.hasPrefix("--output=") || (word.hasPrefix("-o") && word.count > 2) {
+            index += 1
+            continue
+        }
+        if root == "bare-metal" && ["ipv4", "ipv6"].contains(word) { return commandPath + [word] }
+        if vultrReadOnlyOperations.contains(word) || vultrMutatingOperations.contains(word) {
+            return commandPath + [word]
+        }
+        guard vultrCommandGroups.contains(word) else { return nil }
+        commandPath.append(word)
+        index += 1
+    }
+    return nil
+}
+
+private func vultrUsesOrReturnsSecret(root: String, commandPath: [String], arguments: [String]) -> Bool {
+    guard let operation = commandPath.last else { return false }
+    if root == "kubernetes" && commandPath == ["config"] { return true }
+    if root == "cdn" && commandPath == ["push", "create-endpoint"] { return true }
+    if root == "container-registry" {
+        return ["create", "get", "list"].contains(commandPath.first)
+            || commandPath == ["credentials", "docker"]
+    }
+    if root == "object-storage" {
+        return ["create", "get", "list", "regenerate-keys"].contains(commandPath.first)
+    }
+    if root == "inference" {
+        return ["create", "get", "list", "update"].contains(commandPath.first)
+    }
+    if ["bare-metal", "instance"].contains(root) {
+        return ["create", "get", "list"].contains(commandPath.first)
+            || commandPath == ["user-data", "get"]
+            || commandPath == ["user-data", "set"]
+            || root == "bare-metal" && commandPath == ["vnc"]
+    }
+    if root == "database" {
+        return ["create", "get", "list", "update"].contains(commandPath.first)
+            || commandPath.first == "user" && ["create", "get", "list", "update"].contains(operation)
+            || commandPath.first == "migration" && ["get", "start"].contains(operation)
+            || commandPath.first == "connector" && ["create", "get", "list", "update"].contains(operation)
+            || commandPath == ["read-replica", "create"]
+            || commandPath == ["backup", "fork"]
+    }
+    if root == "script" && ["create", "get", "list", "update"].contains(commandPath.first) { return true }
+    if root == "load-balancer" && commandPath == ["ssl", "set-certificate"] { return true }
+    if root == "load-balancer" && commandPath == ["create"]
+        && vultrHasAnyOption(arguments, ["--private-key", "--private-key-b64"])
+    { return true }
+    if root == "user" && ["create", "update"].contains(commandPath.first)
+        && vultrHasAnyOption(arguments, ["--password", "-p"])
+    { return true }
+    return false
+}
+
+private func vultrHasAnyOption(_ arguments: [String], _ options: Set<String>) -> Bool {
+    arguments.contains { argument in
+        options.contains(argument) || options.contains { argument.hasPrefix("\($0)=") }
+    }
+}
+
+private let vultrPublicRoots = SecretGateCommandPolicy.commands("apps,completion,help,marketplace,os,plans,regions,version")
+private let vultrAuthenticatedRoots = SecretGateCommandPolicy.commands("account,backups,bare-metal,billing,block-storage,cdn,container-registry,database,dns,firewall,inference,instance,iso,kubernetes,load-balancer,logs,object-storage,reserved-ip,script,snapshot,ssh-key,user,vpc")
+private let vultrCommandGroups = SecretGateCommandPolicy.commands("acl,advanced-option,alert,app,artifact,available-connector,backup,cluster,connection-pool,connector,credentials,db,domain,firewall,firewall-rule,forwarding,group,history,image,invoice,ipv4,ipv6,iso,kafka-connect,kafka-rest,maintenance,migration,nat-gateway,node,node-pool,os,plan,port-forwarding-rule,pull,push,quota,read-replica,record,repository,reverse-dns,rule,schema-registry,ssl,tier,topic,upgrades,usage,user,user-data,version,vpc")
+private let vultrReadOnlyOperations = SecretGateCommandPolicy.commands("bandwidth,dnssec-info,get,get-file,get-schema,get-status,info,items,list,list-files,list-ipv6,plans,public,regions,soa-info,status,tags,tiers,versions,vnc,ipv4,ipv6")
+private let vultrMutatingOperations = SecretGateCommandPolicy.commands("attach,change,config,convert,create,create-endpoint,create-url,default-ipv4,delete,delete-file,delete-ipv6,destroy,detach,disable-auto-ssl,dnssec,docker,fork,halt,label,pause,promote,purge,reboot,recycle,regenerate-keys,reinstall,resize,restart,restart-task,restore,resume,set,set-auto-ssl,set-certificate,set-ipv4,set-ipv6,soa-update,start,stop,update,update-firewall-group,upgrade")
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1328,7 +1468,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "vagrant": .init("", ""),
     "vault": .init("", ""),
     "virustotal-cli": .init("", ""),
-    "vultr": .init("instance list,instance get,region list,plan list", "instance create,instance delete,instance start,instance stop"),
+    "vultr": .init("", ""),
     "wsk": .init("action list,action get,namespace list,package list,trigger list", "action create,action update,action delete,action invoke", secretDump: "property get"),
     "stripe": .init("", ""),
     "supabase": .init("projects list,functions list,status,inspect", "link,unlink,db push,db reset,functions deploy,secrets set,secrets unset"),
