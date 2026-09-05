@@ -21,8 +21,7 @@ final class NotificationService: UNNotificationServiceExtension {
             let plaintext = try ApprovalCrypto(rootKeyData: key).open(envelope, purpose: "notification")
             let ticket = try JSONDecoder().decode(PhoneApprovalTicket.self, from: plaintext)
             content.threadIdentifier = ticket.requestID.uuidString
-            if let activity = PhoneApprovalActivity(canceled: ticket) {
-                try? PhoneApprovalActivityInbox.save(activity)
+            if ticket.canceledAtMilliseconds != nil {
                 content.title = "Approval canceled"
                 let preferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
                 content.body = preferences.showsHost

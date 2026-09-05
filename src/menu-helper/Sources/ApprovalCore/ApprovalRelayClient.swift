@@ -33,6 +33,7 @@ private struct ApprovalRelayPublication: Codable {
     let message: ApprovalCiphertext
     let notification: ApprovalCiphertext
     let notificationID: String
+    let silent: Bool
 }
 
 public actor ApprovalRelayClient {
@@ -111,7 +112,8 @@ public actor ApprovalRelayClient {
         try await publish(
             message: .request(request),
             ticket: PhoneApprovalTicket(request: request),
-            requestID: request.id
+            requestID: request.id,
+            silent: false
         )
     }
 
@@ -119,14 +121,16 @@ public actor ApprovalRelayClient {
         try await publish(
             message: .cancel(request.id),
             ticket: PhoneApprovalTicket(canceled: request),
-            requestID: request.id
+            requestID: request.id,
+            silent: true
         )
     }
 
     private func publish(
         message: ApprovalWireMessage,
         ticket: PhoneApprovalTicket,
-        requestID: UUID
+        requestID: UUID,
+        silent: Bool
     ) async throws {
         guard let connection else { throw ApprovalRelayClientError.disconnected }
         try await waitUntilReady(connection)
@@ -140,7 +144,8 @@ public actor ApprovalRelayClient {
         let publication = ApprovalRelayPublication(
             message: try crypto.seal(messageData, purpose: "transport"),
             notification: notification,
-            notificationID: crypto.notificationIdentifier(for: requestID)
+            notificationID: crypto.notificationIdentifier(for: requestID),
+            silent: silent
         )
         try await post(
             publication,

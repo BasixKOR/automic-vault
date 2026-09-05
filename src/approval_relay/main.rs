@@ -79,6 +79,8 @@ struct Publication {
     message: Value,
     notification: Value,
     notification_id: Option<String>,
+    #[serde(default)]
+    silent: bool,
 }
 
 #[derive(Clone)]
@@ -353,6 +355,7 @@ async fn publish(
                     environment,
                     publication.notification.clone(),
                     publication.notification_id.as_deref(),
+                    publication.silent,
                 )
                 .await;
         }
@@ -452,9 +455,10 @@ impl ApnsClients {
         environment: ApnsEnvironment,
         notification: Value,
         notification_id: Option<&str>,
+        silent: bool,
     ) -> Result<(), ()> {
         self.client(environment)
-            .push(token, environment, notification, notification_id)
+            .push(token, environment, notification, notification_id, silent)
             .await
     }
 
@@ -495,25 +499,21 @@ impl ApnsClient {
         environment: ApnsEnvironment,
         notification: Value,
         notification_id: Option<&str>,
+        silent: bool,
     ) -> Result<(), ()> {
         let host = match environment {
             ApnsEnvironment::Sandbox => "https://api.sandbox.push.apple.com",
             ApnsEnvironment::Production => "https://api.push.apple.com",
         };
-        let mut request = self.client
+        let (push_type, priority, payload) = apns_delivery(notification, silent);
+        let mut request = self
+            .client
             .post(format!("{host}/3/device/{token}"))
             .bearer_auth(self.bearer_token().map_err(|_| ())?)
             .header("apns-topic", self.topic.as_ref())
-            .header("apns-push-type", "alert")
-            .header("apns-priority", "10")
-            .json(&json!({
-                "aps": {
-                    "alert": { "title": "Automic Vault update", "body": "Open Automic Vault to review" },
-                    "mutable-content": 1,
-                    "category": "AV_REVIEW"
-                },
-                "av": notification
-            }));
+            .header("apns-push-type", push_type)
+            .header("apns-priority", priority)
+            .json(&payload);
         if let Some(notification_id) = notification_id {
             request = request.header("apns-collapse-id", notification_id);
         }
@@ -573,6 +573,29 @@ impl ApnsClient {
         let token = format!("{signed}.{}", encoder.encode(signature.as_ref()));
         *cached = Some((Instant::now(), token.clone()));
         Ok(token)
+    }
+}
+
+fn apns_delivery(notification: Value, silent: bool) -> (&'static str, &'static str, Value) {
+    if silent {
+        (
+            "background",
+            "5",
+            json!({ "aps": { "content-available": 1 }, "av": notification }),
+        )
+    } else {
+        (
+            "alert",
+            "10",
+            json!({
+                "aps": {
+                    "alert": { "title": "Automic Vault update", "body": "Open Automic Vault to review" },
+                    "mutable-content": 1,
+                    "category": "AV_REVIEW"
+                },
+                "av": notification
+            }),
+        )
     }
 }
 
@@ -656,6 +679,15 @@ mod tests {
         assert!(!valid_peer_id("two phones"));
         assert!(valid_device_token(&"0a".repeat(32)));
         assert!(!valid_device_token(&"zz".repeat(32)));
+    }
+
+    #[test]
+    fn cancellation_delivery_is_silent() {
+        let (push_type, priority, payload) = apns_delivery(json!({ "ciphertext": true }), true);
+        assert_eq!(push_type, "background");
+        assert_eq!(priority, "5");
+        assert_eq!(payload["aps"], json!({ "content-available": 1 }));
+        assert!(payload["aps"].get("alert").is_none());
     }
 
     #[test]

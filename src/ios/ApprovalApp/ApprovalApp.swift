@@ -6,7 +6,6 @@ import SwiftUI
 @main
 struct AutomicVaultApprovalApp: App {
     @UIApplicationDelegateAdaptor(ApprovalAppDelegate.self) private var delegate
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -15,9 +14,6 @@ struct AutomicVaultApprovalApp: App {
                 .task {
                     await ApprovalSubscription.shared.start()
                     await ApprovalModel.shared.start()
-                }
-                .task(id: scenePhase) {
-                    if scenePhase == .active { ApprovalModel.shared.refreshActivityInbox() }
                 }
         }
     }
@@ -40,6 +36,13 @@ final class ApprovalAppDelegate: NSObject, UIApplicationDelegate, @preconcurrenc
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         Task { ApprovalModel.shared.registrationFailed(error) }
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any]
+    ) async -> UIBackgroundFetchResult {
+        await ApprovalModel.shared.handleBackgroundNotification(userInfo)
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
@@ -150,7 +153,6 @@ final class ApprovalModel {
             errorMessage = "Request History could not be loaded."
         }
         notificationPreferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
-        refreshActivityInbox()
     }
 
     func start() async {
@@ -266,6 +268,15 @@ final class ApprovalModel {
             }
         default: break
         }
+    }
+
+    func handleBackgroundNotification(_ userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        guard let ticket = await ticket(from: userInfo),
+              let activity = PhoneApprovalActivity(canceled: ticket) else { return .noData }
+        recordActivity(activity)
+        pending.removeAll { $0.id == ticket.requestID }
+        await removeDeliveredNotifications(for: ticket.requestID)
+        return .newData
     }
 
     private func connect() async {
@@ -469,20 +480,6 @@ final class ApprovalModel {
         }
     }
 
-    func refreshActivityInbox() {
-        do {
-            let inbox = try PhoneApprovalActivityInbox.load()
-            guard !inbox.isEmpty else { return }
-            let merged = inbox.reversed().reduce(activity) { items, item in
-                PhoneApprovalActivity.adding(item, to: items)
-            }
-            try PhoneApprovalActivityStore.save(merged)
-            activity = merged
-            try PhoneApprovalActivityInbox.remove(inbox)
-        } catch {
-            errorMessage = "Request History could not import canceled requests."
-        }
-    }
 }
 
 private enum PhoneApprovalActivityStore {
