@@ -66,7 +66,7 @@ The helper inspects responses and replaces direct echoes of a Secret used for
 that request with its Secret Reference. This is defense in depth, not a general
 output-redaction guarantee; the helper cannot recognize transformed output.
 
-Active sessions and their statistics appear under **Active Proxies**. Ending a
+Active sessions and their statistics appear under **Credential Proxies**. Ending a
 session terminates only the proxy helper, not the Target. Its records remain in
 Authorization History, which has one global 50-entry cap.
 

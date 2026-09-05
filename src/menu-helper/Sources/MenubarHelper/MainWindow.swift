@@ -1794,7 +1794,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
         case .blessedScripts: "Blessed Scripts"
         case .launcherBundles: "Launcher Bundles"
         case .allSecrets: "Secrets"
-        case .proxySessions: "Active Proxies"
+        case .proxySessions: "Credential Proxies"
         case .secretUsage: "Authorization History"
         case .settings: "Settings"
         }
