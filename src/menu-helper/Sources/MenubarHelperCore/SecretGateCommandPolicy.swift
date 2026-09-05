@@ -26,6 +26,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "ast-cli" { return astCLIRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "buf" { return bufRequestClassification(words) }
     if gateID == "algolia" { return algoliaRequestClassification(words) }
     if gateID == "akamai" { return akamaiRequestClassification(words) }
     if gateID == "wsk" { return wskRequestClassification(words) }
@@ -1266,6 +1267,115 @@ private func astCLIRequestClassification(_ arguments: [String]) -> SecretGateReq
     return .unknown
 }
 
+private func bufRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    if arguments.prefix(while: { $0 != "--" }).contains(where: {
+        ["--help", "-h", "--help-tree", "--version"].contains($0)
+    }) {
+        return .readOnly
+    }
+    if arguments.contains("--") { return .unknown }
+    let words = bufCommandWords(arguments)
+
+    if words.starts(with: ["registry", "whoami"])
+        || words.starts(with: ["registry", "sdk", "info"])
+        || words.starts(with: ["registry", "sdk", "version"])
+        || words.starts(with: ["alpha", "registry", "token", "get"])
+        || words.starts(with: ["alpha", "registry", "token", "list"])
+        || words.starts(with: ["beta", "registry", "webhook", "list"])
+    {
+        return .readOnly
+    }
+    if words.starts(with: ["registry", "commit"])
+        || words.starts(with: ["registry", "label"])
+    {
+        return bufRegistryLeafClassification(words.dropFirst(2).first)
+    }
+    if words.starts(with: ["registry", "organization"]) {
+        return bufRegistryLeafClassification(words.dropFirst(2).first)
+    }
+    if words.count >= 3,
+       words[0] == "registry",
+       ["module", "plugin", "policy"].contains(words[1])
+    {
+        if ["commit", "label", "settings"].contains(words[2]) {
+            return bufRegistryLeafClassification(words.dropFirst(3).first)
+        }
+        return bufRegistryLeafClassification(words[2])
+    }
+    if words.starts(with: ["alpha", "registry", "token", "delete"])
+        || words.starts(with: ["beta", "registry", "plugin", "delete"])
+        || words.starts(with: ["beta", "registry", "plugin", "push"])
+        || words.starts(with: ["beta", "registry", "webhook", "create"])
+        || words.starts(with: ["beta", "registry", "webhook", "delete"])
+        || words.first == "push"
+        || words.starts(with: ["plugin", "push"])
+        || words.starts(with: ["policy", "push"])
+    {
+        return .mutating
+    }
+    if words.first == "export"
+        || words.starts(with: ["source", "edit", "deprecate"])
+        || words.starts(with: ["dep", "prune"])
+        || words.starts(with: ["dep", "update"])
+        || words.starts(with: ["mod", "prune"])
+        || words.starts(with: ["mod", "update"])
+        || words.starts(with: ["plugin", "update"])
+        || words.starts(with: ["policy", "update"])
+    {
+        return .localWrite
+    }
+    if words.first == "format" {
+        return arguments.contains(where: { ["--write", "-w"].contains($0) || $0.hasPrefix("--write=") || $0.hasPrefix("-w=") })
+            ? .localWrite : .readOnly
+    }
+    if ["build", "breaking", "convert", "lint", "ls-files", "stats"].contains(words.first)
+        || words.starts(with: ["dep", "graph"])
+        || words.starts(with: ["config", "ls-breaking-rules"])
+        || words.starts(with: ["config", "ls-lint-rules"])
+        || words.starts(with: ["mod", "ls-breaking-rules"])
+        || words.starts(with: ["mod", "ls-lint-rules"])
+        || words.starts(with: ["beta", "price"])
+    {
+        return .readOnly
+    }
+    // buf curl can invoke an arbitrary RPC and remains Unknown even when a BSR
+    // schema caused the launcher to request BUF_TOKEN.
+    return .unknown
+}
+
+private func bufRegistryLeafClassification(_ operation: String?) -> SecretGateRequestClassification {
+    guard let operation else { return .unknown }
+    if ["info", "list", "resolve"].contains(operation) { return .readOnly }
+    if ["add-label", "archive", "create", "delete", "deprecate", "unarchive", "undeprecate", "update"].contains(operation) {
+        return .mutating
+    }
+    return .unknown
+}
+
+private func bufCommandWords(_ arguments: [String]) -> [String] {
+    var words: [String] = []
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if argument == "--" { break }
+        if ["--log-format", "--timeout"].contains(argument) {
+            index += 2
+            continue
+        }
+        if ["--debug", "--debug=true", "--debug=false"].contains(argument)
+            || argument.hasPrefix("--log-format=")
+            || argument.hasPrefix("--timeout=")
+        {
+            index += 1
+            continue
+        }
+        if argument.hasPrefix("-") { break }
+        words.append(argument)
+        index += 1
+    }
+    return words
+}
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1727,7 +1837,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "auth validate,chat kics,chat sast,dast-environments list,project branches,project list,project show,project tags,results bfl,results codebashing,results exit-code,results risk-management,results show,scan kics-realtime,scan list,scan logs,scan sca-realtime,scan show,scan tags,scan workflow,triage get-states,triage show,utils learn-more,utils tenant,hooks check-auth,hooks pre-commit secrets-scan,hooks pre-receive validate",
         "project create,project delete,scan cancel,scan create,scan delete,telemetry ai,triage update,utils import,utils pr azure,utils pr bitbucket,utils pr github,utils pr gitlab,hooks pre-commit secrets-ignore,hooks pre-commit secrets-install-git-hook,hooks pre-commit secrets-update-git-hook,hooks claude-stop,hooks claude-pre-tool-use,hooks claude-pre-file-write,hooks claude-user-prompt-submit,hooks cursor-stop,hooks cursor-before-shell,hooks cursor-before-mcp,hooks cursor-before-file-write,hooks cursor-before-file-read,hooks cursor-after-file-edit,hooks cursor-before-submit-prompt,hooks windsurf-pre-run-command,hooks windsurf-pre-mcp-tool-use,hooks windsurf-pre-user-prompt,hooks windsurf-pre-write-code,hooks windsurf-post-cascade-response,hooks droid-stop,hooks droid-pre-tool-use,hooks droid-pre-file-write,hooks droid-user-prompt-submit,hooks gemini-before-agent,hooks gemini-before-tool,hooks gemini-before-file-tool,hooks gemini-after-agent,hooks copilot-cli-stop,hooks copilot-cli-pre-tool-use,hooks copilot-cli-pre-file-write,hooks copilot-cli-user-prompt-submit"
     ),
-    "buf": .init("repository list,module list,organization list", "push,repository create,repository delete"),
+    "buf": .init("", ""),
     "censys": .init("search,view,account", "asm seeds add,asm seeds delete"),
     "checkov": .init("frameworks", "submit"),
     "circleci": .init("project list,pipeline list,config validate", "pipeline run,context create,context delete,context store-secret"),

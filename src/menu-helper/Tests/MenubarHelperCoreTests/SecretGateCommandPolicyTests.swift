@@ -7,7 +7,7 @@ import Testing
         "algolia": ["profile", "list"],
         "argocd": ["app", "get", "example"],
         "ast-cli": ["scan", "list"],
-        "buf": ["repository", "list"],
+        "buf": ["registry", "module", "info", "buf.build/acme/petapis"],
         "censys": ["search", "example"],
         "checkov": ["frameworks"],
         "circleci": ["pipeline", "list"],
@@ -272,6 +272,64 @@ import Testing
     #expect(genericSecretGateRequestClassification(gateID: "ast-cli", arguments: ["future-command"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "ast-cli", arguments: ["scan", "future-command"]) == .unknown)
     #expect(genericSecretGateRequestClassification(gateID: "ast-cli", arguments: ["mcp", "future-command"]) == .unknown)
+}
+
+@Test func bufPolicyTracksTheCurrentRegistryTreeAndLocalEffects() {
+    let readOnly = [
+        ["build", "buf.build/acme/petapis"],
+        ["format", "buf.build/acme/petapis"],
+        ["dep", "graph"],
+        ["registry", "whoami"],
+        ["registry", "organization", "info", "buf.build/acme"],
+        ["registry", "module", "commit", "list", "buf.build/acme/petapis"],
+        ["registry", "plugin", "label", "info", "buf.build/acme/check:main"],
+        ["registry", "policy", "info", "buf.build/acme/policy"],
+        ["--log-format", "json", "--timeout=5s", "registry", "sdk", "version"],
+        ["beta", "registry", "webhook", "list"],
+        ["alpha", "registry", "token", "get", "buf.build"],
+    ]
+    for arguments in readOnly {
+        #expect(genericSecretGateRequestClassification(gateID: "buf", arguments: arguments) == .readOnly)
+    }
+
+    let localWrite = [
+        ["export", "buf.build/acme/petapis", "--output", "gen"],
+        ["format", "--write", "buf.build/acme/petapis"],
+        ["source", "edit", "deprecate", "."],
+        ["dep", "update"],
+        ["plugin", "update"],
+    ]
+    for arguments in localWrite {
+        #expect(genericSecretGateRequestClassification(gateID: "buf", arguments: arguments) == .localWrite)
+    }
+
+    let mutating = [
+        ["push"],
+        ["plugin", "push", "buf.build/acme/check"],
+        ["registry", "organization", "create", "buf.build/acme"],
+        ["registry", "module", "settings", "update", "buf.build/acme/petapis"],
+        ["registry", "plugin", "commit", "add-label", "buf.build/acme/check"],
+        ["registry", "policy", "label", "archive", "buf.build/acme/policy:main"],
+        ["beta", "registry", "webhook", "delete"],
+        ["alpha", "registry", "token", "delete", "buf.build"],
+    ]
+    for arguments in mutating {
+        #expect(genericSecretGateRequestClassification(gateID: "buf", arguments: arguments) == .mutating)
+    }
+
+    for arguments in [
+        ["curl", "--schema", "buf.build/acme/petapis", "https://example.com/acme.v1.API/Get"],
+        ["generate", "--template", "buf.gen.yaml"],
+        ["registry", "future-command"],
+        ["--future-flag", "registry", "whoami"],
+        ["registry", "whoami", "--", "--help"],
+    ] {
+        #expect(genericSecretGateRequestClassification(gateID: "buf", arguments: arguments) == .unknown)
+    }
+    #expect(genericSecretGateRequestClassification(
+        gateID: "buf",
+        arguments: ["registry", "module", "delete", "buf.build/acme/petapis", "--help"]
+    ) == .readOnly)
 }
 
 @Test func netlifyPolicyClassifiesCurrentCommandsAndLeadingOptions() {
