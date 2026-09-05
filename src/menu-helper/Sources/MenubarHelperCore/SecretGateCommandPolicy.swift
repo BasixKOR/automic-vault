@@ -24,6 +24,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "vault" { return vaultRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "virustotal-cli" { return virustotalRequestClassification(words) }
     if gateID == "stripe" { return stripeRequestClassification(words) }
     if gateID == "netlify-cli" { return netlifyRequestClassification(words) }
     if gateID == "node" { return npmRequestClassification(arguments) }
@@ -695,6 +696,100 @@ private func vaultKVRequestClassification(_ words: [String]) -> SecretGateReques
         ? .mutating : .unknown
 }
 
+// Reviewed against vt-cli v1.3.1. New top-level commands remain Unknown until
+// their authority and output behavior are reviewed.
+private func virustotalRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let arguments = Array(arguments.prefix { $0 != "--" })
+    if arguments.contains(where: { ["-h", "--help"].contains($0) }) { return .readOnly }
+    if arguments.contains(where: virustotalVerboseFlagIsEnabled) { return .secretDump }
+    if virustotalInvocationSelectsCustomHost(arguments) { return .secretDump }
+
+    let optionsWithValues = ["--apikey", "-k", "--format", "--host", "--proxy"]
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if optionsWithValues.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") })
+            || (argument.hasPrefix("-k") && argument.count > 2)
+            || virustotalBooleanFlagIsRecognized(argument)
+        {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < arguments.count else { return .unknown }
+    let words = Array(arguments[index...])
+
+    switch words[0] {
+    case "completion", "version":
+        return .readOnly
+    case "gendoc", "init", "download", "dl":
+        return .localWrite
+    case "analysis", "an", "domain", "file", "ip", "meta", "search", "url":
+        return .readOnly
+    case "scan":
+        return .mutating
+    case "collection":
+        return ["create", "rename", "update", "remove", "delete"].contains(words.dropFirst().first) ? .mutating : .readOnly
+    case "group", "user":
+        guard words.dropFirst().first == "privileges" else { return .readOnly }
+        return ["grant", "revoke"].contains(words.dropFirst(2).first) ? .mutating : .unknown
+    case "iocstream", "is":
+        return words.dropFirst().first == "delete" ? .mutating : .readOnly
+    case "retrohunt", "rh":
+        return ["start", "abort", "delete", "del", "rm"].contains(words.dropFirst().first) ? .mutating : .readOnly
+    case "monitor":
+        if words.dropFirst().first == "download" { return .localWrite }
+        return ["upload", "delete", "deletedetails", "setdetails"].contains(words.dropFirst().first) ? .mutating : .readOnly
+    case "monitorpartner":
+        return words.dropFirst().first == "download" ? .localWrite : .readOnly
+    case "threatprofile":
+        return ["create", "update", "delete"].contains(words.dropFirst().first) ? .mutating : .readOnly
+    case "hunting", "ht":
+        guard let area = words.dropFirst().first else { return .unknown }
+        if ["notification", "nt"].contains(area) {
+            return words.dropFirst(2).first == "delete" ? .mutating : .readOnly
+        }
+        guard ["ruleset", "rs"].contains(area) else { return .unknown }
+        return ["add", "delete", "del", "rm", "disable", "enable", "notification_emails", "rename", "setlimit", "update"]
+            .contains(words.dropFirst(2).first) ? .mutating : .readOnly
+    default:
+        return .unknown
+    }
+}
+
+private func virustotalVerboseFlagIsEnabled(_ argument: String) -> Bool {
+    let parts = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+    let flag = parts[0]
+    let isVerbose = flag == "--verbose"
+        || flag == "-v"
+        || (flag.hasPrefix("-") && flag.dropFirst().allSatisfy { ["s", "v"].contains($0) } && flag.contains("v"))
+    guard isVerbose else { return false }
+    guard parts.count == 2 else { return true }
+    return !["0", "f", "false"].contains(parts[1].lowercased())
+}
+
+private func virustotalBooleanFlagIsRecognized(_ argument: String) -> Bool {
+    let flag = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)[0]
+    if ["--silent", "--verbose"].contains(flag) { return true }
+    let shortFlags = flag.dropFirst()
+    return flag.hasPrefix("-") && !shortFlags.isEmpty && shortFlags.allSatisfy { ["s", "v"].contains($0) }
+}
+
+private func virustotalInvocationSelectsCustomHost(_ arguments: [String]) -> Bool {
+    arguments.enumerated().contains { index, argument in
+        let host = argument == "--host"
+            ? arguments.dropFirst(index + 1).first
+            : argument.hasPrefix("--host=") ? String(argument.dropFirst("--host=".count)) : nil
+        return host.map { !$0.isEmpty && $0.caseInsensitiveCompare("www.virustotal.com") != .orderedSame } ?? false
+    }
+}
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1232,7 +1327,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "twine": .init("", ""),
     "vagrant": .init("", ""),
     "vault": .init("", ""),
-    "virustotal-cli": .init("file,url,domain,ip,collection", "scan,upload"),
+    "virustotal-cli": .init("", ""),
     "vultr": .init("instance list,instance get,region list,plan list", "instance create,instance delete,instance start,instance stop"),
     "wsk": .init("action list,action get,namespace list,package list,trigger list", "action create,action update,action delete,action invoke", secretDump: "property get"),
     "stripe": .init("", ""),

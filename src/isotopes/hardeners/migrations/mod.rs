@@ -101,6 +101,10 @@ pub(super) fn names() -> impl Iterator<Item = &'static str> {
     MIGRATIONS.iter().map(|(name, _)| *name)
 }
 
+pub(super) fn virustotal_default_config_is_safe_for_api_key() -> bool {
+    virustotal_cli::default_config_is_safe_for_api_key()
+}
+
 pub(super) fn travis_default_config_is_safe_for_token() -> bool {
     travis::default_config_is_safe_for_token()
 }
