@@ -22,6 +22,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "transifex-cli" { return transifexRequestClassification(arguments) }
     if gateID == "travis" { return travisRequestClassification(arguments) }
     if gateID == "vault" { return vaultRequestClassification(arguments) }
+    if gateID == "argocd" { return argocdRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
     if gateID == "algolia" { return algoliaRequestClassification(words) }
@@ -1134,6 +1135,58 @@ private func algoliaRequestClassification(_ arguments: [String]) -> SecretGateRe
     return .unknown
 }
 
+private func argocdRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    let arguments = arguments.map { $0 == "-H" ? "-H" : $0.lowercased() }
+    guard !arguments.isEmpty else { return .unknown }
+    for (index, argument) in arguments.prefix(while: { $0 != "--" }).enumerated() {
+        if ["--help", "-h", "--version"].contains(argument),
+           index == 0 || !arguments[index - 1].hasPrefix("-") {
+            return .readOnly
+        }
+    }
+
+    let optionsWithValues = [
+        "--config", "--server", "--server-crt", "--client-crt", "--client-crt-key",
+        "--auth-token", "--grpc-web-root-path", "--logformat", "--loglevel", "--header", "-H",
+        "--port-forward-namespace", "--http-retry-max", "--argocd-context", "--server-name",
+        "--controller-name", "--redis-haproxy-name", "--redis-name", "--repo-server-name",
+        "--redis-compress", "--kube-context",
+    ]
+    let booleanOptions = [
+        "--plaintext", "--insecure", "--grpc-web", "--port-forward", "--core", "--prompts-enabled",
+    ]
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if optionsWithValues.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") })
+            || booleanOptions.contains(argument)
+            || booleanOptions.contains(where: { argument.hasPrefix("\($0)=") })
+        {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < arguments.count,
+          let policy = secretGateCommandPolicies["argocd"] else { return .unknown }
+    var words = Array(arguments[index...])
+    if words[0] == "project" { words[0] = "proj" }
+    let candidates = (1...min(3, words.count)).reversed().map {
+        words.prefix($0).joined(separator: " ")
+    }
+    for candidate in candidates {
+        if policy.secretDump.contains(candidate) { return .secretDump }
+        if policy.readOnly.contains(candidate) { return .readOnly }
+        if policy.mutating.contains(candidate) { return .mutating }
+    }
+    return .unknown
+}
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1586,7 +1639,11 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "indices clear,index clear,indices copy,index copy,indices delete,index delete,indices move,index move,indices config import,index config import,objects import,records import,objects delete,records delete,objects update,records update,objects operations,records operations,apikeys create,api-key create,api-keys create,apikey create,apikeys delete,api-key delete,api-keys delete,apikey delete,apikeys rotate,api-key rotate,api-keys rotate,apikey rotate,settings set,settings import,rules import,rule import,rules delete,rule delete,synonyms import,synonym import,synonyms delete,synonym delete,synonyms save,synonym save,dictionary entries clear,dictionaries entries clear,dict entries clear,dictionary entries delete,dictionaries entries delete,dict entries delete,dictionary entries import,dictionaries entries import,dict entries import,dictionary settings set,dictionaries settings set,dict settings set,crawler crawl,crawlers crawl,crawler create,crawlers create,crawler pause,crawlers pause,crawler reindex,crawlers reindex,crawler run,crawlers run,crawler unblock,crawlers unblock,compositions delete,compositions upsert,compositions sorting-strategy,compositions rules delete,compositions rules upsert,profile add,profiles add,profile remove,profiles remove,profile setdefault,profiles setdefault,application create,app create,application select,app select,application update,app update,application upgrade,app upgrade,application downgrade,app downgrade",
         secretDump: "apikeys list,api-key list,api-keys list,apikey list,apikeys get,api-key get,api-keys get,apikey get,auth get --with-access-token"
     ),
-    "argocd": .init("app get,app list,app diff,cluster get,cluster list,account get-user-info", "app create,app set,app sync,app delete,app rollback", secretDump: "account generate-token"),
+    "argocd": .init(
+        "version,app get,app list,app diff,app history,app logs,app manifests,app resources,app wait,appset get,appset list,cluster get,cluster list,repo get,repo list,repocreds list,proj get,proj list,account get-user-info,account whoami,account can-i,account list,account get,cert list,gpg list",
+        "app create,app set,app sync,app delete,app rollback,app terminate-op,app edit,app patch,app unset,app add-source,app remove-source,app confirm-deletion,app actions run,appset create,appset delete,cluster add,cluster set,cluster rm,cluster rotate-auth,repo add,repo rm,repocreds add,repocreds rm,proj create,proj delete,proj set,proj edit,proj add-destination,proj remove-destination,proj add-source,proj remove-source,proj role create,proj role delete,proj role add-policy,proj role remove-policy,proj role delete-token,account update-password,account delete-token,cert add-tls,cert add-ssh,cert rm,gpg add,gpg rm",
+        secretDump: "account generate-token,account session-token,proj role create-token"
+    ),
     "ast-cli": .init("scan list,scan show,project list,project show", "scan create,scan cancel,project create,project delete"),
     "buf": .init("repository list,module list,organization list", "push,repository create,repository delete"),
     "censys": .init("search,view,account", "asm seeds add,asm seeds delete"),
