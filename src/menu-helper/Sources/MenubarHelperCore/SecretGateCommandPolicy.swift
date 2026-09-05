@@ -26,6 +26,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "ast-cli" { return astCLIRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "circleci" { return circleCIRequestClassification(words) }
     if gateID == "checkov" { return checkovRequestClassification(words) }
     if gateID == "censys" { return censysRequestClassification(words) }
     if gateID == "buf" { return bufRequestClassification(words) }
@@ -1432,6 +1433,56 @@ private func checkovRequestClassification(_ arguments: [String]) -> SecretGateRe
     return .unknown
 }
 
+private func circleCIRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    if arguments.contains("--") { return .unknown }
+    if arguments.contains(where: { ["--help", "-h", "--version", "-v"].contains($0) }) {
+        return .readOnly
+    }
+
+    let optionsWithValues = [
+        "--config", "-c", "--endpoint", "--github-api", "--host", "--mock-telemetry", "--theme", "--token",
+    ]
+    let flags = [
+        "--debug", "--insecure-storage", "--json", "--no-color", "--quiet", "--skip-update-check", "--trace",
+    ]
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if optionsWithValues.contains(argument) {
+            guard index + 1 < arguments.count else { return .unknown }
+            index += 2
+        } else if optionsWithValues.contains(where: { argument.hasPrefix("\($0)=") }) || flags.contains(argument) {
+            index += 1
+        } else if argument.hasPrefix("-") {
+            return .unknown
+        } else {
+            break
+        }
+    }
+    guard index < arguments.count else { return .unknown }
+    let words = Array(arguments[index...])
+    let candidates = (1...min(3, words.count)).reversed().map {
+        words.prefix($0).joined(separator: " ")
+    }
+    for candidate in candidates {
+        if circleCICommandPolicy.secretDump.contains(candidate) { return .secretDump }
+        if circleCICommandPolicy.readOnly.contains(candidate) { return .readOnly }
+        if circleCICommandPolicy.mutating.contains(candidate) { return .mutating }
+    }
+    return .unknown
+}
+
+// Reviewed against circleci-cli v1.0.49592 and v0.1.47860. Arbitrary legacy
+// plugins, v1 extensions, MCP tools, and raw API calls stay Unknown.
+private let circleCICommandPolicy = SecretGateCommandPolicy(
+    """
+    auth me,artifact,certificate get,component-version,config process,config validate,context get,context list,context open,deploy list,deploy open,deploy settings,deploy version,diagnostic,dlc,follow,info,job artifacts,job get,job open,job output,job resource-usage,my runs,namespace get,orb diff,orb get,orb info,orb list,orb list-categories,orb process,orb source,orb validate,org list,org settings get,pipeline list,policy decide,policy diff,policy eval,policy fetch,policy logs,policy settings get,policy test,project get,project list,project open,project settings get,query,runner instance list,runner resource-class list,runner token list,signing-config get,signing-config list,test-result get,test-result list,workflow get,workflow list,workflow open
+    """,
+    """
+    context create,context delete,context restriction create,context restriction delete,context secret delete,context secret store,context store-secret,deploy component create,deploy component delete,deploy environment create,deploy environment delete,deploy rollback,namespace create,namespace delete,namespace rename,orb add-to-category,orb create,orb init,orb publish,orb remove-from-category,orb unlist,pipeline create,pipeline run,policy push,policy settings set,project create,project env delete,project env set,project follow,project settings set,project trigger,runner instance delete,runner resource-class create,runner resource-class delete,runner token create,runner token delete,signing-config create,signing-config delete,workflow cancel,workflow rerun
+    """
+)
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1896,7 +1947,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "buf": .init("", ""),
     "censys": .init("", ""),
     "checkov": .init("", ""),
-    "circleci": .init("project list,pipeline list,config validate", "pipeline run,context create,context delete,context store-secret"),
+    "circleci": .init("", ""),
     "civo": .init("instance list,instance show,kubernetes list,kubernetes show", "instance create,instance remove,kubernetes create,kubernetes remove", secretDump: "apikey show"),
     "cloudsmith-cli": .init("whoami,repos list,packages list,packages search", "push,packages delete,repos create,repos delete"),
     "composer": .init("", ""),
