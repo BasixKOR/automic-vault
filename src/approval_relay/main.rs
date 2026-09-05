@@ -74,9 +74,11 @@ struct RegistrationStatus {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Publication {
     message: Value,
     notification: Value,
+    notification_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -322,6 +324,13 @@ async fn publish(
     {
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }
+    if publication
+        .notification_id
+        .as_deref()
+        .is_some_and(|value| !valid_identifier(value))
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let (sender, registrations) = state.authorize(&room_id, &headers, |room| {
         room.registrations
             .retain(|_, value| value.updated_at.elapsed() <= RECENT_REGISTRATION);
@@ -339,7 +348,12 @@ async fn publish(
     if let Some(apns) = &state.apns {
         for (_, token, environment) in registrations {
             let _ = apns
-                .push(&token, environment, publication.notification.clone())
+                .push(
+                    &token,
+                    environment,
+                    publication.notification.clone(),
+                    publication.notification_id.as_deref(),
+                )
                 .await;
         }
     }
@@ -437,9 +451,10 @@ impl ApnsClients {
         token: &str,
         environment: ApnsEnvironment,
         notification: Value,
+        notification_id: Option<&str>,
     ) -> Result<(), ()> {
         self.client(environment)
-            .push(token, environment, notification)
+            .push(token, environment, notification, notification_id)
             .await
     }
 
@@ -479,12 +494,13 @@ impl ApnsClient {
         token: &str,
         environment: ApnsEnvironment,
         notification: Value,
+        notification_id: Option<&str>,
     ) -> Result<(), ()> {
         let host = match environment {
             ApnsEnvironment::Sandbox => "https://api.sandbox.push.apple.com",
             ApnsEnvironment::Production => "https://api.push.apple.com",
         };
-        let response = self.client
+        let mut request = self.client
             .post(format!("{host}/3/device/{token}"))
             .bearer_auth(self.bearer_token().map_err(|_| ())?)
             .header("apns-topic", self.topic.as_ref())
@@ -492,13 +508,16 @@ impl ApnsClient {
             .header("apns-priority", "10")
             .json(&json!({
                 "aps": {
-                    "alert": { "title": "Approval waiting", "body": "Open Automic Vault to review" },
+                    "alert": { "title": "Automic Vault update", "body": "Open Automic Vault to review" },
                     "mutable-content": 1,
                     "category": "AV_REVIEW"
                 },
                 "av": notification
-            }))
-            .send().await.map_err(|_| ())?;
+            }));
+        if let Some(notification_id) = notification_id {
+            request = request.header("apns-collapse-id", notification_id);
+        }
+        let response = request.send().await.map_err(|_| ())?;
         if response.status().is_success() {
             Ok(())
         } else {

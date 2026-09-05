@@ -530,8 +530,11 @@ Application, or a security warning require review in the full iPhone app.
 Notification content is redacted on the lock screen and never includes Secret
 values. The iPhone does not persist Authorization History. It may keep at most
 50 protected, device-local Request History entries for responses successfully
-sent from that phone and pending requests that the Mac canceled while the phone
-was connected. These summaries omit Secret Names, working directories, and
+sent from that phone and pending requests whose cancellation the iPhone
+received from the Mac. Cancellation notifications carry the same encrypted,
+redacted request summary as request notifications so the notification service
+can record them while the app is suspended. These summaries omit Secret Names,
+working directories, and
 expanded request details, are excluded from backup, and do not claim that the
 Mac accepted a response, allowed an operation, or why it canceled a request.
 

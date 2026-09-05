@@ -414,8 +414,8 @@ not reuse the phone response itself.
 
 A bounded, device-local convenience list of Authorization Request summaries
 observed by one iPhone. It records Approval responses successfully sent from
-that phone and pending requests that the Mac canceled while the phone was
-connected. A Request History entry is not an Authorization Record and does not
+that phone and pending requests whose cancellation the iPhone received from the
+Mac. A Request History entry is not an Authorization Record and does not
 establish that the Mac accepted a response, allowed an operation, or why it
 canceled a request. It contains no Secret Values and does not replace the Mac's
 authoritative Authorization History.

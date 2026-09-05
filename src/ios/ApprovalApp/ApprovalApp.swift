@@ -6,6 +6,7 @@ import SwiftUI
 @main
 struct AutomicVaultApprovalApp: App {
     @UIApplicationDelegateAdaptor(ApprovalAppDelegate.self) private var delegate
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +15,9 @@ struct AutomicVaultApprovalApp: App {
                 .task {
                     await ApprovalSubscription.shared.start()
                     await ApprovalModel.shared.start()
+                }
+                .task(id: scenePhase) {
+                    if scenePhase == .active { ApprovalModel.shared.refreshActivityInbox() }
                 }
         }
     }
@@ -146,6 +150,7 @@ final class ApprovalModel {
             errorMessage = "Request History could not be loaded."
         }
         notificationPreferences = (try? ApprovalNotificationPreferences.load()) ?? .init()
+        refreshActivityInbox()
     }
 
     func start() async {
@@ -239,6 +244,12 @@ final class ApprovalModel {
 
     func handleNotificationResponse(_ response: UNNotificationResponse) async {
         guard let ticket = await ticket(from: response.notification.request.content.userInfo) else { return }
+        if let activity = PhoneApprovalActivity(canceled: ticket) {
+            recordActivity(activity)
+            pending.removeAll { $0.id == ticket.requestID }
+            await removeDeliveredNotifications(for: ticket.requestID)
+            return
+        }
         switch response.actionIdentifier {
         case "AV_DENY": await respond(to: ticket, outcome: .denied)
         case "AV_APPROVE" where !ticket.requiresFullReview:
@@ -455,6 +466,21 @@ final class ApprovalModel {
             try PhoneApprovalActivityStore.save(activity)
         } catch {
             errorMessage = "Request History could not be saved."
+        }
+    }
+
+    func refreshActivityInbox() {
+        do {
+            let inbox = try PhoneApprovalActivityInbox.load()
+            guard !inbox.isEmpty else { return }
+            let merged = inbox.reversed().reduce(activity) { items, item in
+                PhoneApprovalActivity.adding(item, to: items)
+            }
+            try PhoneApprovalActivityStore.save(merged)
+            activity = merged
+            try PhoneApprovalActivityInbox.remove(inbox)
+        } catch {
+            errorMessage = "Request History could not import canceled requests."
         }
     }
 }

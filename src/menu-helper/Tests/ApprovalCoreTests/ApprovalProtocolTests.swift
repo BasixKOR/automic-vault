@@ -153,6 +153,25 @@ import Testing
     #expect(restored.first?.respondedAtMilliseconds == 42)
 }
 
+@Test func canceledNotificationCreatesHistoryWithoutPendingRequest() throws {
+    let request = try sampleRequest(command: "git rebase --continue")
+    let ticket = try PhoneApprovalTicket(canceled: request, at: 42)
+    let restored = try JSONDecoder().decode(
+        PhoneApprovalTicket.self,
+        from: JSONEncoder().encode(ticket)
+    )
+    let activity = try #require(PhoneApprovalActivity(canceled: restored))
+
+    #expect(activity.id == request.id)
+    #expect(activity.command == "git rebase --continue")
+    #expect(activity.outcome == .canceled)
+    #expect(activity.respondedAtMilliseconds == 42)
+
+    let crypto = try ApprovalCrypto(rootKeyData: Data(repeating: 9, count: 32))
+    #expect(crypto.notificationIdentifier(for: request.id).count == 43)
+    #expect(crypto.notificationIdentifier(for: request.id) != crypto.address.room)
+}
+
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
     command: String,

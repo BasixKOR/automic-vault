@@ -75,6 +75,10 @@ public struct ApprovalCrypto: Sendable {
         identifier(label: "registration:\(deviceID)")
     }
 
+    public func notificationIdentifier(for requestID: UUID) -> String {
+        identifier(label: "notification:\(requestID.uuidString.lowercased())")
+    }
+
     private func key(purpose: String) -> SymmetricKey {
         HKDF<SHA256>.deriveKey(
             inputKeyMaterial: rootKey,
@@ -280,6 +284,19 @@ public struct PhoneApprovalActivity: Codable, Equatable, Identifiable, Sendable 
         )
     }
 
+    public init?(canceled ticket: PhoneApprovalTicket) {
+        guard let milliseconds = ticket.canceledAtMilliseconds else { return nil }
+        self.init(
+            id: ticket.requestID,
+            respondedAtMilliseconds: milliseconds,
+            macName: ticket.macName,
+            launcher: ticket.launcher,
+            tool: ticket.tool,
+            command: ticket.command,
+            outcome: .canceled
+        )
+    }
+
     public static func adding(_ item: Self, to items: [Self]) -> [Self] {
         Array(([item] + items.filter { $0.id != item.id }).prefix(maximumItems))
     }
@@ -380,8 +397,20 @@ public struct PhoneApprovalTicket: Codable, Equatable, Sendable {
     public let command: String
     public let reason: String
     public let requiresFullReview: Bool
+    public let canceledAtMilliseconds: UInt64?
 
     public init(request: PhoneApprovalRequest) throws {
+        try self.init(request: request, canceledAtMilliseconds: nil)
+    }
+
+    public init(
+        canceled request: PhoneApprovalRequest,
+        at milliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
+    ) throws {
+        try self.init(request: request, canceledAtMilliseconds: milliseconds)
+    }
+
+    private init(request: PhoneApprovalRequest, canceledAtMilliseconds: UInt64?) throws {
         version = 1
         requestID = request.id
         requestDigest = try request.digest()
@@ -391,6 +420,7 @@ public struct PhoneApprovalTicket: Codable, Equatable, Sendable {
         command = Self.summary(request.command)
         reason = Self.summary(request.reason)
         requiresFullReview = request.requiresFullReview
+        self.canceledAtMilliseconds = canceledAtMilliseconds
     }
 
     private static func summary(_ value: String) -> String {
