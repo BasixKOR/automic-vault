@@ -795,7 +795,7 @@ import Testing
         ["whoami"],
         ["-F", "json", "-Pprod", "repositories", "list"],
         ["credential-helper", "list"],
-        ["credential-helper", "docker", "store"],
+        ["credential-helper", "docker", "list"],
         ["mcp", "list_tools"],
     ]
     for arguments in readOnly {
@@ -815,6 +815,8 @@ import Testing
         ["tags", "replace", "workspace/repo/package"],
         ["upstream", "ruby", "delete", "workspace/repo/upstream"],
         ["credential-helper", "install", "pnpm"],
+        ["credential-helper", "docker", "store"],
+        ["credential-helper", "docker", "erase"],
         ["mcp", "configure"],
         ["logout"],
     ]
