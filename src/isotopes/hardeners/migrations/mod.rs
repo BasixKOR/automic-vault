@@ -101,6 +101,17 @@ pub(super) fn names() -> impl Iterator<Item = &'static str> {
     MIGRATIONS.iter().map(|(name, _)| *name)
 }
 
+pub(super) fn akamai_caller_has_credentials(
+    edgerc: Option<&std::path::Path>,
+    section: &str,
+) -> bool {
+    akamai::caller_has_credentials(edgerc, section)
+}
+
+pub(super) fn akamai_command_is_installed(command: &str) -> bool {
+    akamai::command_is_installed(command)
+}
+
 pub(super) fn wsk_selected_props_have_auth() -> bool {
     wsk::selected_props_have_auth()
 }
