@@ -26,6 +26,7 @@ public func genericSecretGateRequestClassification(
     if gateID == "ast-cli" { return astCLIRequestClassification(arguments) }
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
+    if gateID == "censys" { return censysRequestClassification(words) }
     if gateID == "buf" { return bufRequestClassification(words) }
     if gateID == "algolia" { return algoliaRequestClassification(words) }
     if gateID == "akamai" { return akamaiRequestClassification(words) }
@@ -1376,6 +1377,37 @@ private func bufCommandWords(_ arguments: [String]) -> [String] {
     return words
 }
 
+// The protected CENSYS_* variables belong to the legacy Python CLI. The
+// current Go CLI uses its own credential store and never reaches this gate.
+private func censysRequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
+    if arguments.contains("--help") || arguments.contains("-h")
+        || ["--version", "-v"].contains(arguments[0])
+    {
+        return .readOnly
+    }
+    switch arguments[0] {
+    case "account", "hnri", "search", "subdomains", "view":
+        return .readOnly
+    case "config":
+        return .mutating
+    case "asm":
+        guard arguments.count > 1 else { return .unknown }
+        switch arguments[1] {
+        case "list-seeds", "list-saved-queries", "get-saved-query-by-id",
+             "execute-saved-query-by-name", "execute-saved-query-by-id", "search":
+            return .readOnly
+        case "config", "add-seeds", "delete-seeds", "delete-all-seeds",
+             "delete-labeled-seeds", "replace-labeled-seeds", "add-saved-query",
+             "edit-saved-query-by-id", "delete-saved-query-by-id":
+            return .mutating
+        default:
+            return .unknown
+        }
+    default:
+        return .unknown
+    }
+}
+
 private func k6RequestClassification(_ arguments: [String]) -> SecretGateRequestClassification {
     // Mirrors the wrapper's positive catalog so future forms stay Unknown.
     if arguments.contains(where: { $0 == "--help" || $0 == "-h" })
@@ -1838,7 +1870,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
         "project create,project delete,scan cancel,scan create,scan delete,telemetry ai,triage update,utils import,utils pr azure,utils pr bitbucket,utils pr github,utils pr gitlab,hooks pre-commit secrets-ignore,hooks pre-commit secrets-install-git-hook,hooks pre-commit secrets-update-git-hook,hooks claude-stop,hooks claude-pre-tool-use,hooks claude-pre-file-write,hooks claude-user-prompt-submit,hooks cursor-stop,hooks cursor-before-shell,hooks cursor-before-mcp,hooks cursor-before-file-write,hooks cursor-before-file-read,hooks cursor-after-file-edit,hooks cursor-before-submit-prompt,hooks windsurf-pre-run-command,hooks windsurf-pre-mcp-tool-use,hooks windsurf-pre-user-prompt,hooks windsurf-pre-write-code,hooks windsurf-post-cascade-response,hooks droid-stop,hooks droid-pre-tool-use,hooks droid-pre-file-write,hooks droid-user-prompt-submit,hooks gemini-before-agent,hooks gemini-before-tool,hooks gemini-before-file-tool,hooks gemini-after-agent,hooks copilot-cli-stop,hooks copilot-cli-pre-tool-use,hooks copilot-cli-pre-file-write,hooks copilot-cli-user-prompt-submit"
     ),
     "buf": .init("", ""),
-    "censys": .init("search,view,account", "asm seeds add,asm seeds delete"),
+    "censys": .init("", ""),
     "checkov": .init("frameworks", "submit"),
     "circleci": .init("project list,pipeline list,config validate", "pipeline run,context create,context delete,context store-secret"),
     "civo": .init("instance list,instance show,kubernetes list,kubernetes show", "instance create,instance remove,kubernetes create,kubernetes remove", secretDump: "apikey show"),
