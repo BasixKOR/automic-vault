@@ -441,12 +441,21 @@ Other vendors ship signed macOS binaries too. Prefer, in order:
 3. a package-manager-signed build when no suitable vendor-signed artifact
    exists.
 
+We recommend [mise] for managing runtimes such as Node.js and Python. For
+Node.js, mise installs the vendor's prebuilt binaries, preserving their code
+signatures without a local rebuild. Its [Python backend] defaults to
+`python-build-standalone`, so do not assume every mise-managed runtime carries
+the original vendor's Developer ID signature; choose the vendor's signed
+distribution when that identity is required.
+
 When a package manager builds or re-signs a Tool, the signature identifies that
 package manager's artifact rather than the vendor's release. For the related
 security boundaries, see [Tool Hardening], [Verified upstream Tool releases],
 and [Signed CLI Launchers].
 
 [Node.js macOS installer]: https://nodejs.org/en/download
+[mise]: https://mise.jdx.dev/lang/node.html
+[Python backend]: https://mise.jdx.dev/lang/python.html#precompiled-python-binaries
 [Tool Hardening]: docs/architecture.md#tool-hardening
 [Verified upstream Tool releases]: docs/adr/0012-verified-upstream-tool-releases.md
 
