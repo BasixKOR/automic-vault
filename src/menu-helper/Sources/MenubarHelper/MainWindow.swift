@@ -197,6 +197,8 @@ final class DashboardModel: ObservableObject {
 
     private var reloadTask: Task<Void, Never>?
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
+    let authorityApproval = AuthorityApprovalState()
+
     private var blessingCompletion: ((BlessedScriptReviewOutcome) -> Void)?
 
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
@@ -500,7 +502,7 @@ final class DashboardModel: ObservableObject {
     }
 
     func approvePendingBlessing() {
-        guard let request = pendingBlessing else { return }
+        guard let request = pendingBlessing, !authorityApproval.isPending("blessing") else { return }
         let declaration = request.declaration
         let script = BlessedScript(
             path: request.path,
@@ -515,6 +517,7 @@ final class DashboardModel: ObservableObject {
             reviewedContents: request.scriptData
         )
         approveAuthorityChange(
+            action: "blessing",
             "Bless \(URL(fileURLWithPath: script.path).lastPathComponent)",
             detail: [
                 "Path: \(script.path)",
@@ -600,6 +603,7 @@ final class DashboardModel: ObservableObject {
                 reviewedContents: script.reviewedContents
             )
             self.approveAuthorityChange(
+                action: "script-launcher:\(script.path)",
                 "Add \(launcher.bundleIdentifier) to a Blessing",
                 detail: [
                     "Script: \(script.path)",
@@ -617,6 +621,7 @@ final class DashboardModel: ObservableObject {
         chooseLauncherApp { [weak self] launcher in
             guard let self, let launcher else { return }
             self.approveAuthorityChange(
+                action: "secret-name-access",
                 "Allow \(launcher.bundleIdentifier) to list Secret Names",
                 detail: "The verified Launcher may list every saved Secret Name without future Approval."
             ) {
@@ -664,6 +669,7 @@ final class DashboardModel: ObservableObject {
     }
 
     private func finishPendingBlessing(_ outcome: BlessedScriptReviewOutcome) {
+        authorityApproval.cancel("blessing")
         let completion = blessingCompletion
         blessingCompletion = nil
         pendingBlessing = nil
@@ -874,10 +880,16 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    func addDirectAccessLauncher(_ selection: DirectAccessLauncherSelection, to secret: StoredSecret) {
+    func addDirectAccessLauncher(
+        _ selection: DirectAccessLauncherSelection,
+        to secret: StoredSecret,
+        completion: @escaping () -> Void
+    ) {
         approveAuthorityChange(
+            action: "direct-access:\(secret.account)",
             "Allow direct access to \(secret.account)",
-            detail: "\(selection.launcher.bundleIdentifier) may use this Secret without future Approval."
+            detail: "\(selection.launcher.bundleIdentifier) may use this Secret without future Approval.",
+            completion: completion
         ) { [weak self] in
             self?.finishPolicyUpdate(
                 allowDirectAccess(
@@ -1047,7 +1059,6 @@ final class DashboardModel: ObservableObject {
 
     func confirmLauncherHelperReview(selectedHelperIDs: Set<String>) {
         guard let review = pendingLauncherHelperReview else { return }
-        pendingLauncherHelperReview = nil
         finishAddingLauncher(
             review.signing,
             to: review.gate,
@@ -1057,6 +1068,9 @@ final class DashboardModel: ObservableObject {
     }
 
     func cancelLauncherHelperReview() {
+        if let review = pendingLauncherHelperReview {
+            authorityApproval.cancel("gate-launcher:\(review.gate.id)")
+        }
         pendingLauncherHelperReview = nil
     }
 
@@ -1067,7 +1081,10 @@ final class DashboardModel: ObservableObject {
         helpers: [VerifiedLauncherHelper]
     ) {
         let existingPolicy = gate.appPolicies.contains { $0.requirement == signing.requirement }
-        guard !existingPolicy || !helpers.isEmpty else { return }
+        guard !existingPolicy || !helpers.isEmpty else {
+            pendingLauncherHelperReview = nil
+            return
+        }
         let helperList = helpers.map {
             let path = $0.relativePath.map { " at \($0)" } ?? ""
             return "Verified Launcher Helper: \($0.helperSigningIdentifier), "
@@ -1082,12 +1099,14 @@ final class DashboardModel: ObservableObject {
             helperDetail,
         ].compactMap(\.self).joined(separator: "\n\n")
         approveAuthorityChange(
+            action: "gate-launcher:\(gate.id)",
             existingPolicy
                 ? "Add Launcher Helpers for \(signing.identifier)"
                 : "Add \(signing.identifier) to \(gate.displayName)",
             detail: detail
         ) { [weak self] in
             guard let self else { return }
+            self.pendingLauncherHelperReview = nil
             if !existingPolicy {
                 let policyStatus = setSecretGateAppProtection(
                     requirement: signing.requirement,
@@ -1126,6 +1145,7 @@ final class DashboardModel: ObservableObject {
         }
         guard protection.addsAuthority(over: gate.defaultProtection) else { update(); return }
         approveAuthorityChange(
+            action: "gate-default:\(gate.id)",
             "Broaden \(gate.displayName) default to \(protection.title)",
             detail: protection.subtitle,
             perform: update
@@ -1148,6 +1168,7 @@ final class DashboardModel: ObservableObject {
         }
         guard protection.addsAuthority(over: app.protection) else { update(); return }
         approveAuthorityChange(
+            action: "gate-policy:\(gate.id):\(app.requirement)",
             "Broaden \(app.bundleIdentifier) to \(protection.title)",
             detail: protection.subtitle,
             perform: update
@@ -1191,11 +1212,14 @@ final class DashboardModel: ObservableObject {
     }
 
     private func approveAuthorityChange(
+        action: String,
         _ title: String,
         detail: String,
+        completion: @escaping () -> Void = {},
         perform: @escaping () -> Void
     ) {
-        requestAuthorityChangeApproval(title: title, detail: detail) {
+        authorityApproval.request(action, title: title, detail: detail) {
+            defer { completion() }
             if $0 { perform() }
         }
     }
@@ -1457,6 +1481,10 @@ func runUpdateToolbarSelfCheck() -> Int32 {
 
 @MainActor
 func runDashboardSearchSelfCheck() -> Int32 {
+    guard authorityApprovalStateSelfCheck() else {
+        print("authority Approval pending-state self-check failed")
+        return 1
+    }
     let accessRequest = AccessRequestRecord(
         date: Date(timeIntervalSince1970: 18_900),
         tool: "aws",
@@ -1559,6 +1587,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         app: appPolicy,
         launcherBundle: nil,
         gate: gate,
+        approval: model.authorityApproval,
         setProtection: { _ in },
         remove: {}
     ).frame(width: 500)).fittingSize.height
@@ -1933,33 +1962,30 @@ struct DashboardRootView: View {
                             .help("Cancel App Inspection")
                             .accessibilityLabel("Cancel App Inspection")
                         } else {
-                            Button {
-                                model.addApp(to: gate)
-                            } label: {
-                                Label("Add Verified Launcher", systemImage: "plus")
-                            }
+                            AuthorityApprovalButton(
+                                title: "Add Verified Launcher", approval: model.authorityApproval,
+                                action: "gate-launcher:\(gate.id)"
+                            ) { model.addApp(to: gate) }
                             .labelStyle(.titleAndIcon)
                             .help("Add Verified Launcher")
                         }
                     }
                     if model.selectedSection == .blessedScripts {
-                        Button {
-                            if let script = model.selectedBlessedScript {
-                                model.addApp(to: script)
-                            }
-                        } label: {
-                            Label("Add Verified Launcher", systemImage: "plus")
+                        if let script = model.selectedBlessedScript {
+                            AuthorityApprovalButton(
+                                title: "Add Verified Launcher", approval: model.authorityApproval,
+                                action: "script-launcher:\(script.path)"
+                            ) { model.addApp(to: script) }
+                            .labelStyle(.titleAndIcon)
+                            .help("Add Verified Launcher")
                         }
-                        .labelStyle(.titleAndIcon)
-                        .help("Add Verified Launcher")
                     }
                     if model.selectedSection == .settings,
                        model.selectedItem?.id == "secret-name-access" {
-                        Button {
-                            model.addSecretNameAccessApp()
-                        } label: {
-                            Label("Allow Verified Launcher to List Secret Names", systemImage: "plus")
-                        }
+                        AuthorityApprovalButton(
+                            title: "Allow Verified Launcher to List Secret Names",
+                            approval: model.authorityApproval, action: "secret-name-access"
+                        ) { model.addSecretNameAccessApp() }
                         .labelStyle(.titleAndIcon)
                         .help("Allow Verified Launcher to List Secret Names")
                     }
@@ -2897,10 +2923,12 @@ private struct StoredSecretDetailView: View {
             DirectAccessConfirmationView(
                 secretName: secret.account,
                 launcherName: selection.launcher.bundleIdentifier,
-                runtimeWarning: launcherRuntimeWarning(selection.runtimeRequirement)
+                runtimeWarning: launcherRuntimeWarning(selection.runtimeRequirement),
+                approval: model.authorityApproval, action: "direct-access:\(secret.account)"
             ) {
-                pendingDirectAccessLauncher = nil
-                model.addDirectAccessLauncher(selection, to: secret)
+                model.addDirectAccessLauncher(selection, to: secret) {
+                    pendingDirectAccessLauncher = nil
+                }
             }
         }
     }
@@ -3005,6 +3033,8 @@ private struct DirectAccessConfirmationView: View {
     let secretName: String
     let launcherName: String
     let runtimeWarning: String?
+    @ObservedObject var approval: AuthorityApprovalState
+    let action: String
     let confirm: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -3028,13 +3058,14 @@ private struct DirectAccessConfirmationView: View {
             .navigationTitle("Allow Direct Secret Access?")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { approval.cancel(action); dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Continue") { confirm() }
+                    AuthorityApprovalButton(title: "Continue", approval: approval, action: action, perform: confirm)
                 }
             }
         }
+        .onDisappear { approval.cancel(action) }
     }
 }
 
@@ -3559,6 +3590,13 @@ private struct AccessMetaLine: View {
 private struct BlessedScriptReviewView: View {
     @ObservedObject var model: DashboardModel
     let request: BlessedScriptReviewRequest
+    @ObservedObject private var approval: AuthorityApprovalState
+
+    init(model: DashboardModel, request: BlessedScriptReviewRequest) {
+        self.model = model
+        self.request = request
+        approval = model.authorityApproval
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3611,12 +3649,16 @@ private struct BlessedScriptReviewView: View {
                 .padding(22)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(approval.isPending("blessing"))
             Divider()
             HStack {
                 Button("Cancel", role: .cancel) { model.cancelPendingBlessing() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(request.declaration.snapshotIncompatibleInterpreter == nil ? "Bless Script" : "Bless Anyway") {
+                AuthorityApprovalButton(
+                    title: request.declaration.snapshotIncompatibleInterpreter == nil ? "Bless Script" : "Bless Anyway",
+                    approval: model.authorityApproval, action: "blessing"
+                ) {
                     model.approvePendingBlessing()
                 }
                 .buttonStyle(.borderedProminent)
@@ -3632,6 +3674,13 @@ private struct BlessedScriptReviewView: View {
 private struct LauncherHelperReviewView: View {
     @ObservedObject var model: DashboardModel
     let review: LauncherHelperReview
+    @ObservedObject private var approval: AuthorityApprovalState
+
+    init(model: DashboardModel, review: LauncherHelperReview) {
+        self.model = model
+        self.review = review
+        approval = model.authorityApproval
+    }
     @State private var selectedHelperIDs: Set<String> = []
 
     var body: some View {
@@ -3671,6 +3720,7 @@ private struct LauncherHelperReviewView: View {
                     .padding(22)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .disabled(approval.isPending("gate-launcher:\(review.gate.id)"))
             }
             .navigationTitle("Include App Helpers?")
             .toolbar {
@@ -3678,9 +3728,9 @@ private struct LauncherHelperReviewView: View {
                     Button("Cancel") { model.cancelLauncherHelperReview() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(selectedHelperIDs.isEmpty
-                        ? "Add Verified Launcher"
-                        : "Add Verified Launcher with Helpers"
+                    AuthorityApprovalButton(
+                        title: selectedHelperIDs.isEmpty ? "Add Verified Launcher" : "Add Verified Launcher with Helpers",
+                        approval: model.authorityApproval, action: "gate-launcher:\(review.gate.id)"
                     ) {
                         model.confirmLauncherHelperReview(selectedHelperIDs: selectedHelperIDs)
                     }
@@ -3841,6 +3891,7 @@ private func launcherList(
     _ launchers: [BlessedScriptLauncher],
     title: String = "Launcher Endorsements",
     empty: String = "No Verified Launchers endorsed.",
+    approval: AuthorityApprovalState? = nil,
     remove: @escaping (BlessedScriptLauncher) -> Void
 ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -3862,13 +3913,19 @@ private func launcherList(
                         .textSelection(.enabled)
                 }
                 Spacer()
-                Button {
-                    remove(launcher)
-                } label: {
-                    Image(systemName: "minus.circle")
+                if let approval {
+                    AuthorityApprovalButton(title: "Remove", approval: approval, action: "launchers") {
+                        remove(launcher)
+                    }
+                } else {
+                    Button {
+                        remove(launcher)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove Verified Launcher")
                 }
-                .buttonStyle(.plain)
-                .help("Remove Verified Launcher")
             }
             .padding(10)
             .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
@@ -3903,6 +3960,7 @@ private struct SecretNameAccessSettingsView: View {
 }
 
 private struct IPhoneApprovalSettingsView: View {
+    @StateObject private var approval = AuthorityApprovalState()
     @AppStorage(phoneApprovalEnabledDefaultsKey) private var enabled = false
     @State private var status = "Checking for iPhones…"
     @State private var isWorking = false
@@ -3932,10 +3990,13 @@ private struct IPhoneApprovalSettingsView: View {
             )
 
             if enabled {
-                Button("Disable iPhone Approval") {
+                AuthorityApprovalButton(title: "Disable iPhone Approval", approval: approval, action: "disable") {
                     isWorking = true
-                    status = "Waiting for Approval on iPhone…"
-                    PhoneApprovalCoordinator.shared.requestDisable { approved in
+                    approval.request(
+                        "disable", title: "Disable iPhone Approval",
+                        detail: "Future human Approvals will return to this Mac. Existing requests will be canceled."
+                    ) { approved in
+                        if approved { PhoneApprovalCoordinator.shared.disableAfterPhoneApproval() }
                         isWorking = false
                         status = approved ? "iPhone Approval disabled." : "Disable was denied or canceled."
                     }
@@ -3983,6 +4044,7 @@ private struct IPhoneApprovalSettingsView: View {
         } message: {
             Text("macOS will authenticate you. Recovery disables iPhone Approval, cancels pending requests, rotates the iCloud key, and invalidates every iPhone and other Mac on this account.")
         }
+        .onDisappear { approval.cancelAll(); isWorking = false }
     }
 
     private func refreshStatus() async {
@@ -3998,6 +4060,7 @@ private struct IPhoneApprovalSettingsView: View {
 }
 
 private struct TouchIDApprovalSettingsView: View {
+    @StateObject private var approval = AuthorityApprovalState()
     @State private var enabled = TouchIDApproval.isEnabled
     @State private var status = TouchIDApproval.isAvailable
         ? "Touch ID is available on this Mac."
@@ -4035,13 +4098,13 @@ private struct TouchIDApprovalSettingsView: View {
                 }
                 .disabled(isWorking)
             } else {
-                Button("Enable Touch ID Approval") {
+                AuthorityApprovalButton(title: "Enable Touch ID Approval", approval: approval, action: "enable") {
                     isWorking = true
                     status = PhoneApprovalCoordinator.shared.isEnabled
                         ? "Waiting for Approval on iPhone…"
                         : "Waiting for Touch ID…"
-                    requestAuthorityChangeApproval(
-                        title: "Enable Touch ID Approval",
+                    approval.request(
+                        "enable", title: "Enable Touch ID Approval",
                         detail: "Add biometric-only Approval as a human-presence surface on this Mac."
                     ) { approved in
                         guard approved else {
@@ -4066,6 +4129,7 @@ private struct TouchIDApprovalSettingsView: View {
                 .disabled(isWorking || !TouchIDApproval.isAvailable)
             }
         }
+        .onDisappear { approval.cancelAll(); isWorking = false }
     }
 }
 
@@ -4126,6 +4190,7 @@ private struct AutomaticApprovalFeedbackSettingsView: View {
 }
 
 private struct DetachedProcessAccessSettingsView: View {
+    @StateObject private var approval = AuthorityApprovalState()
     @AppStorage(keepLauncherAccessForDetachedProcessesDefaultsKey)
     private var keepsLauncherAccess = false
 
@@ -4139,7 +4204,6 @@ private struct DetachedProcessAccessSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Toggle(
-                "Keep Launcher Access for Detached Processes",
                 isOn: Binding(
                     get: { keepsLauncherAccess },
                     set: { enabled in
@@ -4147,15 +4211,21 @@ private struct DetachedProcessAccessSettingsView: View {
                             keepsLauncherAccess = false
                             return
                         }
-                        requestAuthorityChangeApproval(
-                            title: "Keep Launcher Access for Detached Processes",
+                        approval.request(
+                            "detached", title: "Keep Launcher Access for Detached Processes",
                             detail: "A live process may retain Launcher authority after its verified parent chain exits."
                         ) { approved in
                             if approved { keepsLauncherAccess = true }
                         }
                     }
                 )
-            )
+            ) {
+                AuthorityApprovalLabel(
+                    title: "Keep Launcher Access for Detached Processes", approval: approval,
+                    action: "detached", requiresApproval: !keepsLauncherAccess
+                )
+            }
+            .disabled(approval.isPending("detached"))
             Text("Off by default. When enabled, an exact signed process execution that participates in an automically authorized operation may continue using that Launcher’s current policy at the same Authorization Gate until the process or Automic Vault exits. New processes and other gates are not included.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -4167,10 +4237,12 @@ private struct DetachedProcessAccessSettingsView: View {
             Link("Learn about Launcher Bundles", destination: launcherBundleDocumentationURL)
                 .font(.caption)
         }
+        .onDisappear { approval.cancelAll() }
     }
 }
 
 private struct VerifiedLauncherHelpersSettingsView: View {
+    @StateObject private var approval = AuthorityApprovalState()
     @State private var configuration = loadVerifiedLauncherHelperConfiguration()
     @State private var status = ""
 
@@ -4197,12 +4269,12 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .onDisappear { approval.cancelAll() }
     }
 
     private func helperRow(_ helper: VerifiedLauncherHelper) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(
-                "\(helper.name) in \(helper.appName)",
                 isOn: Binding(
                     get: { configuration.isEnabled(helper) },
                     set: { next in
@@ -4210,15 +4282,21 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                             persist(helper, enabled: false)
                             return
                         }
-                        requestAuthorityChangeApproval(
-                            title: "Enable \(helper.name) Launcher Helper",
+                        approval.request(
+                            helper.id, title: "Enable \(helper.name) Launcher Helper",
                             detail: "Allow the exact signed \(helper.name) helper sealed inside \(helper.appName) to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
                         ) { approved in
                             if approved { persist(helper, enabled: true) }
                         }
                     }
                 )
-            )
+            ) {
+                AuthorityApprovalLabel(
+                    title: "\(helper.name) in \(helper.appName)", approval: approval,
+                    action: helper.id, requiresApproval: !configuration.isEnabled(helper)
+                )
+            }
+            .disabled(approval.isPending(helper.id))
             Text("\(helper.helperSigningIdentifier) → \(helper.appBundleIdentifier)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
@@ -4252,6 +4330,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
 }
 
 private struct GPGSigningSettingsView: View {
+    @StateObject private var approval = AuthorityApprovalState()
     let onCredentialSaved: () -> Void
     @State private var defaultConfigured = hasGPGSigningCredential(alternate: false)
     @State private var alternateConfigured = hasGPGSigningCredential(alternate: true)
@@ -4301,7 +4380,8 @@ private struct GPGSigningSettingsView: View {
             launcherList(
                 configuration.alternateKeyLaunchers,
                 title: "Verified Launchers using the alternate key",
-                empty: "No Verified Launchers use the alternate key."
+                empty: "No Verified Launchers use the alternate key.",
+                approval: approval
             ) { launcher in
                 updateLaunchers(
                     configuration.alternateKeyLaunchers.filter {
@@ -4311,7 +4391,7 @@ private struct GPGSigningSettingsView: View {
                 )
             }
 
-            Button("Add Verified Launcher…") {
+            AuthorityApprovalButton(title: "Add Verified Launcher…", approval: approval, action: "launchers") {
                 chooseLauncher { launcher in
                     guard let launcher,
                           !configuration.alternateKeyLaunchers.contains(where: {
@@ -4370,6 +4450,7 @@ private struct GPGSigningSettingsView: View {
                 onCredentialSaved()
             }
         }
+        .onDisappear { approval.cancelAll() }
     }
 
     private func credentialEditor(
@@ -4458,8 +4539,8 @@ private struct GPGSigningSettingsView: View {
     }
 
     private func updateLaunchers(_ launchers: [BlessedScriptLauncher], action: String) {
-        requestAuthorityChangeApproval(
-            title: action,
+        approval.request(
+            "launchers", title: action,
             detail: "This changes which protected signing credential a Verified Launcher may use."
         ) { approved in
             guard approved else { return }
@@ -4800,7 +4881,7 @@ private struct SecretGateDetailView: View {
                 }
 
                 VStack(spacing: 0) {
-                    DefaultAppPolicyRow(gate: gate, protection: gate.defaultProtection) {
+                    DefaultAppPolicyRow(gate: gate, protection: gate.defaultProtection, approval: model.authorityApproval) {
                         model.setDefaultProtection($0, for: gate)
                     }
                     if !gate.appPolicies.isEmpty { hairline }
@@ -4811,6 +4892,7 @@ private struct SecretGateDetailView: View {
                                 $0.launcherRequirement == app.requirement
                             },
                             gate: gate,
+                            approval: model.authorityApproval,
                             setProtection: { model.setProtection($0, for: app, in: gate) },
                             remove: { model.removeAppPolicy(app, from: gate) }
                         )
@@ -4860,6 +4942,7 @@ private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
     let launcherBundle: LauncherBundleEnrollment?
     let gate: SecretGate
+    let approval: AuthorityApprovalState
     let setProtection: (SecretGateProtection) -> Void
     let remove: () -> Void
     @State private var isConfirmingDelete = false
@@ -4891,8 +4974,8 @@ private struct ApprovedAppRow: View {
                     .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            ProtectionMenu(gate: gate, protection: app.protection, setProtection: setProtection)
-                .frame(width: 132, alignment: .trailing)
+            ProtectionMenu(gate: gate, protection: app.protection, approval: approval, action: "gate-policy:\(gate.id):\(app.requirement)", setProtection: setProtection)
+                .frame(minWidth: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -4913,6 +4996,7 @@ private struct ApprovedAppRow: View {
 private struct DefaultAppPolicyRow: View {
     let gate: SecretGate
     let protection: SecretGateProtection
+    let approval: AuthorityApprovalState
     let setProtection: (SecretGateProtection) -> Void
 
     var body: some View {
@@ -4929,16 +5013,39 @@ private struct DefaultAppPolicyRow: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            ProtectionMenu(gate: gate, protection: protection, setProtection: setProtection)
-                .frame(width: 132, alignment: .trailing)
+            ProtectionMenu(gate: gate, protection: protection, approval: approval, action: "gate-default:\(gate.id)", setProtection: setProtection)
+                .frame(minWidth: 132, alignment: .trailing)
         }
         .padding(.vertical, 10)
     }
 }
 
-private struct ProtectionMenu: NSViewRepresentable {
+private struct ProtectionMenu: View {
     let gate: SecretGate
     let protection: SecretGateProtection
+    @ObservedObject var approval: AuthorityApprovalState
+    let action: String
+    let setProtection: (SecretGateProtection) -> Void
+    @AppStorage(phoneApprovalEnabledDefaultsKey) private var phoneEnabled = false
+
+    var body: some View {
+        if approval.isPending(action) {
+            AuthorityApprovalLabel(title: "Change Access Level", approval: approval, action: action)
+                .font(.caption)
+        } else {
+            NativeProtectionMenu(
+                gate: gate, protection: protection,
+                usesPhone: phoneEnabled && authorityChangeUsesIPhone,
+                setProtection: setProtection
+            )
+        }
+    }
+}
+
+private struct NativeProtectionMenu: NSViewRepresentable {
+    let gate: SecretGate
+    let protection: SecretGateProtection
+    let usesPhone: Bool
     let setProtection: (SecretGateProtection) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -4964,11 +5071,18 @@ private struct ProtectionMenu: NSViewRepresentable {
     }
 
     private func configureItems(in button: NSPopUpButton) {
-        let titles = gate.availableProtections.map(gate.protectionTitle)
-        guard button.itemTitles != titles else { return }
         button.removeAllItems()
         for candidate in gate.availableProtections {
             button.addItem(withTitle: gate.protectionTitle(candidate))
+            if usesPhone && candidate.addsAuthority(over: protection) {
+                let title = NSMutableAttributedString(string: gate.protectionTitle(candidate) + "  ")
+                let attachment = NSTextAttachment()
+                attachment.image = NSImage(systemSymbolName: "iphone", accessibilityDescription: "Approval on iPhone")?
+                    .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+                title.append(NSAttributedString(attachment: attachment))
+                button.lastItem?.attributedTitle = title
+                button.lastItem?.toolTip = "Requires Approval on iPhone."
+            }
             if #available(macOS 14.4, *) {
                 button.lastItem?.subtitle = gate.protectionSubtitle(candidate)
             }
@@ -4991,9 +5105,9 @@ private struct ProtectionMenu: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject {
-        var parent: ProtectionMenu
+        var parent: NativeProtectionMenu
 
-        init(parent: ProtectionMenu) {
+        init(parent: NativeProtectionMenu) {
             self.parent = parent
         }
 
