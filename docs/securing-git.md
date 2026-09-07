@@ -37,22 +37,37 @@ Use SSH.
 
 ## Gate GPG Commit Signing
 
-Automic Vault can also gate use of the private key that signs Git commits and
-tags. Open **Settings → GPG Signing**, export the private key from GnuPG as
-instructed there, and select **Configure Git**. Git then invokes the `av-gpg`
-Command inside the signed app bundle. `av-gpg` forwards the payload to
-`av gpg-sign` at the GPG Signing Gate; it never receives the private key.
+Open **Settings → GPG Signing**:
 
-The settings also support an alternate GPG Signing Credential for an exact
-list of Verified Launchers. This is useful for agents: agent-authored commits
-can use a visibly different key from human-authored commits. The list is bound
-to designated requirements rather than app names or paths, and changing it
-requires Approval.
+1. Add the default GPG Signing Credential by importing its armored private key.
+2. Copy the public key Automic Vault displays and add it to your Git host.
+3. Select **Configure Git**.
 
-The signing Target necessarily handles the private key in memory while it
-creates the signature. Automic Vault controls its application and zeroizes
-transient input buffers; it does not claim that a compromised Target cannot
-inspect its own memory.
+Automic Vault sets Git's global `gpg.program`, `gpg.format=openpgp`, and
+`commit.gpgSign=true`. Your normal workflow now produces signed commits:
+
+```sh
+$ git commit --message 'document gated signing'
+$ git tag --sign v1.2.3
+```
+
+Git calls the bundled `av-gpg` Command. The GPG Signing Gate authorizes the
+complete signing request and the signed `av gpg-sign` Target creates the
+detached signature. Git and `av-gpg` never receive the private key or
+passphrase.
+
+The gate offers **Approval Required** and **Allow Signing**. To give agents a
+distinct signing identity, import or generate an alternate credential, upload
+its displayed public key, then add the exact Verified Launchers that should use
+it. Missing alternate credential material fails closed instead of falling back
+to the default credential.
+
+Launcher selections bind designated requirements rather than app names or
+paths. Changing the selection requires Approval.
+
+The signing Target handles the private key in memory while creating the
+signature. Automic Vault controls its application and zeroizes transient input
+buffers; a compromised Target can still inspect its own memory.
 
 ## Check Git Credential Configuration
 
