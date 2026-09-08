@@ -41,12 +41,19 @@ struct SecretPipe {
     writer: File,
 }
 
-fn duplicate(file: &impl AsRawFd, minimum: i32) -> io::Result<File> {
-    let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, minimum) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
+fn duplicate(file: &impl AsRawFd, mappings: &BTreeMap<String, i32>) -> io::Result<File> {
+    let mut minimum = 3;
+    loop {
+        let fd = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD_CLOEXEC, minimum) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let duplicate = unsafe { File::from_raw_fd(fd) };
+        if !mappings.values().any(|destination| *destination == fd) {
+            return Ok(duplicate);
+        }
+        minimum = fd + 1;
     }
-    Ok(unsafe { File::from_raw_fd(fd) })
 }
 
 fn reserve(mappings: &BTreeMap<String, i32>) -> Result<BTreeMap<String, SecretPipe>, String> {
@@ -59,15 +66,14 @@ fn reserve(mappings: &BTreeMap<String, i32>) -> Result<BTreeMap<String, SecretPi
             ));
         }
     }
-    let minimum = mappings.values().max().copied().unwrap_or(2) + 1;
     let mut pipes = BTreeMap::new();
     for (name, destination) in mappings {
         let make = || -> io::Result<SecretPipe> {
             let (reader, writer) = io::pipe()?;
-            let high_reader = duplicate(&reader, minimum)?;
-            let high_writer = duplicate(&writer, minimum)?;
+            let temporary_reader = duplicate(&reader, mappings)?;
+            let temporary_writer = duplicate(&writer, mappings)?;
             drop((reader, writer));
-            if unsafe { libc::dup2(high_reader.as_raw_fd(), *destination) } < 0 {
+            if unsafe { libc::dup2(temporary_reader.as_raw_fd(), *destination) } < 0 {
                 return Err(io::Error::last_os_error());
             }
             let reader = unsafe { File::from_raw_fd(*destination) };
@@ -76,7 +82,7 @@ fn reserve(mappings: &BTreeMap<String, i32>) -> Result<BTreeMap<String, SecretPi
             }
             Ok(SecretPipe {
                 reader,
-                writer: high_writer,
+                writer: temporary_writer,
             })
         };
         pipes.insert(

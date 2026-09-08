@@ -218,6 +218,41 @@ fn fd_injection_preserves_bytes_eof_and_separates_environment() {
 }
 
 #[test]
+fn fd_injection_can_use_the_highest_descriptor_under_the_process_limit() {
+    let home = temp_home("inject-fd-limit");
+    let keychain = home.join("keychain");
+    fs::create_dir_all(&keychain).unwrap();
+    fs::write(keychain.join("FOO"), "exact value\n").unwrap();
+    fs::write(keychain.join("BAR"), "second").unwrap();
+    let output = Command::new("/bin/sh")
+        .args([
+            "-c",
+            "ulimit -n 32 || exit; exec 3<&- 4<&- 5<&- 31<&-; exec \"$@\"",
+            "inject-fd-limit-test",
+            env!("CARGO_BIN_EXE_av"),
+            "inject",
+            "--mode=fd",
+            "+FOO:31",
+            "+BAR:5",
+            "--",
+            "/bin/cat",
+            "/dev/fd/31",
+            "/dev/fd/5",
+        ])
+        .env("AUTOMIC_VAULT_TEST_KEYCHAIN_DIR", &keychain)
+        .output()
+        .unwrap();
+    if unsafe { libc::geteuid() } != 0 {
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(output.stdout, b"exact value\nsecond");
+        assert!(output.stderr.is_empty(), "{}", stderr(&output));
+    } else {
+        assert!(!output.status.success());
+    }
+    fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
 fn fd_injection_missing_oversized_or_occupied_descriptors_never_start_target() {
     use std::os::unix::process::CommandExt;
     let home = temp_home("inject-fd-errors");
