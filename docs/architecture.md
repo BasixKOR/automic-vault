@@ -207,6 +207,21 @@ between verification and execution, and warns on every run. The Blessing stores
 the override, so existing Blessings must be reviewed again before they can use
 canonical-path execution.
 
+For compatibility, a script with no capabilities manifest uses Capability
+Inheritance. `capabilities: { inherit: true }` makes the same behavior explicit.
+Blessing records created before this mode was stored retain their previous
+inheritance behavior until the user reblesses the script.
+An explicit `capabilities: {}` instead establishes a memory-only empty capability
+ceiling for that exact execution. It blocks automic authorization inherited from
+an outer Blessed Script, Launcher policy, Direct Access Rules, and Temporary
+Access Grants; a later gated request may still receive human Approval. A
+snapshot-compatible script that requests no Secret Names and declares this empty
+ceiling starts without Approval because doing so grants no authority. Scripts
+that request Secret Names still require the ordinary Authorization Decision and
+record before release, and then run beneath the empty ceiling. The ceiling uses
+the same live-ancestry evidence and memory-only lifetime as active Blessed Script
+state; restarting Automic Vault or losing observable ancestry ends it.
+
 ### Distribution
 
 The app, CLI, signed helpers, signed fork Isotope releases and Isotopes tap,
@@ -239,9 +254,10 @@ biometric result. Reuse still requires an Authorization Record before Secret
 Application. Operations that may receive long-lived AWS credentials remain
 excluded and require fresh Approval.
 
-An active Blessing is evaluated before a Temporary Access Grant. A matching
-grant may authorize a recognized operation beyond a narrower Blessing only
-inside the grant's exact scope. Matching happens after ordinary Gate Client,
+An active Blessing is evaluated before a Temporary Access Grant. Unless an
+explicit empty capability ceiling is active, a matching grant may authorize a
+recognized operation beyond a narrower Blessing only inside the grant's exact
+scope. Matching happens after ordinary Gate Client,
 Target, request, Secret, gate, Launcher, and runtime verification succeeds.
 Before presenting a queued Approval, the service checks Temporary Access Grants
 again against the still-live Gate Client, current Agent Task Context, and

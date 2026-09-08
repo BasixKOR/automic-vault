@@ -196,6 +196,35 @@ The script declares the Secrets and Tool capabilities it needs:
 # ---
 ```
 
+For compatibility, omitting the manifest inherits automic authority already
+available from the calling context. Make that choice explicit with:
+
+```sh
+# --- automic-vault
+# capabilities: { inherit: true }
+# ---
+```
+
+Use an empty declaration to ensure every later gated operation requires
+Approval while Automic Vault can attribute it to the live script execution,
+regardless of which Launcher calls the script:
+
+```sh
+# --- automic-vault
+# capabilities: {}
+# ---
+```
+
+The Secret Names in the `av inject` shebang are authorized separately. A script
+with no Secret Names and `capabilities: {}` starts without Approval because it
+receives no Automic Vault authority. This is an authorization ceiling, not a
+sandbox: ordinary commands still run with the user's normal operating-system
+permissions. Restarting Automic Vault or losing observable ancestry ends the
+memory-only ceiling, just as it ends active Blessed Script state.
+
+Compatibility debts reserved for the next major version are tracked in
+[Future Breaking Changes](docs/future-breaking-changes.md).
+
 Editing the script or declaration invalidates the Blessing. A Launcher
 Endorsement lets one Verified Launcher automically authorize that exact
 Blessing. Use Blessed Scripts for reviewed work that exits, and Tool
