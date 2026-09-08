@@ -39,6 +39,7 @@ python3 "$repo/scripts/test-cli-install-refresh.py"
 
 checks=(
   --self-check-approvals
+  --self-check-approval-callsite
   --self-check-approval-process-execution
   --self-check-standalone-launchers
   --self-check-secret-mutations

@@ -196,9 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isUserSessionActive = false
         temporaryAccessGrants.cancelAll()
         refreshTemporaryAccessGrants()
-        if NSApp.modalWindow is ApprovalPanel {
-            NSApp.abortModal()
-        }
+        abortActiveApprovalPrompt()
     }
 
     @objc private func userSessionDidBecomeActive(_ notification: Notification) {
@@ -210,9 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         areScreensAwake = false
         temporaryAccessGrants.cancelAll()
         refreshTemporaryAccessGrants()
-        if NSApp.modalWindow is ApprovalPanel {
-            NSApp.abortModal()
-        }
+        abortActiveApprovalPrompt()
     }
 
     @objc private func screensDidWake(_ notification: Notification) {
@@ -397,9 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshLiveSecretUses()
         liveSecretUseTimer?.invalidate()
         liveSecretUseTimer = nil
-        if NSApp.modalWindow is ApprovalPanel {
-            NSApp.abortModal()
-        }
+        abortActiveApprovalPrompt()
         automaticApprovalFlashWorkItem?.cancel()
         automaticApprovalFlashWorkItem = nil
         preFlashStatusImage = nil
@@ -522,9 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func beginUpdating(with alert: NSAlert) -> Bool {
         temporaryAccessGrants.cancelAll()
         refreshTemporaryAccessGrants()
-        if NSApp.modalWindow is ApprovalPanel {
-            NSApp.abortModal()
-        }
+        abortActiveApprovalPrompt()
         let mainWindowWasVisible = mainWindow?.isVisible == true
         mainWindow?.orderOut(nil)
         isUpdating = true
@@ -2648,6 +2640,7 @@ private enum ApprovalDecision: Equatable {
     case approved
     case alwaysApproved
     case temporaryWriteAccess
+    case reevaluated
 }
 
 private extension ApprovalDecision {
@@ -2659,6 +2652,8 @@ private extension ApprovalDecision {
         case .approved: .approved
         case .alwaysApproved: .alwaysApproved
         case .temporaryWriteAccess: .temporaryAccessGrant
+        case .reevaluated:
+            preconditionFailure(".reevaluated decisions must not be stored into reuse cache")
         }
     }
 }
@@ -2716,7 +2711,7 @@ private func performApprovedSecretMutation(
     perform: ((SecretMutation) -> OSStatus)? = nil,
     preflight: (() -> String?)? = nil,
     requestOverride: ApprovalRequest? = nil
-) -> (status: OSStatus?, error: String?) {
+) async -> (status: OSStatus?, error: String?) {
     let request = requestOverride ?? mutation.approvalRequest(callerPath: callerPath)
     if cancellation?.isCanceled == true {
         _ = onAccessRequest(canceledAccessRequestRecord(
@@ -2736,18 +2731,22 @@ private func performApprovedSecretMutation(
         return (nil, "secret mutation denied while user session is inactive")
     }
 
-    let approval = decision?(request) ?? showApprovalAlert(
-        request: request,
-        callerPath: callerPath,
-        pid: pid,
-        signing: signing,
-        scriptApproval: nil,
-        launcher: launcher,
-        launcherFallbackPath: launcherFallbackPath,
-        automaticApprovalExplanation: nil,
-        cancellation: cancellation,
-        compact: mutation.usesCompactApproval
-    )
+    let approval = if let decision {
+        decision(request)
+    } else {
+        await showApprovalAlert(
+            request: request,
+            callerPath: callerPath,
+            pid: pid,
+            signing: signing,
+            scriptApproval: nil,
+            launcher: launcher,
+            launcherFallbackPath: launcherFallbackPath,
+            automaticApprovalExplanation: nil,
+            cancellation: cancellation,
+            compact: mutation.usesCompactApproval
+        )
+    }
     if approval == .interrupted {
         _ = onAccessRequest(interruptedAccessRequestRecord(
             request: request, callerPath: callerPath, launcher: launcher
@@ -2831,38 +2830,59 @@ private func approvalDecision(
 final class ApprovalCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var canceled = false
-    private var observer: (@MainActor @Sendable () -> Void)?
+    private var observers: [UUID: @MainActor @Sendable () -> Void] = [:]
 
     var isCanceled: Bool {
         lock.withLock { canceled }
     }
 
     func cancel() {
-        let observer: (@MainActor @Sendable () -> Void)? = lock.withLock {
-            guard !canceled else { return nil }
+        let list: [@MainActor @Sendable () -> Void] = lock.withLock {
+            guard !canceled else { return [] }
             canceled = true
-            defer { self.observer = nil }
-            return self.observer
+            let items = Array(self.observers.values)
+            self.observers.removeAll()
+            return items
         }
-        if let observer {
-            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
-                MainActor.assumeIsolated { observer() }
+        if !list.isEmpty {
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    for item in list {
+                        item()
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        for item in list {
+                            item()
+                        }
+                    }
+                }
             }
         }
     }
 
-    func observe(_ observer: @escaping @MainActor @Sendable () -> Void) -> Bool {
+    @discardableResult
+    func observe(id: UUID = UUID(), _ observer: @escaping @MainActor @Sendable () -> Void) -> Bool {
         lock.withLock {
             guard !canceled else { return false }
-            self.observer = observer
+            observers[id] = observer
             return true
         }
     }
 
-    func stopObserving() {
-        lock.withLock { observer = nil }
+    func stopObserving(id: UUID? = nil) {
+        lock.withLock {
+            if let id {
+                observers.removeValue(forKey: id)
+            } else {
+                observers.removeAll()
+            }
+        }
     }
 }
+
 
 private func isApprovalCancellationEvent(_ event: xpc_object_t) -> Bool {
     xpc_equal(event, XPC_ERROR_CONNECTION_INTERRUPTED)
@@ -3754,7 +3774,7 @@ private final class ApprovalServer: @unchecked Sendable {
             )
             return
         }
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
                     request: request, callerPath: callerPath, launcher: launcher
@@ -3773,7 +3793,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "list denied while user session is inactive")
                 return
             }
-            let decision = showApprovalAlert(
+            let decision = await showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
                 pid: pid,
@@ -4534,113 +4554,120 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.sendEvent(event, to: peer)
             }
         }
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if cancellation.isCanceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
                     request: request, callerPath: callerPath, launcher: promptLauncher
                 ))
                 return
             }
-            var currentIdentity = AVProcessIdentity()
-            if av_process_identity(pid, &currentIdentity),
-               sameProcessIdentity(identity, currentIdentity),
-               let currentLiveSigning = liveSigningInfo(pid: pid)
-            {
-                let currentCallerPath = pathString(currentIdentity)
-                let currentSigning = SigningInfo(
-                    identifier: currentLiveSigning.identifier,
-                    teamIdentifier: currentLiveSigning.teamIdentifier
-                )
-                var currentLaunchers = launcherIdentities(for: currentIdentity)
-                if currentLaunchers.isEmpty,
-                   let currentLauncher = launcherIdentity(pid: pid, identity: currentIdentity)
+            let tryFulfillFromGrantOrCache: @MainActor () -> Bool = {
+                var currentIdentity = AVProcessIdentity()
+                if av_process_identity(pid, &currentIdentity),
+                   sameProcessIdentity(identity, currentIdentity),
+                   let currentLiveSigning = liveSigningInfo(pid: pid)
                 {
-                    currentLaunchers.append(currentLauncher)
-                }
-                if currentLiveSigning.mainExecutable == currentCallerPath,
-                   currentSigning.identifier == signing.identifier,
-                   currentSigning.teamIdentifier == signing.teamIdentifier,
-                   isAllowedCaller(path: currentCallerPath, signing: currentSigning),
-                   !self.activeEmptyCapabilityCeiling(pid: pid, identity: currentIdentity),
-                   let configuredGate,
-                   let classification,
-                   request.sshPeer == nil,
-                   let currentAgentTaskContext = agentTaskContext(pid: pid),
-                   self.handleTemporaryAccessGrant(
-                       request: request,
-                       gate: configuredGate,
-                       classification: classification,
-                       agentTaskContext: currentAgentTaskContext,
-                       launchers: currentLaunchers,
-                       callerPath: currentCallerPath,
-                       awsRegistration: awsRegistration,
-                       scriptApproval: scriptApproval,
-                       authorizationGate: authorizationGate,
-                       processChains: retainedProcessChains(for: currentIdentity),
-                       pid: pid,
-                       identity: currentIdentity,
-                       peer: peer,
-                       message: message
-                   )
-                {
-                    return
-                }
-            }
-            let cachedDecision = self.transientApprovals.decision(for: transientApproval)
-            if let decision = cachedDecision {
-                if decision == .denied {
-                    _ = self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Denied",
-                        approvalSource: "Auto",
-                        reason: "Reused recent denial",
-                        launcher: promptLauncher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
-                    return
-                }
-                do {
-                    let record = accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Approved",
-                        approvalSource: "Auto",
-                        reason: "Reused recent approval",
-                        launcher: promptLauncher
+                    let currentCallerPath = pathString(currentIdentity)
+                    let currentSigning = SigningInfo(
+                        identifier: currentLiveSigning.identifier,
+                        teamIdentifier: currentLiveSigning.teamIdentifier
                     )
-                    guard try self.fulfillApprovedRequest(
-                        request: request,
-                        awsRegistration: awsRegistration,
-                        pid: pid,
-                        identity: identity,
-                        record: record,
-                        launcher: promptLauncher,
-                        release: { payload in
-                            self.reply(
-                                peer,
-                                to: message,
-                                ok: true,
-                                error: nil,
-                                secrets: payload.secrets,
-                                value: payload.value
-                            )
-                        }
-                    ) else {
-                        self.reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
-                        return
+                    var currentLaunchers = launcherIdentities(for: currentIdentity)
+                    if currentLaunchers.isEmpty,
+                       let currentLauncher = launcherIdentity(pid: pid, identity: currentIdentity)
+                    {
+                        currentLaunchers.append(currentLauncher)
                     }
-                } catch {
-                    _ = self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Failed",
-                        approvalSource: "Auto",
-                        reason: error.localizedDescription,
-                        launcher: promptLauncher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                    if currentLiveSigning.mainExecutable == currentCallerPath,
+                       currentSigning.identifier == signing.identifier,
+                       currentSigning.teamIdentifier == signing.teamIdentifier,
+                       isAllowedCaller(path: currentCallerPath, signing: currentSigning),
+                       !self.activeEmptyCapabilityCeiling(pid: pid, identity: currentIdentity),
+                       let configuredGate,
+                       let classification,
+                       request.sshPeer == nil,
+                       let currentAgentTaskContext = agentTaskContext(pid: pid),
+                       self.handleTemporaryAccessGrant(
+                           request: request,
+                           gate: configuredGate,
+                           classification: classification,
+                           agentTaskContext: currentAgentTaskContext,
+                           launchers: currentLaunchers,
+                           callerPath: currentCallerPath,
+                           awsRegistration: awsRegistration,
+                           scriptApproval: scriptApproval,
+                           authorizationGate: authorizationGate,
+                           processChains: retainedProcessChains(for: currentIdentity),
+                           pid: pid,
+                           identity: currentIdentity,
+                           peer: peer,
+                           message: message
+                       )
+                    {
+                        return true
+                    }
                 }
+                let cachedDecision = self.transientApprovals.decision(for: transientApproval)
+                if let decision = cachedDecision {
+                    if decision == .denied {
+                        _ = self.onAccessRequest(accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Denied",
+                            approvalSource: "Auto",
+                            reason: "Reused recent denial",
+                            launcher: promptLauncher
+                        ))
+                        self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
+                        return true
+                    }
+                    do {
+                        let record = accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Approved",
+                            approvalSource: "Auto",
+                            reason: "Reused recent approval",
+                            launcher: promptLauncher
+                        )
+                        guard try self.fulfillApprovedRequest(
+                            request: request,
+                            awsRegistration: awsRegistration,
+                            pid: pid,
+                            identity: identity,
+                            record: record,
+                            launcher: promptLauncher,
+                            release: { payload in
+                                self.reply(
+                                    peer,
+                                    to: message,
+                                    ok: true,
+                                    error: nil,
+                                    secrets: payload.secrets,
+                                    value: payload.value
+                                )
+                            }
+                        ) else {
+                            self.reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+                            return true
+                        }
+                    } catch {
+                        _ = self.onAccessRequest(accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Failed",
+                            approvalSource: "Auto",
+                            reason: error.localizedDescription,
+                            launcher: promptLauncher
+                        ))
+                        self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                    }
+                    return true
+                }
+                return false
+            }
+
+            if tryFulfillFromGrantOrCache() {
                 return
             }
 
@@ -4662,7 +4689,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
-            let decision = showApprovalAlert(
+            let decision = await showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
                 pid: pid,
@@ -4678,8 +4705,12 @@ private final class ApprovalServer: @unchecked Sendable {
                 temporaryGrantCandidate: temporaryGrantCandidate,
                 temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
                 classification: classification,
-                cancellation: cancellation
+                cancellation: cancellation,
+                reevaluate: tryFulfillFromGrantOrCache
             )
+            if decision == .reevaluated {
+                return
+            }
             if decision == .canceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
                     request: request, callerPath: callerPath, launcher: promptLauncher
@@ -5080,7 +5111,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     self.sendEvent(humanApprovalRequiredEvent, to: peer)
                 }
             }
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if cancellation.isCanceled {
                     _ = self.onAccessRequest(canceledAccessRequestRecord(
                         request: request, callerPath: callerPath, launcher: launcher
@@ -5099,7 +5130,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     self.reply(peer, to: message, ok: false, error: "human approval unavailable")
                     return
                 }
-                let decision = showApprovalAlert(
+                let decision = await showApprovalAlert(
                     request: request,
                     callerPath: callerPath,
                     pid: pid,
@@ -5289,12 +5320,12 @@ private final class ApprovalServer: @unchecked Sendable {
         let warning = targetProtection?.allowsSecretGateAccess == true ? nil :
             "The target does not meet Automic Vault’s Hardened Runtime requirements. Code injected into it may steal this Proxy Session’s references and credential, then reuse destinations you allow for the session."
 
-        DispatchQueue.main.async {
+        Task { @MainActor in
             guard !cancellation.isCanceled, self.canRequestHumanApproval() else {
                 self.reply(peer, to: message, ok: false, error: "Proxy Session approval unavailable")
                 return
             }
-            let decision = showApprovalAlert(
+            let decision = await showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
                 pid: pid,
@@ -5383,7 +5414,7 @@ private final class ApprovalServer: @unchecked Sendable {
                                     : "The proxy will request these secrets on demand. Query values remain hidden; names: \(destination.queryNames.sorted().joined(separator: ", ")).",
                                 selectedSecretValues: destination.selectedSecretValues
                             )
-                            return switch showApprovalAlert(
+                            return switch await showApprovalAlert(
                                 request: destinationRequest,
                                 callerPath: callerPath,
                                 pid: pid,
@@ -5400,6 +5431,8 @@ private final class ApprovalServer: @unchecked Sendable {
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
                             case .canceled, .interrupted, .denied, .temporaryWriteAccess:
                                 ProxyDestinationDecision.deny
+                            case .reevaluated:
+                                preconditionFailure("proxy destination approval cannot be reevaluated")
                             }
                         }
                     )
@@ -6499,8 +6532,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 selectedSecretValues: request.selectedSecretValues
             )
         } ?? request
-        DispatchQueue.main.async {
-            let result = performApprovedSecretMutation(
+        Task { @MainActor in
+            let result = await performApprovedSecretMutation(
                 mutation,
                 callerPath: caller.path,
                 pid: caller.pid,
@@ -8419,7 +8452,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 key.withCString { keyPointer in
                     if xpc_dictionary_get_string(message, "op").map(String.init(cString:)) == "inject-fd" {
                         Data(value.utf8).withUnsafeBytes { bytes in
-                            xpc_dictionary_set_data(values, keyPointer, bytes.baseAddress, bytes.count)
+                            if let baseAddress = bytes.baseAddress {
+                                xpc_dictionary_set_data(values, keyPointer, baseAddress, bytes.count)
+                            } else {
+                                "".withCString { emptyPtr in
+                                    xpc_dictionary_set_data(values, keyPointer, emptyPtr, 0)
+                                }
+                            }
                         }
                     } else {
                         value.withCString { valuePointer in
@@ -11584,7 +11623,9 @@ private final class ApprovalPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown, !isKeyWindow {
             allowsKey = true
-            makeKey()
+            if isVisible {
+                makeKey()
+            }
         }
         super.sendEvent(event)
     }
@@ -11637,6 +11678,100 @@ private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate:
 }
 
 @MainActor
+private enum ActiveApprovalPrompt {
+    static var current: ApprovalPromptState?
+    static var abortGeneration: UInt64 = 0
+
+    static func abort() {
+        abortGeneration += 1
+        current?.resolve(.canceled)
+        HumanApprovalQueue.shared.cancelAllPending()
+    }
+}
+
+@MainActor
+func abortActiveApprovalPrompt() {
+    ActiveApprovalPrompt.abort()
+}
+
+enum ApprovalDecisionSource {
+    case standardMac
+    case touchID
+    case phone
+    case programmatic
+}
+
+private final class ApprovalPromptState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hasDecision = false
+    private var continuation: CheckedContinuation<ApprovalDecision, Never>?
+    weak var panel: NSPanel?
+    var remoteRequestID: UUID?
+    var usesIPhoneApproval: Bool = false
+    var presentationToken: UUID?
+    weak var cancellation: ApprovalCancellation?
+
+    init(continuation: CheckedContinuation<ApprovalDecision, Never>, panel: NSPanel) {
+        self.continuation = continuation
+        self.panel = panel
+    }
+
+    @MainActor
+    func resolve(
+        _ result: ApprovalDecision,
+        source: ApprovalDecisionSource = .programmatic,
+        phoneEnabled: Bool = PhoneApprovalCoordinator.shared.isEnabled,
+        touchIDEnabled: Bool = TouchIDApproval.isEnabled
+    ) {
+        let shouldResume: Bool = lock.withLock {
+            guard !hasDecision else { return false }
+            hasDecision = true
+            return true
+        }
+        guard shouldResume else { return }
+
+        var finalResult = result
+        if result == .approved || result == .alwaysApproved || result == .temporaryWriteAccess {
+            switch source {
+            case .standardMac:
+                if phoneEnabled || touchIDEnabled {
+                    finalResult = .interrupted
+                }
+            case .touchID:
+                if !touchIDEnabled {
+                    finalResult = .interrupted
+                }
+            case .phone:
+                if !phoneEnabled {
+                    finalResult = .interrupted
+                }
+            case .programmatic:
+                break
+            }
+        }
+
+        if ActiveApprovalPrompt.current === self {
+            ActiveApprovalPrompt.current = nil
+        }
+
+        if let token = presentationToken {
+            cancellation?.stopObserving(id: token)
+        }
+        if usesIPhoneApproval, let remoteRequestID {
+            PhoneApprovalCoordinator.shared.cancel(remoteRequestID)
+        }
+        #if !DEBUG
+        if finalResult == .approved || finalResult == .alwaysApproved {
+            PostHogTelemetry.shared.captureExplicitApproval()
+        }
+        #endif
+        panel?.orderOut(nil)
+        continuation?.resume(returning: finalResult)
+        continuation = nil
+    }
+}
+
+@MainActor
 private func showApprovalAlert(
     request: ApprovalRequest,
     callerPath: String,
@@ -11655,17 +11790,52 @@ private func showApprovalAlert(
     persistentApprovalLabel: String = "Always Allow",
     classification: SecretGateRequestClassification? = nil,
     cancellation: ApprovalCancellation? = nil,
-    compact: Bool = false
-) -> ApprovalDecision {
+    compact: Bool = false,
+    reevaluate: (@MainActor () -> Bool)? = nil
+) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let sshTimer = request.sshPeer.map { peer in
         let timer = Timer(timeInterval: 1, repeats: true) { _ in
             do { try peer.validate() } catch { cancellation?.cancel() }
         }
-        RunLoop.main.add(timer, forMode: .modalPanel)
+        RunLoop.main.add(timer, forMode: .common)
         return timer
     }
     defer { sshTimer?.invalidate() }
+
+    let startGeneration = ActiveApprovalPrompt.abortGeneration
+    let queueToken = UUID()
+    let acquired = await HumanApprovalQueue.shared.acquire(
+        id: queueToken,
+        isCanceled: { cancellation?.isCanceled == true },
+        registerCancellation: { onCancel in
+            let observed = cancellation?.observe(id: queueToken) {
+                onCancel()
+            } ?? true
+            if !observed {
+                onCancel()
+            }
+        }
+    )
+    cancellation?.stopObserving(id: queueToken)
+    guard acquired else {
+        return terminalApprovalDecision(.canceled, cancellation: cancellation)
+    }
+    defer {
+        HumanApprovalQueue.shared.release()
+    }
+    // If an abort occurred (e.g. user session lock, screen sleep, or app update)
+    // while waiting in the queue or right as this waiter was promoted, bail out
+    // immediately rather than presenting a stale prompt.
+    guard cancellation?.isCanceled != true,
+          ActiveApprovalPrompt.abortGeneration == startGeneration
+    else {
+        return terminalApprovalDecision(.canceled, cancellation: cancellation)
+    }
+
+    if reevaluate?() == true {
+        return .reevaluated
+    }
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let processSecurity = approvalProcessSecurity(
@@ -11707,99 +11877,96 @@ private func showApprovalAlert(
     )
     let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
     let usesTouchIDApproval = TouchIDApproval.isEnabled
-    var decision = ApprovalDecision.canceled
-    var hasDecision = false
-    var remoteRequestID: UUID?
-    var completedBeforeModal = false
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
     let panel = makeApprovalPanel()
-    panel.contentView = NSHostingView(
-        rootView: ApprovalPromptView(
-            content: content,
-            maximumHeight: maximumHeight,
-            allowsPersistentApproval: allowsPersistentApproval,
-            temporaryGrantCandidate: temporaryGrantCandidate,
-            persistentApprovalLabel: persistentApprovalLabel,
-            usesIPhoneApproval: usesIPhoneApproval,
-            usesTouchIDApproval: usesTouchIDApproval,
-            compact: compact,
-            decide: {
-                guard !hasDecision else { return }
-                hasDecision = true
-                decision = $0
-                if usesIPhoneApproval, let remoteRequestID {
-                    PhoneApprovalCoordinator.shared.cancel(remoteRequestID)
-                }
-                #if !DEBUG
-                if decision == .approved || decision == .alwaysApproved {
-                    PostHogTelemetry.shared.captureExplicitApproval()
-                }
-                #endif
-                NSApp.stopModal()
-            }
-        )
-    )
-    if usesIPhoneApproval {
-        do {
-            let phoneRequest = try PhoneApprovalRequest(
-                macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
-                launcher: content.requesterName,
-                tool: autoApprovalToolName(request),
-                command: content.command,
-                cwd: content.cwd,
-                secretNames: request.keys.sorted(),
-                reason: automaticApprovalExplanation
-                    ?? request.detail
-                    ?? request.title
-                    ?? "Human Approval is required.",
-                risks: phoneApprovalRisks(
-                    request: request,
-                    classification: classification,
-                    hasSecurityWarning: automaticApprovalExplanation != nil || blessing != nil
-                ),
-                details: content.sections.map { section in
-                    ApprovalDetailSection(
-                        title: section.title,
-                        rows: section.rows.map { .init(label: $0.label, value: $0.value) }
-                    )
-                },
-                temporaryAccessGrantScope: temporaryGrantCandidate.map { candidate in
-                    "\(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+
+    let decision: ApprovalDecision = await withCheckedContinuation { continuation in
+        let state = ApprovalPromptState(continuation: continuation, panel: panel)
+        ActiveApprovalPrompt.current = state
+        state.usesIPhoneApproval = usesIPhoneApproval
+        state.cancellation = cancellation
+
+        let presentationToken = UUID()
+        state.presentationToken = presentationToken
+
+        panel.contentView = NSHostingView(
+            rootView: ApprovalPromptView(
+                content: content,
+                maximumHeight: maximumHeight,
+                allowsPersistentApproval: allowsPersistentApproval,
+                temporaryGrantCandidate: temporaryGrantCandidate,
+                persistentApprovalLabel: persistentApprovalLabel,
+                usesIPhoneApproval: usesIPhoneApproval,
+                usesTouchIDApproval: usesTouchIDApproval,
+                compact: compact,
+                decide: { userDecision, source in
+                    state.resolve(userDecision, source: source)
                 }
             )
-            remoteRequestID = phoneRequest.id
-            try PhoneApprovalCoordinator.shared.submit(phoneRequest) { result in
-                guard !hasDecision else { return }
-                hasDecision = true
-                decision = switch result {
-                case .approved: .approved
-                case .denied: .denied
-                case .temporaryWriteAccess: .temporaryWriteAccess
-                case .canceled: .canceled
+        )
+
+        if usesIPhoneApproval {
+            do {
+                let phoneRequest = try PhoneApprovalRequest(
+                    macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
+                    launcher: content.requesterName,
+                    tool: autoApprovalToolName(request),
+                    command: content.command,
+                    cwd: content.cwd,
+                    secretNames: request.keys.sorted(),
+                    reason: automaticApprovalExplanation
+                        ?? request.detail
+                        ?? request.title
+                        ?? "Human Approval is required.",
+                    risks: phoneApprovalRisks(
+                        request: request,
+                        classification: classification,
+                        hasSecurityWarning: automaticApprovalExplanation != nil || blessing != nil
+                    ),
+                    details: content.sections.map { section in
+                        ApprovalDetailSection(
+                            title: section.title,
+                            rows: section.rows.map { .init(label: $0.label, value: $0.value) }
+                        )
+                    },
+                    temporaryAccessGrantScope: temporaryGrantCandidate.map { candidate in
+                        "\(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
+                    }
+                )
+                state.remoteRequestID = phoneRequest.id
+                try PhoneApprovalCoordinator.shared.submit(phoneRequest) { result in
+                    let mapped: ApprovalDecision = switch result {
+                    case .approved: .approved
+                    case .denied: .denied
+                    case .temporaryWriteAccess: .temporaryWriteAccess
+                    case .canceled: .canceled
+                    }
+                    Task { @MainActor in
+                        state.resolve(mapped, source: .phone)
+                    }
                 }
-                if NSApp.modalWindow === panel {
-                    NSApp.stopModal()
-                } else {
-                    completedBeforeModal = true
-                }
+            } catch {
+                state.resolve(.denied, source: .programmatic)
+                return
             }
-        } catch {
-            return .denied
         }
+
+        let observed = cancellation?.observe(id: presentationToken) {
+            Task { @MainActor in
+                state.resolve(.canceled, source: .programmatic)
+            }
+        } ?? true
+
+        if !observed {
+            state.resolve(.canceled, source: .programmatic)
+            return
+        }
+
+        fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
+        panel.center()
+        panel.orderFrontRegardless()
     }
-    guard cancellation?.observe({ [weak panel] in
-        if let remoteRequestID { PhoneApprovalCoordinator.shared.cancel(remoteRequestID) }
-        guard let panel, NSApp.modalWindow === panel else { return }
-        NSApp.stopModal()
-    }) != false else { return .canceled }
-    defer {
-        cancellation?.stopObserving()
-    }
-    fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
-    panel.center()
-    panel.orderFrontRegardless()
-    if !completedBeforeModal { NSApp.runModal(for: panel) }
-    panel.orderOut(nil)
+
     return terminalApprovalDecision(decision, cancellation: cancellation)
 }
 
@@ -12411,7 +12578,7 @@ private struct ApprovalPromptView: View {
     var usesIPhoneApproval = false
     var usesTouchIDApproval = false
     var compact = false
-    let decide: (ApprovalDecision) -> Void
+    let decide: (ApprovalDecision, ApprovalDecisionSource) -> Void
     @State private var isAuthenticatingWithTouchID = false
 
     var body: some View {
@@ -12495,7 +12662,7 @@ private struct ApprovalPromptView: View {
             if usesTouchIDApproval {
                 HStack(spacing: 12) {
                     Button(usesIPhoneApproval ? "Cancel Request" : "Deny", role: .cancel) {
-                        decide(.denied)
+                        decide(.denied, .standardMac)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -12511,7 +12678,7 @@ private struct ApprovalPromptView: View {
                     .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                 }
             } else if usesIPhoneApproval {
-                Button("Cancel Request", role: .cancel) { decide(.denied) }
+                Button("Cancel Request", role: .cancel) { decide(.denied, .standardMac) }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .keyboardShortcut(.cancelAction)
@@ -12522,7 +12689,7 @@ private struct ApprovalPromptView: View {
                     .multilineTextAlignment(.center)
             } else {
                 HStack(alignment: .top, spacing: 18) {
-                    Button("Deny", role: .cancel) { decide(.denied) }
+                    Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
@@ -12533,7 +12700,7 @@ private struct ApprovalPromptView: View {
                             allowsPersistentApproval: allowsPersistentApproval,
                             temporaryGrantCandidate: temporaryGrantCandidate,
                             persistentApprovalLabel: persistentApprovalLabel,
-                            decide: decide
+                            decide: { decide($0, .standardMac) }
                         )
                         Text(compact
                             ? "This Approval applies only to this secret change."
@@ -12593,7 +12760,7 @@ private struct ApprovalPromptView: View {
             reason: "Approve this exact Automic Vault request"
         ) { approved in
             isAuthenticatingWithTouchID = false
-            if approved { decide(decision) }
+            if approved { decide(decision, .touchID) }
         }
     }
 }
@@ -13125,7 +13292,7 @@ private func showAutomaticAccessToast(
 }
 
 @MainActor
-private func runSecretMutationSelfCheck() -> Int32 {
+private func runSecretMutationSelfCheck() async -> Int32 {
     let credentialMutationRequest = SecretMutation.terraformDelete(
         account: terraformCredentialSecretName("registry.example"),
         hostname: "registry.example"
@@ -13138,7 +13305,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
         SecretMutation.delete(account: "TEST_SECRET"),
     ] {
         var performed = false
-        let result = performApprovedSecretMutation(
+        let result = await performApprovedSecretMutation(
             mutation,
             callerPath: "/usr/local/bin/av",
             pid: 42,
@@ -13157,7 +13324,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
     }
 
     var performedWhileInactive = false
-    let inactive = performApprovedSecretMutation(
+    let inactive = await performApprovedSecretMutation(
         .saveIfAbsentOrEqual(account: "TEST_SECRET", value: "secret"),
         callerPath: "/usr/local/bin/av",
         pid: 42,
@@ -13179,7 +13346,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
 
     var cancellationRecord: AccessRequestRecord?
     var performedAfterCancellation = false
-    let canceled = performApprovedSecretMutation(
+    let canceled = await performApprovedSecretMutation(
         .delete(account: "TEST_SECRET"),
         callerPath: "/usr/local/bin/av",
         pid: 42,
@@ -13205,7 +13372,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
     else { return 1 }
 
     var performedWithoutAudit = false
-    let unaudited = performApprovedSecretMutation(
+    let unaudited = await performApprovedSecretMutation(
         .delete(account: "TEST_SECRET"),
         callerPath: "/usr/local/bin/av",
         pid: 42,
@@ -13239,7 +13406,7 @@ private func runSecretMutationSelfCheck() -> Int32 {
     )
     var approvedRequest: ApprovalRequest?
     var performedAfterFailedPreflight = false
-    let changedDocker = performApprovedSecretMutation(
+    let changedDocker = await performApprovedSecretMutation(
         .dockerDelete(account: "DOCKER_REGISTRY_CREDENTIAL_TEST", serverURL: "registry.example"),
         callerPath: "/usr/local/bin/av",
         pid: 42,
@@ -13532,6 +13699,26 @@ private func runApprovalSelfCheck() -> Int32 {
           terminalApprovalDecision(.approved, cancellation: nil) == .approved
     else { return 1 }
 
+    HumanApprovalQueue.shared.resetForTesting()
+    let initialAbortGeneration = ActiveApprovalPrompt.abortGeneration
+    abortActiveApprovalPrompt()
+    guard ActiveApprovalPrompt.abortGeneration == initialAbortGeneration + 1,
+          !HumanApprovalQueue.shared.hasActiveSlot,
+          HumanApprovalQueue.shared.pendingCount == 0
+    else { return 1 }
+
+    let testPanel = makeApprovalPanel()
+    let dummyView = NSView()
+    testPanel.contentView = dummyView
+    testPanel.initialFirstResponder = dummyView
+    guard !testPanel.canBecomeKey,
+          !testPanel.canBecomeMain,
+          testPanel.styleMask.contains(.nonactivatingPanel),
+          testPanel.level == .modalPanel,
+          !testPanel.hidesOnDeactivate,
+          testPanel.initialFirstResponder === dummyView
+    else { return 1 }
+
     let requester = approvalPromptRequester(
         launcher: LauncherIdentity(
             pid: 41,
@@ -13694,7 +13881,7 @@ private func runApprovalSelfCheck() -> Int32 {
         rootView: ApprovalPromptView(
             content: promptContent,
             temporaryGrantCandidate: nil,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
@@ -13726,7 +13913,7 @@ private func runApprovalSelfCheck() -> Int32 {
                 sections: []
             ),
             temporaryGrantCandidate: nil,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     )
     narrowedPrompt.layoutSubtreeIfNeeded()
@@ -13736,7 +13923,7 @@ private func runApprovalSelfCheck() -> Int32 {
             content: promptContent,
             temporaryGrantCandidate: nil,
             compact: true,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     ).fittingSize
     func containsDragRegion(_ view: NSView) -> Bool {
@@ -13763,7 +13950,7 @@ private func runApprovalSelfCheck() -> Int32 {
             ),
             maximumHeight: 500,
             temporaryGrantCandidate: nil,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     ).fittingSize.height
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """
@@ -14479,6 +14666,332 @@ private func runApprovalSelfCheck() -> Int32 {
           isTrustedBrewStubCaller(path: "/usr/local/bin/brew", signing: brewSigning),
           !isTrustedBrewStubCaller(path: "/opt/homebrew/bin/brew", signing: avSigning)
     else { return 1 }
+
+    return 0
+}
+
+@MainActor
+private func awaitWithTimeout<T: Sendable>(
+    duration: Duration,
+    cancellation: ApprovalCancellation,
+    task: Task<T, Never>
+) async -> T? {
+    await withTaskGroup(of: T?.self) { group in
+        group.addTask {
+            await task.value
+        }
+        group.addTask {
+            try? await Task.sleep(for: duration)
+            return nil
+        }
+        let first = await group.next() ?? nil
+        if first == nil {
+            cancellation.cancel()
+            task.cancel()
+        }
+        group.cancelAll()
+        while await group.next() != nil {}
+        return first
+    }
+}
+
+@MainActor
+private func runApprovalCallsiteSelfCheck() async -> Int32 {
+    // 1. Queued-transition focus invariant: every freshly created alert starts non-key
+    // and does not inherit focus from a previously key window.
+    let panel1 = makeApprovalPanel()
+    guard !panel1.canBecomeKey,
+          !panel1.canBecomeMain,
+          !panel1.isKeyWindow,
+          panel1.initialFirstResponder == nil,
+          panel1.styleMask.contains(.nonactivatingPanel),
+          panel1.level == .modalPanel,
+          !panel1.hidesOnDeactivate
+    else {
+        fputs("panel1 initial posture failed non-activating / non-key invariant\n", stderr)
+        return 10
+    }
+
+    // Simulate user deliberately clicking panel1 to grant key focus
+    if let clickEvent = NSEvent.mouseEvent(
+        with: .leftMouseDown,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: panel1.windowNumber,
+        context: nil,
+        eventNumber: 0,
+        clickCount: 1,
+        pressure: 1.0
+    ) {
+        panel1.sendEvent(clickEvent)
+    }
+    guard panel1.canBecomeKey else {
+        fputs("panel1 failed to become key after deliberate click\n", stderr)
+        return 11
+    }
+    panel1.orderOut(nil)
+    panel1.close()
+
+    // Verify next queued panel starts non-key by construction, preventing focus auto-promotion
+    let panel2 = makeApprovalPanel()
+    guard !panel2.canBecomeKey,
+          !panel2.canBecomeMain,
+          !panel2.isKeyWindow,
+          panel2.initialFirstResponder == nil
+    else {
+        fputs("panel2 inherited key status or initial first responder across queued transition\n", stderr)
+        return 12
+    }
+    panel2.orderOut(nil)
+    panel2.close()
+
+    // 2. Mode-transition invalidation
+    HumanApprovalQueue.shared.resetForTesting()
+    let startAbortGen = ActiveApprovalPrompt.abortGeneration
+    let abortedRes = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        ActiveApprovalPrompt.current = promptState
+        abortActiveApprovalPrompt()
+    }
+    guard abortedRes == .canceled,
+          ActiveApprovalPrompt.abortGeneration == startAbortGen + 1,
+          ActiveApprovalPrompt.current == nil
+    else {
+        fputs("mode-transition invalidation failed to abort active prompt\n", stderr)
+        return 20
+    }
+
+    // 3. Surface elevation and decision source enforcement across all permutations
+    // Case 3a: Both disabled -> standardMac is accepted, elevated sources are not expected
+    let stdMacBothOff = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: false, touchIDEnabled: false)
+    }
+    guard stdMacBothOff == .approved else {
+        fputs("standardMac failed when both elevated surfaces are disabled\n", stderr)
+        return 30
+    }
+
+    // Case 3b: Phone enabled only -> standardMac interrupted, phone approved, touchID interrupted
+    let stdMacPhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: true, touchIDEnabled: false)
+    }
+    let phonePhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: true, touchIDEnabled: false)
+    }
+    let touchIDPhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: true, touchIDEnabled: false)
+    }
+    guard stdMacPhoneOn == .interrupted, phonePhoneOn == .approved, touchIDPhoneOn == .interrupted else {
+        fputs("surface enforcement failed for phone-only configuration\n", stderr)
+        return 31
+    }
+
+    // Case 3c: Touch ID enabled only -> standardMac interrupted, touchID approved, phone interrupted
+    let stdMacTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: false, touchIDEnabled: true)
+    }
+    let touchIDTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: false, touchIDEnabled: true)
+    }
+    let phoneTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: false, touchIDEnabled: true)
+    }
+    guard stdMacTouchIDOn == .interrupted, touchIDTouchIDOn == .approved, phoneTouchIDOn == .interrupted else {
+        fputs("surface enforcement failed for TouchID-only configuration\n", stderr)
+        return 32
+    }
+
+    // Case 3d: Both enabled -> standardMac interrupted, both phone AND touchID approved
+    let stdMacBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: true, touchIDEnabled: true)
+    }
+    let phoneBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: true, touchIDEnabled: true)
+    }
+    let touchIDBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: true, touchIDEnabled: true)
+    }
+    guard stdMacBothOn == .interrupted, phoneBothOn == .approved, touchIDBothOn == .approved else {
+        fputs("surface enforcement failed when both Phone and TouchID are enabled\n", stderr)
+        return 33
+    }
+
+    // Case 3e: Programmatic denial always flows through
+    let progDenied = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.denied, source: .programmatic)
+    }
+    guard progDenied == .denied else {
+        fputs("programmatic denial failed\n", stderr)
+        return 34
+    }
+
+    // 4. Callsite reevaluation through real AuthorizationDecisionReuseCache
+    HumanApprovalQueue.shared.resetForTesting()
+    let slot1Acquired = await HumanApprovalQueue.shared.acquire()
+    guard slot1Acquired, HumanApprovalQueue.shared.hasActiveSlot else {
+        fputs("failed initial queue slot acquisition\n", stderr)
+        return 40
+    }
+
+    let testReq = ApprovalRequest(
+        op: "inject",
+        keys: ["TEST_SECRET"],
+        target: "/bin/zsh",
+        args: [],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
+    let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+
+    var selfIdentity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &selfIdentity) else {
+        fputs("failed to obtain live process identity\n", stderr)
+        return 41
+    }
+    let testReuseRequest = testReq.decisionReuseRequest(
+        clientIdentity: selfIdentity,
+        callerPath: "/bin/zsh",
+        signing: helperSigning
+    )
+    var cache = AuthorizationDecisionReuseCache()
+    guard cache.decision(for: testReuseRequest) == nil else {
+        fputs("reuse cache not empty at test start\n", stderr)
+        return 42
+    }
+
+    let testCancellation = ApprovalCancellation()
+    let queuedAlertTask = Task { @MainActor in
+        await showApprovalAlert(
+            request: testReq,
+            callerPath: "/bin/zsh",
+            pid: getpid(),
+            signing: helperSigning,
+            scriptApproval: nil,
+            launcher: nil,
+            launcherFallbackPath: "/bin/zsh",
+            automaticApprovalExplanation: nil,
+            cancellation: testCancellation,
+            reevaluate: {
+                cache.decision(for: testReuseRequest) == .approved
+            }
+        )
+    }
+
+    var queued = false
+    let deadline = Date().addingTimeInterval(5.0)
+    while Date() < deadline {
+        if HumanApprovalQueue.shared.pendingCount == 1 {
+            queued = true
+            break
+        }
+        await Task.yield()
+    }
+    guard queued else {
+        fputs("timed out waiting for request 2 to enqueue in HumanApprovalQueue\n", stderr)
+        return 43
+    }
+
+    // Request 1 records approved decision into reuse cache and releases slot
+    cache.remember(.approved, for: testReuseRequest)
+    HumanApprovalQueue.shared.release()
+
+    let queuedAlertDecision = await awaitWithTimeout(
+        duration: .seconds(5),
+        cancellation: testCancellation,
+        task: queuedAlertTask
+    )
+    guard let queuedAlertDecision else {
+        fputs("timed out waiting for request 2 to resolve after slot release\n", stderr)
+        return 44
+    }
+    guard queuedAlertDecision == .reevaluated,
+          !HumanApprovalQueue.shared.hasActiveSlot,
+          HumanApprovalQueue.shared.pendingCount == 0
+    else {
+        fputs("request 2 failed to reevaluate from cache and release queue slot\n", stderr)
+        return 45
+    }
+
+    // 5. Negative path: verify that stuck approvals terminate on timeout via cancellation without hanging
+    // Case 5a: Queued waiter stuck behind held slot (slot is never released)
+    HumanApprovalQueue.shared.resetForTesting()
+    let stuckSlotAcquired = await HumanApprovalQueue.shared.acquire()
+    guard stuckSlotAcquired, HumanApprovalQueue.shared.hasActiveSlot else {
+        fputs("failed initial queue slot acquisition for stuck queued test\n", stderr)
+        return 50
+    }
+
+    let stuckQueuedCancellation = ApprovalCancellation()
+    let stuckQueuedTask = Task { @MainActor in
+        await showApprovalAlert(
+            request: testReq,
+            callerPath: "/bin/zsh",
+            pid: getpid(),
+            signing: helperSigning,
+            scriptApproval: nil,
+            launcher: nil,
+            launcherFallbackPath: "/bin/zsh",
+            automaticApprovalExplanation: nil,
+            cancellation: stuckQueuedCancellation,
+            reevaluate: { false }
+        )
+    }
+
+    var stuckQueued = false
+    let stuckDeadline = Date().addingTimeInterval(5.0)
+    while Date() < stuckDeadline {
+        if HumanApprovalQueue.shared.pendingCount == 1 {
+            stuckQueued = true
+            break
+        }
+        await Task.yield()
+    }
+    guard stuckQueued else {
+        stuckQueuedCancellation.cancel()
+        stuckQueuedTask.cancel()
+        HumanApprovalQueue.shared.release()
+        fputs("timed out waiting for stuck request to enqueue in HumanApprovalQueue\n", stderr)
+        return 51
+    }
+
+    // Slot is intentionally never released. Verify awaitWithTimeout cancels and returns nil without hanging.
+    let stuckQueuedDecision = await awaitWithTimeout(
+        duration: .milliseconds(500),
+        cancellation: stuckQueuedCancellation,
+        task: stuckQueuedTask
+    )
+    guard stuckQueuedDecision == nil else {
+        HumanApprovalQueue.shared.release()
+        fputs("stuck queued approval unexpectedly completed instead of timing out\n", stderr)
+        return 52
+    }
+
+    HumanApprovalQueue.shared.release()
+    guard !HumanApprovalQueue.shared.hasActiveSlot,
+          HumanApprovalQueue.shared.pendingCount == 0
+    else {
+        fputs("stuck queued approval failed to cleanly drain from queue after cancellation\n", stderr)
+        return 53
+    }
 
     return 0
 }
@@ -16374,6 +16887,13 @@ if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
 
+if CommandLine.arguments.contains("--self-check-approval-callsite") {
+    Task { @MainActor in
+        exit(await runApprovalCallsiteSelfCheck())
+    }
+    dispatchMain()
+}
+
 if CommandLine.arguments.contains("--self-check-approval-process-execution") {
     exit(runApprovalProcessExecutionSelfCheck())
 }
@@ -16383,7 +16903,10 @@ if CommandLine.arguments.contains("--self-check-standalone-launchers") {
 }
 
 if CommandLine.arguments.contains("--self-check-secret-mutations") {
-    exit(MainActor.assumeIsolated { runSecretMutationSelfCheck() })
+    Task { @MainActor in
+        exit(await runSecretMutationSelfCheck())
+    }
+    dispatchMain()
 }
 
 if CommandLine.arguments.contains("--self-check-keychain-persistence") {
