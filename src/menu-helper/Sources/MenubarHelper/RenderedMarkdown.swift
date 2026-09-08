@@ -22,9 +22,12 @@ struct RenderedMarkdown: View {
             }
 
             if let trailingLink = parsed.trailingLink {
-                // Rendered outside the .textSelection(.enabled) scope above: SwiftUI/AppKit stops
-                // showing the pointing-hand cursor over links once their container is selectable.
+                // .textSelection(.disabled) is explicit, not just "we didn't wrap this one": a
+                // selectable ancestor would otherwise flow its environment value down here too,
+                // and SwiftUI/AppKit stops showing the pointing-hand cursor over links once their
+                // container is selectable.
                 trailingLinkText(trailingLink)
+                    .textSelection(.disabled)
             }
         }
     }
