@@ -26,6 +26,11 @@ $ av harden gh
 $ av doctor gh
 ```
 
+Automic Vault has several other mechanisms (Blessed Scripts, Launcher
+Bundles, the Secret Proxy, Direct Secret Access) for situations a Hardener
+doesn't cover. See [Choosing a Mechanism](docs/choosing-a-mechanism.md) for
+which one fits your situation.
+
 For the rest: [user manual] or `av help`.
 
 ## Detectors
@@ -274,6 +279,7 @@ intercept every process execution. Keep your terminal and agent harness's
 
 - [User manual][user manual]
 - [Documentation index](docs/index.md)
+- [Choosing a Mechanism](docs/choosing-a-mechanism.md)
 - [Domain language](docs/domain-language.md), [architecture](docs/architecture.md), and [positioning](docs/positioning.md)
 - [Architecture decisions](docs/adr/)
 - [Homebrew tap](https://github.com/automic-vault/homebrew-isotopes)
