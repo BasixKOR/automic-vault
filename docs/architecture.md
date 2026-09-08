@@ -433,6 +433,27 @@ cannot describe a distinct GPG operation.
 
 The Homebrew migration intentionally broadens persisted `readOnly` rules to allow explicit `brew update`. Homebrew could already update itself and its package metadata as a secondary effect of an authorized inspection command, so the old distinction did not enforce strict read-only execution. The legacy `update` classification covers only `brew update`, a Homebrew Update. The legacy `secretDump` classification covers both Secret Disclosure and AWS Elevated Secret Application. The legacy `mutating` classification can cover local, system, or remote effects. Replacing those values with characteristic sets is a policy-engine migration. It requires a reviewed Tool catalog, compatibility tests, and proof that no existing rule gains authority. Until that migration, the legacy classifier remains the enforcement source and the UI explains its established behavior with the canonical names.
 
+## File descriptor delivery
+
+`av inject --mode=fd +FOO:3 +BAR:4 -- COMMAND` performs Secret Application through
+one anonymous pipe per Secret. The signed `av` Gate Client submits the distinct
+`inject-fd` operation, which older helpers reject. The app validates the complete
+mapping and constructs canonical mapping detail for the immutable request,
+iPhone Approval digest, and persisted Authorization Record. Every invocation
+requires fresh Approval, without Direct Access, Blessing, Tool-specific policy,
+or temporary-grant authorization. The ordinary record-before-release transaction
+and exact Project Value selection still apply.
+
+Only unoccupied descriptors of 3 or higher are accepted. The CLI reserves them
+with close-on-exec before XPC, receives length-delimited UTF-8 Secret bytes,
+prebuffers every pipe using nonblocking writes, and closes every write end before
+executing the Target with the same PID. Failure to buffer a complete Value denies
+execution and closes all pipes. Only the requested read ends have close-on-exec
+cleared for the Target. The requested names are removed from its environment.
+FD mode does not support shebang dispatch, missing Secrets, or environment
+replacement flags. Pipe capacity bounds each Value; this is not a streaming
+export or backup format. See [ADR 0043](adr/0043-file-descriptor-secret-delivery.md).
+
 ## Secret custody and availability
 
 Secret bytes stay in the app's private Keychain access group. Gate policy and Authorization History use separate services. Availability controls whether Keychain may return a Secret while the device is locked. Authorization controls whether the operation may receive it. Both checks must pass.
