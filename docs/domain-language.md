@@ -341,6 +341,17 @@ Secret Application. The launched Target receives only Secret References. The
 helper applies a Secret to an authorized outbound request and must discard its
 request-scoped copy when that request completes.
 
+### Secret Delivery
+
+The mechanism used to apply a Secret to its Target. `av inject` uses environment
+variables by default. With `--mode=fd`, each requested Secret Name maps to one
+anonymous pipe at an explicit Target file descriptor. The delivery mode and
+complete mapping are part of the Authorization Request and Authorization Record.
+FD delivery requires fresh Approval; existing Direct Access Rules, Blessings,
+and Tool-specific policies do not authorize it. It removes the requested Secret
+Names from the Target's environment. It does not prevent the Target from copying
+Secret bytes or sharing its descriptors after receipt.
+
 ### Secret Disclosure
 
 The intentional return of a raw Secret value to the Launcher, standard output, clipboard, or another general-purpose destination. `gh auth token` is a Secret Disclosure even though it has no remote side effect.
