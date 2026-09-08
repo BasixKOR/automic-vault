@@ -750,13 +750,18 @@ final class DashboardModel: ObservableObject {
         reloadTask?.cancel()
         isReloading = true
         reloadTask = Task {
-            var (next, cliInstallState, launcherBundles) = await Task.detached(priority: .background) {
-                (DashboardSnapshot.load(), currentCLIInstallState(), loadLauncherBundleEnrollments())
+            let cliInstallState = await Task.detached(priority: .background) {
+                currentCLIInstallState()
+            }.value
+            guard !Task.isCancelled else { return }
+            self.cliInstallState = cliInstallState
+
+            var (next, launcherBundles) = await Task.detached(priority: .background) {
+                (DashboardSnapshot.load(), loadLauncherBundleEnrollments())
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
             snapshot = next
-            self.cliInstallState = cliInstallState
             self.launcherBundles = launcherBundles
             normalizeSelection()
             isReloading = false

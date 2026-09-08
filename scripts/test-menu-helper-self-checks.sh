@@ -35,6 +35,8 @@ if [[ ! -x "$menubar" ]]; then
   exit 1
 fi
 
+python3 "$repo/scripts/test-cli-install-refresh.py"
+
 checks=(
   --self-check-approvals
   --self-check-approval-process-execution
