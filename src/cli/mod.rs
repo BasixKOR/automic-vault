@@ -26,6 +26,7 @@ mod save;
 mod scan;
 mod shell_secrets;
 pub(crate) mod sqlcmd_credential;
+mod ssh_agent;
 pub(crate) mod terraform_credential;
 pub(crate) mod uaa_credential;
 pub(crate) mod wakatime_credential;
@@ -44,9 +45,10 @@ commands:
   $ av bless [--endorse-launcher] <path>  # review a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
+  $ av inject --mode=fd +KEY:FD -- <cmd>  # apply secrets through anonymous pipes
   $ av proxy +KEY... [--] <command>       # proxy secret references for a command
   $ av list                               # list saved secret names
-  $ av save [--project-directory=DIR] KEY # store a global or Project Value
+  $ av save [options] KEY                 # store a global or Project Value
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
   $ av unharden brew [-y|--yes]           # temporarily restore Homebrew for cask migration
   $ av gpg-sign [GPG options]             # authorize and sign a Git payload
@@ -59,7 +61,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 45;
+pub(crate) const INSTALL_REVISION: u32 = 48;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -343,6 +345,8 @@ where
             }
         }
         Some("__secret-gates-json") if rest.is_empty() => scan::run_secret_gates_json(stdout),
+        Some("ssh-agent") => ssh_agent::run(rest, stderr),
+        Some("__ssh-public-key") => ssh_agent::public_key(stdout, stderr),
         Some("gpg-sign") => gpg_sign::run(rest, stdout, stderr),
         Some("__gpg-public-key") if rest.is_empty() => gpg_sign::validate(stdout, stderr),
         Some("__gpg-generate-key") if rest.is_empty() => gpg_sign::generate(stdout, stderr),
@@ -543,7 +547,7 @@ where
             };
             open::run(stderr, secret_gate.as_deref())
         }
-        Some("save") => save::run(rest, stderr),
+        Some("save") => save::run(rest, stdout, stderr),
         _ => {
             let _ = writeln!(stderr, "{USAGE}");
             2

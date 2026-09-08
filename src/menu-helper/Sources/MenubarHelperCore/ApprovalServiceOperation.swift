@@ -16,10 +16,13 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case rcloneHelperVersion = "rclone-helper-version"
     case kubectlHelperVersion = "kubectl-helper-version"
     case inject
+    case injectFd = "inject-fd"
     case varlock
     case keys
     case authorize
     case gpgSign = "gpg-sign"
+    case sshSign = "ssh-sign"
+    case sshIdentities = "ssh-identities"
     case proxyStart = "proxy-start"
     case awsCredentials = "aws-credentials"
     case dockerGet = "docker-get"

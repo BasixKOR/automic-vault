@@ -410,14 +410,15 @@ final class PhoneApprovalCoordinator {
         }
     }
 
+    @discardableResult
     func approveAuthorityChange(
         title: String,
         detail: String,
         completion: @escaping (Bool) -> Void
-    ) {
+    ) -> UUID? {
         guard isEnabled else {
             completion(true)
-            return
+            return nil
         }
         do {
             let request = try PhoneApprovalRequest(
@@ -435,18 +436,10 @@ final class PhoneApprovalCoordinator {
                 )]
             )
             try submit(request) { result in completion(result == .approved) }
+            return request.id
         } catch {
             completion(false)
-        }
-    }
-
-    func requestDisable(completion: @escaping (Bool) -> Void) {
-        requestAuthorityChangeApproval(
-            title: "Disable iPhone Approval",
-            detail: "Future human Approvals will return to this Mac. Existing requests will be canceled."
-        ) { [weak self] approved in
-            if approved { self?.disableAfterPhoneApproval() }
-            completion(approved)
+            return nil
         }
     }
 
@@ -506,11 +499,12 @@ final class PhoneApprovalCoordinator {
 }
 
 @MainActor
+@discardableResult
 func requestAuthorityChangeApproval(
     title: String,
     detail: String,
     completion: @escaping (Bool) -> Void
-) {
+) -> UUID? {
     if TouchIDApproval.isEnabled {
         if TouchIDApproval.isAvailable {
             Task {
@@ -518,14 +512,14 @@ func requestAuthorityChangeApproval(
                     reason: "Approve this Automic Vault authority change"
                 ))
             }
-            return
+            return nil
         }
         guard PhoneApprovalCoordinator.shared.isEnabled else {
             completion(false)
-            return
+            return nil
         }
     }
-    PhoneApprovalCoordinator.shared.approveAuthorityChange(
+    return PhoneApprovalCoordinator.shared.approveAuthorityChange(
         title: title,
         detail: detail,
         completion: completion

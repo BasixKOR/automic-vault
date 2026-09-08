@@ -25,6 +25,8 @@ import Testing
         "aws": .fullExceptSecretDumps,
         "stripe": .fullExceptSecretDumps,
     ])
+    #expect(!declaration.manifest.inheritsCapabilities)
+    #expect(!declaration.manifest.hasEmptyCapabilityCeiling)
     #expect(declaration.checksum.count == 64)
 }
 
@@ -38,7 +40,45 @@ import Testing
 
     #expect(declaration.keys == ["TOKEN"])
     #expect(declaration.manifest.capabilities.isEmpty)
+    #expect(declaration.manifest.inheritsCapabilities)
+    #expect(!declaration.manifest.hasEmptyCapabilityCeiling)
     #expect(declaration.snapshotIncompatibleInterpreter == nil)
+}
+
+@Test(arguments: [
+    ("# capabilities: { inherit: true }", true, false),
+    ("# capabilities: {}", false, true),
+])
+func blessedScriptManifestParsesInlineCapabilityModes(
+    line: String,
+    inheritsCapabilities: Bool,
+    hasEmptyCapabilityCeiling: Bool
+) throws {
+    let declaration = try blessedScriptDeclaration(data: Data("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    \(line)
+    # ---
+    print("ok")
+    """.utf8))
+
+    #expect(declaration.manifest.capabilities.isEmpty)
+    #expect(declaration.manifest.inheritsCapabilities == inheritsCapabilities)
+    #expect(declaration.manifest.hasEmptyCapabilityCeiling == hasEmptyCapabilityCeiling)
+    #expect(declaration.matchesExecution(
+        keys: [],
+        target: "/usr/bin/python3",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        snapshotIncompatibleInterpreter: nil
+    ))
+    #expect(!declaration.matchesExecution(
+        keys: ["TOKEN"],
+        target: "/usr/bin/python3",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        snapshotIncompatibleInterpreter: nil
+    ))
 }
 
 @Test func blessedScriptDetectsSnapshotIncompatibleInterpreterChains() throws {
@@ -175,13 +215,30 @@ import Testing
     #expect(overridden.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
 }
 
-@Test func existingBlessingsDoNotImplicitlyAllowCanonicalPathExecution() throws {
+@Test func existingBlessingsRetainCapabilityInheritanceWithoutCanonicalPathExecution() throws {
     let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/opt/homebrew/bin/uv","replaceExistingEnv":false,"allowMissingKeys":false,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
 
     let script = try JSONDecoder().decode(BlessedScript.self, from: data)
 
     #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
     #expect(script.reviewedContents == nil)
+    #expect(script.usesCapabilityInheritance)
+}
+
+@Test func storedBlessingsPreserveExplicitCapabilityInheritance() throws {
+    let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"inheritsCapabilities":true,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
+
+    let script = try JSONDecoder().decode(BlessedScript.self, from: data)
+
+    #expect(script.usesCapabilityInheritance)
+}
+
+@Test func storedBlessingsPreserveExplicitlyDisabledCapabilityInheritance() throws {
+    let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"inheritsCapabilities":false,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
+
+    let script = try JSONDecoder().decode(BlessedScript.self, from: data)
+
+    #expect(!script.usesCapabilityInheritance)
 }
 
 @Test func reviewedBlessingContentsMustMatchTheBlessedChecksum() throws {
@@ -347,6 +404,12 @@ import Testing
     #   gh: read-only
     # ---
     """,
+    """
+    #!/usr/local/bin/av inject -- /bin/sh
+    # --- automic-vault
+    # capabilities: { inherit: false }
+    # ---
+    """,
 ])
 func malformedBlessedScriptManifestsFailClosed(_ source: String) {
     #expect(throws: (any Error).self) {
@@ -384,4 +447,69 @@ func malformedBlessedScriptManifestsFailClosed(_ source: String) {
     } catch {
         #expect(error.localizedDescription == "invalid av inject shebang")
     }
+}
+
+@Test func blessedScriptNarrowedPolicyExplanationIdentifiesMissingCapability() {
+    let script = BlessedScript(
+        path: "/tmp/deploy.sh",
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["aws": .fullExceptSecretDumps],
+        launchers: []
+    )
+
+    let explanation = activeBlessedScriptPromptExplanation(
+        script: script,
+        gateID: "gpg-signing",
+        launcherAllowsOperation: true
+    )
+    #expect(explanation == "The Blessed Script’s declared Capabilities narrow gate policy for this execution and lack a gpg-signing Capability. Approval applies only to this request.")
+}
+
+@Test func blessedScriptNarrowedPolicyExplanationIdentifiesExceededCapability() {
+    let script = BlessedScript(
+        path: "/tmp/deploy.sh",
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["gh": .readOnly],
+        launchers: []
+    )
+
+    let explanation = activeBlessedScriptPromptExplanation(
+        script: script,
+        gateID: "gh",
+        launcherAllowsOperation: true
+    )
+    #expect(explanation == "The Blessed Script’s declared Capabilities narrow gate policy for this execution and exceed the declared gh Capability. Approval applies only to this request.")
+}
+
+@Test func blessedScriptNarrowedPolicyExplanationFallsBackWhenLauncherDoesNotAllow() {
+    let script = BlessedScript(
+        path: "/tmp/deploy.sh",
+        checksum: "checksum",
+        keys: [],
+        target: "/bin/sh",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        capabilities: ["aws": .fullExceptSecretDumps],
+        launchers: []
+    )
+
+    #expect(activeBlessedScriptPromptExplanation(
+        script: script,
+        gateID: "gpg-signing",
+        launcherAllowsOperation: false
+    ) == "This request exceeds the stored authority. Approval applies only to this request.")
+
+    #expect(activeBlessedScriptPromptExplanation(
+        script: script,
+        gateID: nil,
+        launcherAllowsOperation: true
+    ) == "This request exceeds the stored authority. Approval applies only to this request.")
 }

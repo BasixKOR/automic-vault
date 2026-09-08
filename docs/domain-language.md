@@ -78,6 +78,27 @@ this gate is signing, it exposes only **Approval Required** and **Allow
 Signing**. Allow Signing is the GPG-specific presentation of Local Write. The
 gate defaults to Approval Required.
 
+### SSH Agent Gate
+
+The built-in Tool-specific Secret Gate for SSH authentication signatures through
+Automic Vault's optional SSH agent. One SSH Credential is used for every
+Verified Launcher; there are no Launcher-specific credential selectors or
+Project Values at this gate. The credential contains an OpenSSH private key and
+its optional passphrase in one protected Secret, `AV_SSH_CREDENTIAL`.
+
+Each request binds the live local socket peer, its Verified Launcher, the signed
+`av` Gate Client and signing Target, and the exact authentication payload.
+The Verified Launcher must be a live original ancestor: the socket peer cannot
+represent itself as a Launcher. Every parent execution must match the kernel's
+original-parent evidence; unavailable or changed ancestry denies use.
+The gate defaults to **Approval Required** and offers **Allow Authentication**
+for recognized SSH authentication signatures. This delegates authentication,
+including access that may permit remote writes; it is not Read Only authority.
+Public-key enumeration does not apply a Secret. Agent key mutation and arbitrary
+signing are unsupported. No destination-specific authority is claimed. A local
+client that forwards or shares its connection can carry other software's
+requests under its Launcher attribution.
+
 ### Proxy Session
 
 A live, memory-only Secret Proxy Gate context bound to one complete command and
@@ -341,6 +362,17 @@ Secret Application. The launched Target receives only Secret References. The
 helper applies a Secret to an authorized outbound request and must discard its
 request-scoped copy when that request completes.
 
+### Secret Delivery
+
+The mechanism used to apply a Secret to its Target. `av inject` uses environment
+variables by default. With `--mode=fd`, each requested Secret Name maps to one
+anonymous pipe at an explicit Target file descriptor. The delivery mode and
+complete mapping are part of the Authorization Request and Authorization Record.
+FD delivery requires fresh Approval; existing Direct Access Rules, Blessings,
+and Tool-specific policies do not authorize it. It removes the requested Secret
+Names from the Target's environment. It does not prevent the Target from copying
+Secret bytes or sharing its descriptors after receipt.
+
 ### Secret Disclosure
 
 The intentional return of a raw Secret value to the Launcher, standard output, clipboard, or another general-purpose destination. `gh auth token` is a Secret Disclosure even though it has no remote side effect.
@@ -596,6 +628,22 @@ Blessing cannot gain this exception during an upgrade.
 ### Capability
 
 The maximum Access Level a Blessed Script may receive through one Authorization Gate.
+
+### Capability Inheritance
+
+Compatibility behavior that lets a script continue to use automic authority
+available from its execution context, including an outer Blessed Script, its
+Verified Launcher's Authorization Policy and Direct Access Rules, and a matching
+Temporary Access Grant. Capability Inheritance grants no authority by itself.
+
+A Script Declaration with no capabilities manifest inherits by default. The
+declaration `capabilities: { inherit: true }` makes that behavior explicit.
+`capabilities: {}` disables Capability Inheritance and declares an empty
+capability ceiling: after any Secret Names requested by the script's own shebang
+are separately authorized, every later gated operation attributable to that live
+execution requires Approval. Neither form makes the script safe, prevents
+ordinary ungated execution, or follows a child after its script ancestry becomes
+unobservable.
 
 ### Launcher Endorsement
 

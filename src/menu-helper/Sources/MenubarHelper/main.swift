@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return formatter
     }()
     private var approval: ApprovalServer?
+    private let sshAgent = SSHAgentRuntime.shared
     private var scanWorkItem: DispatchWorkItem?
     private var scanBurstStartedAt: TimeInterval?
     private var pendingFullScan = false
@@ -355,6 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             try approval.start()
             self.approval = approval
+            sshAgent.startObserving()
             scheduleScan(after: 0)
             scanQueue.async { [weak self] in
                 let metadata = loadDetectorMetadata(avExecutableURL: avExecutableURL())
@@ -380,6 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopServices() {
+        sshAgent.stop()
         temporaryAccessGrants.cancelAll()
         refreshTemporaryAccessGrants()
         temporaryAccessGrantTimer?.invalidate()
@@ -1716,7 +1719,7 @@ private func automaticAccessRecord(_ record: AccessRequestRecord) -> AutoApprova
         accessRequestID: record.id,
         date: record.date,
         launcher: record.launcher ?? "Launcher unavailable",
-        launcherIconPath: "",
+        launcherIconPath: record.launcherIconPath ?? "",
         tool: record.tool,
         displayCommand: record.commandForDisplay,
         keys: record.keys,
@@ -1754,6 +1757,7 @@ private func accessRequestRecord(
         approvalSource: approvalSource,
         reason: reason,
         launcher: launcher.map { approvalPromptRequester(launcher: $0, fallback: $0.path).name },
+        launcherIconPath: launcher.map { approvalPromptRequester(launcher: $0, fallback: $0.path).iconPath },
         callerPath: callerPath,
         target: request.target,
         targetRuntimeProtection: automaticTargetRuntimeProtection(
@@ -1850,6 +1854,13 @@ private func exactAuthorizationCommand(_ request: ApprovalRequest, scriptPath: S
 }
 
 private func authorizationHistoryCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    if let peer = request.sshPeer {
+        let tool = pathString(peer.identity)
+        return prettyShellCommand(
+            target: tool,
+            args: redactedAuthorizationArguments(tool: tool, arguments: Array(peer.arguments.dropFirst()))
+        )
+    }
     let parts = authorizationCommandParts(request, scriptPath: scriptPath)
     return prettyShellCommand(
         target: parts.tool,
@@ -1858,7 +1869,8 @@ private func authorizationHistoryCommand(_ request: ApprovalRequest, scriptPath:
 }
 
 private func approvalCommandPath(_ request: ApprovalRequest) -> String {
-    resolvedShebangScriptPath(request) ?? request.target
+    if let peer = request.sshPeer { return pathString(peer.identity) }
+    return resolvedShebangScriptPath(request) ?? request.target
 }
 
 private func resolvedShebangScriptPath(_ request: ApprovalRequest) -> String? {
@@ -1959,6 +1971,90 @@ func avExecutableURL() -> URL {
     return URL(fileURLWithPath: "/usr/local/bin/av")
 }
 
+private func processArgumentVector(_ pid: pid_t) -> [String]? {
+    var buffer = [CChar](repeating: 0, count: 64 * 1024)
+    let count = av_process_arguments_data(pid, &buffer, buffer.count)
+    guard count > 0,
+          let text = String(bytes: buffer.prefix(count).map { UInt8(bitPattern: $0) }, encoding: .utf8)
+    else { return nil }
+    return text.split(separator: "\0", omittingEmptySubsequences: false).dropLast().map(String.init)
+}
+
+private func sshAgentPeerCWD(_ pid: pid_t) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    guard av_process_cwd(pid, &buffer, buffer.count) else { return nil }
+    return String(decoding: buffer.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+}
+
+// An SSH client cannot stand in as its own Launcher. Every ancestor must be the
+// same execution that parented its child, preventing an exec into an allowed app.
+private func sshAgentLaunchers(for identity: AVProcessIdentity) -> [LauncherIdentity] {
+    var child = identity
+    for _ in 0..<32 {
+        var parent = AVProcessIdentity()
+        if !av_original_parent_identity(&child, &parent) {
+            // Terminal uses a root-owned login relay; it supplies no Launcher authority.
+            var code: SecCode?
+            var requirement: SecRequirement?
+            guard av_original_login_parent_identity(&child, &parent),
+                  SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: child.ppid] as CFDictionary, [], &code) == errSecSuccess,
+                  let code,
+                  SecRequirementCreateWithString("anchor apple and identifier com.apple.login" as CFString, [], &requirement) == errSecSuccess,
+                  let requirement,
+                  SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+            else { return [] }
+        }
+        let candidates = launcherIdentities(pid: parent.pid, identity: parent)
+            .filter { $0.runtimeProtection.allowsSecretGateAccess }
+        if !candidates.isEmpty { return candidates }
+        child = parent
+    }
+    return []
+}
+
+/// Retains the kernel socket evidence through Approval and release.
+private final class SSHAgentPeer: Sendable {
+    let socket: FileHandle
+    let identity: AVProcessIdentity
+    let configuration: SSHAgentConfiguration
+    let launchers: [LauncherIdentity]
+    let arguments: [String]
+    let cwd: String
+    let helperIdentity: AVProcessIdentity
+
+    init(socket: FileHandle, identity: AVProcessIdentity, configuration: SSHAgentConfiguration,
+         launchers: [LauncherIdentity], arguments: [String], cwd: String,
+         helperIdentity: AVProcessIdentity) {
+        self.socket = socket
+        self.identity = identity
+        self.configuration = configuration
+        self.launchers = launchers
+        self.arguments = arguments
+        self.cwd = cwd
+        self.helperIdentity = helperIdentity
+    }
+
+    func validate() throws {
+        var current = AVProcessIdentity()
+        var helper = AVProcessIdentity()
+        guard av_process_identity(helperIdentity.pid, &helper), sameProcessIdentity(helperIdentity, helper),
+              let signing = liveSigningInfo(pid: helper.pid),
+              signing.mainExecutable == pathString(helperIdentity),
+              signing.identifier == "com.automicvault.av", signing.runtimeProtection == .hardened,
+              av_socket_peer_identity(socket.fileDescriptor, &current),
+              sameProcessIdentity(identity, current), pathString(identity) == pathString(current),
+              processArgumentVector(current.pid) == arguments, sshAgentPeerCWD(current.pid) == cwd,
+              loadSSHAgentConfiguration() == configuration, configuration.enabled,
+              launcherBundleIntegrityError(for: current) == nil
+        else { throw AppError("SSH agent connection or configuration changed") }
+        let live = sshAgentLaunchers(for: current)
+        guard !launchers.isEmpty, launchers.allSatisfy({ expected in
+            live.contains { $0.designatedRequirement == expected.designatedRequirement
+                && $0.runtimeProtection == expected.runtimeProtection }
+        }) else { throw AppError("SSH Verified Launcher changed before signing") }
+    }
+}
+
 private struct ApprovalRequest {
     let op: String
     let keys: [String]
@@ -1977,6 +2073,7 @@ private struct ApprovalRequest {
     let credentialScope: String?
     let credentialParent: CredentialHelperParent?
     let selectedSecretValues: SelectedSecretValues
+    let sshPeer: SSHAgentPeer?
 
     init(
         op: String,
@@ -1995,7 +2092,8 @@ private struct ApprovalRequest {
         detail: String?,
         credentialScope: String? = nil,
         credentialParent: CredentialHelperParent? = nil,
-        selectedSecretValues: SelectedSecretValues = SelectedSecretValues(values: [:])
+        selectedSecretValues: SelectedSecretValues = SelectedSecretValues(values: [:]),
+        sshPeer: SSHAgentPeer? = nil
     ) {
         self.op = op
         self.keys = keys
@@ -2014,6 +2112,7 @@ private struct ApprovalRequest {
         self.credentialScope = credentialScope
         self.credentialParent = credentialParent
         self.selectedSecretValues = selectedSecretValues
+        self.sshPeer = sshPeer
     }
 
     func selecting(_ values: SelectedSecretValues) -> ApprovalRequest {
@@ -2034,7 +2133,8 @@ private struct ApprovalRequest {
             detail: detail,
             credentialScope: credentialScope,
             credentialParent: credentialParent,
-            selectedSecretValues: values
+            selectedSecretValues: values,
+            sshPeer: sshPeer
         )
     }
 
@@ -2056,7 +2156,8 @@ private struct ApprovalRequest {
             detail: detail,
             credentialScope: credentialScope,
             credentialParent: credentialParent,
-            selectedSecretValues: selectedSecretValues
+            selectedSecretValues: selectedSecretValues,
+            sshPeer: sshPeer
         )
     }
 
@@ -2101,9 +2202,11 @@ private struct ApprovalRequest {
                 )
             },
             selectedSecretValues: selectedSecretValues,
-            policy: awsRequestMayUseLongLivedCredentials(self)
-                ? .freshApprovalRequired
-                : .reusable
+            // The SSH helper is shared by unrelated clients and Launchers. Even
+            // denial reuse would quarantine every client using that helper.
+            policy: op == "ssh-sign" ? .disabled
+                : op == "inject-fd" || awsRequestMayUseLongLivedCredentials(self)
+                    ? .freshApprovalRequired : .reusable
         )
     }
 }
@@ -3011,6 +3114,7 @@ private func temporaryAccessGrantCandidate(
         agentTaskContext: agentTaskContext
     ) == nil,
     let gate, let launcher, let agentTaskContext,
+    gate.id != "ssh-agent",
     let runtimeRequirement = launcher.runtimeProtection.secretGateAdmissionRequirement
     else {
         return nil
@@ -3032,6 +3136,17 @@ private func temporaryAccessGrantCandidate(
 private struct ScriptApproval {
     let path: String
     let checksum: String
+}
+
+private struct ActiveScriptAuthority {
+    let blessings: [BlessedScript]
+    let hasEmptyCapabilityCeiling: Bool
+
+    var nearestBlessing: BlessedScript? { blessings.first }
+    var allowsAutomaticAuthority: Bool { !hasEmptyCapabilityCeiling }
+    var inheritsLauncherPolicy: Bool {
+        allowsAutomaticAuthority && blessings.allSatisfy(\.usesCapabilityInheritance)
+    }
 }
 
 private func blessedScriptMatches(
@@ -3168,6 +3283,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private var retainedProcessProvenance = RetainedProcessProvenanceStore()
     private let blessedExecutionsLock = NSLock()
     private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
+    private var emptyCapabilityCeilings: Set<BlessedExecutionKey> = []
     private let awsRegistrationsLock = NSLock()
     private var awsRegistrations: [BlessedExecutionKey: AWSRegistration] = [:]
 
@@ -3444,7 +3560,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: "1")
-        case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .sshIdentities where isTrustedAvCaller(path: callerPath, signing: signing):
+            let config = loadSSHAgentConfiguration()
+            guard config.enabled, !config.publicKey.isEmpty else {
+                reply(peer, to: message, ok: false, error: "SSH Agent is disabled or unconfigured")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, secrets: ["public_key": config.publicKey])
+        case .gpgSign where isTrustedAvCaller(path: callerPath, signing: signing),
+             .sshSign where isTrustedAvCaller(path: callerPath, signing: signing):
             handleInject(
                 message,
                 on: peer,
@@ -3453,6 +3577,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 callerPath: callerPath,
                 signing: signing
+            )
+        case .injectFd where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleInject(
+                message, on: peer, cancellation: cancellation, pid: pid,
+                identity: identity, callerPath: callerPath, signing: signing
             )
         case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .plumberGet, .uaaGet, .railwayGet,
              .oxideGet, .fastlyGet, .sqlcmdGet, .terraformGet, .aliyunGet, .wakatimeGet, .rcloneGet, .kubectlGet:
@@ -3761,7 +3890,15 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: "invalid approval request")
             return
         }
-        var launchers = launcherIdentities(for: identity)
+        do {
+            parsedRequest = try sshAgentRequest(from: message, request: parsedRequest,
+                                              helperIdentity: identity, helperPath: callerPath)
+        } catch {
+            reply(peer, to: message, ok: false, error: error.localizedDescription)
+            return
+        }
+        let originIdentity = parsedRequest.sshPeer?.identity ?? identity
+        var launchers = parsedRequest.sshPeer?.launchers ?? launcherIdentities(for: identity)
         if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
             launchers.append(launcher)
         }
@@ -3913,8 +4050,13 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             let selected = try secretValueCustody.bind(
                 names: selectionNames,
-                cwd: kubectlRequest.cwd
+                cwd: kubectlRequest.cwd,
+                globalOnly: kubectlRequest.sshPeer != nil
             )
+            if kubectlRequest.sshPeer != nil,
+               selected.source(for: sshCredentialSecretName) != .global {
+                throw AppError("SSH Agent requires the Global Value of its credential")
+            }
             // ponytail: Global Values only until OAuth refresh mutations bind the selected source.
             if isTrustedWranglerCaller(path: callerPath, signing: signing),
                !wranglerCredentialSelectionIsSupported(selected) {
@@ -3932,34 +4074,48 @@ private final class ApprovalServer: @unchecked Sendable {
             reply(peer, to: message, ok: false, error: error.localizedDescription)
             return
         }
-        let scriptApproval = scriptApproval(for: request)
-        let processChains = retainedProcessChains(for: identity)
+        let scriptApproval = request.sshPeer == nil ? scriptApproval(for: request) : nil
+        if request.sshPeer == nil, let scriptDeclaration = scriptStartingWithoutApproval(for: request) {
+            if scriptDeclaration.manifest.hasEmptyCapabilityCeiling {
+                registerEmptyCapabilityCeiling(pid: pid, identity: identity)
+            }
+            reply(peer, to: message, ok: true, error: nil, secrets: [:])
+            return
+        }
+        let processChains = request.sshPeer == nil ? retainedProcessChains(for: identity) : []
         let keepsDetachedProcessAccess = UserDefaults.standard.bool(
             forKey: keepLauncherAccessForDetachedProcessesDefaultsKey
         )
-        let ancestorFallbackPath = launcherFallbackPath(for: identity)
+        let ancestorFallbackPath = launcherFallbackPath(for: originIdentity)
         let launcherFallbackPath = ancestorFallbackPath ?? callerPath
         let launcher = executionOrigin(
             among: launchers,
             callerPID: pid,
             ancestorFallbackPath: ancestorFallbackPath
         )
-        let activeBlessing = activeBlessedScript(pid: pid, identity: identity)
-        if let script = activeBlessing {
-            if handleBlessedCapability(
-                script,
-                request: request,
-                signing: signing,
-                descriptors: secretGateDescriptors,
-                launcher: launcher,
-                callerPath: callerPath,
-                awsRegistration: awsRegistration,
-                pid: pid,
-                identity: identity,
-                peer: peer,
-                message: message
-            ) {
-                return
+        let scriptAuthority = ActiveScriptAuthority(
+            blessings: request.sshPeer == nil ? activeBlessedScripts(pid: pid, identity: identity) : [],
+            hasEmptyCapabilityCeiling: request.sshPeer == nil && activeEmptyCapabilityCeiling(pid: pid, identity: identity)
+        )
+        let activeBlessing = scriptAuthority.nearestBlessing
+        if scriptAuthority.allowsAutomaticAuthority {
+            for script in scriptAuthority.blessings {
+                if handleBlessedCapability(
+                    script,
+                    request: request,
+                    signing: signing,
+                    descriptors: secretGateDescriptors,
+                    launcher: launcher,
+                    callerPath: callerPath,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    peer: peer,
+                    message: message
+                ) {
+                    return
+                }
+                if !script.usesCapabilityInheritance { break }
             }
         }
         let blessingGate = scriptApproval.map {
@@ -3982,7 +4138,8 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let effectiveBlessingMatch = currentBlessingMatch
             ?? (keepsDetachedProcessAccess ? retainedBlessingMatch : nil)
-        if let scriptApproval,
+        if scriptAuthority.allowsAutomaticAuthority,
+           let scriptApproval,
            let blessingGate,
            let (script, matchedLauncher) = effectiveBlessingMatch
         {
@@ -4059,6 +4216,10 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             descriptors: secretGateDescriptors
         )
+        if request.sshPeer != nil, configuredGate?.id != "ssh-agent" {
+            reply(peer, to: message, ok: false, error: "SSH Agent Gate is unavailable")
+            return
+        }
         let authorizationGate = configuredGate.map {
             RetainedAuthorizationGate.secretGate($0.id)
         } ?? .directSecret
@@ -4094,7 +4255,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let classification = configuredGate.map {
             classifySecretGateRequest(gateID: $0.id, request: request)
         }
-        let currentAgentTaskContext = agentTaskContext(pid: pid)
+        let currentAgentTaskContext = request.sshPeer == nil ? agentTaskContext(pid: pid) : nil
         let retainedProcessExplanation: String?
         if !keepsDetachedProcessAccess,
            retainedBlessingMatch != nil,
@@ -4124,7 +4285,9 @@ private final class ApprovalServer: @unchecked Sendable {
             retainedProcessExplanation = nil
         }
         let automaticApprovalExplanation: String?
-        if let resolvedPolicy,
+        if scriptAuthority.hasEmptyCapabilityCeiling {
+            automaticApprovalExplanation = "This script declared an empty capability ceiling, so inherited automatic access cannot authorize this request."
+        } else if let resolvedPolicy,
            let classification,
            let explanation = launcherRuntimeProtectionApprovalExplanation(
                policy: resolvedPolicy,
@@ -4150,7 +4313,8 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             automaticApprovalExplanation = nil
         }
-        if let configuredGate,
+        if scriptAuthority.allowsAutomaticAuthority,
+           let configuredGate,
            let classification,
            let currentAgentTaskContext,
            handleTemporaryAccessGrant(
@@ -4172,7 +4336,7 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             return
         }
-        if activeBlessing == nil, let directAccessLauncher {
+        if scriptAuthority.inheritsLauncherPolicy, let directAccessLauncher {
             do {
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
@@ -4237,7 +4401,7 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             return
         }
-        if activeBlessing == nil,
+        if scriptAuthority.inheritsLauncherPolicy,
            let configuredGate,
            let resolvedPolicy,
            let classification,
@@ -4315,18 +4479,20 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let promptLauncher = policyLauncher
-        let temporaryGrantCandidate = temporaryAccessGrantCandidate(
+        let temporaryGrantCandidate = scriptAuthority.hasEmptyCapabilityCeiling ? nil : temporaryAccessGrantCandidate(
             gate: configuredGate,
             classification: classification,
             launcher: launcher,
             agentTaskContext: currentAgentTaskContext
         )
-        let temporaryGrantUnavailableReason = temporaryAccessGrantUnavailableReason(
-            hasToolSpecificGate: configuredGate != nil,
-            classification: classification,
-            launcherRuntimeProtection: launcher?.runtimeProtection,
-            agentTaskContext: currentAgentTaskContext
-        )
+        let temporaryGrantUnavailableReason = scriptAuthority.hasEmptyCapabilityCeiling
+            ? "This script declared an empty capability ceiling."
+            : temporaryAccessGrantUnavailableReason(
+                hasToolSpecificGate: configuredGate != nil,
+                classification: classification,
+                launcherRuntimeProtection: launcher?.runtimeProtection,
+                agentTaskContext: currentAgentTaskContext
+            )
         let promptAccessLevel = if let configuredGate, let resolvedPolicy {
             configuredGate.protectionTitle(resolvedPolicy.protection)
         } else {
@@ -4339,9 +4505,20 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         let promptBlessing: BlessedScriptPromptContext?
         if let activeBlessing {
+            let launcherAllowsOperation = if configuredGate != nil,
+                                             let resolvedPolicy,
+                                             let classification {
+                secretGateProtectionAllows(resolvedPolicy.protection, classification: classification)
+            } else {
+                false
+            }
             promptBlessing = BlessedScriptPromptContext(
                 script: activeBlessing,
-                explanation: "This request exceeds the stored authority. Approval applies only to this request."
+                explanation: activeBlessedScriptPromptExplanation(
+                    script: activeBlessing,
+                    gateID: configuredGate?.id,
+                    launcherAllowsOperation: launcherAllowsOperation
+                )
             )
         } else if let scriptApproval,
                   let script = matchingBlessedScriptExecution(
@@ -4397,8 +4574,10 @@ private final class ApprovalServer: @unchecked Sendable {
                        currentSigning.identifier == signing.identifier,
                        currentSigning.teamIdentifier == signing.teamIdentifier,
                        isAllowedCaller(path: currentCallerPath, signing: currentSigning),
+                       !self.activeEmptyCapabilityCeiling(pid: pid, identity: currentIdentity),
                        let configuredGate,
                        let classification,
+                       request.sshPeer == nil,
                        let currentAgentTaskContext = agentTaskContext(pid: pid),
                        self.handleTemporaryAccessGrant(
                            request: request,
@@ -5310,32 +5489,75 @@ private final class ApprovalServer: @unchecked Sendable {
         blessedExecutionsLock.unlock()
     }
 
-    private func activeBlessedScript(pid: pid_t, identity: AVProcessIdentity) -> BlessedScript? {
+    private func activeBlessedScripts(pid: pid_t, identity: AVProcessIdentity) -> [BlessedScript] {
         let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
-        blessedExecutions = blessedExecutions.filter { key, script in
-            var current = AVProcessIdentity()
-            return currentBlessings.contains(script)
-                && av_process_identity(key.pid, &current)
-                && current.start_usec == key.startUsec
-        }
         let executions = blessedExecutions
+        blessedExecutionsLock.unlock()
+
+        let staleExecutions = executions.compactMap { key, script in
+            currentBlessings.contains(script) && executionIsLive(key) ? nil : key
+        }
+        blessedExecutionsLock.lock()
+        for key in staleExecutions where blessedExecutions[key] == executions[key] {
+            blessedExecutions.removeValue(forKey: key)
+        }
+        let activeExecutions = blessedExecutions
+        blessedExecutionsLock.unlock()
+
+        var scripts: [BlessedScript] = []
+        var currentPID = pid
+        var currentIdentity = identity
+        for _ in 0..<64 {
+            if let script = activeExecutions[BlessedExecutionKey(
+                pid: currentPID,
+                startUsec: currentIdentity.start_usec
+            )] {
+                scripts.append(script)
+            }
+            guard currentIdentity.ppid > 1 else { return scripts }
+            currentPID = currentIdentity.ppid
+            guard av_process_identity(currentPID, &currentIdentity) else { return scripts }
+        }
+        return scripts
+    }
+
+    private func registerEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) {
+        blessedExecutionsLock.lock()
+        emptyCapabilityCeilings.insert(BlessedExecutionKey(pid: pid, startUsec: identity.start_usec))
+        blessedExecutionsLock.unlock()
+    }
+
+    private func activeEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) -> Bool {
+        blessedExecutionsLock.lock()
+        let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+
+        let staleCeilings = ceilings.filter { !executionIsLive($0) }
+        blessedExecutionsLock.lock()
+        emptyCapabilityCeilings.subtract(staleCeilings)
+        let activeCeilings = emptyCapabilityCeilings
         blessedExecutionsLock.unlock()
 
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
-            if let script = executions[BlessedExecutionKey(
+            if activeCeilings.contains(BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
-            )] {
-                return script
+            )) {
+                return true
             }
-            guard currentIdentity.ppid > 1 else { return nil }
+            guard currentIdentity.ppid > 1 else { return false }
             currentPID = currentIdentity.ppid
-            guard av_process_identity(currentPID, &currentIdentity) else { return nil }
+            guard av_process_identity(currentPID, &currentIdentity) else { return false }
         }
-        return nil
+        return false
+    }
+
+    private func executionIsLive(_ key: BlessedExecutionKey) -> Bool {
+        var identity = AVProcessIdentity()
+        return av_process_identity(key.pid, &identity) && identity.start_usec == key.startUsec
     }
 
     private func handleBlessedCapability(
@@ -5471,7 +5693,7 @@ private final class ApprovalServer: @unchecked Sendable {
         switch loadStoredSecretsResult(directAccessRules: directAccessRules) {
         case .success(let loaded): storedSecrets = loaded
         case .failure(let status):
-            reply(peer, to: message, ok: false, error: "stored Secrets are unavailable: \(status)")
+            reply(peer, to: message, ok: false, error: SecretValueCustodyError.inventoryUnavailable(status).localizedDescription)
             return
         }
         let storedSecret = storedSecrets.first { $0.account == key }
@@ -6440,6 +6662,60 @@ private final class ApprovalServer: @unchecked Sendable {
             useLongLivedCredentials: awsRequestMayUseLongLivedCredentials(request)
                 && chain.selected.roleARN == nil
                 && chain.selected.mfaSerial == nil
+        )
+    }
+
+    private func sshAgentRequest(
+        from message: xpc_object_t, request: ApprovalRequest,
+        helperIdentity: AVProcessIdentity, helperPath: String
+    ) throws -> ApprovalRequest {
+        guard request.op == "ssh-sign" else {
+            guard request.tool != "ssh-agent" else { throw AppError("SSH requires the agent protocol") }
+            return request
+        }
+        guard request.tool == "ssh-agent", request.target == helperPath,
+              request.keys.isEmpty, validSSHSigningArguments(request.args),
+              !request.replaceExistingEnv, !request.allowMissingKeys,
+              request.envConflicts.isEmpty, request.shebangScript == nil, request.scriptData == nil,
+              request.snapshotIncompatibleInterpreter == nil,
+              let signing = liveSigningInfo(pid: helperIdentity.pid),
+              signing.mainExecutable == helperPath, signing.runtimeProtection == .hardened,
+              signing.identifier == "com.automicvault.av",
+              xpc_dictionary_get_value(message, "ssh_socket") != nil
+        else { throw AppError("Invalid SSH agent signing request") }
+        let fd = xpc_dictionary_dup_fd(message, "ssh_socket")
+        guard fd >= 0 else { throw AppError("SSH socket evidence is unavailable") }
+        let socket = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var origin = AVProcessIdentity()
+        guard av_socket_peer_identity(fd, &origin), origin.euid == helperIdentity.euid,
+              origin.audit_session_id == helperIdentity.audit_session_id,
+              launcherBundleIntegrityError(for: origin) == nil,
+              let arguments = processArgumentVector(origin.pid), !arguments.isEmpty
+        else { throw AppError("SSH socket peer cannot be verified") }
+        let config = loadSSHAgentConfiguration()
+        let publicFields = config.publicKey.split(separator: " ")
+        guard config.enabled, publicFields.count >= 2,
+              let publicBytes = Data(base64Encoded: String(publicFields[1])),
+              request.args[1] == "public-key-sha256=" + SHA256.hash(data: publicBytes)
+                .map({ String(format: "%02x", $0) }).joined()
+        else { throw AppError("SSH Agent is disabled or the requested key does not match") }
+        let launchers = sshAgentLaunchers(for: origin)
+        guard !launchers.isEmpty else { throw AppError("SSH authentication requires a live Verified Launcher ancestor with verifiable original process ancestry") }
+        guard let cwd = sshAgentPeerCWD(origin.pid) else {
+            throw AppError("SSH peer working directory is unavailable")
+        }
+        let originPeer = SSHAgentPeer(socket: socket, identity: origin, configuration: config,
+                                     launchers: launchers, arguments: arguments, cwd: cwd,
+                                     helperIdentity: helperIdentity)
+        try originPeer.validate()
+        return ApprovalRequest(
+            op: "ssh-sign", keys: [sshCredentialSecretName], target: helperPath,
+            args: request.args + ["socket-peer=\(pathString(origin))"] + arguments,
+            cwd: cwd, replaceExistingEnv: false, allowMissingKeys: false,
+            envConflicts: [], shebangScript: nil, scriptData: nil, tool: "ssh-agent",
+            title: "Authenticate with your SSH credential?",
+            detail: "The SSH Agent will sign this authentication request using your shared SSH credential. This can grant remote access, including writes. Destination restrictions are not configured. Shared or forwarded connections inherit the local client’s Launcher attribution.",
+            sshPeer: originPeer
         )
     }
 
@@ -7813,19 +8089,32 @@ private final class ApprovalServer: @unchecked Sendable {
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
+        try request.sshPeer?.validate()
         let transaction = try prepareApprovedFulfillment(
             for: request,
             awsRegistration: awsRegistration
         )
+        try request.sshPeer?.validate()
         return transaction.commit(
-            record: { onAccessRequest(record) },
+            record: {
+                do {
+                    try request.sshPeer?.validate()
+                    guard onAccessRequest(record) else { return false }
+                    try request.sshPeer?.validate()
+                    return true
+                } catch { return false }
+            },
             activate: { material in
                 if let registration = material.awsRegistration {
                     installAWSRegistration(registration, pid: pid, identity: identity)
                 }
+                if scriptExecutionDeclaration(for: request)?.manifest.hasEmptyCapabilityCeiling == true {
+                    registerEmptyCapabilityCeiling(pid: pid, identity: identity)
+                }
                 activateAfterRecording()
             },
             observe: { material in
+                guard request.sshPeer == nil else { return }
                 recordLiveSecretUse(
                     request: request,
                     payload: material.payload,
@@ -8130,74 +8419,6 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
 
-    private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
-        guard let opPointer = xpc_dictionary_get_string(message, "op"),
-              let targetPointer = xpc_dictionary_get_string(message, "target"),
-              let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
-              let keys = stringArray(message, "keys"),
-              let args = stringArray(message, "args"),
-              let envConflicts = stringArray(message, "env_conflicts")
-        else {
-            return nil
-        }
-        let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
-            || op == "oxide-get" || op == "fastly-get" || op == "sqlcmd-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
-            || op == "rclone-get" || op == "kubectl-get"
-            || op == "proxy-start"
-        else { return nil }
-        let scriptData: Data?
-        if xpc_dictionary_get_value(message, "script_data") != nil {
-            guard let data = xpcData(message, key: "script_data") else { return nil }
-            scriptData = data
-        } else {
-            scriptData = nil
-        }
-
-        return ApprovalRequest(
-            op: op,
-            keys: keys,
-            target: String(cString: targetPointer),
-            args: args,
-            cwd: String(cString: cwdPointer),
-            replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
-            allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
-            envConflicts: envConflicts,
-            shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
-            scriptData: scriptData,
-            snapshotIncompatibleInterpreter: xpc_dictionary_get_string(
-                message,
-                "snapshot_incompatible_interpreter"
-            ).map(String.init(cString:)),
-            tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
-            title: xpc_dictionary_get_string(message, "title").map(String.init(cString:)),
-            detail: xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
-        )
-    }
-
-    private func stringArray(_ message: xpc_object_t, _ key: String) -> [String]? {
-        guard let value = xpc_dictionary_get_value(message, key),
-              xpc_get_type(value) == XPC_TYPE_ARRAY
-        else {
-            return nil
-        }
-        var strings: [String] = []
-        for index in 0..<xpc_array_get_count(value) {
-            guard let pointer = xpc_array_get_string(value, index) else { return nil }
-            strings.append(String(cString: pointer))
-        }
-        return strings
-    }
-
-    private func xpcData(_ message: xpc_object_t, key: String) -> Data? {
-        var length = 0
-        guard let bytes = xpc_dictionary_get_data(message, key, &length),
-              length <= blessedScriptMaximumBytes
-        else { return nil }
-        return Data(bytes: bytes, count: length)
-    }
-
     private func reply(
         _ peer: xpc_connection_t,
         to message: xpc_object_t,
@@ -8221,8 +8442,20 @@ private final class ApprovalServer: @unchecked Sendable {
             let values = xpc_dictionary_create_empty()
             for (key, value) in secrets {
                 key.withCString { keyPointer in
-                    value.withCString { valuePointer in
-                        xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                    if xpc_dictionary_get_string(message, "op").map(String.init(cString:)) == "inject-fd" {
+                        Data(value.utf8).withUnsafeBytes { bytes in
+                            if let baseAddress = bytes.baseAddress {
+                                xpc_dictionary_set_data(values, keyPointer, baseAddress, bytes.count)
+                            } else {
+                                "".withCString { emptyPtr in
+                                    xpc_dictionary_set_data(values, keyPointer, emptyPtr, 0)
+                                }
+                            }
+                        }
+                    } else {
+                        value.withCString { valuePointer in
+                            xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                        }
                     }
                 }
             }
@@ -8275,6 +8508,94 @@ private final class ApprovalServer: @unchecked Sendable {
         xpc_connection_send_message(peer, message)
     }
 }
+
+private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
+    guard let opPointer = xpc_dictionary_get_string(message, "op"),
+          let targetPointer = xpc_dictionary_get_string(message, "target"),
+          let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
+          let keys = stringArray(message, "keys"),
+          let args = stringArray(message, "args"),
+          let envConflicts = stringArray(message, "env_conflicts")
+    else {
+        return nil
+    }
+    let op = String(cString: opPointer)
+    guard op == "inject" || op == "inject-fd" || op == "keys" || op == "authorize" || op == "gpg-sign" || op == "ssh-sign"
+        || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
+        || op == "oxide-get" || op == "fastly-get" || op == "sqlcmd-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
+        || op == "rclone-get" || op == "kubectl-get"
+        || op == "proxy-start"
+    else { return nil }
+    let scriptData: Data?
+    if xpc_dictionary_get_value(message, "script_data") != nil {
+        guard let data = xpcData(message, key: "script_data") else { return nil }
+        scriptData = data
+    } else {
+        scriptData = nil
+    }
+
+    var title = xpc_dictionary_get_string(message, "title").map(String.init(cString:))
+    var detail = xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
+    if op == "inject-fd" {
+        guard let mappings = stringArray(message, "secret_fds"),
+              let description = fileDescriptorInjectionDetail(keys: keys, mappings: mappings),
+              !xpc_dictionary_get_bool(message, "replace_existing_env"),
+              !xpc_dictionary_get_bool(message, "allow_missing_keys"),
+              envConflicts.isEmpty,
+              xpc_dictionary_get_value(message, "shebang_script") == nil,
+              xpc_dictionary_get_value(message, "script_data") == nil,
+              xpc_dictionary_get_value(message, "snapshot_incompatible_interpreter") == nil,
+              xpc_dictionary_get_value(message, "tool") == nil
+        else { return nil }
+        title = "Apply Secrets through file descriptors?"
+        detail = description
+    } else if xpc_dictionary_get_value(message, "secret_fds") != nil {
+        return nil
+    }
+
+    return ApprovalRequest(
+        op: op,
+        keys: keys,
+        target: String(cString: targetPointer),
+        args: args,
+        cwd: String(cString: cwdPointer),
+        replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
+        allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
+        envConflicts: envConflicts,
+        shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
+        scriptData: scriptData,
+        snapshotIncompatibleInterpreter: xpc_dictionary_get_string(
+            message,
+            "snapshot_incompatible_interpreter"
+        ).map(String.init(cString:)),
+        tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
+        title: title,
+        detail: detail
+    )
+}
+
+private func stringArray(_ message: xpc_object_t, _ key: String) -> [String]? {
+    guard let value = xpc_dictionary_get_value(message, key),
+          xpc_get_type(value) == XPC_TYPE_ARRAY
+    else {
+        return nil
+    }
+    var strings: [String] = []
+    for index in 0..<xpc_array_get_count(value) {
+        guard let pointer = xpc_array_get_string(value, index) else { return nil }
+        strings.append(String(cString: pointer))
+    }
+    return strings
+}
+
+private func xpcData(_ message: xpc_object_t, key: String) -> Data? {
+    var length = 0
+    guard let bytes = xpc_dictionary_get_data(message, key, &length),
+          length <= blessedScriptMaximumBytes
+    else { return nil }
+    return Data(bytes: bytes, count: length)
+}
+
 
 private func supportsVarlockProtocol(_ version: UInt64) -> Bool {
     version == varlockProtocolVersion
@@ -8443,7 +8764,8 @@ private func secretGateMatches(
     request: ApprovalRequest,
     signing: SigningInfo
 ) -> Bool {
-    gate.routes.contains { route in
+    guard request.op != "inject-fd" else { return false }
+    return gate.routes.contains { route in
         route.operation == request.op
             && route.callerIdentifiers.contains(signing.identifier)
             && normalizedExecutablePath(route.targetPath) == normalizedExecutablePath(request.target)
@@ -8543,6 +8865,8 @@ private func classifySecretGateRequest(
     request: ApprovalRequest
 ) -> SecretGateRequestClassification {
     switch gateID {
+    case "ssh-agent":
+        return .mutating
     case "gpg-signing":
         return .localWrite
     case "wrangler":
@@ -10329,9 +10653,26 @@ private struct ApprovalProcessSecurityNode: Identifiable {
     let posture: ApprovalProcessPosture
     let explanation: String
     let isAutomicVaultSigned: Bool
+    var invocationName: String? = nil
 
     var id: String { "\(pid ?? -1):\(path)" }
-    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    var executableName: String { URL(fileURLWithPath: path).lastPathComponent }
+    var name: String { invocationName ?? executableName }
+}
+
+// Diagnostic display only: argv (including npm's rewritten process title) is
+// mutable. It must never replace the executable identity or its runtime posture.
+private func approvalProcessInvocationName(path: String, arguments: [String]) -> String? {
+    guard ["node", "nodejs"].contains(URL(fileURLWithPath: path).lastPathComponent),
+          let first = arguments.first
+    else { return nil }
+    if first == "npm" || first.hasPrefix("npm ") { return "npm" }
+    if let script = arguments.dropFirst().first,
+       URL(fileURLWithPath: script).lastPathComponent == "npm-cli.js"
+    {
+        return "npm"
+    }
+    return nil
 }
 
 private struct ApprovalProcessSecurity {
@@ -10464,7 +10805,7 @@ private func approvalProcessSecurity(
 ) -> ApprovalProcessSecurity {
     let automicVaultTeamIdentifier = selfTeamIdentifier()
     var identities = approvalProcessIdentities(
-        gateClientPID: gateClientPID,
+        gateClientPID: request.sshPeer?.identity.pid ?? gateClientPID,
         launcherPID: launcher?.pid
     )
     if let launcher,
@@ -10481,10 +10822,13 @@ private func approvalProcessSecurity(
         ))
     }
     if !identities.contains(where: { $0.pid == gateClientPID }) {
+        var helper = AVProcessIdentity()
+        let execution = av_process_identity(gateClientPID, &helper)
+            ? approvalProcessExecution(pid: gateClientPID, identity: helper) : nil
         identities.insert(ApprovalProcessIdentity(
             pid: gateClientPID,
             path: gateClientPath,
-            execution: nil
+            execution: execution
         ), at: 0)
     }
 
@@ -10503,8 +10847,16 @@ private func approvalProcessSecurity(
         if isLauncher { roles.append("Verified Launcher") }
         if isTarget { roles.append(request.keys.isEmpty ? "Target" : "Secret recipient") }
         if isGateClient { roles.append("Verified Gate Client") }
+        if identity.pid == request.sshPeer?.identity.pid { roles.append("SSH client") }
         if roles.isEmpty { roles.append("Intermediary") }
 
+        let invocationName = identity.execution.flatMap { execution -> String? in
+            guard !isLauncher, approvalProcessExecutionIsLive(execution),
+                  let arguments = processArgumentVector(identity.pid),
+                  approvalProcessExecutionIsLive(execution)
+            else { return nil }
+            return approvalProcessInvocationName(path: identity.path, arguments: arguments)
+        }
         let signing = identity.execution.flatMap { execution -> LiveSigningInfo? in
             guard approvalProcessExecutionIsLive(execution) else { return nil }
             let signing = liveSigningInfo(pid: identity.pid)
@@ -10525,7 +10877,8 @@ private func approvalProcessSecurity(
             isAutomicVaultSigned: isAutomicVaultSigned(
                 signing,
                 teamIdentifier: automicVaultTeamIdentifier
-            )
+            ),
+            invocationName: invocationName
         )
     }
 
@@ -11227,6 +11580,33 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
+private func scriptExecutionDeclaration(for request: ApprovalRequest) -> BlessedScriptDeclaration? {
+    guard request.op == "inject",
+          request.shebangScript != nil,
+          let data = request.scriptData,
+          let declaration = try? blessedScriptDeclaration(data: data),
+          declaration.matchesExecution(
+              keys: request.keys,
+              target: request.target,
+              replaceExistingEnv: request.replaceExistingEnv,
+              allowMissingKeys: request.allowMissingKeys,
+              snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter
+          )
+    else { return nil }
+    return declaration
+}
+
+private func scriptStartingWithoutApproval(
+    for request: ApprovalRequest
+) -> BlessedScriptDeclaration? {
+    guard request.keys.isEmpty,
+          let declaration = scriptExecutionDeclaration(for: request),
+          declaration.manifest.hasEmptyCapabilityCeiling,
+          declaration.snapshotIncompatibleInterpreter == nil
+    else { return nil }
+    return declaration
+}
+
 private final class ApprovalPanel: NSPanel {
     private var allowsKey = false
 
@@ -11404,6 +11784,15 @@ private func showApprovalAlert(
     reevaluate: (@MainActor () -> Bool)? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
+    let sshTimer = request.sshPeer.map { peer in
+        let timer = Timer(timeInterval: 1, repeats: true) { _ in
+            do { try peer.validate() } catch { cancellation?.cancel() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
+    }
+    defer { sshTimer?.invalidate() }
+
     let startGeneration = ActiveApprovalPrompt.abortGeneration
     let queueToken = UUID()
     let acquired = await HumanApprovalQueue.shared.acquire(
@@ -11437,7 +11826,6 @@ private func showApprovalAlert(
     if reevaluate?() == true {
         return .reevaluated
     }
-
     let receivedAt = Date()
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcherFallbackPath)
     let processSecurity = approvalProcessSecurity(
@@ -11474,7 +11862,8 @@ private func showApprovalAlert(
             launcher: launcher,
             processSecurity: processSecurity,
             receivedAt: receivedAt
-        )
+        ),
+        sshSigningTargetPath: request.sshPeer.map { _ in escapedSecurityPath(request.target) }
     )
     let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
     let usesTouchIDApproval = TouchIDApproval.isEnabled
@@ -11582,7 +11971,7 @@ private func phoneApprovalRisks(
     case .unknown: return [.unknown]
     case .readOnly, .localWrite, .update, .mutating: return [.routine]
     case nil where request.op == "list": return [.secretDisclosure]
-    case nil where request.op == "inject": return [.unconstrainedSecretApplication]
+    case nil where request.op == "inject" || request.op == "inject-fd": return [.unconstrainedSecretApplication]
     case nil: return [.securityWarning]
     }
 }
@@ -11628,6 +12017,9 @@ private func prettyShellCommand(target: String, args: [String]) -> String {
 }
 
 private func approvalPromptCommand(_ request: ApprovalRequest, scriptPath: String? = nil) -> String {
+    if let peer = request.sshPeer {
+        return ([pathString(peer.identity)] + peer.arguments.dropFirst()).map(shellQuote).joined(separator: " ")
+    }
     let parts = authorizationCommandParts(request, scriptPath: scriptPath)
     let resolvedScript = scriptPath ?? resolvedShebangScriptPath(request)
     let invokedScript = resolvedScript.flatMap { path in
@@ -11670,6 +12062,13 @@ private func approvalPromptSections(
             ApprovalPromptRow("Signed", "\(signing.identifier) / \(signing.teamIdentifier)"),
         ]),
     ]
+
+    if request.op == "inject-fd" {
+        sections[1] = ApprovalPromptSection("Secret Delivery", "arrow.right", [
+            ApprovalPromptRow("Delivery", request.detail ?? ""),
+            ApprovalPromptRow("Environment", "Requested Secret Names are removed"),
+        ])
+    }
 
     if !request.keys.isEmpty {
         sections.insert(ApprovalPromptSection(
@@ -11770,6 +12169,15 @@ private struct ApprovalPromptContent {
     let blessing: BlessedScriptPromptContext?
     let processSecurity: ApprovalProcessSecurity
     let sections: [ApprovalPromptSection]
+    var sshSigningTargetPath: String? = nil
+
+    var operationTitle: String? {
+        sshSigningTargetPath == nil ? operation : "SSH Authentication"
+    }
+
+    var writeAccessUnavailableReason: String? {
+        sshSigningTargetPath == nil ? temporaryGrantUnavailableReason : nil
+    }
 }
 
 private extension ApprovalProcessPosture {
@@ -11798,6 +12206,9 @@ private extension ApprovalProcessSecurityNode {
         [
             "\(displayRoles): \(name.isEmpty ? path : name)",
             "Path: \(escapedSecurityPath(path))",
+            invocationName.map { _ in
+                "Invoked via \(executableName); name reported by mutable process arguments, not verified code identity"
+            },
             pid.map { "PID: \($0)" },
             "Status: \(posture.presentation.title)",
             explanation,
@@ -12014,12 +12425,18 @@ private struct ApprovalPromptProcessNodeView: View {
             .overlay {
                 Capsule().stroke(.white.opacity(0.1), lineWidth: 1)
             }
+            if node.invocationName != nil {
+                Text("via \(node.executableName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ApprovalPromptPathView(path: escapedSecurityPath(node.path))
         }
         .frame(width: 150)
+        .help(node.details)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "\(node.displayRoles), \(node.name), \(presentation.title)\(node.isAutomicVaultSigned ? ", signed by Automic Vault" : "")"
+            "\(node.displayRoles), \(node.name)\(node.invocationName == nil ? "" : " via \(node.executableName)"), \(presentation.title)\(node.isAutomicVaultSigned ? ", signed by Automic Vault" : "")"
         )
     }
 }
@@ -12201,7 +12618,7 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
-            if let reason = content.temporaryGrantUnavailableReason {
+            if let reason = content.writeAccessUnavailableReason {
                 Text(reason)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -12339,6 +12756,7 @@ private struct ApprovalPromptView: View {
 }
 
 private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String {
+    if script.usesCapabilityInheritance { return "Inherited from execution context" }
     let summary = script.capabilities.sorted(by: { $0.key < $1.key })
         .map { "\($0.key): \($0.value.title)" }
         .joined(separator: " • ")
@@ -12379,7 +12797,7 @@ private struct ApprovalPromptCommandView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    if let operation = content.operation {
+                    if let operation = content.operationTitle {
                         ApprovalPromptInlineMeta(
                             label: "Operation",
                             value: operation,
@@ -12404,10 +12822,17 @@ private struct ApprovalPromptCommandView: View {
                         systemImage: "folder"
                     )
                     ApprovalPromptInlineMeta(
-                        label: "Full Path",
+                        label: content.sshSigningTargetPath == nil ? "Full Path" : "SSH Client",
                         value: content.commandPath,
                         systemImage: "terminal"
                     )
+                    if let target = content.sshSigningTargetPath {
+                        ApprovalPromptInlineMeta(
+                            label: "Signing Target",
+                            value: target,
+                            systemImage: "key.horizontal"
+                        )
+                    }
                     if let blessing = content.blessing {
                         ApprovalPromptInlineMeta(
                             label: "Capabilities",
@@ -12447,13 +12872,13 @@ private struct ApprovalPromptInlineMeta: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 125, alignment: .leading)
-            Text(value.isEmpty ? "(none)" : value)
+            Text(value.isEmpty ? "none" : value)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(value.isEmpty ? .tertiary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
-                .help(value.isEmpty ? "(none)" : value)
+                .help(value.isEmpty ? "none" : value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -13038,7 +13463,79 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
 }
 
 @MainActor
+private func fileDescriptorInjectionSelfCheck() -> Bool {
+    let message = xpc_dictionary_create_empty()
+    func strings(_ key: String, _ values: [String]) {
+        let array = xpc_array_create_empty()
+        for value in values { value.withCString { xpc_array_set_string(array, XPC_ARRAY_APPEND, $0) } }
+        key.withCString { xpc_dictionary_set_value(message, $0, array) }
+    }
+    xpc_dictionary_set_string(message, "op", "inject-fd")
+    xpc_dictionary_set_string(message, "target", "/bin/cat")
+    xpc_dictionary_set_string(message, "cwd", "/tmp")
+    xpc_dictionary_set_string(message, "detail", "untrusted description")
+    xpc_dictionary_set_bool(message, "replace_existing_env", false)
+    xpc_dictionary_set_bool(message, "allow_missing_keys", false)
+    strings("keys", ["FOO", "BAR"])
+    strings("args", [])
+    strings("env_conflicts", [])
+    strings("secret_fds", ["FOO:3", "BAR:4"])
+    guard let request = approvalRequest(from: message),
+          request.detail?.contains("BAR → FD 4, FOO → FD 3") == true,
+          request.title == "Apply Secrets through file descriptors?",
+          phoneApprovalRisks(request: request, classification: nil, hasSecurityWarning: false)
+              == [.unconstrainedSecretApplication]
+    else { return false }
+    var identity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &identity) else { return false }
+    let signing = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
+    let reuse = request.decisionReuseRequest(clientIdentity: identity, callerPath: "/usr/local/bin/av", signing: signing)
+    var cache = AuthorizationDecisionReuseCache()
+    cache.remember(.approved, for: reuse)
+    guard cache.decision(for: reuse) == nil,
+          request.selecting(SelectedSecretValues(values: [:])).detail == request.detail,
+          accessRequestRecord(request: request, callerPath: "/usr/local/bin/av", decision: "Approved",
+                              approvalSource: "Manual", reason: "test", launcher: nil).detail == request.detail,
+          approvalPromptSections(request: request, callerPath: "/usr/local/bin/av", pid: getpid(),
+                                 signing: signing, scriptApproval: nil, launcher: nil,
+                                 processSecurity: ApprovalProcessSecurity(nodes: []), receivedAt: Date())
+              .contains(where: { $0.title == "Secret Delivery" })
+    else { return false }
+    strings("secret_fds", ["FOO:4", "BAR:3"])
+    guard let swapped = approvalRequest(from: message),
+          swapped.decisionReuseRequest(clientIdentity: identity, callerPath: "/usr/local/bin/av", signing: signing) != reuse
+    else { return false }
+    for mappings in [["FOO:3"], ["FOO:3", "BAR:3"], ["FOO:1", "BAR:4"], ["FOO:3", "BAZ:4"]] {
+        strings("secret_fds", mappings)
+        guard approvalRequest(from: message) == nil else { return false }
+    }
+    strings("secret_fds", ["FOO:3", "BAR:4"])
+    for key in ["replace_existing_env", "allow_missing_keys"] {
+        key.withCString { xpc_dictionary_set_bool(message, $0, true) }
+        guard approvalRequest(from: message) == nil else { return false }
+        key.withCString { xpc_dictionary_set_bool(message, $0, false) }
+    }
+    strings("env_conflicts", ["FOO"])
+    guard approvalRequest(from: message) == nil else { return false }
+    strings("env_conflicts", [])
+    for key in ["shebang_script", "tool", "snapshot_incompatible_interpreter"] {
+        key.withCString { xpc_dictionary_set_string(message, $0, "unexpected") }
+        guard approvalRequest(from: message) == nil else { return false }
+        key.withCString { xpc_dictionary_set_value(message, $0, nil) }
+    }
+    for op in ["inject", "ssh-sign"] {
+        op.withCString { xpc_dictionary_set_string(message, "op", $0) }
+        strings("secret_fds", ["FOO:3", "BAR:4"])
+        guard approvalRequest(from: message) == nil else { return false }
+        xpc_dictionary_set_value(message, "secret_fds", nil)
+        guard approvalRequest(from: message)?.op == op else { return false }
+    }
+    return true
+}
+
+@MainActor
 private func runApprovalSelfCheck() -> Int32 {
+    guard fileDescriptorInjectionSelfCheck() else { return 1 }
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
     var selfIdentity = AVProcessIdentity()
     guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
@@ -13089,6 +13586,47 @@ private func runApprovalSelfCheck() -> Int32 {
             ),
         ])
     )
+    let sshRequest = ApprovalRequest(
+        op: "ssh-sign", keys: [sshCredentialSecretName], target: "/usr/local/bin/av",
+        args: ["ssh-agent"], cwd: "/tmp", replaceExistingEnv: false,
+        allowMissingKeys: false, envConflicts: [], shebangScript: nil,
+        scriptData: nil, tool: "ssh-agent", title: nil, detail: nil,
+        sshPeer: SSHAgentPeer(
+            socket: .nullDevice, identity: selfIdentity, configuration: SSHAgentConfiguration(),
+            launchers: [], arguments: [pathString(selfIdentity), "pangolin", "true"],
+            cwd: "/tmp", helperIdentity: selfIdentity
+        )
+    )
+    let nodePath = "/opt/homebrew/bin/node"
+    let sshReuseRequest = sshRequest.decisionReuseRequest(
+        clientIdentity: selfIdentity, callerPath: sshRequest.target, signing: helperSigning
+    )
+    var sshReuseCache = AuthorizationDecisionReuseCache()
+    for outcome in [AuthorizationDecisionReuseOutcome.denied, .approved, .alwaysApproved] {
+        sshReuseCache.remember(outcome, for: sshReuseRequest)
+        guard sshReuseCache.decision(for: sshReuseRequest) == nil else {
+            print("SSH requests must never reuse approval or denial")
+            return 1
+        }
+    }
+    guard approvalCommandPath(sshRequest) == pathString(selfIdentity),
+          sshRequest.target == "/usr/local/bin/av",
+          approvalPromptCommand(sshRequest) == "\(shellQuote(pathString(selfIdentity))) pangolin true",
+          authorizationHistoryCommand(sshRequest) == prettyShellCommand(
+              target: pathString(selfIdentity), args: ["pangolin", "true"]
+          ),
+          approvalProcessInvocationName(path: nodePath, arguments: ["npm i", "", ""]) == "npm",
+          approvalProcessInvocationName(path: nodePath, arguments: ["npm", "install"]) == "npm",
+          approvalProcessInvocationName(path: nodePath, arguments: [nodePath, "/opt/npm/bin/npm-cli.js", "i"]) == "npm",
+          approvalProcessInvocationName(path: nodePath, arguments: [nodePath, "postinstall.cjs"]) == nil,
+          approvalProcessInvocationName(path: nodePath, arguments: [nodePath, "-e", "npm-cli.js"]) == nil,
+          approvalProcessInvocationName(path: nodePath, arguments: ["npm-imposter"]) == nil,
+          approvalProcessInvocationName(path: "/usr/bin/ssh", arguments: ["npm i"]) == nil,
+          approvalProcessInvocationName(path: nodePath, arguments: []) == nil
+    else {
+        print("SSH command and npm invocation presentation self-check failed")
+        return 1
+    }
     guard processEnvironmentValueSelfCheck() else {
         print("bounded peer environment self-check failed")
         return 2
@@ -13307,6 +13845,28 @@ private func runApprovalSelfCheck() -> Int32 {
         processSecurity: promptProcessSecurity,
         sections: []
     )
+    var sshPromptContent = promptContent
+    sshPromptContent.sshSigningTargetPath = sshRequest.target
+    let npmNode = ApprovalProcessSecurityNode(
+        pid: 42, path: nodePath, roles: ["Intermediary"], posture: .doesNotMeetRequirements,
+        explanation: "Hardened Runtime is not enabled; Executes mutable JavaScript and dependencies",
+        isAutomicVaultSigned: false, invocationName: "npm"
+    )
+    guard sshPromptContent.operationTitle == "SSH Authentication",
+          sshPromptContent.writeAccessUnavailableReason == nil,
+          promptContent.operationTitle == promptContent.operation,
+          promptContent.writeAccessUnavailableReason == promptContent.temporaryGrantUnavailableReason,
+          npmNode.name == "npm", npmNode.executableName == "node",
+          npmNode.details.contains(nodePath),
+          npmNode.details.contains("not verified code identity"),
+          npmNode.posture == .doesNotMeetRequirements,
+          !npmNode.isLauncher, !npmNode.isTarget,
+          NSHostingView(rootView: ApprovalPromptCommandView(content: sshPromptContent)).fittingSize.height > 0,
+          NSHostingView(rootView: ApprovalPromptProcessNodeView(node: npmNode)).fittingSize.height > 0
+    else {
+        print("SSH Approval presentation self-check failed")
+        return 1
+    }
     let collapsedPrompt = NSHostingView(
         rootView: ApprovalPromptView(
             content: promptContent,
@@ -13316,6 +13876,38 @@ private func runApprovalSelfCheck() -> Int32 {
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
     let collapsedHeight = collapsedPrompt.fittingSize.height
+    let narrowedPrompt = NSHostingView(
+        rootView: ApprovalPromptView(
+            content: ApprovalPromptContent(
+                requesterName: requester.name,
+                requesterIconPath: requester.iconPath,
+                command: "git commit -S",
+                commandPath: "/usr/local/bin/git",
+                title: "Sign this Git operation?",
+                detail: "Automic Vault will use your default GPG signing credential.",
+                automaticApprovalExplanation: nil,
+                operation: operationClassificationTitle(.localWrite),
+                accessLevel: "Allow Signing",
+                temporaryGrantUnavailableReason: nil,
+                cwd: "/tmp",
+                keys: "AV_GPG_PRIVATE_KEY",
+                blessing: BlessedScriptPromptContext(
+                    script: promptBlessing.script,
+                    explanation: activeBlessedScriptPromptExplanation(
+                        script: promptBlessing.script,
+                        gateID: "gpg-signing",
+                        launcherAllowsOperation: true
+                    )
+                ),
+                processSecurity: promptProcessSecurity,
+                sections: []
+            ),
+            temporaryGrantCandidate: nil,
+            decide: { _, _ in }
+        )
+    )
+    narrowedPrompt.layoutSubtreeIfNeeded()
+    let narrowedHeight = narrowedPrompt.fittingSize.height
     let compactSize = NSHostingView(
         rootView: ApprovalPromptView(
             content: promptContent,
@@ -13363,6 +13955,21 @@ private func runApprovalSelfCheck() -> Int32 {
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
+          activeBlessedScriptPromptExplanation(
+              script: promptBlessing.script,
+              gateID: "gpg-signing",
+              launcherAllowsOperation: true
+          ) == "The Blessed Script’s declared Capabilities narrow gate policy for this execution and lack a gpg-signing Capability. Approval applies only to this request.",
+          activeBlessedScriptPromptExplanation(
+              script: promptBlessing.script,
+              gateID: "gh",
+              launcherAllowsOperation: true
+          ) == "The Blessed Script’s declared Capabilities narrow gate policy for this execution and exceed the declared gh Capability. Approval applies only to this request.",
+          activeBlessedScriptPromptExplanation(
+              script: promptBlessing.script,
+              gateID: "gpg-signing",
+              launcherAllowsOperation: false
+          ) == "This request exceeds the stored authority. Approval applies only to this request.",
           approvalPromptSecretNames(
               requested: ["PUBLISH_TOKEN", "AWS_ACCESS_KEY_ID"],
               blessed: ["PUBLISH_TOKEN", "AWS_SECRET_ACCESS_KEY"]
@@ -13377,6 +13984,7 @@ private func runApprovalSelfCheck() -> Int32 {
           automaticApprovalExplanation.contains("Approval is required to fail closed"),
           containsDragRegion(collapsedPrompt),
           collapsedHeight > 0,
+          narrowedHeight > 0,
           compactSize.width == 420,
           compactSize.height < collapsedHeight,
           SecretMutation.save(
@@ -13673,6 +14281,13 @@ private func runApprovalSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let fdRequest = ApprovalRequest(
+        op: "inject-fd", keys: directRequest.keys, target: directRequest.target,
+        args: directRequest.args, cwd: directRequest.cwd,
+        replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+        shebangScript: nil, scriptData: nil, tool: nil, title: nil,
+        detail: fileDescriptorInjectionDetail(keys: directRequest.keys, mappings: ["HCLOUD_TOKEN:3"])
+    )
     let directRules = [DirectAccessRule(
         secretName: "HCLOUD_TOKEN",
         launcher: BlessedScriptLauncher(
@@ -13680,7 +14295,11 @@ private func runApprovalSelfCheck() -> Int32 {
             requirement: blockedLauncher.designatedRequirement
         )
     )]
-    guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
+    guard matchingDirectAccessLauncher(
+              request: fdRequest, configuredGate: nil, trustedAVGateClient: true,
+              launchers: [blockedLauncher], rules: directRules
+          ) == nil,
+          resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [unhardenedLauncher])?.protection == .noAccess,
@@ -13750,6 +14369,49 @@ private func runApprovalSelfCheck() -> Int32 {
     else {
         return 1
     }
+
+    func scriptRequest(_ source: String, keys: [String] = []) -> ApprovalRequest {
+        ApprovalRequest(
+            op: "inject",
+            keys: keys,
+            target: "/usr/bin/python3",
+            args: ["/tmp/script"],
+            cwd: "/tmp",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: "/tmp/script",
+            scriptData: Data(source.utf8),
+            tool: nil,
+            title: nil,
+            detail: nil
+        )
+    }
+    let inheritedScript = scriptStartingWithoutApproval(for: scriptRequest(
+        "#!/usr/local/bin/av inject -- /usr/bin/python3\nprint('ok')\n"
+    ))
+    let explicitlyInheritedScript = scriptStartingWithoutApproval(for: scriptRequest("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    # capabilities: { inherit: true }
+    # ---
+    print("ok")
+    """))
+    let emptyCeilingScript = scriptStartingWithoutApproval(for: scriptRequest("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    # capabilities: {}
+    # ---
+    print("ok")
+    """))
+    guard inheritedScript == nil,
+          explicitlyInheritedScript == nil,
+          emptyCeilingScript?.manifest.hasEmptyCapabilityCeiling == true,
+          scriptStartingWithoutApproval(for: scriptRequest(
+              "#!/usr/local/bin/av inject +TOKEN -- /usr/bin/python3\nprint('ok')\n",
+              keys: ["TOKEN"]
+          )) == nil
+    else { return 1 }
 
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
@@ -13824,6 +14486,17 @@ private func runApprovalSelfCheck() -> Int32 {
         capabilities: blessedScript.capabilities,
         launchers: []
     )
+    let inheritingScript = BlessedScript(
+        path: blessedScript.path,
+        checksum: blessedScript.checksum,
+        keys: blessedScript.keys,
+        target: blessedScript.target,
+        replaceExistingEnv: blessedScript.replaceExistingEnv,
+        allowMissingKeys: blessedScript.allowMissingKeys,
+        inheritsCapabilities: true,
+        capabilities: [:],
+        launchers: []
+    )
     guard blessedScriptCanAutoApprove(
         blessedScript,
         request: readOnlyAws,
@@ -13872,7 +14545,19 @@ private func runApprovalSelfCheck() -> Int32 {
         lostBlessingExplanation(
             for: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
             blessedScripts: [blessedScript]
-        ) == nil
+        ) == nil,
+        ActiveScriptAuthority(
+            blessings: [inheritingScript],
+            hasEmptyCapabilityCeiling: false
+        ).inheritsLauncherPolicy,
+        !ActiveScriptAuthority(
+            blessings: [inheritingScript],
+            hasEmptyCapabilityCeiling: true
+        ).allowsAutomaticAuthority,
+        !ActiveScriptAuthority(
+            blessings: [inheritingScript, blessedScript],
+            hasEmptyCapabilityCeiling: false
+        ).inheritsLauncherPolicy
     else { return 1 }
 
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, descriptors: [awsDescriptor])?.id == "aws",
@@ -15645,6 +16330,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         approvalSource: "Auto",
         reason: "Read Only from app policy",
         launcher: "Codex",
+        launcherIconPath: "/Applications/Codex.app",
         callerPath: "/usr/local/bin/av",
         target: "/bin/zsh",
         cwd: "/tmp",
@@ -15661,6 +16347,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
             approvalSource: source,
             reason: recordedApproval.reason,
             launcher: recordedApproval.launcher,
+            launcherIconPath: recordedApproval.launcherIconPath,
             callerPath: recordedApproval.callerPath,
             target: recordedApproval.target,
             cwd: recordedApproval.cwd,
@@ -15669,6 +16356,9 @@ private func runMenuStatusSelfCheck() -> Int32 {
         )
     }
     let policyDenial = retrospectiveRecord("Denied")
+    guard automaticAccessRecord(policyDenial).launcherIconPath == "/Applications/Codex.app",
+          restoredApproval.launcherIconPath == "/Applications/Codex.app"
+    else { return 1 }
     let grantController = TemporaryAccessGrantController()
     let grantWallNow = Date(timeIntervalSince1970: 20_000)
     let grantMonotonicNow: TimeInterval = 100
