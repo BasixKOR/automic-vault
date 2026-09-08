@@ -1,4 +1,4 @@
-# Automic Vault [![Knock Knock](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
+# Automic Vault [![Chat w/Maintainer](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
 
 > Your secrets manager should know what the secrets *do*.
 
