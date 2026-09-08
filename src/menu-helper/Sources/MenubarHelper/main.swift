@@ -2546,9 +2546,11 @@ private extension ApprovalDecision {
         case .canceled: .canceled
         case .interrupted: .interrupted
         case .denied: .denied
-        case .approved, .reevaluated: .approved
+        case .approved: .approved
         case .alwaysApproved: .alwaysApproved
         case .temporaryWriteAccess: .temporaryAccessGrant
+        case .reevaluated:
+            preconditionFailure(".reevaluated decisions must not be stored into reuse cache")
         }
     }
 }
@@ -5240,8 +5242,10 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .interrupted, .denied, .temporaryWriteAccess, .reevaluated:
+                            case .canceled, .interrupted, .denied, .temporaryWriteAccess:
                                 ProxyDestinationDecision.deny
+                            case .reevaluated:
+                                preconditionFailure("proxy destination approval cannot be reevaluated")
                             }
                         }
                     )
@@ -11323,7 +11327,12 @@ private final class ApprovalPromptState: @unchecked Sendable {
     }
 
     @MainActor
-    func resolve(_ result: ApprovalDecision, source: ApprovalDecisionSource = .programmatic) {
+    func resolve(
+        _ result: ApprovalDecision,
+        source: ApprovalDecisionSource = .programmatic,
+        phoneEnabled: Bool = PhoneApprovalCoordinator.shared.isEnabled,
+        touchIDEnabled: Bool = TouchIDApproval.isEnabled
+    ) {
         let shouldResume: Bool = lock.withLock {
             guard !hasDecision else { return false }
             hasDecision = true
@@ -11333,10 +11342,21 @@ private final class ApprovalPromptState: @unchecked Sendable {
 
         var finalResult = result
         if result == .approved || result == .alwaysApproved || result == .temporaryWriteAccess {
-            if PhoneApprovalCoordinator.shared.isEnabled, source == .standardMac {
-                finalResult = .denied
-            } else if TouchIDApproval.isEnabled, source != .touchID {
-                finalResult = .denied
+            switch source {
+            case .standardMac:
+                if phoneEnabled || touchIDEnabled {
+                    finalResult = .interrupted
+                }
+            case .touchID:
+                if !touchIDEnabled {
+                    finalResult = .interrupted
+                }
+            case .phone:
+                if !phoneEnabled {
+                    finalResult = .interrupted
+                }
+            case .programmatic:
+                break
             }
         }
 
@@ -13955,6 +13975,248 @@ private func runApprovalSelfCheck() -> Int32 {
     return 0
 }
 
+@MainActor
+private func runApprovalCallsiteSelfCheck() async -> Int32 {
+    // 1. Queued-transition focus invariant: every freshly created alert starts non-key
+    // and does not inherit focus from a previously key window.
+    let panel1 = makeApprovalPanel()
+    guard !panel1.canBecomeKey,
+          !panel1.canBecomeMain,
+          !panel1.isKeyWindow,
+          panel1.initialFirstResponder == nil,
+          panel1.styleMask.contains(.nonactivatingPanel),
+          panel1.level == .modalPanel,
+          !panel1.hidesOnDeactivate
+    else {
+        fputs("panel1 initial posture failed non-activating / non-key invariant\n", stderr)
+        return 10
+    }
+
+    // Simulate user deliberately clicking panel1 to grant key focus
+    if let clickEvent = NSEvent.mouseEvent(
+        with: .leftMouseDown,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: panel1.windowNumber,
+        context: nil,
+        eventNumber: 0,
+        clickCount: 1,
+        pressure: 1.0
+    ) {
+        panel1.sendEvent(clickEvent)
+    }
+    guard panel1.canBecomeKey else {
+        fputs("panel1 failed to become key after deliberate click\n", stderr)
+        return 11
+    }
+    panel1.orderOut(nil)
+
+    // Verify next queued panel starts non-key by construction, preventing focus auto-promotion
+    let panel2 = makeApprovalPanel()
+    guard !panel2.canBecomeKey,
+          !panel2.canBecomeMain,
+          !panel2.isKeyWindow,
+          panel2.initialFirstResponder == nil
+    else {
+        fputs("panel2 inherited key status or initial first responder across queued transition\n", stderr)
+        return 12
+    }
+    panel2.orderOut(nil)
+
+    // 2. Mode-transition invalidation
+    HumanApprovalQueue.shared.resetForTesting()
+    let startAbortGen = ActiveApprovalPrompt.abortGeneration
+    let abortedRes = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        ActiveApprovalPrompt.current = promptState
+        abortActiveApprovalPrompt()
+    }
+    guard abortedRes == .canceled,
+          ActiveApprovalPrompt.abortGeneration == startAbortGen + 1,
+          ActiveApprovalPrompt.current == nil
+    else {
+        fputs("mode-transition invalidation failed to abort active prompt\n", stderr)
+        return 20
+    }
+
+    // 3. Surface elevation and decision source enforcement across all permutations
+    // Case 3a: Both disabled -> standardMac is accepted, elevated sources are not expected
+    let stdMacBothOff = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: false, touchIDEnabled: false)
+    }
+    guard stdMacBothOff == .approved else {
+        fputs("standardMac failed when both elevated surfaces are disabled\n", stderr)
+        return 30
+    }
+
+    // Case 3b: Phone enabled only -> standardMac interrupted, phone approved, touchID interrupted
+    let stdMacPhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: true, touchIDEnabled: false)
+    }
+    let phonePhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: true, touchIDEnabled: false)
+    }
+    let touchIDPhoneOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: true, touchIDEnabled: false)
+    }
+    guard stdMacPhoneOn == .interrupted, phonePhoneOn == .approved, touchIDPhoneOn == .interrupted else {
+        fputs("surface enforcement failed for phone-only configuration\n", stderr)
+        return 31
+    }
+
+    // Case 3c: Touch ID enabled only -> standardMac interrupted, touchID approved, phone interrupted
+    let stdMacTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: false, touchIDEnabled: true)
+    }
+    let touchIDTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: false, touchIDEnabled: true)
+    }
+    let phoneTouchIDOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: false, touchIDEnabled: true)
+    }
+    guard stdMacTouchIDOn == .interrupted, touchIDTouchIDOn == .approved, phoneTouchIDOn == .interrupted else {
+        fputs("surface enforcement failed for TouchID-only configuration\n", stderr)
+        return 32
+    }
+
+    // Case 3d: Both enabled -> standardMac interrupted, both phone AND touchID approved
+    let stdMacBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .standardMac, phoneEnabled: true, touchIDEnabled: true)
+    }
+    let phoneBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .phone, phoneEnabled: true, touchIDEnabled: true)
+    }
+    let touchIDBothOn = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.approved, source: .touchID, phoneEnabled: true, touchIDEnabled: true)
+    }
+    guard stdMacBothOn == .interrupted, phoneBothOn == .approved, touchIDBothOn == .approved else {
+        fputs("surface enforcement failed when both Phone and TouchID are enabled\n", stderr)
+        return 33
+    }
+
+    // Case 3e: Programmatic denial always flows through
+    let progDenied = await withCheckedContinuation { cont in
+        let promptState = ApprovalPromptState(continuation: cont, panel: panel1)
+        promptState.resolve(.denied, source: .programmatic)
+    }
+    guard progDenied == .denied else {
+        fputs("programmatic denial failed\n", stderr)
+        return 34
+    }
+
+    // 4. Callsite reevaluation through real AuthorizationDecisionReuseCache
+    HumanApprovalQueue.shared.resetForTesting()
+    let slot1Acquired = await HumanApprovalQueue.shared.acquire()
+    guard slot1Acquired, HumanApprovalQueue.shared.hasActiveSlot else {
+        fputs("failed initial queue slot acquisition\n", stderr)
+        return 40
+    }
+
+    let testReq = ApprovalRequest(
+        op: "inject",
+        keys: ["TEST_SECRET"],
+        target: "/bin/zsh",
+        args: [],
+        cwd: "/tmp",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        envConflicts: [],
+        shebangScript: nil,
+        scriptData: nil,
+        tool: nil,
+        title: nil,
+        detail: nil
+    )
+    let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
+
+    var selfIdentity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &selfIdentity) else {
+        fputs("failed to obtain live process identity\n", stderr)
+        return 41
+    }
+    let testReuseRequest = testReq.decisionReuseRequest(
+        clientIdentity: selfIdentity,
+        callerPath: "/bin/zsh",
+        signing: helperSigning
+    )
+    var cache = AuthorizationDecisionReuseCache()
+    guard cache.decision(for: testReuseRequest) == nil else {
+        fputs("reuse cache not empty at test start\n", stderr)
+        return 42
+    }
+
+    let queuedAlertTask = Task { @MainActor in
+        await showApprovalAlert(
+            request: testReq,
+            callerPath: "/bin/zsh",
+            pid: getpid(),
+            signing: helperSigning,
+            scriptApproval: nil,
+            launcher: nil,
+            launcherFallbackPath: "/bin/zsh",
+            automaticApprovalExplanation: nil,
+            reevaluate: {
+                cache.decision(for: testReuseRequest) == .approved
+            }
+        )
+    }
+
+    var queued = false
+    let deadline = Date().addingTimeInterval(5.0)
+    while Date() < deadline {
+        if HumanApprovalQueue.shared.pendingCount == 1 {
+            queued = true
+            break
+        }
+        await Task.yield()
+    }
+    guard queued else {
+        fputs("timed out waiting for request 2 to enqueue in HumanApprovalQueue\n", stderr)
+        return 43
+    }
+
+    // Request 1 records approved decision into reuse cache and releases slot
+    cache.remember(.approved, for: testReuseRequest)
+    HumanApprovalQueue.shared.release()
+
+    let queuedAlertDecision = await withTaskGroup(of: ApprovalDecision?.self) { group in
+        group.addTask {
+            await queuedAlertTask.value
+        }
+        group.addTask {
+            try? await Task.sleep(for: .seconds(5))
+            return nil
+        }
+        let first = await group.next() ?? nil
+        group.cancelAll()
+        return first
+    }
+    guard let queuedAlertDecision else {
+        fputs("timed out waiting for request 2 to resolve after slot release\n", stderr)
+        return 44
+    }
+    guard queuedAlertDecision == .reevaluated,
+          !HumanApprovalQueue.shared.hasActiveSlot,
+          HumanApprovalQueue.shared.pendingCount == 0
+    else {
+        fputs("request 2 failed to reevaluate from cache and release queue slot\n", stderr)
+        return 45
+    }
+
+    return 0
+}
+
 private func runApprovalProcessExecutionSelfCheck() -> Int32 {
     var identity = AVProcessIdentity()
     guard av_process_identity(getpid(), &identity) else { return 1 }
@@ -15839,6 +16101,13 @@ if CommandLine.arguments.contains("--self-check-sleep") {
 
 if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
+}
+
+if CommandLine.arguments.contains("--self-check-approval-callsite") {
+    Task { @MainActor in
+        exit(await runApprovalCallsiteSelfCheck())
+    }
+    dispatchMain()
 }
 
 if CommandLine.arguments.contains("--self-check-approval-process-execution") {
