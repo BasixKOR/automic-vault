@@ -5457,7 +5457,7 @@ private final class ApprovalServer: @unchecked Sendable {
         switch loadStoredSecretsResult(directAccessRules: directAccessRules) {
         case .success(let loaded): storedSecrets = loaded
         case .failure(let status):
-            reply(peer, to: message, ok: false, error: "stored Secrets are unavailable: \(status)")
+            reply(peer, to: message, ok: false, error: SecretValueCustodyError.inventoryUnavailable(status).localizedDescription)
             return
         }
         let storedSecret = storedSecrets.first { $0.account == key }
