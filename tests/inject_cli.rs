@@ -182,8 +182,13 @@ fn fd_injection_preserves_bytes_eof_and_separates_environment() {
     fs::write(keychain.join("BAR"), "second").unwrap();
     let input = home.join("stdin");
     fs::write(&input, "stdin").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+    // CI runners can leave these descriptors open. Free them in the child before av starts.
+    let output = Command::new("/bin/sh")
         .args([
+            "-c",
+            "exec 3<&- 4<&-; exec \"$@\"",
+            "inject-fd-test",
+            env!("CARGO_BIN_EXE_av"),
             "inject",
             "--mode=fd",
             "+FOO:3",
