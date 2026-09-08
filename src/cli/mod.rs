@@ -44,6 +44,7 @@ commands:
   $ av bless [--endorse-launcher] <path>  # review a script for secret access
   $ av inject +KEY... [--] <command>      # inject secrets into a command
   $ av inject -- <command>                # run an approved script
+  $ av inject --mode=fd +KEY:FD -- <cmd>  # apply secrets through anonymous pipes
   $ av proxy +KEY... [--] <command>       # proxy secret references for a command
   $ av list                               # list saved secret names
   $ av save [--project-directory=DIR] KEY # store a global or Project Value
