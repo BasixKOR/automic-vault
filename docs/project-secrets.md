@@ -21,6 +21,8 @@ selected Value ends the request without trying another value.
 
 ## Multiline and exact input
 
+Available since 4.6.0.
+
 `av save NAME` prompts for one hidden line. For a multiline Secret Value such as
 a PEM, use:
 
@@ -39,10 +41,23 @@ This reads to EOF without trimming or newline conversion and refuses terminal
 stdin. Both flags work with Global Values and `--project-directory` and cannot
 be combined. Values must be nonempty UTF-8 without NUL bytes, at most 1 MiB.
 
+If a trusted producer has already supplied a readable descriptor:
+
+```sh
+$ av save --stdin --project-directory=. DEPLOY_PRIVATE_KEY <&3
+```
+
+Saving under an existing name updates its selected Global or Project Value
+after Approval. Review the destination before replacing a Value.
+
 Both input modes use the existing save Approval and Authorization Record path.
 They do not retrieve existing Secrets or authorize later Secret Use. Keep the
 producer's Secret output out of command arguments, environment variables,
 logs, and plaintext files.
+
+To apply exact stored bytes to a consumer, see
+[FD delivery](direct-secret-access.md#apply-secrets-through-file-descriptors).
+For legacy login-Keychain items, see [Copying Secrets from v1](migrating-from-v1.md).
 
 ## dotenvx
 

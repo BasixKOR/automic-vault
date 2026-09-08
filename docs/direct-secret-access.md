@@ -1,7 +1,8 @@
 # Direct Secret Access
 
 Direct Secret Access lets one Verified Launcher use one exact Secret Name in
-future direct `av inject` requests without asking for Approval each time.
+future environment-mode `av inject` requests without asking for Approval each
+time. It does not authorize FD delivery.
 
 This is intentionally not the preferred way to use Automic Vault. The Launcher
 may select any Target and arguments, and the Target receives the Secret. Code
@@ -66,7 +67,7 @@ Vault releases the Secret.
 
 ## Apply Secrets through file descriptors
 
-For a consumer that reads credentials from file descriptors:
+Available since 4.6.0. For a consumer that reads credentials from file descriptors:
 
 ```sh
 av inject --mode=fd +FOO:3 +BAR:4 -- /bin/foo
@@ -83,6 +84,10 @@ Rule or Blessing exists. The Approval shows the mappings and selected Global or
 Project Values; Authorization History records them before release. Keep the app
 and CLI updated together: older apps reject this delivery operation.
 
+A Blessed Script can invoke this command, but its Blessing does not authorize
+FD delivery. Each invocation still requires fresh human Approval, and FD mode
+in an `av inject` shebang is unsupported.
+
 Descriptors must be distinct, unused, canonical decimal integers of 3 or higher;
 stdin, stdout, and stderr are preserved. Duplicate Secret Names, omitted mappings,
 missing Secrets, `--allow-missing-keys`, `--replace-existing-env`, and FD shebangs
@@ -93,3 +98,7 @@ stored; it cannot recover whitespace removed by an earlier import.
 The Target can copy the bytes or pass its read descriptors to children. Pipes
 avoid a named plaintext file and Secret environment injection; they do not make
 the consumer trustworthy or provide encrypted backup/recovery.
+
+Use [`av save --stdin`](project-secrets.md#multiline-and-exact-input) to preserve
+exact input when storing a new Value. For selected v1 Values, see
+[Copying Secrets from v1](migrating-from-v1.md).

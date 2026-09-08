@@ -13,8 +13,9 @@
 - [Choosing a Mechanism](choosing-a-mechanism.md) — which feature to reach for, starting from your situation
 - [Detection and Tool Hardening](tool-hardening.md) — Findings, verification, AWS/Docker handoffs, and terminal permissions
 - [Authorization Gates and Approval](authorization.md) — Access Levels, iPhone and Touch ID setup, Temporary Access Grants, and History
-- [Project Secrets](project-secrets.md) — Project Values with dotenvx and mise
-- [Direct Secret Access](direct-secret-access.md) — broad per-Secret Launcher access and safer alternatives
+- [Project Secrets](project-secrets.md) — multiline and exact-input saving, Project Values, dotenvx, and mise
+- [Direct Secret Access](direct-secret-access.md) — environment delivery, approved FD delivery, and broad per-Secret Launcher access
+- [Copying Secrets from v1](migrating-from-v1.md) — selected legacy Keychain Values, import Approval, and migration limits
 - [Secret Proxy](secret-proxy.md) — destination-gated HTTP/S Secret Application with bearer references
 - [Varlock](varlock.md) — resolver setup and Varlock's separate credential proxy
 - [Signed CLI Launchers](signed-cli-launchers.md) — signature requirements and verification
