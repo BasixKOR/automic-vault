@@ -259,6 +259,61 @@ import Testing
     #expect(!queue.hasActiveSlot)
 }
 
+@Test func releaseRacingWithWaiterRegistration() async {
+    let queue = HumanApprovalQueue()
+    let waves = 5
+    let tasksPerWave = 32
+
+    for _ in 0..<waves {
+        await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<tasksPerWave {
+                group.addTask {
+                    let acquired = await queue.acquire()
+                    if acquired {
+                        queue.release()
+                    }
+                    return acquired
+                }
+            }
+            var acquiredCount = 0
+            for await acquired in group {
+                if acquired {
+                    acquiredCount += 1
+                }
+            }
+            #expect(acquiredCount == tasksPerWave)
+        }
+        #expect(!queue.hasActiveSlot)
+        #expect(queue.pendingCount == 0)
+    }
+}
+
+@Test func resetForTestingDoesNotDeadlockWhenWaitersReenter() async {
+    let queue = HumanApprovalQueue()
+    let acquired = await queue.acquire()
+    #expect(acquired)
+
+    let completed = LockedState<Bool>(false)
+    let task = Task {
+        let granted = await queue.acquire()
+        #expect(!granted)
+        // Re-enter the queue synchronously upon resumption
+        _ = queue.pendingCount
+        queue.release()
+        completed.set(true)
+    }
+
+    let enqueued = await waitUntil { queue.pendingCount == 1 }
+    #expect(enqueued)
+
+    queue.resetForTesting()
+
+    _ = await task.value
+    #expect(completed.get())
+    #expect(!queue.hasActiveSlot)
+    #expect(queue.pendingCount == 0)
+}
+
 private final class LockedState<T>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: T

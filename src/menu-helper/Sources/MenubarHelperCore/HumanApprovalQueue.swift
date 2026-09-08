@@ -34,19 +34,6 @@ public final class HumanApprovalQueue: @unchecked Sendable {
     ) async -> Bool {
         if isCanceled?() == true { return false }
 
-        let shouldWait: Bool = lock.withLock {
-            if !isSlotActive {
-                isSlotActive = true
-                return false
-            } else {
-                return true
-            }
-        }
-
-        if !shouldWait {
-            return true
-        }
-
         return await withCheckedContinuation { continuation in
             var resumed = false
             let resumeWith: (Bool) -> Void = { granted in
@@ -55,22 +42,34 @@ public final class HumanApprovalQueue: @unchecked Sendable {
                 continuation.resume(returning: granted)
             }
 
-            let wasAlreadyCanceled: Bool = lock.withLock {
+            enum Decision {
+                case grantImmediate
+                case cancelImmediate
+                case enqueued
+            }
+
+            let decision: Decision = lock.withLock {
                 if isCanceled?() == true {
-                    return true
+                    return .cancelImmediate
+                }
+                if !isSlotActive {
+                    isSlotActive = true
+                    return .grantImmediate
                 }
                 waiters[id] = resumeWith
                 waiterOrder.append(id)
-                return false
+                return .enqueued
             }
 
-            if wasAlreadyCanceled {
+            switch decision {
+            case .grantImmediate:
+                resumeWith(true)
+            case .cancelImmediate:
                 resumeWith(false)
-                return
-            }
-
-            registerCancellation? { [weak self] in
-                self?.cancel(id: id)
+            case .enqueued:
+                registerCancellation? { [weak self] in
+                    self?.cancel(id: id)
+                }
             }
         }
     }
@@ -117,13 +116,15 @@ public final class HumanApprovalQueue: @unchecked Sendable {
 
     /// Resets queue state (for test isolation).
     public func resetForTesting() {
-        lock.withLock {
+        let pendingResumes: [(Bool) -> Void] = lock.withLock {
             isSlotActive = false
-            for resume in waiters.values {
-                resume(false)
-            }
+            let list = Array(waiters.values)
             waiters.removeAll()
             waiterOrder.removeAll()
+            return list
+        }
+        for resume in pendingResumes {
+            resume(false)
         }
     }
 }

@@ -2537,6 +2537,7 @@ private enum ApprovalDecision: Equatable {
     case approved
     case alwaysApproved
     case temporaryWriteAccess
+    case reevaluated
 }
 
 private extension ApprovalDecision {
@@ -2545,7 +2546,7 @@ private extension ApprovalDecision {
         case .canceled: .canceled
         case .interrupted: .interrupted
         case .denied: .denied
-        case .approved: .approved
+        case .approved, .reevaluated: .approved
         case .alwaysApproved: .alwaysApproved
         case .temporaryWriteAccess: .temporaryAccessGrant
         }
@@ -4373,104 +4374,111 @@ private final class ApprovalServer: @unchecked Sendable {
                 ))
                 return
             }
-            var currentIdentity = AVProcessIdentity()
-            if av_process_identity(pid, &currentIdentity),
-               sameProcessIdentity(identity, currentIdentity),
-               let currentLiveSigning = liveSigningInfo(pid: pid)
-            {
-                let currentCallerPath = pathString(currentIdentity)
-                let currentSigning = SigningInfo(
-                    identifier: currentLiveSigning.identifier,
-                    teamIdentifier: currentLiveSigning.teamIdentifier
-                )
-                var currentLaunchers = launcherIdentities(for: currentIdentity)
-                if currentLaunchers.isEmpty,
-                   let currentLauncher = launcherIdentity(pid: pid, identity: currentIdentity)
+            let tryFulfillFromGrantOrCache: @MainActor () -> Bool = {
+                var currentIdentity = AVProcessIdentity()
+                if av_process_identity(pid, &currentIdentity),
+                   sameProcessIdentity(identity, currentIdentity),
+                   let currentLiveSigning = liveSigningInfo(pid: pid)
                 {
-                    currentLaunchers.append(currentLauncher)
-                }
-                if currentLiveSigning.mainExecutable == currentCallerPath,
-                   currentSigning.identifier == signing.identifier,
-                   currentSigning.teamIdentifier == signing.teamIdentifier,
-                   isAllowedCaller(path: currentCallerPath, signing: currentSigning),
-                   let configuredGate,
-                   let classification,
-                   let currentAgentTaskContext = agentTaskContext(pid: pid),
-                   self.handleTemporaryAccessGrant(
-                       request: request,
-                       gate: configuredGate,
-                       classification: classification,
-                       agentTaskContext: currentAgentTaskContext,
-                       launchers: currentLaunchers,
-                       callerPath: currentCallerPath,
-                       awsRegistration: awsRegistration,
-                       scriptApproval: scriptApproval,
-                       authorizationGate: authorizationGate,
-                       processChains: retainedProcessChains(for: currentIdentity),
-                       pid: pid,
-                       identity: currentIdentity,
-                       peer: peer,
-                       message: message
-                   )
-                {
-                    return
-                }
-            }
-            let cachedDecision = self.transientApprovals.decision(for: transientApproval)
-            if let decision = cachedDecision {
-                if decision == .denied {
-                    _ = self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Denied",
-                        approvalSource: "Auto",
-                        reason: "Reused recent denial",
-                        launcher: promptLauncher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
-                    return
-                }
-                do {
-                    let record = accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Approved",
-                        approvalSource: "Auto",
-                        reason: "Reused recent approval",
-                        launcher: promptLauncher
+                    let currentCallerPath = pathString(currentIdentity)
+                    let currentSigning = SigningInfo(
+                        identifier: currentLiveSigning.identifier,
+                        teamIdentifier: currentLiveSigning.teamIdentifier
                     )
-                    guard try self.fulfillApprovedRequest(
-                        request: request,
-                        awsRegistration: awsRegistration,
-                        pid: pid,
-                        identity: identity,
-                        record: record,
-                        launcher: promptLauncher,
-                        release: { payload in
-                            self.reply(
-                                peer,
-                                to: message,
-                                ok: true,
-                                error: nil,
-                                secrets: payload.secrets,
-                                value: payload.value
-                            )
-                        }
-                    ) else {
-                        self.reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
-                        return
+                    var currentLaunchers = launcherIdentities(for: currentIdentity)
+                    if currentLaunchers.isEmpty,
+                       let currentLauncher = launcherIdentity(pid: pid, identity: currentIdentity)
+                    {
+                        currentLaunchers.append(currentLauncher)
                     }
-                } catch {
-                    _ = self.onAccessRequest(accessRequestRecord(
-                        request: request,
-                        callerPath: callerPath,
-                        decision: "Failed",
-                        approvalSource: "Auto",
-                        reason: error.localizedDescription,
-                        launcher: promptLauncher
-                    ))
-                    self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                    if currentLiveSigning.mainExecutable == currentCallerPath,
+                       currentSigning.identifier == signing.identifier,
+                       currentSigning.teamIdentifier == signing.teamIdentifier,
+                       isAllowedCaller(path: currentCallerPath, signing: currentSigning),
+                       let configuredGate,
+                       let classification,
+                       let currentAgentTaskContext = agentTaskContext(pid: pid),
+                       self.handleTemporaryAccessGrant(
+                           request: request,
+                           gate: configuredGate,
+                           classification: classification,
+                           agentTaskContext: currentAgentTaskContext,
+                           launchers: currentLaunchers,
+                           callerPath: currentCallerPath,
+                           awsRegistration: awsRegistration,
+                           scriptApproval: scriptApproval,
+                           authorizationGate: authorizationGate,
+                           processChains: retainedProcessChains(for: currentIdentity),
+                           pid: pid,
+                           identity: currentIdentity,
+                           peer: peer,
+                           message: message
+                       )
+                    {
+                        return true
+                    }
                 }
+                let cachedDecision = self.transientApprovals.decision(for: transientApproval)
+                if let decision = cachedDecision {
+                    if decision == .denied {
+                        _ = self.onAccessRequest(accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Denied",
+                            approvalSource: "Auto",
+                            reason: "Reused recent denial",
+                            launcher: promptLauncher
+                        ))
+                        self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
+                        return true
+                    }
+                    do {
+                        let record = accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Approved",
+                            approvalSource: "Auto",
+                            reason: "Reused recent approval",
+                            launcher: promptLauncher
+                        )
+                        guard try self.fulfillApprovedRequest(
+                            request: request,
+                            awsRegistration: awsRegistration,
+                            pid: pid,
+                            identity: identity,
+                            record: record,
+                            launcher: promptLauncher,
+                            release: { payload in
+                                self.reply(
+                                    peer,
+                                    to: message,
+                                    ok: true,
+                                    error: nil,
+                                    secrets: payload.secrets,
+                                    value: payload.value
+                                )
+                            }
+                        ) else {
+                            self.reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+                            return true
+                        }
+                    } catch {
+                        _ = self.onAccessRequest(accessRequestRecord(
+                            request: request,
+                            callerPath: callerPath,
+                            decision: "Failed",
+                            approvalSource: "Auto",
+                            reason: error.localizedDescription,
+                            launcher: promptLauncher
+                        ))
+                        self.reply(peer, to: message, ok: false, error: error.localizedDescription)
+                    }
+                    return true
+                }
+                return false
+            }
+
+            if tryFulfillFromGrantOrCache() {
                 return
             }
 
@@ -4508,8 +4516,12 @@ private final class ApprovalServer: @unchecked Sendable {
                 temporaryGrantCandidate: temporaryGrantCandidate,
                 temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
                 classification: classification,
-                cancellation: cancellation
+                cancellation: cancellation,
+                reevaluate: tryFulfillFromGrantOrCache
             )
+            if decision == .reevaluated {
+                return
+            }
             if decision == .canceled {
                 _ = self.onAccessRequest(canceledAccessRequestRecord(
                     request: request, callerPath: callerPath, launcher: promptLauncher
@@ -5228,7 +5240,7 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .interrupted, .denied, .temporaryWriteAccess:
+                            case .canceled, .interrupted, .denied, .temporaryWriteAccess, .reevaluated:
                                 ProxyDestinationDecision.deny
                             }
                         }
@@ -11212,7 +11224,17 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
 }
 
 private final class ApprovalPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    private var allowsKey = false
+
+    override var canBecomeKey: Bool { allowsKey }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !isKeyWindow {
+            allowsKey = true
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
 }
 
 private final class ApprovalPanelDragView: NSView {
@@ -11274,8 +11296,15 @@ private enum ActiveApprovalPrompt {
 }
 
 @MainActor
-private func abortActiveApprovalPrompt() {
+func abortActiveApprovalPrompt() {
     ActiveApprovalPrompt.abort()
+}
+
+enum ApprovalDecisionSource {
+    case standardMac
+    case touchID
+    case phone
+    case programmatic
 }
 
 private final class ApprovalPromptState: @unchecked Sendable {
@@ -11294,13 +11323,22 @@ private final class ApprovalPromptState: @unchecked Sendable {
     }
 
     @MainActor
-    func resolve(_ result: ApprovalDecision) {
+    func resolve(_ result: ApprovalDecision, source: ApprovalDecisionSource = .programmatic) {
         let shouldResume: Bool = lock.withLock {
             guard !hasDecision else { return false }
             hasDecision = true
             return true
         }
         guard shouldResume else { return }
+
+        var finalResult = result
+        if result == .approved || result == .alwaysApproved || result == .temporaryWriteAccess {
+            if PhoneApprovalCoordinator.shared.isEnabled, source == .standardMac {
+                finalResult = .denied
+            } else if TouchIDApproval.isEnabled, source != .touchID {
+                finalResult = .denied
+            }
+        }
 
         if ActiveApprovalPrompt.current === self {
             ActiveApprovalPrompt.current = nil
@@ -11313,12 +11351,12 @@ private final class ApprovalPromptState: @unchecked Sendable {
             PhoneApprovalCoordinator.shared.cancel(remoteRequestID)
         }
         #if !DEBUG
-        if result == .approved || result == .alwaysApproved {
+        if finalResult == .approved || finalResult == .alwaysApproved {
             PostHogTelemetry.shared.captureExplicitApproval()
         }
         #endif
         panel?.orderOut(nil)
-        continuation?.resume(returning: result)
+        continuation?.resume(returning: finalResult)
         continuation = nil
     }
 }
@@ -11342,7 +11380,8 @@ private func showApprovalAlert(
     persistentApprovalLabel: String = "Always Allow",
     classification: SecretGateRequestClassification? = nil,
     cancellation: ApprovalCancellation? = nil,
-    compact: Bool = false
+    compact: Bool = false,
+    reevaluate: (@MainActor () -> Bool)? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let startGeneration = ActiveApprovalPrompt.abortGeneration
@@ -11373,6 +11412,10 @@ private func showApprovalAlert(
           ActiveApprovalPrompt.abortGeneration == startGeneration
     else {
         return terminalApprovalDecision(.canceled, cancellation: cancellation)
+    }
+
+    if reevaluate?() == true {
+        return .reevaluated
     }
 
     let receivedAt = Date()
@@ -11437,12 +11480,11 @@ private func showApprovalAlert(
                 usesIPhoneApproval: usesIPhoneApproval,
                 usesTouchIDApproval: usesTouchIDApproval,
                 compact: compact,
-                decide: { userDecision in
-                    state.resolve(userDecision)
+                decide: { userDecision, source in
+                    state.resolve(userDecision, source: source)
                 }
             )
         )
-        panel.initialFirstResponder = panel.contentView
 
         if usesIPhoneApproval {
             do {
@@ -11480,28 +11522,30 @@ private func showApprovalAlert(
                     case .temporaryWriteAccess: .temporaryWriteAccess
                     case .canceled: .canceled
                     }
-                    state.resolve(mapped)
+                    Task { @MainActor in
+                        state.resolve(mapped, source: .phone)
+                    }
                 }
             } catch {
-                state.resolve(.denied)
+                state.resolve(.denied, source: .programmatic)
                 return
             }
         }
 
         let observed = cancellation?.observe(id: presentationToken) {
-            state.resolve(.canceled)
+            Task { @MainActor in
+                state.resolve(.canceled, source: .programmatic)
+            }
         } ?? true
 
         if !observed {
-            state.resolve(.canceled)
+            state.resolve(.canceled, source: .programmatic)
             return
         }
 
         fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
         panel.center()
         panel.orderFrontRegardless()
-        panel.makeKey()
-        panel.makeFirstResponder(panel.contentView)
     }
 
     return terminalApprovalDecision(decision, cancellation: cancellation)
@@ -12087,7 +12131,7 @@ private struct ApprovalPromptView: View {
     var usesIPhoneApproval = false
     var usesTouchIDApproval = false
     var compact = false
-    let decide: (ApprovalDecision) -> Void
+    let decide: (ApprovalDecision, ApprovalDecisionSource) -> Void
     @State private var isAuthenticatingWithTouchID = false
 
     var body: some View {
@@ -12171,7 +12215,7 @@ private struct ApprovalPromptView: View {
             if usesTouchIDApproval {
                 HStack(spacing: 12) {
                     Button(usesIPhoneApproval ? "Cancel Request" : "Deny", role: .cancel) {
-                        decide(.denied)
+                        decide(.denied, .standardMac)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
@@ -12187,7 +12231,7 @@ private struct ApprovalPromptView: View {
                     .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                 }
             } else if usesIPhoneApproval {
-                Button("Cancel Request", role: .cancel) { decide(.denied) }
+                Button("Cancel Request", role: .cancel) { decide(.denied, .standardMac) }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .keyboardShortcut(.cancelAction)
@@ -12198,7 +12242,7 @@ private struct ApprovalPromptView: View {
                     .multilineTextAlignment(.center)
             } else {
                 HStack(alignment: .top, spacing: 18) {
-                    Button("Deny", role: .cancel) { decide(.denied) }
+                    Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                         .frame(maxWidth: .infinity)
@@ -12209,7 +12253,7 @@ private struct ApprovalPromptView: View {
                             allowsPersistentApproval: allowsPersistentApproval,
                             temporaryGrantCandidate: temporaryGrantCandidate,
                             persistentApprovalLabel: persistentApprovalLabel,
-                            decide: decide
+                            decide: { decide($0, .standardMac) }
                         )
                         Text(compact
                             ? "This Approval applies only to this secret change."
@@ -12269,7 +12313,7 @@ private struct ApprovalPromptView: View {
             reason: "Approve this exact Automic Vault request"
         ) { approved in
             isAuthenticatingWithTouchID = false
-            if approved { decide(decision) }
+            if approved { decide(decision, .touchID) }
         }
     }
 }
@@ -13099,7 +13143,7 @@ private func runApprovalSelfCheck() -> Int32 {
     let dummyView = NSView()
     testPanel.contentView = dummyView
     testPanel.initialFirstResponder = dummyView
-    guard testPanel.canBecomeKey,
+    guard !testPanel.canBecomeKey,
           !testPanel.canBecomeMain,
           testPanel.styleMask.contains(.nonactivatingPanel),
           testPanel.level == .modalPanel,
@@ -13247,7 +13291,7 @@ private func runApprovalSelfCheck() -> Int32 {
         rootView: ApprovalPromptView(
             content: promptContent,
             temporaryGrantCandidate: nil,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     )
     collapsedPrompt.layoutSubtreeIfNeeded()
@@ -13257,7 +13301,7 @@ private func runApprovalSelfCheck() -> Int32 {
             content: promptContent,
             temporaryGrantCandidate: nil,
             compact: true,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     ).fittingSize
     func containsDragRegion(_ view: NSView) -> Bool {
@@ -13284,7 +13328,7 @@ private func runApprovalSelfCheck() -> Int32 {
             ),
             maximumHeight: 500,
             temporaryGrantCandidate: nil,
-            decide: { _ in }
+            decide: { _, _ in }
         )
     ).fittingSize.height
     guard prettyShellCommand(target: "/bin/echo", args: ["hello world", "it's-ok"]) == """

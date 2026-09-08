@@ -89,11 +89,17 @@ enum TouchIDApproval {
         }
         let status = setTouchIDApprovalEnabled(true)
         guard status == errSecSuccess else { throw TouchIDApprovalError.storage(status) }
+        Task { @MainActor in
+            abortActiveApprovalPrompt()
+        }
     }
 
     static func disable() throws {
         let status = setTouchIDApprovalEnabled(false)
         guard status == errSecSuccess else { throw TouchIDApprovalError.storage(status) }
+        Task { @MainActor in
+            abortActiveApprovalPrompt()
+        }
     }
 }
 
@@ -386,6 +392,9 @@ final class PhoneApprovalCoordinator {
         UserDefaults.standard.set(true, forKey: phoneApprovalEnabledDefaultsKey)
         workerGeneration += 1
         await worker.start(generation: workerGeneration)
+        Task { @MainActor in
+            abortActiveApprovalPrompt()
+        }
     }
 
     func submit(
@@ -454,6 +463,9 @@ final class PhoneApprovalCoordinator {
     func disableAfterPhoneApproval() {
         UserDefaults.standard.set(false, forKey: phoneApprovalEnabledDefaultsKey)
         stopConnection(cancelPending: true)
+        Task { @MainActor in
+            abortActiveApprovalPrompt()
+        }
     }
 
     func recoverWithoutIPhone() async throws {
@@ -468,6 +480,9 @@ final class PhoneApprovalCoordinator {
         _ = try keyStore.rotate()
         UserDefaults.standard.set(false, forKey: phoneApprovalEnabledDefaultsKey)
         stopConnection(cancelPending: true)
+        Task { @MainActor in
+            abortActiveApprovalPrompt()
+        }
     }
 
     private func finish(_ requestID: UUID, with result: PhoneApprovalResult) {
