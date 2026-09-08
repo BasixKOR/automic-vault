@@ -207,7 +207,7 @@ fn read_secret_from_tty(key: &str, input: Input) -> Result<Zeroizing<String>, St
 
     let mut bytes = Zeroizing::new(Vec::new());
     let mut chunk = Zeroizing::new([0u8; 4096]);
-    let result = loop {
+    let result: Result<(), String> = loop {
         if INPUT_SIGNAL.load(Ordering::Relaxed) != 0 {
             break Err("Secret input canceled".into());
         }
@@ -241,20 +241,14 @@ fn read_secret_from_tty(key: &str, input: Input) -> Result<Zeroizing<String>, St
             continue;
         }
         match tty.read(&mut *chunk) {
-            Ok(0) => break decode_secret(&bytes),
+            Ok(0) => break Ok(()),
             Ok(count) => {
                 bytes.extend_from_slice(&chunk[..count]);
                 if bytes.len() > MAX_SECRET_BYTES {
                     break Err("Secret Value exceeds 1 MiB".into());
                 }
-                if input == Input::Line {
-                    while bytes
-                        .last()
-                        .is_some_and(|byte| *byte == b'\n' || *byte == b'\r')
-                    {
-                        bytes.pop();
-                    }
-                    break decode_secret(&bytes);
+                if input == Input::Line && bytes.ends_with(b"\n") {
+                    break Ok(());
                 }
             }
             Err(error)
@@ -270,10 +264,18 @@ fn read_secret_from_tty(key: &str, input: Input) -> Result<Zeroizing<String>, St
     writeln!(tty).ok();
     drop(signals);
     if INPUT_SIGNAL.load(Ordering::Relaxed) != 0 {
-        Err("Secret input canceled".into())
-    } else {
-        result
+        return Err("Secret input canceled".into());
     }
+    result?;
+    if input == Input::Line {
+        while bytes
+            .last()
+            .is_some_and(|byte| *byte == b'\n' || *byte == b'\r')
+        {
+            bytes.pop();
+        }
+    }
+    decode_secret(&bytes)
 }
 
 struct EchoRestore {

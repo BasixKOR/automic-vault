@@ -313,6 +313,19 @@ fn terminal_modes_preserve_input_restore_echo_and_cancel_without_saving() {
         b"  synthetic-test-only  "
     );
 
+    let mut tty = Terminal::spawn(&fixture, &["SAVED_KEY"]);
+    tty.ready();
+    tty.send(b"  synthetic-test-only");
+    tty.send(b"\x04");
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(tty.child.try_wait().unwrap().is_none());
+    tty.send(b"  \n");
+    tty.finish(true);
+    assert_eq!(
+        fs::read(fixture.saved()).unwrap(),
+        b"  synthetic-test-only  "
+    );
+
     for signal in [
         None,
         Some(libc::SIGTERM),
