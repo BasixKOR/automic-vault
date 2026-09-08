@@ -156,6 +156,23 @@ confined to the adjacent signed `av` process and the Keychain-owning menu app,
 which stores it after deriving its public key.
 See [ADR 0019](adr/0019-gpg-signing-gate.md).
 
+The optional SSH Agent Gate uses a Unix socket served by the bundled signed
+`av ssh-agent` Target. The helper passes a duplicate of each connected socket
+over authenticated XPC. The Mac derives the local peer's execution identity from
+its kernel audit token, recorded executable UUID and live endpoint ownership,
+then resolves a Verified Launcher through kernel-bound original parent
+executions. Terminal's root-owned Apple `login` relay may be traversed only with
+both original execution links verified and matching user/audit-session endpoints.
+The relay grants no authority. The peer cannot be its own Launcher. Unsupported kernels and changed
+ancestry deny use. The bounded SSH authentication payload digest is bound before
+authorizing. It rechecks the
+peer and credential configuration before releasing the single Global Value of
+`AV_SSH_CREDENTIAL`. The helper signs in memory and returns only the signature.
+Private keys are never added to the system agent. There is no decision reuse,
+Blessing, Temporary Access Grant, or retained provenance at this gate. Settings
+stores its enabled state and public key in the Data Protection Keychain.
+See [ADR 0044](adr/0044-ssh-agent-gate.md).
+
 ### Launcher Packaging
 
 Launcher Bundles let one unsigned Mach-O command-line tool participate as a
@@ -406,6 +423,12 @@ application source, dependencies, plug-ins, or native extensions that can
 observe a Secret after Application. These findings inform Approval; they do not
 create authority, replace Target verification, or imply that a Target will keep
 a Secret confidential.
+
+Execution Chain labels may identify an invocation such as `npm` from mutable
+process arguments. They retain the interpreter's executable path and runtime
+posture and do not establish the invoked code's identity. SSH Approvals identify
+the local SSH client separately from the `av` signing Target and describe the
+operation as authentication, which may permit remote writes.
 
 For `av proxy`, the CLI remains the Gate Client and the signed proxy helper is
 the immediate Secret Target. The launched executable is bound as the Proxy
