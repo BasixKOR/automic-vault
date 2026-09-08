@@ -22,3 +22,17 @@ capability ceiling now.
 
 Omitting the capabilities manifest should mean `capabilities: {}`. Scripts that
 need ambient authority must declare `capabilities: { inherit: true }` explicitly.
+
+## `av save` single-line input should trim surrounding whitespace
+
+### Current behavior
+
+In single-line mode, `av save` removes the line ending from the entered value but
+preserves other leading and trailing whitespace. Existing Secrets may depend on
+those bytes, so changing this behavior in a minor release could silently alter
+their values.
+
+### Next major version
+
+`av save` should trim whitespace from both ends of values entered in single-line
+mode before validating and storing them.
