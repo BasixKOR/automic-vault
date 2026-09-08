@@ -2316,13 +2316,12 @@ private struct DashboardRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    .layoutPriority(1)
                 if let status = item.blessingStatus {
                     BlessingStatusPill(status: status)
-                        .fixedSize()
                 }
                 if let kind = item.kind {
                     DetectorKindPill(kind: kind)
-                        .fixedSize()
                 }
                 if item.isHardened, !item.isTriggered {
                     HardenedDetectorPill()
@@ -2331,9 +2330,11 @@ private struct DashboardRow: View {
                 if let severity = item.severity {
                     Text(severity)
                         .font(.system(size: 10, weight: .bold))
+                        .lineLimit(1)
                         .padding(.horizontal, 6)
                         .frame(height: 18)
                         .outlinedPill(detectorSeverityColor(severity))
+                        .layoutPriority(1)
                 }
             }
             Group {
