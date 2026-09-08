@@ -52,5 +52,5 @@ the Mac is unlocked. The Secret Gate still authorizes each operation.
 
 If `gh auth status` reports an invalid token only while locked, or login fails
 with Keychain error `-25308`, follow the
-[locked-Mac setup and troubleshooting guide](https://github.com/automic-vault/automic-vault/blob/main/docs/authorization.md#remote-work-from-a-locked-mac).
+[locked-Mac setup and troubleshooting guide](../../../docs/authorization.md#remote-work-from-a-locked-mac).
 Login and credential changes can still require an unlocked Mac.
