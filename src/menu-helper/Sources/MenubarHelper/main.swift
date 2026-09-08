@@ -12453,13 +12453,13 @@ private struct ApprovalPromptInlineMeta: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 125, alignment: .leading)
-            Text(value.isEmpty ? "(none)" : value)
+            Text(value.isEmpty ? "none" : value)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(value.isEmpty ? .tertiary : .secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
-                .help(value.isEmpty ? "(none)" : value)
+                .help(value.isEmpty ? "none" : value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
