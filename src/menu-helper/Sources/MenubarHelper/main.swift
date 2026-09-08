@@ -5332,20 +5332,24 @@ private final class ApprovalServer: @unchecked Sendable {
     private func activeBlessedScripts(pid: pid_t, identity: AVProcessIdentity) -> [BlessedScript] {
         let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
-        blessedExecutions = blessedExecutions.filter { key, script in
-            var current = AVProcessIdentity()
-            return currentBlessings.contains(script)
-                && av_process_identity(key.pid, &current)
-                && current.start_usec == key.startUsec
-        }
         let executions = blessedExecutions
+        blessedExecutionsLock.unlock()
+
+        let staleExecutions = executions.compactMap { key, script in
+            currentBlessings.contains(script) && executionIsLive(key) ? nil : key
+        }
+        blessedExecutionsLock.lock()
+        for key in staleExecutions where blessedExecutions[key] == executions[key] {
+            blessedExecutions.removeValue(forKey: key)
+        }
+        let activeExecutions = blessedExecutions
         blessedExecutionsLock.unlock()
 
         var scripts: [BlessedScript] = []
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
-            if let script = executions[BlessedExecutionKey(
+            if let script = activeExecutions[BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
             )] {
@@ -5366,17 +5370,19 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func activeEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) -> Bool {
         blessedExecutionsLock.lock()
-        emptyCapabilityCeilings = emptyCapabilityCeilings.filter { key in
-            var current = AVProcessIdentity()
-            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
-        }
         let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+
+        let staleCeilings = ceilings.filter { !executionIsLive($0) }
+        blessedExecutionsLock.lock()
+        emptyCapabilityCeilings.subtract(staleCeilings)
+        let activeCeilings = emptyCapabilityCeilings
         blessedExecutionsLock.unlock()
 
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
-            if ceilings.contains(BlessedExecutionKey(
+            if activeCeilings.contains(BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
             )) {
@@ -5387,6 +5393,11 @@ private final class ApprovalServer: @unchecked Sendable {
             guard av_process_identity(currentPID, &currentIdentity) else { return false }
         }
         return false
+    }
+
+    private func executionIsLive(_ key: BlessedExecutionKey) -> Bool {
+        var identity = AVProcessIdentity()
+        return av_process_identity(key.pid, &identity) && identity.start_usec == key.startUsec
     }
 
     private func handleBlessedCapability(
@@ -11302,7 +11313,7 @@ private func scriptStartingWithoutApproval(
 ) -> BlessedScriptDeclaration? {
     guard request.keys.isEmpty,
           let declaration = scriptExecutionDeclaration(for: request),
-          declaration.manifest.capabilities.isEmpty,
+          declaration.manifest.hasEmptyCapabilityCeiling,
           declaration.snapshotIncompatibleInterpreter == nil
     else { return nil }
     return declaration
@@ -13755,6 +13766,13 @@ private func runApprovalSelfCheck() -> Int32 {
     let inheritedScript = scriptStartingWithoutApproval(for: scriptRequest(
         "#!/usr/local/bin/av inject -- /usr/bin/python3\nprint('ok')\n"
     ))
+    let explicitlyInheritedScript = scriptStartingWithoutApproval(for: scriptRequest("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    # capabilities: { inherit: true }
+    # ---
+    print("ok")
+    """))
     let emptyCeilingScript = scriptStartingWithoutApproval(for: scriptRequest("""
     #!/usr/local/bin/av inject -- /usr/bin/python3
     # --- automic-vault
@@ -13762,7 +13780,8 @@ private func runApprovalSelfCheck() -> Int32 {
     # ---
     print("ok")
     """))
-    guard inheritedScript?.manifest.inheritsCapabilities == true,
+    guard inheritedScript == nil,
+          explicitlyInheritedScript == nil,
           emptyCeilingScript?.manifest.hasEmptyCapabilityCeiling == true,
           scriptStartingWithoutApproval(for: scriptRequest(
               "#!/usr/local/bin/av inject +TOKEN -- /usr/bin/python3\nprint('ok')\n",

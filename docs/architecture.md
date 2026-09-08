@@ -209,6 +209,8 @@ canonical-path execution.
 
 For compatibility, a script with no capabilities manifest uses Capability
 Inheritance. `capabilities: { inherit: true }` makes the same behavior explicit.
+Blessing records created before this mode was stored retain their previous
+inheritance behavior until the user reblesses the script.
 An explicit `capabilities: {}` instead establishes a memory-only empty capability
 ceiling for that exact execution. It blocks automic authorization inherited from
 an outer Blessed Script, Launcher policy, Direct Access Rules, and Temporary

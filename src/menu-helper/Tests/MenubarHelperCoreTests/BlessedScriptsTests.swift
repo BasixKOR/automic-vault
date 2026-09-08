@@ -215,14 +215,14 @@ func blessedScriptManifestParsesInlineCapabilityModes(
     #expect(overridden.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
 }
 
-@Test func existingBlessingsDoNotImplicitlyAllowCanonicalPathExecution() throws {
+@Test func existingBlessingsRetainCapabilityInheritanceWithoutCanonicalPathExecution() throws {
     let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/opt/homebrew/bin/uv","replaceExistingEnv":false,"allowMissingKeys":false,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
 
     let script = try JSONDecoder().decode(BlessedScript.self, from: data)
 
     #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
     #expect(script.reviewedContents == nil)
-    #expect(!script.usesCapabilityInheritance)
+    #expect(script.usesCapabilityInheritance)
 }
 
 @Test func storedBlessingsPreserveExplicitCapabilityInheritance() throws {
@@ -231,6 +231,14 @@ func blessedScriptManifestParsesInlineCapabilityModes(
     let script = try JSONDecoder().decode(BlessedScript.self, from: data)
 
     #expect(script.usesCapabilityInheritance)
+}
+
+@Test func storedBlessingsPreserveExplicitlyDisabledCapabilityInheritance() throws {
+    let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"inheritsCapabilities":false,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
+
+    let script = try JSONDecoder().decode(BlessedScript.self, from: data)
+
+    #expect(!script.usesCapabilityInheritance)
 }
 
 @Test func reviewedBlessingContentsMustMatchTheBlessedChecksum() throws {

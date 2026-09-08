@@ -125,7 +125,7 @@ public struct BlessedScript: Codable, Equatable, Identifiable, Sendable {
     public let reviewedContents: Data?
 
     public var id: String { path }
-    public var usesCapabilityInheritance: Bool { inheritsCapabilities == true }
+    public var usesCapabilityInheritance: Bool { inheritsCapabilities ?? true }
 
     public var verifiedReviewedContents: Data? {
         guard let reviewedContents,

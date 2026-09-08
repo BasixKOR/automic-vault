@@ -68,10 +68,14 @@ private func blessedScriptAccessSummary(
     capabilities: [String: SecretGateProtection],
     inheritsCapabilities: Bool
 ) -> String {
-    if inheritsCapabilities { return "Inherited from execution context" }
     let summary = capabilities.sorted { $0.key < $1.key }
         .map { "\($0.key): \($0.value.normalized(forGateID: $0.key).title)" }
         .joined(separator: ", ")
+    if inheritsCapabilities {
+        return summary.isEmpty
+            ? "Inherited from execution context"
+            : "\(summary); additional authority inherited from execution context"
+    }
     return summary.isEmpty ? "None" : summary
 }
 

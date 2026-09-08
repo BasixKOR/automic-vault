@@ -22,6 +22,10 @@ An omitted capabilities manifest retains Capability Inheritance.
 `capabilities: {}` disables Capability Inheritance and establishes an empty
 capability ceiling for the exact script execution.
 
+Blessing records created before Capability Inheritance was stored explicitly
+retain their previous inheritance behavior. Reblessing records the current
+declaration mode.
+
 The empty ceiling blocks automic authorization from outer Blessings, Launcher
 policy, Direct Access Rules, and Temporary Access Grants. It does not block a
 human Approval or constrain ungated process execution. Secret Names in the
