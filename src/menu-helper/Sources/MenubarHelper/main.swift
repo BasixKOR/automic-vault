@@ -2109,7 +2109,7 @@ private struct ApprovalRequest {
                 )
             },
             selectedSecretValues: selectedSecretValues,
-            policy: awsRequestMayUseLongLivedCredentials(self)
+            policy: op == "inject-fd" || awsRequestMayUseLongLivedCredentials(self)
                 ? .freshApprovalRequired
                 : .reusable
         )
@@ -3441,6 +3441,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 callerPath: callerPath,
                 signing: signing
+            )
+        case .injectFd where isTrustedAvCaller(path: callerPath, signing: signing):
+            handleInject(
+                message, on: peer, cancellation: cancellation, pid: pid,
+                identity: identity, callerPath: callerPath, signing: signing
             )
         case .inject, .keys, .authorize, .dockerGet, .goatGet, .ordercliGet, .openhueGet, .plumberGet, .uaaGet, .railwayGet,
              .oxideGet, .fastlyGet, .sqlcmdGet, .terraformGet, .aliyunGet, .wakatimeGet, .rcloneGet, .kubectlGet:
@@ -8116,74 +8121,6 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
 
-    private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
-        guard let opPointer = xpc_dictionary_get_string(message, "op"),
-              let targetPointer = xpc_dictionary_get_string(message, "target"),
-              let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
-              let keys = stringArray(message, "keys"),
-              let args = stringArray(message, "args"),
-              let envConflicts = stringArray(message, "env_conflicts")
-        else {
-            return nil
-        }
-        let op = String(cString: opPointer)
-        guard op == "inject" || op == "keys" || op == "authorize" || op == "gpg-sign"
-            || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
-            || op == "oxide-get" || op == "fastly-get" || op == "sqlcmd-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
-            || op == "rclone-get" || op == "kubectl-get"
-            || op == "proxy-start"
-        else { return nil }
-        let scriptData: Data?
-        if xpc_dictionary_get_value(message, "script_data") != nil {
-            guard let data = xpcData(message, key: "script_data") else { return nil }
-            scriptData = data
-        } else {
-            scriptData = nil
-        }
-
-        return ApprovalRequest(
-            op: op,
-            keys: keys,
-            target: String(cString: targetPointer),
-            args: args,
-            cwd: String(cString: cwdPointer),
-            replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
-            allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
-            envConflicts: envConflicts,
-            shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
-            scriptData: scriptData,
-            snapshotIncompatibleInterpreter: xpc_dictionary_get_string(
-                message,
-                "snapshot_incompatible_interpreter"
-            ).map(String.init(cString:)),
-            tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
-            title: xpc_dictionary_get_string(message, "title").map(String.init(cString:)),
-            detail: xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
-        )
-    }
-
-    private func stringArray(_ message: xpc_object_t, _ key: String) -> [String]? {
-        guard let value = xpc_dictionary_get_value(message, key),
-              xpc_get_type(value) == XPC_TYPE_ARRAY
-        else {
-            return nil
-        }
-        var strings: [String] = []
-        for index in 0..<xpc_array_get_count(value) {
-            guard let pointer = xpc_array_get_string(value, index) else { return nil }
-            strings.append(String(cString: pointer))
-        }
-        return strings
-    }
-
-    private func xpcData(_ message: xpc_object_t, key: String) -> Data? {
-        var length = 0
-        guard let bytes = xpc_dictionary_get_data(message, key, &length),
-              length <= blessedScriptMaximumBytes
-        else { return nil }
-        return Data(bytes: bytes, count: length)
-    }
-
     private func reply(
         _ peer: xpc_connection_t,
         to message: xpc_object_t,
@@ -8207,8 +8144,14 @@ private final class ApprovalServer: @unchecked Sendable {
             let values = xpc_dictionary_create_empty()
             for (key, value) in secrets {
                 key.withCString { keyPointer in
-                    value.withCString { valuePointer in
-                        xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                    if xpc_dictionary_get_string(message, "op").map(String.init(cString:)) == "inject-fd" {
+                        Data(value.utf8).withUnsafeBytes { bytes in
+                            xpc_dictionary_set_data(values, keyPointer, bytes.baseAddress, bytes.count)
+                        }
+                    } else {
+                        value.withCString { valuePointer in
+                            xpc_dictionary_set_string(values, keyPointer, valuePointer)
+                        }
                     }
                 }
             }
@@ -8261,6 +8204,94 @@ private final class ApprovalServer: @unchecked Sendable {
         xpc_connection_send_message(peer, message)
     }
 }
+
+private func approvalRequest(from message: xpc_object_t) -> ApprovalRequest? {
+    guard let opPointer = xpc_dictionary_get_string(message, "op"),
+          let targetPointer = xpc_dictionary_get_string(message, "target"),
+          let cwdPointer = xpc_dictionary_get_string(message, "cwd"),
+          let keys = stringArray(message, "keys"),
+          let args = stringArray(message, "args"),
+          let envConflicts = stringArray(message, "env_conflicts")
+    else {
+        return nil
+    }
+    let op = String(cString: opPointer)
+    guard op == "inject" || op == "inject-fd" || op == "keys" || op == "authorize" || op == "gpg-sign"
+        || op == "docker-get" || op == "goat-get" || op == "ordercli-get" || op == "openhue-get" || op == "plumber-get" || op == "uaa-get" || op == "railway-get"
+        || op == "oxide-get" || op == "fastly-get" || op == "sqlcmd-get" || op == "terraform-get" || op == "aliyun-get" || op == "wakatime-get"
+        || op == "rclone-get" || op == "kubectl-get"
+        || op == "proxy-start"
+    else { return nil }
+    let scriptData: Data?
+    if xpc_dictionary_get_value(message, "script_data") != nil {
+        guard let data = xpcData(message, key: "script_data") else { return nil }
+        scriptData = data
+    } else {
+        scriptData = nil
+    }
+
+    var title = xpc_dictionary_get_string(message, "title").map(String.init(cString:))
+    var detail = xpc_dictionary_get_string(message, "detail").map(String.init(cString:))
+    if op == "inject-fd" {
+        guard let mappings = stringArray(message, "secret_fds"),
+              let description = fileDescriptorInjectionDetail(keys: keys, mappings: mappings),
+              !xpc_dictionary_get_bool(message, "replace_existing_env"),
+              !xpc_dictionary_get_bool(message, "allow_missing_keys"),
+              envConflicts.isEmpty,
+              xpc_dictionary_get_value(message, "shebang_script") == nil,
+              xpc_dictionary_get_value(message, "script_data") == nil,
+              xpc_dictionary_get_value(message, "snapshot_incompatible_interpreter") == nil,
+              xpc_dictionary_get_value(message, "tool") == nil
+        else { return nil }
+        title = "Apply Secrets through file descriptors?"
+        detail = description
+    } else if xpc_dictionary_get_value(message, "secret_fds") != nil {
+        return nil
+    }
+
+    return ApprovalRequest(
+        op: op,
+        keys: keys,
+        target: String(cString: targetPointer),
+        args: args,
+        cwd: String(cString: cwdPointer),
+        replaceExistingEnv: xpc_dictionary_get_bool(message, "replace_existing_env"),
+        allowMissingKeys: xpc_dictionary_get_bool(message, "allow_missing_keys"),
+        envConflicts: envConflicts,
+        shebangScript: xpc_dictionary_get_string(message, "shebang_script").map(String.init(cString:)),
+        scriptData: scriptData,
+        snapshotIncompatibleInterpreter: xpc_dictionary_get_string(
+            message,
+            "snapshot_incompatible_interpreter"
+        ).map(String.init(cString:)),
+        tool: xpc_dictionary_get_string(message, "tool").map(String.init(cString:)),
+        title: title,
+        detail: detail
+    )
+}
+
+private func stringArray(_ message: xpc_object_t, _ key: String) -> [String]? {
+    guard let value = xpc_dictionary_get_value(message, key),
+          xpc_get_type(value) == XPC_TYPE_ARRAY
+    else {
+        return nil
+    }
+    var strings: [String] = []
+    for index in 0..<xpc_array_get_count(value) {
+        guard let pointer = xpc_array_get_string(value, index) else { return nil }
+        strings.append(String(cString: pointer))
+    }
+    return strings
+}
+
+private func xpcData(_ message: xpc_object_t, key: String) -> Data? {
+    var length = 0
+    guard let bytes = xpc_dictionary_get_data(message, key, &length),
+          length <= blessedScriptMaximumBytes
+    else { return nil }
+    return Data(bytes: bytes, count: length)
+}
+
 
 private func supportsVarlockProtocol(_ version: UInt64) -> Bool {
     version == varlockProtocolVersion
@@ -8429,7 +8460,8 @@ private func secretGateMatches(
     request: ApprovalRequest,
     signing: SigningInfo
 ) -> Bool {
-    gate.routes.contains { route in
+    guard request.op != "inject-fd" else { return false }
+    return gate.routes.contains { route in
         route.operation == request.op
             && route.callerIdentifiers.contains(signing.identifier)
             && normalizedExecutablePath(route.targetPath) == normalizedExecutablePath(request.target)
@@ -11442,7 +11474,7 @@ private func phoneApprovalRisks(
     case .unknown: return [.unknown]
     case .readOnly, .localWrite, .update, .mutating: return [.routine]
     case nil where request.op == "list": return [.secretDisclosure]
-    case nil where request.op == "inject": return [.unconstrainedSecretApplication]
+    case nil where request.op == "inject" || request.op == "inject-fd": return [.unconstrainedSecretApplication]
     case nil: return [.securityWarning]
     }
 }
@@ -11530,6 +11562,13 @@ private func approvalPromptSections(
             ApprovalPromptRow("Signed", "\(signing.identifier) / \(signing.teamIdentifier)"),
         ]),
     ]
+
+    if request.op == "inject-fd" {
+        sections[1] = ApprovalPromptSection("Secret Delivery", "arrow.right", [
+            ApprovalPromptRow("Delivery", request.detail ?? ""),
+            ApprovalPromptRow("Environment", "Requested Secret Names are removed"),
+        ])
+    }
 
     if !request.keys.isEmpty {
         sections.insert(ApprovalPromptSection(
@@ -12898,7 +12937,75 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
 }
 
 @MainActor
+private func fileDescriptorInjectionSelfCheck() -> Bool {
+    let message = xpc_dictionary_create_empty()
+    func strings(_ key: String, _ values: [String]) {
+        let array = xpc_array_create_empty()
+        for value in values { value.withCString { xpc_array_set_string(array, XPC_ARRAY_APPEND, $0) } }
+        key.withCString { xpc_dictionary_set_value(message, $0, array) }
+    }
+    xpc_dictionary_set_string(message, "op", "inject-fd")
+    xpc_dictionary_set_string(message, "target", "/bin/cat")
+    xpc_dictionary_set_string(message, "cwd", "/tmp")
+    xpc_dictionary_set_string(message, "detail", "untrusted description")
+    xpc_dictionary_set_bool(message, "replace_existing_env", false)
+    xpc_dictionary_set_bool(message, "allow_missing_keys", false)
+    strings("keys", ["FOO", "BAR"])
+    strings("args", [])
+    strings("env_conflicts", [])
+    strings("secret_fds", ["FOO:3", "BAR:4"])
+    guard let request = approvalRequest(from: message),
+          request.detail?.contains("BAR → FD 4, FOO → FD 3") == true,
+          request.title == "Apply Secrets through file descriptors?",
+          phoneApprovalRisks(request: request, classification: nil, hasSecurityWarning: false)
+              == [.unconstrainedSecretApplication]
+    else { return false }
+    var identity = AVProcessIdentity()
+    guard av_process_identity(getpid(), &identity) else { return false }
+    let signing = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
+    let reuse = request.decisionReuseRequest(clientIdentity: identity, callerPath: "/usr/local/bin/av", signing: signing)
+    var cache = AuthorizationDecisionReuseCache()
+    cache.remember(.approved, for: reuse)
+    guard cache.decision(for: reuse) == nil,
+          request.selecting(SelectedSecretValues(values: [:])).detail == request.detail,
+          accessRequestRecord(request: request, callerPath: "/usr/local/bin/av", decision: "Approved",
+                              approvalSource: "Manual", reason: "test", launcher: nil).detail == request.detail,
+          approvalPromptSections(request: request, callerPath: "/usr/local/bin/av", pid: getpid(),
+                                 signing: signing, scriptApproval: nil, launcher: nil,
+                                 processSecurity: ApprovalProcessSecurity(nodes: []), receivedAt: Date())
+              .contains(where: { $0.title == "Secret Delivery" })
+    else { return false }
+    strings("secret_fds", ["FOO:4", "BAR:3"])
+    guard let swapped = approvalRequest(from: message),
+          swapped.decisionReuseRequest(clientIdentity: identity, callerPath: "/usr/local/bin/av", signing: signing) != reuse
+    else { return false }
+    for mappings in [["FOO:3"], ["FOO:3", "BAR:3"], ["FOO:1", "BAR:4"], ["FOO:3", "BAZ:4"]] {
+        strings("secret_fds", mappings)
+        guard approvalRequest(from: message) == nil else { return false }
+    }
+    strings("secret_fds", ["FOO:3", "BAR:4"])
+    for key in ["replace_existing_env", "allow_missing_keys"] {
+        key.withCString { xpc_dictionary_set_bool(message, $0, true) }
+        guard approvalRequest(from: message) == nil else { return false }
+        key.withCString { xpc_dictionary_set_bool(message, $0, false) }
+    }
+    strings("env_conflicts", ["FOO"])
+    guard approvalRequest(from: message) == nil else { return false }
+    strings("env_conflicts", [])
+    for key in ["shebang_script", "tool", "snapshot_incompatible_interpreter"] {
+        key.withCString { xpc_dictionary_set_string(message, $0, "unexpected") }
+        guard approvalRequest(from: message) == nil else { return false }
+        key.withCString { xpc_dictionary_set_value(message, $0, nil) }
+    }
+    xpc_dictionary_set_string(message, "op", "inject")
+    guard approvalRequest(from: message) == nil else { return false }
+    xpc_dictionary_set_value(message, "secret_fds", nil)
+    return approvalRequest(from: message) != nil
+}
+
+@MainActor
 private func runApprovalSelfCheck() -> Int32 {
+    guard fileDescriptorInjectionSelfCheck() else { return 1 }
     let helperSigning = SigningInfo(identifier: "com.automicvault", teamIdentifier: "TEAM")
     var selfIdentity = AVProcessIdentity()
     guard av_process_identity(getpid(), &selfIdentity), liveSigningInfo(pid: getpid()) != nil else {
@@ -13561,6 +13668,13 @@ private func runApprovalSelfCheck() -> Int32 {
         title: nil,
         detail: nil
     )
+    let fdRequest = ApprovalRequest(
+        op: "inject-fd", keys: directRequest.keys, target: directRequest.target,
+        args: directRequest.args, cwd: directRequest.cwd,
+        replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+        shebangScript: nil, scriptData: nil, tool: nil, title: nil,
+        detail: fileDescriptorInjectionDetail(keys: directRequest.keys, mappings: ["HCLOUD_TOKEN:3"])
+    )
     let directRules = [DirectAccessRule(
         secretName: "HCLOUD_TOKEN",
         launcher: BlessedScriptLauncher(
@@ -13568,7 +13682,11 @@ private func runApprovalSelfCheck() -> Int32 {
             requirement: blockedLauncher.designatedRequirement
         )
     )]
-    guard resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
+    guard matchingDirectAccessLauncher(
+              request: fdRequest, configuredGate: nil, trustedAVGateClient: true,
+              launchers: [blockedLauncher], rules: directRules
+          ) == nil,
+          resolveSecretGatePolicy(gate: policyGate, launchers: []) == nil,
           resolveSecretGatePolicy(gate: policyGate, launchers: [blockedLauncher])?.protection == .noAccess,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [blockedLauncher])?.protection == .readOnly,
           resolveSecretGatePolicy(gate: runtimeProtectedGate, launchers: [unhardenedLauncher])?.protection == .noAccess,
