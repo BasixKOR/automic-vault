@@ -230,6 +230,9 @@ Endorsement lets one Verified Launcher automically authorize that exact
 Blessing. Use Blessed Scripts for reviewed work that exits, and Tool
 Authorization Gates for long-running processes.
 
+FD delivery currently requires fresh Approval, including when invoked inside a
+Blessed Script. FD mode in an `av inject` shebang is unsupported.
+
 <img src="./docs/img/blessed-script.png" alt="Automic Vault Blessed Script review" style="width: 589px; height: auto" />
 
 [Blessings and execution guarantees](docs/domain-language.md#blessed-script) ·
@@ -266,6 +269,36 @@ The directory selects a Value and grants no authority. The same name-based
 policy covers all Values of that Secret.
 
 [Project Values, dotenvx, and mise](docs/project-secrets.md)
+
+### Save multiline or exact input
+
+```sh
+$ av save --multiline DEPLOY_PRIVATE_KEY
+# Hidden input; Ctrl-D finishes after the final newline.
+$ av save --stdin API_TOKEN <&3
+# Read exact bytes from an existing descriptor until EOF.
+```
+
+Both modes require Approval. `--stdin` preserves whitespace and newlines;
+Values must be nonempty UTF-8 without NUL bytes, at most 1 MiB.
+
+[Input modes](docs/project-secrets.md#multiline-and-exact-input) ·
+[Copy selected v1 Secrets](docs/migrating-from-v1.md)
+
+## File descriptor delivery
+
+For a consumer that reads credentials from file descriptors:
+
+```sh
+$ av inject --mode=fd +FOO:3 +BAR:4 -- /path/to/consumer
+```
+
+Each Secret arrives through its own anonymous pipe as exact stored bytes,
+followed by EOF. Automic Vault removes the requested names from the Target's
+environment and requires fresh Approval for every invocation. Descriptors must
+be unused, and each Value must fit the available pipe buffer.
+
+[FD delivery and its limits](docs/direct-secret-access.md#apply-secrets-through-file-descriptors)
 
 ## Credential Proxies
 
