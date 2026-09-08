@@ -207,6 +207,17 @@ between verification and execution, and warns on every run. The Blessing stores
 the override, so existing Blessings must be reviewed again before they can use
 canonical-path execution.
 
+For compatibility, a script with no capabilities manifest uses Capability
+Inheritance. `capabilities: { inherit: true }` makes the same behavior explicit.
+An explicit `capabilities: {}` instead establishes a memory-only empty capability
+ceiling for that exact execution. It blocks automic authorization inherited from
+an outer Blessed Script, Launcher policy, Direct Access Rules, and Temporary
+Access Grants; a later gated request may still receive human Approval. A
+snapshot-compatible script that requests no Secret Names and declares this empty
+ceiling starts without Approval because doing so grants no authority. Scripts
+that request Secret Names still require the ordinary Authorization Decision and
+record before release, and then run beneath the empty ceiling.
+
 ### Distribution
 
 The app, CLI, signed helpers, signed fork Isotope releases and Isotopes tap,

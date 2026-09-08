@@ -597,6 +597,20 @@ Blessing cannot gain this exception during an upgrade.
 
 The maximum Access Level a Blessed Script may receive through one Authorization Gate.
 
+### Capability Inheritance
+
+Compatibility behavior that lets a script continue to use automic authority
+available from its execution context, including an outer Blessed Script, its
+Verified Launcher's Authorization Policy and Direct Access Rules, and a matching
+Temporary Access Grant. Capability Inheritance grants no authority by itself.
+
+A Script Declaration with no capabilities manifest inherits by default. The
+declaration `capabilities: { inherit: true }` makes that behavior explicit.
+`capabilities: {}` disables Capability Inheritance and declares an empty
+capability ceiling: after any Secret Names requested by the script's own shebang
+are separately authorized, every later gated operation requires Approval.
+Neither form makes the script safe or prevents ordinary ungated execution.
+
 ### Launcher Endorsement
 
 Permission for one Verified Launcher to execute an exact Blessing with automic authorization. Launcher Endorsement does not transfer to sibling Launchers or a changed script.
