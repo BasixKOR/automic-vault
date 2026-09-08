@@ -12199,6 +12199,7 @@ private struct ApprovalPromptView: View {
 }
 
 private func approvalPromptCapabilitySummary(_ script: BlessedScript) -> String {
+    if script.usesCapabilityInheritance { return "Inherited from execution context" }
     let summary = script.capabilities.sorted(by: { $0.key < $1.key })
         .map { "\($0.key): \($0.value.title)" }
         .joined(separator: " • ")

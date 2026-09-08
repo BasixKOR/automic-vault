@@ -25,6 +25,8 @@ import Testing
         "aws": .fullExceptSecretDumps,
         "stripe": .fullExceptSecretDumps,
     ])
+    #expect(!declaration.manifest.inheritsCapabilities)
+    #expect(!declaration.manifest.hasEmptyCapabilityCeiling)
     #expect(declaration.checksum.count == 64)
 }
 
@@ -38,7 +40,31 @@ import Testing
 
     #expect(declaration.keys == ["TOKEN"])
     #expect(declaration.manifest.capabilities.isEmpty)
+    #expect(declaration.manifest.inheritsCapabilities)
+    #expect(!declaration.manifest.hasEmptyCapabilityCeiling)
     #expect(declaration.snapshotIncompatibleInterpreter == nil)
+}
+
+@Test(arguments: [
+    ("# capabilities: { inherit: true }", true, false),
+    ("# capabilities: {}", false, true),
+])
+func blessedScriptManifestParsesInlineCapabilityModes(
+    line: String,
+    inheritsCapabilities: Bool,
+    hasEmptyCapabilityCeiling: Bool
+) throws {
+    let declaration = try blessedScriptDeclaration(data: Data("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    \(line)
+    # ---
+    print("ok")
+    """.utf8))
+
+    #expect(declaration.manifest.capabilities.isEmpty)
+    #expect(declaration.manifest.inheritsCapabilities == inheritsCapabilities)
+    #expect(declaration.manifest.hasEmptyCapabilityCeiling == hasEmptyCapabilityCeiling)
 }
 
 @Test func blessedScriptDetectsSnapshotIncompatibleInterpreterChains() throws {

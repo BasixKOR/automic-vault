@@ -64,6 +64,24 @@ private extension SecretGateProtection {
     }
 }
 
+private func blessedScriptAccessSummary(
+    capabilities: [String: SecretGateProtection],
+    inheritsCapabilities: Bool
+) -> String {
+    if inheritsCapabilities { return "Inherited from execution context" }
+    let summary = capabilities.sorted { $0.key < $1.key }
+        .map { "\($0.key): \($0.value.normalized(forGateID: $0.key).title)" }
+        .joined(separator: ", ")
+    return summary.isEmpty ? "None" : summary
+}
+
+private func blessedScriptAccessSummary(_ script: BlessedScript) -> String {
+    blessedScriptAccessSummary(
+        capabilities: script.capabilities,
+        inheritsCapabilities: script.usesCapabilityInheritance
+    )
+}
+
 struct BlessedScriptReviewRequest: Sendable {
     let path: String
     let declaration: BlessedScriptDeclaration
@@ -533,6 +551,7 @@ final class DashboardModel: ObservableObject {
             replaceExistingEnv: declaration.replaceExistingEnv,
             allowMissingKeys: declaration.allowMissingKeys,
             allowsCanonicalPathExecution: declaration.snapshotIncompatibleInterpreter != nil,
+            inheritsCapabilities: declaration.manifest.inheritsCapabilities,
             capabilities: declaration.manifest.capabilities,
             launchers: pendingBlessingLaunchers,
             reviewedContents: request.scriptData
@@ -545,7 +564,7 @@ final class DashboardModel: ObservableObject {
                 "Checksum: \(script.checksum)",
                 "Target: \(script.target)",
                 "Secret Names: \(script.keys.joined(separator: ", "))",
-                "Access: \(script.capabilities.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.title)" }.joined(separator: ", "))",
+                "Access: \(blessedScriptAccessSummary(script))",
                 "Launchers: \(script.launchers.map(\.bundleIdentifier).joined(separator: ", "))",
             ].joined(separator: "\n")
         ) { [weak self] in
@@ -618,6 +637,7 @@ final class DashboardModel: ObservableObject {
                 replaceExistingEnv: script.replaceExistingEnv,
                 allowMissingKeys: script.allowMissingKeys,
                 allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
+                inheritsCapabilities: script.usesCapabilityInheritance,
                 capabilities: script.capabilities,
                 launchers: script.launchers + [launcher],
                 blessedAt: script.blessedAt,
@@ -630,7 +650,7 @@ final class DashboardModel: ObservableObject {
                     "Script: \(script.path)",
                     "Checksum: \(script.checksum)",
                     "Secret Names: \(script.keys.joined(separator: ", "))",
-                    "Access: \(script.capabilities.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value.title)" }.joined(separator: ", "))",
+                    "Access: \(blessedScriptAccessSummary(script))",
                 ].joined(separator: "\n")
             ) {
                 self.finishPolicyUpdate(saveBlessedScript(updated), error: "Could not add Verified Launcher")
@@ -671,6 +691,7 @@ final class DashboardModel: ObservableObject {
             replaceExistingEnv: script.replaceExistingEnv,
             allowMissingKeys: script.allowMissingKeys,
             allowsCanonicalPathExecution: script.allowsCanonicalPathExecution == true,
+            inheritsCapabilities: script.usesCapabilityInheritance,
             capabilities: script.capabilities,
             launchers: launchers,
             blessedAt: script.blessedAt,
@@ -3662,6 +3683,7 @@ private struct BlessedScriptReviewView: View {
                         path: request.path,
                         checksum: request.declaration.checksum,
                         keys: request.declaration.keys,
+                        inheritsCapabilities: request.declaration.manifest.inheritsCapabilities,
                         capabilities: request.declaration.manifest.capabilities
                     )
                     launcherList(model.pendingBlessingLaunchers) {
@@ -3875,6 +3897,7 @@ private struct BlessedScriptDetailView: View {
                 path: script.path,
                 checksum: script.checksum,
                 keys: script.keys,
+                inheritsCapabilities: script.usesCapabilityInheritance,
                 capabilities: script.capabilities
             )
             launcherList(script.launchers) {
@@ -3912,6 +3935,7 @@ private struct BlessedScriptFields: View {
     let path: String
     let checksum: String
     let keys: [String]
+    let inheritsCapabilities: Bool
     let capabilities: [String: SecretGateProtection]
 
     var body: some View {
@@ -3921,9 +3945,10 @@ private struct BlessedScriptFields: View {
             SecretGateField("Secrets", keys.joined(separator: ", "))
             SecretGateField(
                 "Capabilities",
-                capabilities.sorted(by: { $0.key < $1.key })
-                    .map { "\($0.key): \($0.value.normalized(forGateID: $0.key).title)" }
-                    .joined(separator: ", ")
+                blessedScriptAccessSummary(
+                    capabilities: capabilities,
+                    inheritsCapabilities: inheritsCapabilities
+                )
             )
         }
     }
