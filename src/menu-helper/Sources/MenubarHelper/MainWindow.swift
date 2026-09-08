@@ -2162,14 +2162,14 @@ private struct DashboardListView: View {
         let items = model.items
         Group {
             if items.isEmpty {
-                if model.isReloading {
-                    ProgressView()
-                        .controlSize(.large)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
+                VStack(spacing: 12) {
                     EmptyListView(section: model.selectedSection)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if model.isReloading {
+                        ProgressView()
+                            .controlSize(.large)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 itemList(items)
             }
