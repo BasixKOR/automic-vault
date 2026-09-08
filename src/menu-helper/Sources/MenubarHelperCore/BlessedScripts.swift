@@ -325,6 +325,20 @@ public struct BlessedScriptDeclaration: Equatable, Sendable {
     public let allowMissingKeys: Bool
     public let snapshotIncompatibleInterpreter: String?
     public let manifest: BlessedScriptManifest
+
+    public func matchesExecution(
+        keys: [String],
+        target: String,
+        replaceExistingEnv: Bool,
+        allowMissingKeys: Bool,
+        snapshotIncompatibleInterpreter: String?
+    ) -> Bool {
+        self.keys == keys.sorted()
+            && self.target == target
+            && self.replaceExistingEnv == replaceExistingEnv
+            && self.allowMissingKeys == allowMissingKeys
+            && self.snapshotIncompatibleInterpreter == snapshotIncompatibleInterpreter
+    }
 }
 
 public func blessedScriptDeclaration(data: Data) throws -> BlessedScriptDeclaration {

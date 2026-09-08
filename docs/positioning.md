@@ -47,8 +47,8 @@ Automic Vault decides whether a complete operation may use it.
 - Existing developer commands continue to work above the security boundary.
 - Scripts inherit their existing execution context's automic authority when no
   capability declaration is present. `capabilities: {}` opts into an empty
-  capability ceiling so later gated operations require Approval regardless of
-  the calling Launcher.
+  capability ceiling so later gated operations attributable to that live script
+  execution require Approval regardless of the calling Launcher.
 - An explicitly recognized, vendor-signed CLI sealed inside its vendor's app
   may represent that app as a Verified Launcher; unrelated bundled executables
   do not inherit the app's authority.

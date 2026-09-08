@@ -65,6 +65,20 @@ func blessedScriptManifestParsesInlineCapabilityModes(
     #expect(declaration.manifest.capabilities.isEmpty)
     #expect(declaration.manifest.inheritsCapabilities == inheritsCapabilities)
     #expect(declaration.manifest.hasEmptyCapabilityCeiling == hasEmptyCapabilityCeiling)
+    #expect(declaration.matchesExecution(
+        keys: [],
+        target: "/usr/bin/python3",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        snapshotIncompatibleInterpreter: nil
+    ))
+    #expect(!declaration.matchesExecution(
+        keys: ["TOKEN"],
+        target: "/usr/bin/python3",
+        replaceExistingEnv: false,
+        allowMissingKeys: false,
+        snapshotIncompatibleInterpreter: nil
+    ))
 }
 
 @Test func blessedScriptDetectsSnapshotIncompatibleInterpreterChains() throws {
@@ -208,6 +222,15 @@ func blessedScriptManifestParsesInlineCapabilityModes(
 
     #expect(!script.allowsExecution(snapshotIncompatibleInterpreter: "uv"))
     #expect(script.reviewedContents == nil)
+    #expect(!script.usesCapabilityInheritance)
+}
+
+@Test func storedBlessingsPreserveExplicitCapabilityInheritance() throws {
+    let data = Data(#"{"path":"/tmp/script","checksum":"checksum","keys":[],"target":"/bin/sh","replaceExistingEnv":false,"allowMissingKeys":false,"inheritsCapabilities":true,"capabilities":{},"launchers":[],"blessedAt":0}"#.utf8)
+
+    let script = try JSONDecoder().decode(BlessedScript.self, from: data)
+
+    #expect(script.usesCapabilityInheritance)
 }
 
 @Test func reviewedBlessingContentsMustMatchTheBlessedChecksum() throws {
@@ -371,6 +394,12 @@ func blessedScriptManifestParsesInlineCapabilityModes(
     # --- automic-vault
     # capabilities:
     #   gh: read-only
+    # ---
+    """,
+    """
+    #!/usr/local/bin/av inject -- /bin/sh
+    # --- automic-vault
+    # capabilities: { inherit: false }
     # ---
     """,
 ])

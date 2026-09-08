@@ -3022,6 +3022,17 @@ private struct ScriptApproval {
     let checksum: String
 }
 
+private struct ActiveScriptAuthority {
+    let blessings: [BlessedScript]
+    let hasEmptyCapabilityCeiling: Bool
+
+    var nearestBlessing: BlessedScript? { blessings.first }
+    var allowsAutomaticAuthority: Bool { !hasEmptyCapabilityCeiling }
+    var inheritsLauncherPolicy: Bool {
+        allowsAutomaticAuthority && blessings.allSatisfy(\.usesCapabilityInheritance)
+    }
+}
+
 private func blessedScriptMatches(
     _ script: BlessedScript,
     request: ApprovalRequest,
@@ -3156,6 +3167,7 @@ private final class ApprovalServer: @unchecked Sendable {
     private var retainedProcessProvenance = RetainedProcessProvenanceStore()
     private let blessedExecutionsLock = NSLock()
     private var blessedExecutions: [BlessedExecutionKey: BlessedScript] = [:]
+    private var emptyCapabilityCeilings: Set<BlessedExecutionKey> = []
     private let awsRegistrationsLock = NSLock()
     private var awsRegistrations: [BlessedExecutionKey: AWSRegistration] = [:]
 
@@ -3921,6 +3933,13 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let scriptApproval = scriptApproval(for: request)
+        if let scriptDeclaration = scriptStartingWithoutApproval(for: request) {
+            if scriptDeclaration.manifest.hasEmptyCapabilityCeiling {
+                registerEmptyCapabilityCeiling(pid: pid, identity: identity)
+            }
+            reply(peer, to: message, ok: true, error: nil, secrets: [:])
+            return
+        }
         let processChains = retainedProcessChains(for: identity)
         let keepsDetachedProcessAccess = UserDefaults.standard.bool(
             forKey: keepLauncherAccessForDetachedProcessesDefaultsKey
@@ -3932,22 +3951,29 @@ private final class ApprovalServer: @unchecked Sendable {
             callerPID: pid,
             ancestorFallbackPath: ancestorFallbackPath
         )
-        let activeBlessing = activeBlessedScript(pid: pid, identity: identity)
-        if let script = activeBlessing {
-            if handleBlessedCapability(
-                script,
-                request: request,
-                signing: signing,
-                descriptors: secretGateDescriptors,
-                launcher: launcher,
-                callerPath: callerPath,
-                awsRegistration: awsRegistration,
-                pid: pid,
-                identity: identity,
-                peer: peer,
-                message: message
-            ) {
-                return
+        let scriptAuthority = ActiveScriptAuthority(
+            blessings: activeBlessedScripts(pid: pid, identity: identity),
+            hasEmptyCapabilityCeiling: activeEmptyCapabilityCeiling(pid: pid, identity: identity)
+        )
+        let activeBlessing = scriptAuthority.nearestBlessing
+        if scriptAuthority.allowsAutomaticAuthority {
+            for script in scriptAuthority.blessings {
+                if handleBlessedCapability(
+                    script,
+                    request: request,
+                    signing: signing,
+                    descriptors: secretGateDescriptors,
+                    launcher: launcher,
+                    callerPath: callerPath,
+                    awsRegistration: awsRegistration,
+                    pid: pid,
+                    identity: identity,
+                    peer: peer,
+                    message: message
+                ) {
+                    return
+                }
+                if !script.usesCapabilityInheritance { break }
             }
         }
         let blessingGate = scriptApproval.map {
@@ -3970,7 +3996,8 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let effectiveBlessingMatch = currentBlessingMatch
             ?? (keepsDetachedProcessAccess ? retainedBlessingMatch : nil)
-        if let scriptApproval,
+        if scriptAuthority.allowsAutomaticAuthority,
+           let scriptApproval,
            let blessingGate,
            let (script, matchedLauncher) = effectiveBlessingMatch
         {
@@ -4112,7 +4139,9 @@ private final class ApprovalServer: @unchecked Sendable {
             retainedProcessExplanation = nil
         }
         let automaticApprovalExplanation: String?
-        if let resolvedPolicy,
+        if scriptAuthority.hasEmptyCapabilityCeiling {
+            automaticApprovalExplanation = "This script declared an empty capability ceiling, so inherited automatic access cannot authorize this request."
+        } else if let resolvedPolicy,
            let classification,
            let explanation = launcherRuntimeProtectionApprovalExplanation(
                policy: resolvedPolicy,
@@ -4138,7 +4167,8 @@ private final class ApprovalServer: @unchecked Sendable {
         } else {
             automaticApprovalExplanation = nil
         }
-        if let configuredGate,
+        if scriptAuthority.allowsAutomaticAuthority,
+           let configuredGate,
            let classification,
            let currentAgentTaskContext,
            handleTemporaryAccessGrant(
@@ -4160,7 +4190,7 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             return
         }
-        if activeBlessing == nil, let directAccessLauncher {
+        if scriptAuthority.inheritsLauncherPolicy, let directAccessLauncher {
             do {
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
@@ -4225,7 +4255,7 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             return
         }
-        if activeBlessing == nil,
+        if scriptAuthority.inheritsLauncherPolicy,
            let configuredGate,
            let resolvedPolicy,
            let classification,
@@ -4303,18 +4333,20 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let promptLauncher = policyLauncher
-        let temporaryGrantCandidate = temporaryAccessGrantCandidate(
+        let temporaryGrantCandidate = scriptAuthority.hasEmptyCapabilityCeiling ? nil : temporaryAccessGrantCandidate(
             gate: configuredGate,
             classification: classification,
             launcher: launcher,
             agentTaskContext: currentAgentTaskContext
         )
-        let temporaryGrantUnavailableReason = temporaryAccessGrantUnavailableReason(
-            hasToolSpecificGate: configuredGate != nil,
-            classification: classification,
-            launcherRuntimeProtection: launcher?.runtimeProtection,
-            agentTaskContext: currentAgentTaskContext
-        )
+        let temporaryGrantUnavailableReason = scriptAuthority.hasEmptyCapabilityCeiling
+            ? "This script declared an empty capability ceiling."
+            : temporaryAccessGrantUnavailableReason(
+                hasToolSpecificGate: configuredGate != nil,
+                classification: classification,
+                launcherRuntimeProtection: launcher?.runtimeProtection,
+                agentTaskContext: currentAgentTaskContext
+            )
         let promptAccessLevel = if let configuredGate, let resolvedPolicy {
             configuredGate.protectionTitle(resolvedPolicy.protection)
         } else {
@@ -4395,6 +4427,7 @@ private final class ApprovalServer: @unchecked Sendable {
                    currentSigning.identifier == signing.identifier,
                    currentSigning.teamIdentifier == signing.teamIdentifier,
                    isAllowedCaller(path: currentCallerPath, signing: currentSigning),
+                   !self.activeEmptyCapabilityCeiling(pid: pid, identity: currentIdentity),
                    let configuredGate,
                    let classification,
                    let currentAgentTaskContext = agentTaskContext(pid: pid),
@@ -5296,7 +5329,7 @@ private final class ApprovalServer: @unchecked Sendable {
         blessedExecutionsLock.unlock()
     }
 
-    private func activeBlessedScript(pid: pid_t, identity: AVProcessIdentity) -> BlessedScript? {
+    private func activeBlessedScripts(pid: pid_t, identity: AVProcessIdentity) -> [BlessedScript] {
         let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
         blessedExecutions = blessedExecutions.filter { key, script in
@@ -5308,6 +5341,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let executions = blessedExecutions
         blessedExecutionsLock.unlock()
 
+        var scripts: [BlessedScript] = []
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
@@ -5315,13 +5349,44 @@ private final class ApprovalServer: @unchecked Sendable {
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
             )] {
-                return script
+                scripts.append(script)
             }
-            guard currentIdentity.ppid > 1 else { return nil }
+            guard currentIdentity.ppid > 1 else { return scripts }
             currentPID = currentIdentity.ppid
-            guard av_process_identity(currentPID, &currentIdentity) else { return nil }
+            guard av_process_identity(currentPID, &currentIdentity) else { return scripts }
         }
-        return nil
+        return scripts
+    }
+
+    private func registerEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) {
+        blessedExecutionsLock.lock()
+        emptyCapabilityCeilings.insert(BlessedExecutionKey(pid: pid, startUsec: identity.start_usec))
+        blessedExecutionsLock.unlock()
+    }
+
+    private func activeEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) -> Bool {
+        blessedExecutionsLock.lock()
+        emptyCapabilityCeilings = emptyCapabilityCeilings.filter { key in
+            var current = AVProcessIdentity()
+            return av_process_identity(key.pid, &current) && current.start_usec == key.startUsec
+        }
+        let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+
+        var currentPID = pid
+        var currentIdentity = identity
+        for _ in 0..<64 {
+            if ceilings.contains(BlessedExecutionKey(
+                pid: currentPID,
+                startUsec: currentIdentity.start_usec
+            )) {
+                return true
+            }
+            guard currentIdentity.ppid > 1 else { return false }
+            currentPID = currentIdentity.ppid
+            guard av_process_identity(currentPID, &currentIdentity) else { return false }
+        }
+        return false
     }
 
     private func handleBlessedCapability(
@@ -7808,6 +7873,9 @@ private final class ApprovalServer: @unchecked Sendable {
             activate: { material in
                 if let registration = material.awsRegistration {
                     installAWSRegistration(registration, pid: pid, identity: identity)
+                }
+                if scriptExecutionDeclaration(for: request)?.manifest.hasEmptyCapabilityCeiling == true {
+                    registerEmptyCapabilityCeiling(pid: pid, identity: identity)
                 }
                 activateAfterRecording()
             },
@@ -11213,6 +11281,33 @@ private func scriptApproval(for request: ApprovalRequest) -> ScriptApproval? {
     return ScriptApproval(path: path, checksum: checksum)
 }
 
+private func scriptExecutionDeclaration(for request: ApprovalRequest) -> BlessedScriptDeclaration? {
+    guard request.op == "inject",
+          request.shebangScript != nil,
+          let data = request.scriptData,
+          let declaration = try? blessedScriptDeclaration(data: data),
+          declaration.matchesExecution(
+              keys: request.keys,
+              target: request.target,
+              replaceExistingEnv: request.replaceExistingEnv,
+              allowMissingKeys: request.allowMissingKeys,
+              snapshotIncompatibleInterpreter: request.snapshotIncompatibleInterpreter
+          )
+    else { return nil }
+    return declaration
+}
+
+private func scriptStartingWithoutApproval(
+    for request: ApprovalRequest
+) -> BlessedScriptDeclaration? {
+    guard request.keys.isEmpty,
+          let declaration = scriptExecutionDeclaration(for: request),
+          declaration.manifest.capabilities.isEmpty,
+          declaration.snapshotIncompatibleInterpreter == nil
+    else { return nil }
+    return declaration
+}
+
 private final class ApprovalPanel: NSPanel {
     private var allowsKey = false
 
@@ -13640,6 +13735,41 @@ private func runApprovalSelfCheck() -> Int32 {
         return 1
     }
 
+    func scriptRequest(_ source: String, keys: [String] = []) -> ApprovalRequest {
+        ApprovalRequest(
+            op: "inject",
+            keys: keys,
+            target: "/usr/bin/python3",
+            args: ["/tmp/script"],
+            cwd: "/tmp",
+            replaceExistingEnv: false,
+            allowMissingKeys: false,
+            envConflicts: [],
+            shebangScript: "/tmp/script",
+            scriptData: Data(source.utf8),
+            tool: nil,
+            title: nil,
+            detail: nil
+        )
+    }
+    let inheritedScript = scriptStartingWithoutApproval(for: scriptRequest(
+        "#!/usr/local/bin/av inject -- /usr/bin/python3\nprint('ok')\n"
+    ))
+    let emptyCeilingScript = scriptStartingWithoutApproval(for: scriptRequest("""
+    #!/usr/local/bin/av inject -- /usr/bin/python3
+    # --- automic-vault
+    # capabilities: {}
+    # ---
+    print("ok")
+    """))
+    guard inheritedScript?.manifest.inheritsCapabilities == true,
+          emptyCeilingScript?.manifest.hasEmptyCapabilityCeiling == true,
+          scriptStartingWithoutApproval(for: scriptRequest(
+              "#!/usr/local/bin/av inject +TOKEN -- /usr/bin/python3\nprint('ok')\n",
+              keys: ["TOKEN"]
+          )) == nil
+    else { return 1 }
+
     let avSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
     func awsRequest(
         keys: [String] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
@@ -13713,6 +13843,17 @@ private func runApprovalSelfCheck() -> Int32 {
         capabilities: blessedScript.capabilities,
         launchers: []
     )
+    let inheritingScript = BlessedScript(
+        path: blessedScript.path,
+        checksum: blessedScript.checksum,
+        keys: blessedScript.keys,
+        target: blessedScript.target,
+        replaceExistingEnv: blessedScript.replaceExistingEnv,
+        allowMissingKeys: blessedScript.allowMissingKeys,
+        inheritsCapabilities: true,
+        capabilities: [:],
+        launchers: []
+    )
     guard blessedScriptCanAutoApprove(
         blessedScript,
         request: readOnlyAws,
@@ -13761,7 +13902,19 @@ private func runApprovalSelfCheck() -> Int32 {
         lostBlessingExplanation(
             for: ScriptApproval(path: "/tmp/script", checksum: "checksum"),
             blessedScripts: [blessedScript]
-        ) == nil
+        ) == nil,
+        ActiveScriptAuthority(
+            blessings: [inheritingScript],
+            hasEmptyCapabilityCeiling: false
+        ).inheritsLauncherPolicy,
+        !ActiveScriptAuthority(
+            blessings: [inheritingScript],
+            hasEmptyCapabilityCeiling: true
+        ).allowsAutomaticAuthority,
+        !ActiveScriptAuthority(
+            blessings: [inheritingScript, blessedScript],
+            hasEmptyCapabilityCeiling: false
+        ).inheritsLauncherPolicy
     else { return 1 }
 
     guard matchingSecretGate(request: readOnlyAws, signing: avSigning, descriptors: [awsDescriptor])?.id == "aws",

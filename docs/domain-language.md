@@ -608,8 +608,10 @@ A Script Declaration with no capabilities manifest inherits by default. The
 declaration `capabilities: { inherit: true }` makes that behavior explicit.
 `capabilities: {}` disables Capability Inheritance and declares an empty
 capability ceiling: after any Secret Names requested by the script's own shebang
-are separately authorized, every later gated operation requires Approval.
-Neither form makes the script safe or prevents ordinary ungated execution.
+are separately authorized, every later gated operation attributable to that live
+execution requires Approval. Neither form makes the script safe, prevents
+ordinary ungated execution, or follows a child after its script ancestry becomes
+unobservable.
 
 ### Launcher Endorsement
 

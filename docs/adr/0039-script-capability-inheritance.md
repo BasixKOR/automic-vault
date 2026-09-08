@@ -31,6 +31,8 @@ Request and must be authorized and recorded before release.
 A snapshot-compatible script with no requested Secret Names and an explicit
 empty ceiling may start without Approval. The approval service validates the
 complete declaration and registers the ceiling before allowing execution.
+The ceiling remains memory-only and attributable through live process ancestry;
+an Automic Vault restart or loss of observable ancestry ends it.
 
 ## Consequences
 
