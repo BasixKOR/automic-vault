@@ -2845,10 +2845,18 @@ final class ApprovalCancellation: @unchecked Sendable {
             return items
         }
         if !list.isEmpty {
-            RunLoop.main.perform(inModes: [.modalPanel, .default]) {
+            if Thread.isMainThread {
                 MainActor.assumeIsolated {
                     for item in list {
                         item()
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        for item in list {
+                            item()
+                        }
                     }
                 }
             }
@@ -11615,7 +11623,9 @@ private final class ApprovalPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown, !isKeyWindow {
             allowsKey = true
-            makeKey()
+            if isVisible {
+                makeKey()
+            }
         }
         super.sendEvent(event)
     }
@@ -14661,6 +14671,31 @@ private func runApprovalSelfCheck() -> Int32 {
 }
 
 @MainActor
+private func awaitWithTimeout<T: Sendable>(
+    duration: Duration,
+    cancellation: ApprovalCancellation,
+    task: Task<T, Never>
+) async -> T? {
+    await withTaskGroup(of: T?.self) { group in
+        group.addTask {
+            await task.value
+        }
+        group.addTask {
+            try? await Task.sleep(for: duration)
+            return nil
+        }
+        let first = await group.next() ?? nil
+        if first == nil {
+            cancellation.cancel()
+            task.cancel()
+        }
+        group.cancelAll()
+        while await group.next() != nil {}
+        return first
+    }
+}
+
+@MainActor
 private func runApprovalCallsiteSelfCheck() async -> Int32 {
     // 1. Queued-transition focus invariant: every freshly created alert starts non-key
     // and does not inherit focus from a previously key window.
@@ -14696,6 +14731,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
         return 11
     }
     panel1.orderOut(nil)
+    panel1.close()
 
     // Verify next queued panel starts non-key by construction, preventing focus auto-promotion
     let panel2 = makeApprovalPanel()
@@ -14708,6 +14744,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
         return 12
     }
     panel2.orderOut(nil)
+    panel2.close()
 
     // 2. Mode-transition invalidation
     HumanApprovalQueue.shared.resetForTesting()
@@ -14841,6 +14878,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
         return 42
     }
 
+    let testCancellation = ApprovalCancellation()
     let queuedAlertTask = Task { @MainActor in
         await showApprovalAlert(
             request: testReq,
@@ -14851,6 +14889,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
             launcher: nil,
             launcherFallbackPath: "/bin/zsh",
             automaticApprovalExplanation: nil,
+            cancellation: testCancellation,
             reevaluate: {
                 cache.decision(for: testReuseRequest) == .approved
             }
@@ -14875,18 +14914,11 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
     cache.remember(.approved, for: testReuseRequest)
     HumanApprovalQueue.shared.release()
 
-    let queuedAlertDecision = await withTaskGroup(of: ApprovalDecision?.self) { group in
-        group.addTask {
-            await queuedAlertTask.value
-        }
-        group.addTask {
-            try? await Task.sleep(for: .seconds(5))
-            return nil
-        }
-        let first = await group.next() ?? nil
-        group.cancelAll()
-        return first
-    }
+    let queuedAlertDecision = await awaitWithTimeout(
+        duration: .seconds(5),
+        cancellation: testCancellation,
+        task: queuedAlertTask
+    )
     guard let queuedAlertDecision else {
         fputs("timed out waiting for request 2 to resolve after slot release\n", stderr)
         return 44
@@ -14897,6 +14929,68 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
     else {
         fputs("request 2 failed to reevaluate from cache and release queue slot\n", stderr)
         return 45
+    }
+
+    // 5. Negative path: verify that stuck approvals terminate on timeout via cancellation without hanging
+    // Case 5a: Queued waiter stuck behind held slot (slot is never released)
+    HumanApprovalQueue.shared.resetForTesting()
+    let stuckSlotAcquired = await HumanApprovalQueue.shared.acquire()
+    guard stuckSlotAcquired, HumanApprovalQueue.shared.hasActiveSlot else {
+        fputs("failed initial queue slot acquisition for stuck queued test\n", stderr)
+        return 50
+    }
+
+    let stuckQueuedCancellation = ApprovalCancellation()
+    let stuckQueuedTask = Task { @MainActor in
+        await showApprovalAlert(
+            request: testReq,
+            callerPath: "/bin/zsh",
+            pid: getpid(),
+            signing: helperSigning,
+            scriptApproval: nil,
+            launcher: nil,
+            launcherFallbackPath: "/bin/zsh",
+            automaticApprovalExplanation: nil,
+            cancellation: stuckQueuedCancellation,
+            reevaluate: { false }
+        )
+    }
+
+    var stuckQueued = false
+    let stuckDeadline = Date().addingTimeInterval(5.0)
+    while Date() < stuckDeadline {
+        if HumanApprovalQueue.shared.pendingCount == 1 {
+            stuckQueued = true
+            break
+        }
+        await Task.yield()
+    }
+    guard stuckQueued else {
+        stuckQueuedCancellation.cancel()
+        stuckQueuedTask.cancel()
+        HumanApprovalQueue.shared.release()
+        fputs("timed out waiting for stuck request to enqueue in HumanApprovalQueue\n", stderr)
+        return 51
+    }
+
+    // Slot is intentionally never released. Verify awaitWithTimeout cancels and returns nil without hanging.
+    let stuckQueuedDecision = await awaitWithTimeout(
+        duration: .milliseconds(500),
+        cancellation: stuckQueuedCancellation,
+        task: stuckQueuedTask
+    )
+    guard stuckQueuedDecision == nil else {
+        HumanApprovalQueue.shared.release()
+        fputs("stuck queued approval unexpectedly completed instead of timing out\n", stderr)
+        return 52
+    }
+
+    HumanApprovalQueue.shared.release()
+    guard !HumanApprovalQueue.shared.hasActiveSlot,
+          HumanApprovalQueue.shared.pendingCount == 0
+    else {
+        fputs("stuck queued approval failed to cleanly drain from queue after cancellation\n", stderr)
+        return 53
     }
 
     return 0
