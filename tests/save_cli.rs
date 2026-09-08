@@ -263,6 +263,8 @@ impl Terminal {
             assert!(Instant::now() < deadline, "save did not exit");
             std::thread::sleep(Duration::from_millis(10));
         }
+        // macOS revokes the slave when the controlling session exits. The master
+        // still exposes its termios; tcgetattr(slave) fails after child exit.
         let mut restored = unsafe { std::mem::zeroed::<libc::termios>() };
         assert_eq!(
             unsafe { libc::tcgetattr(self.master.as_ref().unwrap().as_raw_fd(), &mut restored) },

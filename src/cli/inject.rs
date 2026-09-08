@@ -1315,18 +1315,16 @@ fn xpc_approve_request(
         fn av_xpc_connection_set_empty_event_handler(connection: XpcObject);
     }
 
-    unsafe fn set_string(dict: XpcObject, key: &[u8], value: &str) -> Result<(), String> {
-        let value =
-            CString::new(value).map_err(|_| format!("XPC field contains NUL: {value:?}"))?;
+    unsafe fn set_string(dict: XpcObject, key: &'static [u8], value: &str) -> Result<(), String> {
+        let value = crate::approval_service::xpc_string(key, value)?;
         unsafe { xpc_dictionary_set_string(dict, key.as_ptr().cast(), value.as_ptr()) };
         Ok(())
     }
 
-    unsafe fn string_array(values: &[String]) -> Result<XpcObject, String> {
+    unsafe fn string_array(field: &'static [u8], values: &[String]) -> Result<XpcObject, String> {
         let array = unsafe { xpc_array_create_empty() };
         for value in values {
-            let value = CString::new(value.as_str())
-                .map_err(|_| format!("XPC array contains NUL: {value:?}"))?;
+            let value = crate::approval_service::xpc_string(field, value)?;
             let string = unsafe { xpc_string_create(value.as_ptr()) };
             unsafe {
                 xpc_array_append_value(array, string);
@@ -1435,15 +1433,15 @@ fn xpc_approve_request(
             request.allow_missing_keys,
         );
 
-        let keys = string_array(&request.keys)?;
+        let keys = string_array(b"keys\0", &request.keys)?;
         xpc_dictionary_set_value(message, b"keys\0".as_ptr().cast(), keys);
         xpc_release(keys);
 
-        let args = string_array(&request.args)?;
+        let args = string_array(b"args\0", &request.args)?;
         xpc_dictionary_set_value(message, b"args\0".as_ptr().cast(), args);
         xpc_release(args);
 
-        let conflicts = string_array(&request.env_conflicts)?;
+        let conflicts = string_array(b"env_conflicts\0", &request.env_conflicts)?;
         xpc_dictionary_set_value(message, b"env_conflicts\0".as_ptr().cast(), conflicts);
         xpc_release(conflicts);
     }
