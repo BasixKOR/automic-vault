@@ -917,8 +917,7 @@ fn xpc_request_with_project_directory(
     }
 
     unsafe fn set_string(dict: XpcObject, key: &[u8], value: &str) -> Result<(), String> {
-        let value =
-            CString::new(value).map_err(|_| format!("XPC field contains NUL: {value:?}"))?;
+        let value = CString::new(value).map_err(|_| "XPC field contains NUL".to_string())?;
         unsafe { xpc_dictionary_set_string(dict, key.as_ptr().cast(), value.as_ptr()) };
         Ok(())
     }
