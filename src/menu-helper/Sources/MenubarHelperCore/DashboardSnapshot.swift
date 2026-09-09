@@ -1592,6 +1592,7 @@ public func appendAccessRequestRecord(
     if let defaults {
         defaults.set(data, forKey: key)
         guard defaults.synchronize() else { return false }
+        return defaults.data(forKey: key) == data
     } else {
         guard saveKeychainData(
             data,
@@ -1601,8 +1602,11 @@ public func appendAccessRequestRecord(
         ) == errSecSuccess else {
             return false
         }
+        // Verify the complete persisted bytes without decoding the history a second time.
+        guard case .success(let persisted) = loadKeychainDataResult(service: service, account: key)
+        else { return false }
+        return persisted == data
     }
-    return loadAccessRequestRecords(defaults: defaults, key: key, service: service).first?.id == record.id
 }
 
 private let projectValueAccountPrefix = "AVProjectValueV1:"
