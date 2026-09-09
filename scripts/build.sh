@@ -190,6 +190,10 @@ if [[ "$release_artifact" -eq 1 ]]; then
 fi
 cp "$MENU_HELPER/LaunchAgent.plist" "$LAUNCH_AGENT_PLIST"
 cp "$MENU_HELPER/Resources/NSMenuItem.png" "$RESOURCES/NSMenuItem.png"
+# SwiftUI and AppKit look up UI strings in the signed app's main bundle.
+for localization in "$MENU_HELPER"/Resources/*.lproj; do
+  ditto "$localization" "$RESOURCES/$(basename "$localization")"
+done
 /usr/bin/install -m 0755 "$MENU_HELPER/Resources/install-av-cli.command" "$RESOURCES/install-av-cli.command"
 mkdir -p "$LAUNCHER_ICONSET"
 for size in 16 32 128 256 512; do

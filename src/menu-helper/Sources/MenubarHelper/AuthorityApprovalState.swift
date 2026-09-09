@@ -70,11 +70,14 @@ struct AuthorityApprovalLabel: View {
             if phone {
                 Image(systemName: "iphone").accessibilityHidden(true)
             }
-            Text(pending ? (phone ? "Waiting for iPhone…" : "Waiting for Approval…") : title)
+            Text(localizedUIString(pending ? (phone ? "Waiting for iPhone…" : "Waiting for Approval…") : title))
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(pending ? "\(title), waiting for Approval\(phone ? " on iPhone" : "")" : title)
-        .help(phone ? "\(title) requires Approval on iPhone." : title)
+        .accessibilityLabel(pending
+            ? (phone ? String(localized: "\(localizedUIString(title)), waiting for Approval on iPhone")
+                : String(localized: "\(localizedUIString(title)), waiting for Approval"))
+            : localizedUIString(title))
+        .help(phone ? String(localized: "\(localizedUIString(title)) requires Approval on iPhone.") : localizedUIString(title))
     }
 }
 

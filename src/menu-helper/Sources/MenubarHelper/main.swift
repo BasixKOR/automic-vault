@@ -54,23 +54,23 @@ private func makeUpdater(
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let visibleAutoApprovalCount = 5
     private lazy var statusItem = NSStatusBar.system.statusItem(withLength: 15)
-    private lazy var scanStatusItem = makeStatusMenuItem(title: "Scan pending")
+    private lazy var scanStatusItem = makeStatusMenuItem(title: String(localized: "Scan pending"))
     private lazy var doctorStatusItem: NSMenuItem = {
         let item = makeStatusMenuItem(title: "")
         item.isHidden = true
         return item
     }()
     private lazy var checkForUpdatesItem = NSMenuItem(
-        title: "Check for Updates…",
+        title: String(localized: "Check for Updates…"),
         action: #selector(checkForUpdates),
         keyEquivalent: ""
     )
     private lazy var installCLIItem = NSMenuItem(
-        title: "Install av-cli",
+        title: String(localized: "Install av-cli"),
         action: #selector(installCLI),
         keyEquivalent: ""
     )
-    private lazy var quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
+    private lazy var quitItem = NSMenuItem(title: String(localized: "Quit"), action: #selector(quit), keyEquivalent: "q")
     private lazy var quitSeparator = NSMenuItem.separator()
     private var autoApprovalItems: [NSMenuItem] = []
     private var autoApprovalHeadingItem: NSMenuItem?
@@ -231,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkForUpdatesItem.target = self
         menu.addItem(checkForUpdatesItem)
         menu.addItem(.separator())
-        let openItem = NSMenuItem(title: "Open Automic Vault", action: #selector(openMainWindow), keyEquivalent: "")
+        let openItem = NSMenuItem(title: String(localized: "Open Automic Vault"), action: #selector(openMainWindow), keyEquivalent: "")
         setVersionBadge(appVersion(), on: openItem)
         openItem.target = self
         menu.addItem(openItem)
@@ -248,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isStartingUp = true
         statusItem.button?.image = brandImage()
         statusItem.button?.alphaValue = 0.5
-        setStatusMenuItemTitle("Starting Automic Vault", on: scanStatusItem)
+        setStatusMenuItemTitle(String(localized: "Starting Automic Vault"), on: scanStatusItem)
         updateMenuVisibility(
             statusItem.menu?.items ?? [],
             startingUp: true,
@@ -478,18 +478,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let update else {
                 readyUpdate = nil
                 let alert = NSAlert()
-                alert.messageText = "Automic Vault is up to date"
+                alert.messageText = String(localized: "Automic Vault is up to date")
                 alert.runModal()
                 return
             }
             readyUpdate = update
 
             let alert = NSAlert()
-            alert.messageText = "An update is ready"
-            alert.informativeText = "Install \(update.assetName) and relaunch Automic Vault?"
-            alert.addButton(withTitle: "Install and Relaunch")
-            alert.addButton(withTitle: "Later")
-            alert.addButton(withTitle: "View Release Notes")
+            alert.messageText = String(localized: "An update is ready")
+            alert.informativeText = String(localized: "Install \(update.assetName) and relaunch Automic Vault?")
+            alert.addButton(withTitle: String(localized: "Install and Relaunch"))
+            alert.addButton(withTitle: String(localized: "Later"))
+            alert.addButton(withTitle: String(localized: "View Release Notes"))
             let response = alert.runModal()
             if response == .alertThirdButtonReturn {
                 NSWorkspace.shared.open(URL(
@@ -559,8 +559,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = updateVerificationFailureText
-        alert.addButton(withTitle: "Search GitHub Issues")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "Search GitHub Issues"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(updateVerificationIssuesURL)
         }
@@ -778,7 +778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             1,
             FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
         ) else {
-            setStatusMenuItemTitle("Scan watcher unavailable", on: scanStatusItem)
+            setStatusMenuItemTitle(String(localized: "Scan watcher unavailable"), on: scanStatusItem)
             return
         }
         eventStream = stream
@@ -931,7 +931,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if latestDetectorFindings.isEmpty {
                 setBaseStatusImage(brandImage())
                 setScanStatus(
-                    "No Vulnerabilities Detected",
+                    String(localized: "No Vulnerabilities Detected"),
                     image: shieldImage(symbolName: "shield.fill", color: .systemGreen)
                 )
             } else {
@@ -956,7 +956,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A successful unrelated partial scan cannot certify a failed check.
         if fullScanFailed || !failedScanDetectors.isEmpty {
             setBaseStatusImage(brandImage(color: .systemRed))
-            setScanStatus("Scan failed", image: shieldImage(color: .systemRed))
+            setScanStatus(String(localized: "Scan failed"), image: shieldImage(color: .systemRed))
         }
         if scanWorkItem == nil, pendingFullScan || !pendingScanDetectors.isEmpty {
             runPendingScan()
@@ -1133,7 +1133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         )
         if !submenuGroups.isEmpty {
-            let moreItem = NSMenuItem(title: "More", action: nil, keyEquivalent: "")
+            let moreItem = NSMenuItem(title: String(localized: "More"), action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             submenuGroups.map(autoApprovalMenuItem).forEach(submenu.addItem)
             moreItem.submenu = submenu
@@ -1223,7 +1223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             let submenu = NSMenu()
             let addTenMinutes = NSMenuItem(
-                title: "Add 10 Minutes",
+                title: String(localized: "Add 10 Minutes"),
                 action: #selector(addTenMinutesToTemporaryAccessGrant(_:)),
                 keyEquivalent: ""
             )
@@ -1233,7 +1233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             submenu.addItem(.separator())
             if isTemporaryAccessGrantStripCollapsed {
                 let showStrip = NSMenuItem(
-                    title: "Show Temporary Access Grant Strip",
+                    title: String(localized: "Show Temporary Access Grant Strip"),
                     action: #selector(showTemporaryAccessGrantStrip(_:)),
                     keyEquivalent: ""
                 )
@@ -1252,7 +1252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toggle.representedObject = grant.id.uuidString
             submenu.addItem(toggle)
             let end = NSMenuItem(
-                title: "End temporary Write Access",
+                title: String(localized: "End temporary Write Access"),
                 action: #selector(endTemporaryAccessGrant(_:)),
                 keyEquivalent: ""
             )
@@ -1265,7 +1265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in temporaryAccessGrantMenuItems.reversed() {
             menu.insertItem(item, at: 0)
         }
-        let heading = makeStatusMenuItem(title: "Temporary Access Grants")
+        let heading = makeStatusMenuItem(title: String(localized: "Temporary Access Grants"))
         menu.insertItem(heading, at: 0)
         temporaryAccessGrantHeadingItem = heading
         let separator = NSMenuItem.separator()
@@ -1360,7 +1360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             targetItem.isEnabled = false
             submenu.addItem(targetItem)
             submenu.addItem(.separator())
-            submenu.addItem(makeStatusMenuItem(title: "Secret Names"))
+            submenu.addItem(makeStatusMenuItem(title: String(localized: "Secret Names")))
             for name in use.secretNames {
                 let secretItem = NSMenuItem(title: name, action: nil, keyEquivalent: "")
                 secretItem.isEnabled = false
@@ -1382,7 +1382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in liveSecretUseMenuItems.reversed() {
             menu.insertItem(item, at: insertionIndex)
         }
-        let heading = makeStatusMenuItem(title: "Live Secret Uses")
+        let heading = makeStatusMenuItem(title: String(localized: "Live Secret Uses"))
         menu.insertItem(heading, at: insertionIndex)
         liveSecretUseHeadingItem = heading
         let separator = NSMenuItem.separator()
@@ -1629,16 +1629,16 @@ private func makeStatusMenuItem(title: String) -> NSMenuItem {
 
 private func autoApprovalHistoryHeading(hasRecords: Bool) -> NSMenuItem? {
     guard hasRecords else { return nil }
-    let item = makeStatusMenuItem(title: "Automic Authorization History")
+    let item = makeStatusMenuItem(title: String(localized: "Automic Authorization History"))
     item.isEnabled = false
     return item
 }
 
 private func makeUpdatingMenu() -> NSMenu {
     let menu = NSMenu()
-    menu.addItem(makeStatusMenuItem(title: "Updating…"))
+    menu.addItem(makeStatusMenuItem(title: String(localized: "Updating…")))
     menu.addItem(.separator())
-    let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "q")
+    let quitItem = NSMenuItem(title: String(localized: "Quit"), action: nil, keyEquivalent: "q")
     quitItem.isEnabled = false
     menu.addItem(quitItem)
     return menu
@@ -1646,8 +1646,8 @@ private func makeUpdatingMenu() -> NSMenu {
 
 @MainActor
 private func configureUpdatingAlert(_ alert: NSAlert) {
-    alert.messageText = "Updating…"
-    alert.informativeText = "Automic Vault will relaunch when the update is complete."
+    alert.messageText = String(localized: "Updating…")
+    alert.informativeText = String(localized: "Automic Vault will relaunch when the update is complete.")
     alert.buttons.forEach { $0.isHidden = true }
     let progress = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
     progress.style = .spinning
@@ -8556,13 +8556,13 @@ private final class ApprovalServer: @unchecked Sendable {
     private func requestMFACode(serial: String) throws -> String {
         guard canRequestMacInput() else { throw AppError("AWS MFA unavailable while the user session is inactive") }
         let alert = NSAlert()
-        alert.messageText = "AWS MFA required"
-        alert.informativeText = "Enter the current code for \(serial). Automic Vault does not run mfa_process commands."
-        alert.addButton(withTitle: "Continue")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = String(localized: "AWS MFA required")
+        alert.informativeText = String(localized: "Enter the current code for \(serial). Automic Vault does not run mfa_process commands.")
+        alert.addButton(withTitle: String(localized: "Continue"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.placeholderString = "123456"
-        field.setAccessibilityLabel("AWS MFA code")
+        field.setAccessibilityLabel(String(localized: "AWS MFA code"))
         alert.accessoryView = field
         guard alert.runModal() == .alertFirstButtonReturn else { throw AppError("AWS MFA canceled") }
         let code = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12460,7 +12460,7 @@ private extension ApprovalProcessSecurityNode {
                 "Invoked via \(executableName); name reported by mutable process arguments, not verified code identity"
             },
             pid.map { "PID: \($0)" },
-            "Status: \(posture.presentation.title)",
+            String(localized: "Status: \(localizedUIString(posture.presentation.title))"),
             explanation,
         ]
         .compactMap(\.self)
@@ -12478,7 +12478,10 @@ private extension ApprovalProcessSecurity {
 
 private func approvalPromptDetails(_ sections: [ApprovalPromptSection]) -> String {
     sections.map { section in
-        ([section.title] + section.rows.map { "\($0.label): \($0.value)" })
+        ([localizedUIString(section.title)] + section.rows.map {
+            let label = section.title == "Secret Values" ? $0.label : localizedUIString($0.label)
+            return "\(label): \($0.value)"
+        })
             .joined(separator: "\n")
     }
     .joined(separator: "\n\n")
@@ -12498,8 +12501,8 @@ private struct ApprovalPromptInfoButton: View {
         }
         .buttonStyle(.plain)
         .help(details)
-        .accessibilityLabel(title)
-        .accessibilityHint("Shows \(title.lowercased())")
+        .accessibilityLabel(localizedUIString(title))
+        .accessibilityHint(String(localized: "Shows \(localizedUIString(title))"))
         .popover(isPresented: $isPresented, arrowEdge: .trailing) {
             ScrollView {
                 Text(details)
@@ -12581,7 +12584,7 @@ private struct ApprovalPromptHeaderView: View {
                 )
                 ApprovalPromptPathView(path: escapedSecurityPath(launcher?.path ?? content.requesterIconPath))
                 ApprovalPromptInfoButton(
-                    title: "Request details",
+                    title: String(localized: "Request details"),
                     details: details.isEmpty ? "No additional request details." : details
                 )
             }
@@ -12609,7 +12612,7 @@ private struct ApprovalPromptProcessSecurityView: View {
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                 ApprovalPromptInfoButton(
-                    title: "Execution chain details",
+                    title: String(localized: "Execution chain details"),
                     details: details.isEmpty ? "No process details available." : details
                 )
                 .foregroundStyle(.secondary)
@@ -12734,7 +12737,7 @@ private struct CompactSecretMutationApprovalView: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 ApprovalPromptInfoButton(
-                    title: "Request details",
+                    title: String(localized: "Request details"),
                     details: approvalPromptDetails(content.sections)
                 )
                 .foregroundStyle(.secondary)
@@ -12769,7 +12772,7 @@ private struct ApprovalPromptApprovalMenu: View {
                         )
                     }
                     if allowsPersistentApproval {
-                        Button(persistentApprovalLabel) { decide(.alwaysApproved) }
+                        Button(localizedUIString(persistentApprovalLabel)) { decide(.alwaysApproved) }
                     }
                 } label: {
                     buttonLabel
@@ -12800,10 +12803,10 @@ private struct ApprovalPromptApprovalMenu: View {
 
     @ViewBuilder private var buttonLabel: some View {
         if let systemImage {
-            Label(title, systemImage: systemImage)
+            Label(localizedUIString(title), systemImage: systemImage)
                 .frame(maxWidth: .infinity)
         } else {
-            Text(title)
+            Text(localizedUIString(title))
                 .frame(maxWidth: .infinity)
         }
     }
@@ -12869,7 +12872,7 @@ private struct ApprovalPromptView: View {
             .layoutPriority(1)
 
             if let reason = content.writeAccessUnavailableReason {
-                Text(reason)
+                Text(localizedUIString(reason))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -12886,8 +12889,8 @@ private struct ApprovalPromptView: View {
                             .font(.headline)
                     }
                     Text(usesTouchIDApproval
-                        ? "Approve on iPhone or with fresh Touch ID on this Mac."
-                        : "Approve this request on your iPhone.")
+                        ? String(localized: "Approve on iPhone or with fresh Touch ID on this Mac.")
+                        : String(localized: "Approve this request on your iPhone."))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -12901,7 +12904,7 @@ private struct ApprovalPromptView: View {
 
             if usesTouchIDApproval {
                 HStack(spacing: 12) {
-                    Button(usesIPhoneApproval ? "Cancel Request" : "Deny", role: .cancel) {
+                    Button(usesIPhoneApproval ? String(localized: "Cancel Request") : String(localized: "Deny"), role: .cancel) {
                         decide(.denied, .standardMac)
                     }
                     .buttonStyle(.bordered)
@@ -12943,8 +12946,8 @@ private struct ApprovalPromptView: View {
                             decide: { decide($0, .standardMac) }
                         )
                         Text(compact
-                            ? "This Approval applies only to this secret change."
-                            : "Review the request details before allowing access.")
+                            ? String(localized: "This Approval applies only to this secret change.")
+                            : String(localized: "Review the request details before allowing access."))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -12954,8 +12957,8 @@ private struct ApprovalPromptView: View {
             }
             if allowsPersistentApproval {
                 Text(persistentApprovalLabel == "Allow for Session"
-                    ? "Session approval expires when this Proxy Session ends"
-                    : "Manage this Verified Launcher's Access Level in Automic Vault.")
+                    ? String(localized: "Session approval expires when this Proxy Session ends")
+                    : String(localized: "Manage this Verified Launcher's Access Level in Automic Vault."))
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
@@ -12997,7 +13000,7 @@ private struct ApprovalPromptView: View {
     private func authenticateWithTouchID(_ decision: ApprovalDecision) {
         isAuthenticatingWithTouchID = true
         TouchIDApproval.authenticate(
-            reason: "Approve this exact Automic Vault request"
+            reason: String(localized: "Approve this exact Automic Vault request")
         ) { approved in
             isAuthenticatingWithTouchID = false
             if approved { decide(decision, .touchID) }
@@ -13050,14 +13053,14 @@ private struct ApprovalPromptCommandView: View {
                     if let operation = content.operationTitle {
                         ApprovalPromptInlineMeta(
                             label: "Operation",
-                            value: operation,
+                            value: localizedUIString(operation),
                             systemImage: "list.bullet"
                         )
                     }
                     if let accessLevel = content.accessLevel {
                         ApprovalPromptInlineMeta(
                             label: "Access Level",
-                            value: accessLevel,
+                            value: localizedUIString(accessLevel),
                             systemImage: "shield.lefthalf.filled"
                         )
                     }
@@ -13118,7 +13121,7 @@ private struct ApprovalPromptInlineMeta: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            Text(label)
+            Text(localizedUIString(label))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 125, alignment: .leading)
@@ -13181,7 +13184,7 @@ private struct AutomaticAccessToastView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(record.launcher)
                         .font(.headline)
-                    Text(automaticAccessDecisionLabel(wasDenied: record.wasDenied))
+                    Text(localizedUIString(automaticAccessDecisionLabel(wasDenied: record.wasDenied)))
                         .font(.caption2.weight(.semibold))
                         .tracking(1.2)
                         .foregroundStyle(.secondary)
@@ -13301,8 +13304,8 @@ private struct TemporaryAccessGrantStripView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .accessibilityLabel(grants.allSatisfy { $0.isCountdownSuspended }
-                    ? "Temporary Write Access is suspended"
-                    : "Warning: Temporary Write Access is active")
+                    ? String(localized: "Temporary Write Access is suspended")
+                    : String(localized: "Warning: Temporary Write Access is active"))
 
             Divider()
 
@@ -13417,8 +13420,8 @@ private struct TemporaryAccessGrantRow: View {
                     Button("Add 10 Minutes", action: addTenMinutes)
                     Divider()
                     Button(grant.isCountdownSuspended
-                        ? "Resume Write Access"
-                        : "Pause Write Access"
+                        ? String(localized: "Resume Write Access")
+                        : String(localized: "Pause Write Access")
                     ) {
                         setCountdownSuspended(!grant.isCountdownSuspended)
                     }

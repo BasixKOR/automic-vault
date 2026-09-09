@@ -49,9 +49,9 @@ enum AutomaticApprovalFeedback: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .notification: "Show Notification"
-        case .none: "Show Nothing"
-        case .menuBarFlash: "Flash Menu Bar"
+        case .notification: String(localized: "Show Notification")
+        case .none: String(localized: "Show Nothing")
+        case .menuBarFlash: String(localized: "Flash Menu Bar")
         }
     }
 }
@@ -347,62 +347,62 @@ final class DashboardModel: ObservableObject {
         case .settings:
             [
                 DashboardItem(
-                    id: "touch-id-approval",
-                    title: "Touch ID Approval",
+                    id: String(localized: "touch-id-approval"),
+                    title: String(localized: "Touch ID Approval"),
                     subtitle: TouchIDApproval.isEnabled
-                        ? "Approve on this Mac with Touch ID"
-                        : "Require biometrics for Mac Approval",
-                    detail: "Add an explicit biometric-only Approval surface on this Mac."
+                        ? String(localized: "Approve on this Mac with Touch ID")
+                        : String(localized: "Require biometrics for Mac Approval"),
+                    detail: String(localized: "Add an explicit biometric-only Approval surface on this Mac.")
                 ),
                 DashboardItem(
-                    id: "iphone-approval",
-                    title: "iPhone Approval",
+                    id: String(localized: "iphone-approval"),
+                    title: String(localized: "iPhone Approval"),
                     subtitle: PhoneApprovalCoordinator.shared.isEnabled
-                        ? "All human Approvals use iPhone"
-                        : "Approve away from agents on this Mac",
-                    detail: "Move every human Approval for this Mac to iPhones on your iCloud Keychain account."
+                        ? String(localized: "All human Approvals use iPhone")
+                        : String(localized: "Approve away from agents on this Mac"),
+                    detail: String(localized: "Move every human Approval for this Mac to iPhones on your iCloud Keychain account.")
                 ),
                 DashboardItem(
-                    id: "automatic-approval-feedback",
-                    title: "Automic Authorization",
-                    subtitle: "Choose subtle feedback or none",
-                    detail: "Control visual feedback after policy authorizes an operation."
+                    id: String(localized: "automatic-approval-feedback"),
+                    title: String(localized: "Automic Authorization"),
+                    subtitle: String(localized: "Choose subtle feedback or none"),
+                    detail: String(localized: "Control visual feedback after policy authorizes an operation.")
                 ),
                 DashboardItem(
-                    id: "detached-process-access",
-                    title: "Detached Processes",
-                    subtitle: "Keep Launcher attribution after ancestry loss",
-                    detail: "Allow an exact live process execution to retain gate-specific Launcher attribution after its parent chain exits."
+                    id: String(localized: "detached-process-access"),
+                    title: String(localized: "Detached Processes"),
+                    subtitle: String(localized: "Keep Launcher attribution after ancestry loss"),
+                    detail: String(localized: "Allow an exact live process execution to retain gate-specific Launcher attribution after its parent chain exits.")
                 ),
                 DashboardItem(
-                    id: "verified-launcher-helpers",
-                    title: "Verified Launcher Helpers",
-                    subtitle: "Recognize signed CLIs sealed inside vendor apps",
-                    detail: "Manage exact app and helper signing-identity associations."
+                    id: String(localized: "verified-launcher-helpers"),
+                    title: String(localized: "Verified Launcher Helpers"),
+                    subtitle: String(localized: "Recognize signed CLIs sealed inside vendor apps"),
+                    detail: String(localized: "Manage exact app and helper signing-identity associations.")
                 ),
                 DashboardItem(
-                    id: "gpg-signing",
-                    title: "GPG Signing",
-                    subtitle: "Authorize Git commit signing",
-                    detail: "Store GPG signing credentials, configure Git, and select Verified Launchers that use an alternate key."
+                    id: String(localized: "gpg-signing"),
+                    title: String(localized: "GPG Signing"),
+                    subtitle: String(localized: "Authorize Git commit signing"),
+                    detail: String(localized: "Store GPG signing credentials, configure Git, and select Verified Launchers that use an alternate key.")
                 ),
                 DashboardItem(
-                    id: "ssh-agent",
-                    title: "SSH Agent",
-                    subtitle: "Authorize SSH authentication",
-                    detail: "Use one protected SSH credential for every Verified Launcher."
+                    id: String(localized: "ssh-agent"),
+                    title: String(localized: "SSH Agent"),
+                    subtitle: String(localized: "Authorize SSH authentication"),
+                    detail: String(localized: "Use one protected SSH credential for every Verified Launcher.")
                 ),
                 DashboardItem(
-                    id: "secret-name-access",
-                    title: "Secret Name Access",
-                    subtitle: "Verified Launchers allowed to run av list",
-                    detail: "Manage Verified Launchers that may list saved Secret Names without Approval."
+                    id: String(localized: "secret-name-access"),
+                    title: String(localized: "Secret Name Access"),
+                    subtitle: String(localized: "Verified Launchers allowed to run av list"),
+                    detail: String(localized: "Manage Verified Launchers that may list saved Secret Names without Approval.")
                 ),
                 DashboardItem(
-                    id: "about",
-                    title: "About",
-                    subtitle: "GUI environment details",
-                    detail: "View details about the running Automic Vault app."
+                    id: String(localized: "about"),
+                    title: String(localized: "About"),
+                    subtitle: String(localized: "GUI environment details"),
+                    detail: String(localized: "View details about the running Automic Vault app.")
                 ),
             ]
         }
@@ -581,7 +581,7 @@ final class DashboardModel: ObservableObject {
             guard let self else { return }
             let status = saveBlessedScript(script)
             guard status == errSecSuccess else {
-                self.errorMessage = "Could not bless script: \(status)"
+                self.errorMessage = String(localized: "Could not bless script: \(status)")
                 return
             }
             self.finishPendingBlessing(.approved)
@@ -597,7 +597,7 @@ final class DashboardModel: ObservableObject {
 
     func reviewChanges(to script: BlessedScript) {
         guard let previousContents = script.verifiedReviewedContents else {
-            errorMessage = "The original reviewed contents are unavailable. Run `av bless` once to create a new review baseline."
+            errorMessage = String(localized: "The original reviewed contents are unavailable. Run `av bless` once to create a new review baseline.")
             return
         }
         do {
@@ -617,7 +617,7 @@ final class DashboardModel: ObservableObject {
                 if case .failed(let error) = outcome { self?.errorMessage = error }
             }
         } catch {
-            errorMessage = "Could not review changes: \(error.localizedDescription)"
+            errorMessage = String(localized: "Could not review changes: \(error.localizedDescription)")
         }
     }
 
@@ -716,7 +716,7 @@ final class DashboardModel: ObservableObject {
             selectedItemID = nil
             reloadAuthorizationState()
         } else {
-            errorMessage = "Could not revoke blessing: \(status)"
+            errorMessage = String(localized: "Could not revoke blessing: \(status)")
         }
     }
 
@@ -835,7 +835,7 @@ final class DashboardModel: ObservableObject {
         guard !isBuildingLauncherBundle else { return }
         let status = removeLauncherBundleEnrollment(generation: enrollment.generation)
         guard status == errSecSuccess else {
-            errorMessage = "Could not revoke Launcher Bundle enrollment: \(status)"
+            errorMessage = String(localized: "Could not revoke Launcher Bundle enrollment: \(status)")
             return
         }
         isBuildingLauncherBundle = true
@@ -856,7 +856,7 @@ final class DashboardModel: ObservableObject {
                     ? nil
                     : "The bundle was revoked, but old authorization rules could not be removed: \(cleanup)"
             case .failure(let error):
-                errorMessage = "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)"
+                errorMessage = String(localized: "The bundle was revoked, but could not be moved to Trash: \(error.localizedDescription)")
             }
             selectedItemID = nil
             reloadAuthorizationState()
@@ -895,7 +895,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         } else {
-            errorMessage = "Could not save \(account): \(status)"
+            errorMessage = String(localized: "Could not save \(account): \(status)")
             return false
         }
     }
@@ -913,7 +913,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         }
-        errorMessage = "Could not update \(secret.account): \(status)"
+        errorMessage = String(localized: "Could not update \(secret.account): \(status)")
         return false
     }
 
@@ -976,7 +976,7 @@ final class DashboardModel: ObservableObject {
             selectedItemID = nil
             reloadAfterSecretMutation()
         } else {
-            errorMessage = "Could not delete \(account): \(status)"
+            errorMessage = String(localized: "Could not delete \(account): \(status)")
         }
     }
 
@@ -1017,7 +1017,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = nil
             reloadAfterSecretMutation()
         } else {
-            errorMessage = "Could not delete \(secret.account) Value: \(status)"
+            errorMessage = String(localized: "Could not delete \(secret.account) Value: \(status)")
         }
     }
 
@@ -1038,7 +1038,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         } else {
-            errorMessage = "Could not rename \(account): \(status)"
+            errorMessage = String(localized: "Could not rename \(account): \(status)")
             return false
         }
     }
@@ -1047,7 +1047,7 @@ final class DashboardModel: ObservableObject {
         do {
             try openCLIInstaller()
         } catch {
-            errorMessage = "Could not open install command: \(error.localizedDescription)"
+            errorMessage = String(localized: "Could not open install command: \(error.localizedDescription)")
         }
     }
 
@@ -1172,7 +1172,7 @@ final class DashboardModel: ObservableObject {
                     runtimeRequirement: runtimeRequirement
                 )
                 guard policyStatus == errSecSuccess else {
-                    self.errorMessage = "Could not allow \(signing.identifier): \(policyStatus)"
+                    self.errorMessage = String(localized: "Could not allow \(signing.identifier): \(policyStatus)")
                     return
                 }
             }
@@ -1242,14 +1242,14 @@ final class DashboardModel: ObservableObject {
 
     private func finishSecretGatePolicyUpdate(_ status: OSStatus, gate: SecretGate, error: String) {
         guard status == errSecSuccess else {
-            errorMessage = "\(error): \(status)"
+            errorMessage = String(localized: "\(error): \(status)")
             return
         }
         reloadTask?.cancel()
         reloadTask = nil
         isReloading = false
         guard let index = snapshot.secretGates.firstIndex(where: { $0.id == gate.id }) else {
-            errorMessage = "The policy was saved, but the Authorization Gate is no longer available"
+            errorMessage = String(localized: "The policy was saved, but the Authorization Gate is no longer available")
             return
         }
         errorMessage = nil
@@ -1264,7 +1264,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = nil
             reloadAuthorizationState()
         } else {
-            errorMessage = "\(error): \(status)"
+            errorMessage = String(localized: "\(error): \(status)")
         }
     }
 
@@ -1889,31 +1889,31 @@ enum DashboardSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .detectors: "Detectors"
-        case .doctor: "Doctor"
-        case .hardenedTools: "Hardened Tools"
-        case .secretGates: "Authorization Gates"
-        case .blessedScripts: "Blessed Scripts"
-        case .launcherBundles: "Launcher Bundles"
-        case .allSecrets: "Secrets"
-        case .proxySessions: "Credential Proxies"
-        case .secretUsage: "Authorization History"
-        case .settings: "Settings"
+        case .detectors: String(localized: "Detectors")
+        case .doctor: String(localized: "Doctor")
+        case .hardenedTools: String(localized: "Hardened Tools")
+        case .secretGates: String(localized: "Authorization Gates")
+        case .blessedScripts: String(localized: "Blessed Scripts")
+        case .launcherBundles: String(localized: "Launcher Bundles")
+        case .allSecrets: String(localized: "Secrets")
+        case .proxySessions: String(localized: "Credential Proxies")
+        case .secretUsage: String(localized: "Authorization History")
+        case .settings: String(localized: "Settings")
         }
     }
 
     var systemImage: String {
         switch self {
-        case .detectors: "sensor.tag.radiowaves.forward"
-        case .doctor: "stethoscope"
-        case .hardenedTools: "hammer"
-        case .secretGates: "lock.shield"
-        case .blessedScripts: "checkmark.seal"
-        case .launcherBundles: "shippingbox"
-        case .allSecrets: "key"
-        case .proxySessions: "arrow.left.arrow.right.circle"
-        case .secretUsage: "clock.arrow.circlepath"
-        case .settings: "gearshape"
+        case .detectors: String(localized: "sensor.tag.radiowaves.forward")
+        case .doctor: String(localized: "stethoscope")
+        case .hardenedTools: String(localized: "hammer")
+        case .secretGates: String(localized: "lock.shield")
+        case .blessedScripts: String(localized: "checkmark.seal")
+        case .launcherBundles: String(localized: "shippingbox")
+        case .allSecrets: String(localized: "key")
+        case .proxySessions: String(localized: "arrow.left.arrow.right.circle")
+        case .secretUsage: String(localized: "clock.arrow.circlepath")
+        case .settings: String(localized: "gearshape")
         }
     }
 }
@@ -2456,16 +2456,16 @@ private struct EmptyListView: View {
 
     private var emptyText: String {
         switch section {
-        case .detectors: "Detectors identify developer tool configurations that could expose secrets"
-        case .doctor: "Doctor identifies problems with your Automic Vault installation and explains how to fix them"
-        case .hardenedTools: "Hardened Tools secure developer tools with granular access to secrets"
-        case .secretGates: "Authorization Gates control which operations Verified Launchers may perform through specific Tools"
-        case .blessedScripts: "Blessed Scripts bind exact scripts to declared Secrets, Targets, and per-Gate capabilities"
-        case .launcherBundles: "Create a Verified Launcher from one unsigned Mach-O command-line tool"
-        case .allSecrets: "Secrets are credentials stored securely in the macOS Data Protection Keychain"
-        case .proxySessions: "Active `av proxy` sessions appear here while their target process is running"
-        case .secretUsage: "Authorization History records requests and their authorization decisions"
-        case .settings: "Settings control how Automic Vault behaves"
+        case .detectors: String(localized: "Detectors identify developer tool configurations that could expose secrets")
+        case .doctor: String(localized: "Doctor identifies problems with your Automic Vault installation and explains how to fix them")
+        case .hardenedTools: String(localized: "Hardened Tools secure developer tools with granular access to secrets")
+        case .secretGates: String(localized: "Authorization Gates control which operations Verified Launchers may perform through specific Tools")
+        case .blessedScripts: String(localized: "Blessed Scripts bind exact scripts to declared Secrets, Targets, and per-Gate capabilities")
+        case .launcherBundles: String(localized: "Create a Verified Launcher from one unsigned Mach-O command-line tool")
+        case .allSecrets: String(localized: "Secrets are credentials stored securely in the macOS Data Protection Keychain")
+        case .proxySessions: String(localized: "Active `av proxy` sessions appear here while their target process is running")
+        case .secretUsage: String(localized: "Authorization History records requests and their authorization decisions")
+        case .settings: String(localized: "Settings control how Automic Vault behaves")
         }
     }
 
@@ -2862,7 +2862,7 @@ private struct StoredSecretDetailView: View {
                 ForEach(secret.values) { value in
                     HStack(alignment: .center, spacing: 10) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(value.source == .global ? "Global Value" : escapedSecurityPath(value.source.displayName))
+                            Text(value.source == .global ? String(localized: "Global Value") : escapedSecurityPath(value.source.displayName))
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                                 .textSelection(.enabled)
                             if case .projectDirectory(let path) = value.source,
@@ -3358,7 +3358,7 @@ private struct InfoBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
+            Text(localizedUIString(title).uppercased())
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .tracking(0.7)
@@ -3421,7 +3421,7 @@ private struct ReferenceDetailView: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                Text(referenceTitle)
+                Text(localizedUIString(referenceTitle))
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.7)
@@ -3467,7 +3467,7 @@ private struct ReferenceDetailView: View {
     }
 
     private var referenceBadge: some View {
-        Text(badge.title)
+        Text(localizedUIString(badge.title))
             .font(.system(size: 11, weight: .semibold))
             .padding(.horizontal, 8)
             .frame(height: 20)
@@ -4063,20 +4063,20 @@ private struct IPhoneApprovalSettingsView: View {
                     .font(.system(size: 24, weight: .semibold))
                 Text(enabled
                     ? (TouchIDApproval.isEnabled
-                        ? "Human Approval may come from an eligible iPhone or Touch ID on this Mac."
-                        : "Every human Approval for this Mac must come from an eligible iPhone.")
-                    : "Keep agents with computer-use access away from their own Approval controls.")
+                        ? String(localized: "Human Approval may come from an eligible iPhone or Touch ID on this Mac.")
+                        : String(localized: "Every human Approval for this Mac must come from an eligible iPhone."))
+                    : String(localized: "Keep agents with computer-use access away from their own Approval controls."))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
 
-            Label(enabled ? "Enabled" : "Disabled", systemImage: enabled ? "iphone.and.arrow.forward" : "iphone.slash")
+            Label(enabled ? String(localized: "Enabled") : String(localized: "Disabled"), systemImage: enabled ? "iphone.and.arrow.forward" : "iphone.slash")
                 .foregroundStyle(enabled ? .green : .secondary)
             Text(status).font(.caption).foregroundStyle(.secondary)
 
             InfoBlock(
                 title: "Physical separation",
-                text: "iPhone Mirroring and Show on Mac can expose phone controls to an agent. Disable them, or require Face ID or Touch ID in the iPhone app."
+                text: String(localized: "iPhone Mirroring and Show on Mac can expose phone controls to an agent. Disable them, or require Face ID or Touch ID in the iPhone app.")
             )
 
             if enabled {
@@ -4167,13 +4167,13 @@ private struct TouchIDApprovalSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Label(enabled ? "Enabled" : "Disabled", systemImage: "touchid")
+            Label(enabled ? String(localized: "Enabled") : String(localized: "Disabled"), systemImage: "touchid")
                 .foregroundStyle(enabled ? .green : .secondary)
             Text(status).font(.caption).foregroundStyle(.secondary)
 
             InfoBlock(
                 title: "Explicit local authority",
-                text: "Touch ID Approval works independently of relay availability and may coexist with iPhone Approval. It never accepts a password, Apple Watch, pointer, or keyboard action."
+                text: String(localized: "Touch ID Approval works independently of relay availability and may coexist with iPhone Approval. It never accepts a password, Apple Watch, pointer, or keyboard action.")
             )
 
             if enabled {
@@ -5200,7 +5200,7 @@ private struct SecretGateField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased())
+            Text(localizedUIString(label).uppercased())
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.secondary)
             Text(value)
@@ -5279,7 +5279,7 @@ private struct DefaultAppPolicyRow: View {
                 .frame(width: 34, height: 34)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(gate.defaultPolicyLabel)
+                Text(localizedUIString(gate.defaultPolicyLabel))
                     .font(.system(size: 13, weight: .medium))
                 Text("Requires Hardened Runtime")
                     .font(.system(size: 12))
@@ -5331,7 +5331,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
         button.controlSize = .small
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectProtection(_:))
-        button.setAccessibilityLabel("Protection level")
+        button.setAccessibilityLabel(String(localized: "Protection level"))
         configureItems(in: button)
         updateSelection(in: button)
         return button
@@ -5346,21 +5346,21 @@ private struct NativeProtectionMenu: NSViewRepresentable {
     private func configureItems(in button: NSPopUpButton) {
         button.removeAllItems()
         for candidate in gate.availableProtections {
-            button.addItem(withTitle: gate.protectionTitle(candidate))
+            button.addItem(withTitle: localizedUIString(gate.protectionTitle(candidate)))
             if usesPhone && candidate.addsAuthority(over: protection) {
-                let title = NSMutableAttributedString(string: gate.protectionTitle(candidate) + "  ")
+                let title = NSMutableAttributedString(string: localizedUIString(gate.protectionTitle(candidate)) + "  ")
                 let attachment = NSTextAttachment()
-                attachment.image = NSImage(systemSymbolName: "iphone", accessibilityDescription: "Approval on iPhone")?
+                attachment.image = NSImage(systemSymbolName: "iphone", accessibilityDescription: String(localized: "Approval on iPhone"))?
                     .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
                 title.append(NSAttributedString(attachment: attachment))
                 button.lastItem?.attributedTitle = title
-                button.lastItem?.toolTip = "Requires Approval on iPhone."
+                button.lastItem?.toolTip = String(localized: "Requires Approval on iPhone.")
             }
             if #available(macOS 14.4, *) {
-                button.lastItem?.subtitle = gate.protectionSubtitle(candidate)
+                button.lastItem?.subtitle = localizedUIString(gate.protectionSubtitle(candidate))
             }
             if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
-                let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")
+                let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: String(localized: "Warning"))
                 button.lastItem?.image = candidate == .fullIncludingSecretDumps
                     ? warning?.withSymbolConfiguration(.init(paletteColors: [.systemRed]))
                     : warning
