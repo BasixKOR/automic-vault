@@ -347,12 +347,11 @@ intercept every process execution. Keep your terminal and agent harness's
 - [Domain language](docs/domain-language.md), [architecture](docs/architecture.md), and [positioning](docs/positioning.md)
 - [Architecture decisions](docs/adr/)
 - [Homebrew tap](https://github.com/automic-vault/homebrew-isotopes)
-- [Ephemeral chat](https://outclaw.dev/automic-vault/automic-vault)
 
 Automic Vault is free and open source under Apache-2.0. iPhone Approval requires
 a subscription to send allow responses.
 
-[![Chat w/Maintainer](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
+[![Chat w/Maintainer](https://knock-knock.mxcl.dev/badge.svg)](https://knock-knock.mxcl.dev/automic-vault/automic-vault)
 
 &nbsp;
 
