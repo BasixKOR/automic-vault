@@ -3906,10 +3906,15 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         let originIdentity = parsedRequest.sshPeer?.identity ?? identity
-        var launchers = parsedRequest.sshPeer?.launchers ?? launcherIdentities(for: identity)
-        if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
-            launchers.append(launcher)
+        func requestLaunchers() -> [LauncherIdentity] {
+            var launchers = parsedRequest.sshPeer?.launchers ?? launcherIdentities(for: identity)
+            if launchers.isEmpty, let launcher = launcherIdentity(pid: pid, identity: identity) {
+                launchers.append(launcher)
+            }
+            return launchers
         }
+        // GPG needs Launchers for credential selection; other requests need them for authorization.
+        var launchers = parsedRequest.op == "gpg-sign" ? requestLaunchers() : []
         if parsedRequest.op == "gpg-sign" {
             let migrationStatus = migrateLegacyGPGSigningSecrets()
             guard migrationStatus == errSecSuccess else {
@@ -4089,6 +4094,9 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             reply(peer, to: message, ok: true, error: nil, secrets: [:])
             return
+        }
+        if request.op != "gpg-sign" {
+            launchers = requestLaunchers()
         }
         let processChains = request.sshPeer == nil ? retainedProcessChains(for: identity) : []
         let keepsDetachedProcessAccess = UserDefaults.standard.bool(
@@ -14381,9 +14389,14 @@ private func runApprovalSelfCheck() -> Int32 {
         return 1
     }
 
-    func scriptRequest(_ source: String, keys: [String] = []) -> ApprovalRequest {
+    func scriptRequest(
+        _ source: String,
+        keys: [String] = [],
+        op: String = "inject",
+        snapshotIncompatibleInterpreter: String? = nil
+    ) -> ApprovalRequest {
         ApprovalRequest(
-            op: "inject",
+            op: op,
             keys: keys,
             target: "/usr/bin/python3",
             args: ["/tmp/script"],
@@ -14393,6 +14406,7 @@ private func runApprovalSelfCheck() -> Int32 {
             envConflicts: [],
             shebangScript: "/tmp/script",
             scriptData: Data(source.utf8),
+            snapshotIncompatibleInterpreter: snapshotIncompatibleInterpreter,
             tool: nil,
             title: nil,
             detail: nil
@@ -14408,18 +14422,23 @@ private func runApprovalSelfCheck() -> Int32 {
     # ---
     print("ok")
     """))
-    let emptyCeilingScript = scriptStartingWithoutApproval(for: scriptRequest("""
+    let emptyCeilingSource = """
     #!/usr/local/bin/av inject -- /usr/bin/python3
     # --- automic-vault
     # capabilities: {}
     # ---
     print("ok")
-    """))
+    """
+    let emptyCeilingScript = scriptStartingWithoutApproval(for: scriptRequest(emptyCeilingSource))
     guard inheritedScript == nil,
           explicitlyInheritedScript == nil,
           emptyCeilingScript?.manifest.hasEmptyCapabilityCeiling == true,
+          scriptStartingWithoutApproval(for: scriptRequest(emptyCeilingSource, op: "authorize")) == nil,
           scriptStartingWithoutApproval(for: scriptRequest(
-              "#!/usr/local/bin/av inject +TOKEN -- /usr/bin/python3\nprint('ok')\n",
+              emptyCeilingSource, snapshotIncompatibleInterpreter: "/usr/bin/python3"
+          )) == nil,
+          scriptStartingWithoutApproval(for: scriptRequest(
+              emptyCeilingSource.replacingOccurrences(of: "inject --", with: "inject +TOKEN --"),
               keys: ["TOKEN"]
           )) == nil
     else { return 1 }
