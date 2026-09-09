@@ -1,4 +1,4 @@
-# Automic Vault [![Chat w/Maintainer](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
+# Automic Vault
 
 > Your secrets manager should know what the secrets *do*.
 
@@ -32,6 +32,8 @@ doesn't cover. See [Choosing a Mechanism](docs/choosing-a-mechanism.md) for
 which one fits your situation.
 
 For the rest: [user manual] or `av help`.
+
+&nbsp;
 
 ## Detectors
 
@@ -349,6 +351,10 @@ intercept every process execution. Keep your terminal and agent harness's
 
 Automic Vault is free and open source under Apache-2.0. iPhone Approval requires
 a subscription to send allow responses.
+
+[![Chat w/Maintainer](https://outclaw.dev/badge.svg)](https://outclaw.dev/automic-vault/automic-vault)
+
+&nbsp;
 
 > [!IMPORTANT]
 > Automic Vault is not associated or affiliated with any cryptocurrency or
