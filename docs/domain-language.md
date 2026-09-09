@@ -207,6 +207,11 @@ providers are a Codex task identified by a canonical UUID in
 `CODEX_THREAD_ID` and a Claude Code session identified by a canonical UUID in
 `CLAUDE_CODE_SESSION_ID`. Automic Vault accepts a context only when exactly one
 recognized provider variable is present in the live process environment.
+For the setuid Homebrew Gate Client, macOS prevents the approval service from
+inspecting that environment. The signed brew stub transports its own bounded
+provider variable with its single Authorization Request instead. This exception
+applies only at the Homebrew Execution Gate; it supplies no Launcher identity.
+See [ADR 0045](adr/0045-homebrew-agent-task-context.md).
 
 An Agent Task Context is forgeable by software running as the user. It is not
 identity, authentication, or a security boundary and grants no authority by

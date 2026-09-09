@@ -3055,6 +3055,125 @@ private func agentTaskContext(pid: pid_t) -> AgentTaskContext? {
     return AgentTaskContext(environment: environment)
 }
 
+// Resolve task context only after ordinary Gate Client and gate verification.
+private func agentTaskContext(
+    for request: ApprovalRequest,
+    identity: AVProcessIdentity,
+    gateID: String?,
+    callerPath: String,
+    signing: SigningInfo,
+    message: xpc_object_t
+) -> AgentTaskContext? {
+    var current = AVProcessIdentity()
+    guard request.sshPeer == nil,
+          av_process_identity(identity.pid, &current), sameProcessIdentity(identity, current),
+          pathString(identity) == pathString(current)
+    else { return nil }
+    guard gateID == "brew", request.op == "authorize", request.tool == "brew",
+          request.keys.isEmpty, isTrustedBrewStubCaller(path: callerPath, signing: signing)
+    else { return agentTaskContext(pid: identity.pid) }
+
+    // macOS withholds the setuid stub's environment. Its signed, single-request
+    // Gate Client supplies only this forgeable narrowing label (ADR 0045).
+    var environment: [String: String] = [:]
+    for provider in AgentProvider.allCases {
+        let field = "brew_\(provider.environmentVariable)"
+        guard let value = xpc_dictionary_get_value(message, field) else { continue }
+        guard xpc_get_type(value) == XPC_TYPE_STRING,
+              xpc_string_get_length(value) == 36,
+              let pointer = xpc_string_get_string_ptr(value),
+              let string = String(validatingCString: pointer)
+        else { return nil }
+        environment[provider.environmentVariable] = string
+    }
+    return AgentTaskContext(environment: environment)
+}
+
+private func brewAgentTaskContextSelfCheck() -> Bool {
+    // No readable task environment: exercise the transported context with a live peer.
+    let process = Process()
+    guard let executable = Bundle.main.executableURL else { return false }
+    process.executableURL = executable
+    process.arguments = ["--self-check-sleep"]
+    process.environment = [:]
+    do { try process.run() } catch { return false }
+    defer {
+        if process.isRunning { process.terminate() }
+        process.waitUntilExit()
+    }
+    var identity = AVProcessIdentity()
+    guard av_process_identity(process.processIdentifier, &identity) else { return false }
+    let message = xpc_dictionary_create_empty()
+    let uuid = "11111111-2222-3333-4444-555555555555"
+    uuid.withCString { xpc_dictionary_set_string(message, "brew_CODEX_THREAD_ID", $0) }
+    let request = ApprovalRequest(
+        op: "authorize", keys: [], target: "/opt/homebrew/bin/brew",
+        args: ["install", "--formula", "tree"], cwd: "/tmp",
+        replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+        shebangScript: nil, scriptData: nil, tool: "brew", title: nil, detail: nil
+    )
+    func context(
+        gateID: String? = "brew",
+        callerPath: String = "/usr/local/bin/brew",
+        identifier: String = "com.automicvault.av-brew-stub",
+        identity: AVProcessIdentity = identity,
+        request: ApprovalRequest = request
+    ) -> AgentTaskContext? {
+        agentTaskContext(
+            for: request, identity: identity, gateID: gateID, callerPath: callerPath,
+            signing: SigningInfo(identifier: identifier, teamIdentifier: "ZU76A67LGU"),
+            message: message
+        )
+    }
+    let expected = AgentTaskContext(provider: .codex, id: UUID(uuidString: uuid)!)
+    guard context() == expected else {
+        print("brew task context unavailable when the peer environment cannot be read")
+        return false
+    }
+    let launcher = LauncherIdentity(
+        pid: 41, path: "/Applications/Codex.app/Contents/MacOS/Codex",
+        identifier: "com.openai.codex", teamIdentifier: "TEAM",
+        designatedRequirement: "identifier com.openai.codex", runtimeProtection: .hardened
+    )
+    let gate = SecretGate(id: "brew", keyPatterns: [], routes: [], defaultProtection: .noAccess, appPolicies: [])
+    guard let candidate = temporaryAccessGrantCandidate(
+        gate: gate, classification: brewRequestClassification(request.args),
+        launcher: launcher, agentTaskContext: context()
+    ), candidate.scope.agentTaskContext == expected,
+       candidate.scope.matches(
+           authorizationGateID: "brew", launcherDesignatedRequirement: launcher.designatedRequirement,
+           launcherRuntimeProtection: .hardened, agentTaskContext: expected,
+           classification: brewRequestClassification(["upgrade", "--formula", "tree"])
+       ),
+       context(gateID: "gh") == nil,
+       context(gateID: nil) == nil,
+       context(identifier: "com.automicvault.av") == nil,
+       context(callerPath: "/usr/local/bin/unrelated") == nil,
+       context(request: request.requesting(keys: ["SECRET"], title: "", detail: "")) == nil
+    else { return false }
+
+    // Both providers, malformed UUIDs, oversized strings and wrong XPC types fail closed.
+    uuid.withCString { xpc_dictionary_set_string(message, "brew_CLAUDE_CODE_SESSION_ID", $0) }
+    guard context() == nil else { return false }
+    xpc_dictionary_set_value(message, "brew_CODEX_THREAD_ID", nil)
+    guard context() == AgentTaskContext(provider: .claudeCode, id: expected.id) else { return false }
+    for invalid in ["", String(repeating: "x", count: 36), uuid + "x"] {
+        invalid.withCString { xpc_dictionary_set_string(message, "brew_CLAUDE_CODE_SESSION_ID", $0) }
+        guard context() == nil else { return false }
+    }
+    xpc_dictionary_set_int64(message, "brew_CLAUDE_CODE_SESSION_ID", 1)
+    guard context() == nil else { return false }
+    xpc_dictionary_set_value(message, "brew_CLAUDE_CODE_SESSION_ID", nil)
+    guard context() == nil else { return false }
+    uuid.withCString { xpc_dictionary_set_string(message, "brew_CODEX_THREAD_ID", $0) }
+    var changedIdentity = identity
+    changedIdentity.start_usec &+= 1
+    guard context(identity: changedIdentity) == nil, context() == expected else { return false }
+    process.terminate()
+    process.waitUntilExit()
+    return context() == nil
+}
+
 private func processEnvironmentValueSelfCheck() -> Bool {
     let expected = "11111111-2222-3333-4444-555555555555"
     let process = Process()
@@ -4271,7 +4390,10 @@ private final class ApprovalServer: @unchecked Sendable {
         let classification = configuredGate.map {
             classifySecretGateRequest(gateID: $0.id, request: request)
         }
-        let currentAgentTaskContext = request.sshPeer == nil ? agentTaskContext(pid: pid) : nil
+        let currentAgentTaskContext = agentTaskContext(
+            for: request, identity: identity, gateID: configuredGate?.id,
+            callerPath: callerPath, signing: signing, message: message
+        )
         let retainedProcessExplanation: String?
         if !keepsDetachedProcessAccess,
            retainedBlessingMatch != nil,
@@ -4594,7 +4716,10 @@ private final class ApprovalServer: @unchecked Sendable {
                        let configuredGate,
                        let classification,
                        request.sshPeer == nil,
-                       let currentAgentTaskContext = agentTaskContext(pid: pid),
+                       let currentAgentTaskContext = agentTaskContext(
+                           for: request, identity: identity, gateID: configuredGate.id,
+                           callerPath: currentCallerPath, signing: currentSigning, message: message
+                       ),
                        self.handleTemporaryAccessGrant(
                            request: request,
                            gate: configuredGate,
@@ -4763,7 +4888,10 @@ private final class ApprovalServer: @unchecked Sendable {
                           gate: configuredGate,
                           classification: classification,
                           launcher: liveLauncher,
-                          agentTaskContext: agentTaskContext(pid: pid)
+                          agentTaskContext: agentTaskContext(
+                              for: request, identity: identity, gateID: configuredGate?.id,
+                              callerPath: callerPath, signing: signing, message: message
+                          )
                       ),
                       refreshedCandidate.scope == originalCandidate.scope
                 else {
@@ -13646,6 +13774,7 @@ private func runApprovalSelfCheck() -> Int32 {
         print("SSH command and npm invocation presentation self-check failed")
         return 1
     }
+    guard brewAgentTaskContextSelfCheck() else { return 1 }
     guard processEnvironmentValueSelfCheck() else {
         print("bounded peer environment self-check failed")
         return 2
