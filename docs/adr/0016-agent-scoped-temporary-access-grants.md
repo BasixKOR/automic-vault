@@ -1,6 +1,7 @@
 # ADR 0016: Agent-scoped Temporary Access Grants
 
-Status: accepted
+Status: accepted; Homebrew context transport amended by
+[ADR 0045](0045-homebrew-agent-task-context.md).
 
 ## Context
 

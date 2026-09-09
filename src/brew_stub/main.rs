@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V20";
+const MARKER: &str = "AUTOMIC_VAULT_BREW_STUB_V21";
 const TARGET: &str = "/opt/homebrew/bin/brew";
 const PREFIX: &str = "/opt/homebrew";
 const SHELLENV_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -383,6 +383,28 @@ fn authorization_request(args: &[OsString], cwd: &Path) -> Result<AuthorizationR
     })
 }
 
+// Only a narrowing label; the approval service still verifies the live Launcher.
+// Preserve ambiguity by sending no context if more than one provider is present.
+fn agent_task_environment<I>(source: I) -> Option<(&'static [u8], String)>
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    let mut values = source.into_iter().filter_map(|(key, value)| {
+        let field: &'static [u8] = match key.to_str()? {
+            "CODEX_THREAD_ID" => b"brew_CODEX_THREAD_ID\0",
+            "CLAUDE_CODE_SESSION_ID" => b"brew_CLAUDE_CODE_SESSION_ID\0",
+            _ => return None,
+        };
+        Some((field, value))
+    });
+    let (field, value) = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let value = value.into_string().ok()?;
+    (value.len() <= 36).then_some((field, value))
+}
+
 #[cfg(target_os = "macos")]
 fn xpc_authorize(request: &AuthorizationRequest) -> Result<(), String> {
     use std::os::raw::{c_char, c_int, c_void};
@@ -482,6 +504,9 @@ fn xpc_authorize(request: &AuthorizationRequest) -> Result<(), String> {
         set_string(message, b"target\0", &request.target)?;
         set_string(message, b"cwd\0", &request.cwd)?;
         set_string(message, b"tool\0", "brew")?;
+        if let Some((field, value)) = agent_task_environment(std::env::vars_os()) {
+            set_string(message, field, &value)?;
+        }
         xpc_dictionary_set_bool(message, b"replace_existing_env\0".as_ptr().cast(), false);
         xpc_dictionary_set_bool(message, b"allow_missing_keys\0".as_ptr().cast(), false);
         xpc_dictionary_set_value(message, b"keys\0".as_ptr().cast(), empty);
@@ -582,6 +607,42 @@ where
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn agent_context_transport_is_bounded_and_unambiguous() {
+        use std::os::unix::ffi::OsStringExt;
+        let uuid = "11111111-2222-3333-4444-555555555555";
+        for (variable, field) in [
+            ("CODEX_THREAD_ID", b"brew_CODEX_THREAD_ID\0".as_slice()),
+            (
+                "CLAUDE_CODE_SESSION_ID",
+                b"brew_CLAUDE_CODE_SESSION_ID\0".as_slice(),
+            ),
+        ] {
+            assert_eq!(
+                agent_task_environment([
+                    ("UNRELATED".into(), "ignored".into()),
+                    (variable.into(), uuid.into()),
+                ]),
+                Some((field, uuid.into()))
+            );
+        }
+        for environment in [
+            vec![],
+            vec![("CODEX_THREAD_ID".into(), "x".repeat(37).into())],
+            vec![("CODEX_THREAD_ID".into(), OsString::from_vec(vec![0xff]))],
+            vec![
+                ("CODEX_THREAD_ID".into(), uuid.into()),
+                ("CLAUDE_CODE_SESSION_ID".into(), "malformed".into()),
+            ],
+            vec![
+                ("CODEX_THREAD_ID".into(), uuid.into()),
+                ("CODEX_THREAD_ID".into(), uuid.into()),
+            ],
+        ] {
+            assert_eq!(agent_task_environment(environment), None);
+        }
+    }
 
     #[test]
     fn authorization_request_keeps_exact_args_and_cwd() {

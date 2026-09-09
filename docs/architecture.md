@@ -108,9 +108,19 @@ broader Direct Secret Gate because a diagnostic check is unavailable.
 For recognized agent Launchers, the service may read `CODEX_THREAD_ID` or
 `CLAUDE_CODE_SESSION_ID` directly from the live XPC peer with a bounded
 `KERN_PROCARGS2` query. It accepts only one canonical UUID from exactly one
-provider and adds no client-controlled identity field to XPC. This label is an
-Agent Task Context: same-user software can forge it, so the live Verified
-Launcher remains the identity boundary.
+provider. This label is an Agent Task Context: same-user software can forge it,
+so the live Verified Launcher remains the identity boundary.
+
+The setuid Homebrew Gate Client is the sole transport exception: macOS withholds
+its environment from the approval service. The signed, single-request brew stub
+sends its own bounded provider variable over authenticated XPC. Only a verified
+brew stub making a Secret-free `authorize` request at the Homebrew Execution
+Gate may supply that context. The service applies the same canonical UUID and
+single-provider validation, and uses that request's immutable context for grant
+creation and matching, including queued requests. Live Gate Client, Launcher,
+runtime, capability-ceiling, recording and release checks still apply. Missing
+or invalid context disables Temporary Access Grants without changing ordinary
+Approval. See [ADR 0045](adr/0045-homebrew-agent-task-context.md).
 
 An eligible live write-request Approval can create a Temporary Access Grant
 with an initial ten minutes of active countdown time through an explicit prompt
