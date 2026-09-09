@@ -211,7 +211,12 @@ func unavailableSecretExplainsAvailabilitySetting(error: SecretValueCustodyError
     #expect(error.localizedDescription.contains("Unlock the Mac and retry"))
     #expect(error.localizedDescription.contains("enable Available While Locked"))
     #expect(error.localizedDescription.contains("Automic Vault app"))
+    #expect(error.localizedDescription.contains("allow Automic Vault to access"))
+    #expect(error.localizedDescription.contains("Authorization is still required"))
     #expect(error.localizedDescription.contains("Login and credential changes may still require unlocking"))
+    if case .selectedValueUnavailable(let name, _) = error {
+        #expect(error.localizedDescription.contains("Secret \(name) is unavailable"))
+    }
     #expect(!SecretValueCustodyError.inventoryUnavailable(errSecNotAvailable)
         .localizedDescription.contains("Available While Locked"))
 }
