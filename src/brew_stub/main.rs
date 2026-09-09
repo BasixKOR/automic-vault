@@ -402,7 +402,15 @@ where
         return None;
     }
     let value = value.into_string().ok()?;
-    (value.len() <= 36).then_some((field, value))
+    let canonical = value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        });
+    canonical.then_some((field, value))
 }
 
 #[cfg(target_os = "macos")]
@@ -625,6 +633,28 @@ mod tests {
                     (variable.into(), uuid.into()),
                 ]),
                 Some((field, uuid.into()))
+            );
+        }
+        for invalid in [
+            "",
+            "short",
+            "g1111111-2222-3333-4444-555555555555",
+            "1111111-12222-3333-4444-555555555555",
+            "11111111222223333-4444-555555555555",
+        ] {
+            assert_eq!(
+                agent_task_environment([("CODEX_THREAD_ID".into(), invalid.into())]),
+                None,
+                "forwarded invalid task label: {invalid}"
+            );
+        }
+        for valid in [
+            "abcdefab-cdef-abcd-efab-cdefabcdefab",
+            "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+        ] {
+            assert_eq!(
+                agent_task_environment([("CODEX_THREAD_ID".into(), valid.into())]),
+                Some((b"brew_CODEX_THREAD_ID\0".as_slice(), valid.into()))
             );
         }
         for environment in [

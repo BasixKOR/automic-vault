@@ -22,8 +22,10 @@ The signed brew stub reads its own environment before submitting its single
 Authorization Request and may send `brew_CODEX_THREAD_ID` or
 `brew_CLAUDE_CODE_SESSION_ID` over its existing authenticated XPC connection.
 It sends no context when multiple recognized variables (including duplicate
-entries) are present, or when the selected value is not UTF-8 or exceeds 36
-bytes. These fields are never command-line inputs or Launcher identity claims.
+entries) are present, or when the selected value is not a canonical 36-byte
+UUID: hexadecimal digits with hyphens at the UUID positions. Uppercase and
+lowercase hex are accepted, matching the service's validation. These fields
+are never command-line inputs or Launcher identity claims.
 
 The approval service accepts these fields only from the verified brew stub for
 an `authorize` request with no Secret Names, the `brew` Tool, and the matched
