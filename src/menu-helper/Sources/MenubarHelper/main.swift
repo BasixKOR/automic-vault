@@ -11476,14 +11476,15 @@ private func verifiedLauncherHelperAssociation(
     configuration: VerifiedLauncherHelperConfiguration? = nil,
     bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
 ) -> VerifiedLauncherHelperAssociation? {
-    let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
-    let helpers = helpers ?? configuration.helpers
     guard signing.isDeveloperID else { return nil }
     let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
     let executableURL = URL(fileURLWithPath: executablePath)
         .standardizedFileURL
         .resolvingSymlinksInPath()
     let appURLs = containingAppURLs ?? appBundleURLs(containing: executableURL.path)
+    guard !appURLs.isEmpty else { return nil }
+    let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
+    let helpers = helpers ?? configuration.helpers
     for helper in helpers where configuration.isEnabled(helper)
         && helper.helperSigningIdentifier == signing.identifier
         && helper.helperTeamIdentifier == signing.teamIdentifier
