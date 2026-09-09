@@ -1608,3 +1608,29 @@ func keychainAccessibility(account: String, service: String) -> String? {
     else { return nil }
     return attributes[kSecAttrAccessible as String] as? String
 }
+
+// A matching UUID is insufficient evidence that the complete record was persisted.
+private final class AlteredAccessLogDefaults: UserDefaults, @unchecked Sendable {
+    private var stored: Data?
+
+    override func data(forKey defaultName: String) -> Data? { stored }
+    override func synchronize() -> Bool { true }
+    override func set(_ value: Any?, forKey defaultName: String) {
+        guard let data = value as? Data,
+              var records = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              !records.isEmpty
+        else { stored = nil; return }
+        records[0]["target"] = "/altered-target"
+        stored = try? JSONSerialization.data(withJSONObject: records)
+    }
+}
+
+@Test func accessRequestLogRejectsAlteredRecordWithMatchingID() {
+    let record = AccessRequestRecord(
+        date: Date(timeIntervalSince1970: 0), tool: "fixture", command: "fixture list",
+        decision: "Approved", approvalSource: "Auto", reason: "Read Only",
+        launcher: "Fixture", callerPath: "/fixture/av", target: "/fixture/tool",
+        cwd: "/fixture", keys: ["SYNTHETIC_TOKEN"], detail: nil
+    )
+    #expect(!appendAccessRequestRecord(record, defaults: AlteredAccessLogDefaults()))
+}
