@@ -1,5 +1,7 @@
 # Automic Vault
 
+[English](README.md) · [简体中文](README.zh-Hans.md)
+
 > Your secrets manager should know what the secrets *do*.
 
 Automic Vault is a macOS secrets manager for developer tools and agents. It
