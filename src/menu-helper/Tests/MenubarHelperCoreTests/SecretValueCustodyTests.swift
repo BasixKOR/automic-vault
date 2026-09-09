@@ -203,6 +203,19 @@ func lockedSecretIsUnavailableRatherThanMissing(hasOtherAvailableSecret: Bool) t
     }
 }
 
+@Test(arguments: [
+    SecretValueCustodyError.inventoryUnavailable(errSecInteractionNotAllowed),
+    .selectedValueUnavailable("GH_TOKEN_GITHUB_COM", errSecInteractionNotAllowed),
+])
+func unavailableSecretExplainsAvailabilitySetting(error: SecretValueCustodyError) {
+    #expect(error.localizedDescription.contains("Unlock the Mac and retry"))
+    #expect(error.localizedDescription.contains("enable Available While Locked"))
+    #expect(error.localizedDescription.contains("Automic Vault app"))
+    #expect(error.localizedDescription.contains("Login and credential changes may still require unlocking"))
+    #expect(!SecretValueCustodyError.inventoryUnavailable(errSecNotAvailable)
+        .localizedDescription.contains("Available While Locked"))
+}
+
 @Test func availableWhileLockedSecretRemainsUsable() throws {
     let cwd = try canonicalProjectDirectory(FileManager.default.temporaryDirectory.path)
     let secret = StoredSecret(account: "GH_TOKEN_GITHUB_COM", accessibility: .afterFirstUnlock, values: [
