@@ -581,7 +581,7 @@ final class DashboardModel: ObservableObject {
             guard let self else { return }
             let status = saveBlessedScript(script)
             guard status == errSecSuccess else {
-                self.errorMessage = String(localized: "Could not bless script: \(status)")
+                self.errorMessage = String(localized: "Could not bless script: \(String(status))")
                 return
             }
             self.finishPendingBlessing(.approved)
@@ -716,7 +716,7 @@ final class DashboardModel: ObservableObject {
             selectedItemID = nil
             reloadAuthorizationState()
         } else {
-            errorMessage = String(localized: "Could not revoke blessing: \(status)")
+            errorMessage = String(localized: "Could not revoke blessing: \(String(status))")
         }
     }
 
@@ -835,7 +835,7 @@ final class DashboardModel: ObservableObject {
         guard !isBuildingLauncherBundle else { return }
         let status = removeLauncherBundleEnrollment(generation: enrollment.generation)
         guard status == errSecSuccess else {
-            errorMessage = String(localized: "Could not revoke Launcher Bundle enrollment: \(status)")
+            errorMessage = String(localized: "Could not revoke Launcher Bundle enrollment: \(String(status))")
             return
         }
         isBuildingLauncherBundle = true
@@ -895,7 +895,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         } else {
-            errorMessage = String(localized: "Could not save \(account): \(status)")
+            errorMessage = String(localized: "Could not save \(account): \(String(status))")
             return false
         }
     }
@@ -913,7 +913,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         }
-        errorMessage = String(localized: "Could not update \(secret.account): \(status)")
+        errorMessage = String(localized: "Could not update \(secret.account): \(String(status))")
         return false
     }
 
@@ -976,7 +976,7 @@ final class DashboardModel: ObservableObject {
             selectedItemID = nil
             reloadAfterSecretMutation()
         } else {
-            errorMessage = String(localized: "Could not delete \(account): \(status)")
+            errorMessage = String(localized: "Could not delete \(account): \(String(status))")
         }
     }
 
@@ -1017,7 +1017,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = nil
             reloadAfterSecretMutation()
         } else {
-            errorMessage = String(localized: "Could not delete \(secret.account) Value: \(status)")
+            errorMessage = String(localized: "Could not delete \(secret.account) Value: \(String(status))")
         }
     }
 
@@ -1038,7 +1038,7 @@ final class DashboardModel: ObservableObject {
             reloadAfterSecretMutation()
             return true
         } else {
-            errorMessage = String(localized: "Could not rename \(account): \(status)")
+            errorMessage = String(localized: "Could not rename \(account): \(String(status))")
             return false
         }
     }
@@ -1172,7 +1172,7 @@ final class DashboardModel: ObservableObject {
                     runtimeRequirement: runtimeRequirement
                 )
                 guard policyStatus == errSecSuccess else {
-                    self.errorMessage = String(localized: "Could not allow \(signing.identifier): \(policyStatus)")
+                    self.errorMessage = String(localized: "Could not allow \(signing.identifier): \(String(policyStatus))")
                     return
                 }
             }
@@ -1242,7 +1242,7 @@ final class DashboardModel: ObservableObject {
 
     private func finishSecretGatePolicyUpdate(_ status: OSStatus, gate: SecretGate, error: String) {
         guard status == errSecSuccess else {
-            errorMessage = String(localized: "\(error): \(status)")
+            errorMessage = String(localized: "\(error): \(String(status))")
             return
         }
         reloadTask?.cancel()
@@ -1264,7 +1264,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = nil
             reloadAuthorizationState()
         } else {
-            errorMessage = String(localized: "\(error): \(status)")
+            errorMessage = String(localized: "\(error): \(String(status))")
         }
     }
 
@@ -3289,33 +3289,33 @@ private func detectorSeverityColor(_ severity: String?) -> Color {
 private func detectorSummary(for item: DashboardItem) -> String {
     switch item.kind?.lowercased() {
     case "auth token", "hosts token":
-        "Auth tokens grant API access without a password. If they leak, another process can act as you until the token is revoked."
+        String(localized: "Auth tokens grant API access without a password. If they leak, another process can act as you until the token is revoked.")
     case "credential fill", "credential oauth", "credential helpers":
-        "Credential helpers can expose reusable Git credentials. A compromised helper or config can capture tokens and push or pull as you."
+        String(localized: "Credential helpers can expose reusable Git credentials. A compromised helper or config can capture tokens and push or pull as you.")
     case "credentials file":
-        "Credentials files keep reusable keys on disk. Any process that can read them can authenticate to the linked service."
+        String(localized: "Credentials files keep reusable keys on disk. Any process that can read them can authenticate to the linked service.")
     case "legacy plugins":
-        "Legacy plugins run code inside the tool. Old or writable plugins widen the path for unreviewed code execution."
+        String(localized: "Legacy plugins run code inside the tool. Old or writable plugins widen the path for unreviewed code execution.")
     case "login cache":
-        "Login caches store session material after sign-in. A readable cache can let another process reuse your cloud session."
+        String(localized: "Login caches store session material after sign-in. A readable cache can let another process reuse your cloud session.")
     case "minimum release age":
-        "Missing release-age protection allows brand-new packages immediately. That raises exposure to dependency hijacks and rushed malicious releases."
+        String(localized: "Missing release-age protection allows brand-new packages immediately. That raises exposure to dependency hijacks and rushed malicious releases.")
     case "mutable":
-        "Mutable installs can be changed after installation. If an attacker edits them, future commands may run code you did not approve."
+        String(localized: "Mutable installs can be changed after installation. If an attacker edits them, future commands may run code you did not approve.")
     case "persisted output", "persisted report":
-        "Persisted output can leave discovered secrets in report files. Anyone with file access can recover those secrets later."
+        String(localized: "Persisted output can leave discovered secrets in report files. Anyone with file access can recover those secrets later.")
     case "plaintext secret":
-        "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them."
+        String(localized: "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them.")
     case "registry credentials":
-        "Registry credentials allow image pulls, pushes, or private registry access. If exposed, they can leak images or poison deployments."
+        String(localized: "Registry credentials allow image pulls, pushes, or private registry access. If exposed, they can leak images or poison deployments.")
     case "root access":
-        "Root-equivalent access can modify system files and privileged workloads. Misuse can turn a local compromise into full host control."
+        String(localized: "Root-equivalent access can modify system files and privileged workloads. Misuse can turn a local compromise into full host control.")
     case "shell history":
-        "Shell history can preserve secrets typed into commands. Those values remain readable long after the command finishes."
+        String(localized: "Shell history can preserve secrets typed into commands. Those values remain readable long after the command finishes.")
     case "system integrity":
-        "System integrity controls protect privileged operations and trusted macOS components. Strong authentication and built-in macOS protections reduce opportunities for compromised code to gain root access or tamper with the system."
+        String(localized: "System integrity controls protect privileged operations and trusted macOS components. Strong authentication and built-in macOS protections reduce opportunities for compromised code to gain root access or tamper with the system.")
     default:
-        "Sensitive local files can expose credentials or weaken a trust boundary. If another process can read or change them, it may impersonate you or run untrusted code."
+        String(localized: "Sensitive local files can expose credentials or weaken a trust boundary. If another process can read or change them, it may impersonate you or run untrusted code.")
     }
 }
 
@@ -3720,7 +3720,7 @@ private struct BlessedScriptReviewView: View {
                     if request.declaration.manifest.capabilities.values.contains(.fullIncludingSecretDumps) {
                         InfoBlock(
                             title: "Full Access",
-                            text: "This script requests access to operations that may reveal protected secret values."
+                            text: String(localized: "This script requests access to operations that may reveal protected secret values.")
                         )
                     }
                     if let interpreter = request.declaration.snapshotIncompatibleInterpreter {
@@ -3985,10 +3985,10 @@ private func launcherList(
     remove: @escaping (BlessedScriptLauncher) -> Void
 ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-        Text(title)
+        Text(localizedUIString(title))
             .font(.system(size: 13, weight: .semibold))
         if launchers.isEmpty {
-            Text(empty)
+            Text(localizedUIString(empty))
                 .foregroundStyle(.secondary)
         }
         ForEach(launchers, id: \.requirement) { launcher in
@@ -4322,7 +4322,7 @@ private struct DetachedProcessAccessSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             InfoBlock(
                 title: "Security tradeoff",
-                text: "This extends authority after the verified parent chain disappears. Intermediary processes that permit same-user code injection can pass that authority to injected code. An enrolled Launcher Bundle payload represents its own bundle without this setting."
+                text: String(localized: "This extends authority after the verified parent chain disappears. Intermediary processes that permit same-user code injection can pass that authority to injected code. An enrolled Launcher Bundle payload represents its own bundle without this setting.")
             )
             Link("Learn about Launcher Bundles", destination: launcherBundleDocumentationURL)
                 .font(.caption)
@@ -4351,7 +4351,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             }
             InfoBlock(
                 title: "Exact identities only",
-                text: "Each association verifies both signing identities, binds the live helper to its on-disk executable, and confirms that exact executable is unmodified in the app's resource seal. Other bundled executables do not inherit the app's authority."
+                text: String(localized: "Each association verifies both signing identities, binds the live helper to its on-disk executable, and confirms that exact executable is unmodified in the app's resource seal. Other bundled executables do not inherit the app's authority.")
             )
             if !status.isEmpty {
                 Text(status)
@@ -4469,8 +4469,8 @@ private struct SSHAgentSettingsView: View {
             }
             Text("Other agent clients can use SSH_AUTH_SOCK=\(sshAgentSocketURL().path). Disabling the agent leaves OpenSSH configured to fail closed until you remove its configuration.")
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            InfoBlock(title: "Existing access paths", text: "Importing does not delete your original private key, its Keychain passphrase, or keys loaded in another agent. These remain independent access paths. After verifying the new setup, remove the old copies and agent entries yourself. Explicit IdentityFile settings may still select other keys.")
-            InfoBlock(title: "Local Launcher boundary", text: "Destination-specific restrictions are not provided. Clients need a live Verified Launcher ancestor; a client cannot act as its own Launcher. Shared or forwarded connections carry requests under that ancestor’s attribution. OpenSSH configuration disables forwarding by default.")
+            InfoBlock(title: "Existing access paths", text: String(localized: "Importing does not delete your original private key, its Keychain passphrase, or keys loaded in another agent. These remain independent access paths. After verifying the new setup, remove the old copies and agent entries yourself. Explicit IdentityFile settings may still select other keys."))
+            InfoBlock(title: "Local Launcher boundary", text: String(localized: "Destination-specific restrictions are not provided. Clients need a live Verified Launcher ancestor; a client cannot act as its own Launcher. Shared or forwarded connections carry requests under that ancestor’s attribution. OpenSSH configuration disables forwarding by default."))
             if !runtime.status.isEmpty { InfoBlock(title: "SSH Agent", text: runtime.status) }
             if !status.isEmpty { InfoBlock(title: "Status", text: status) }
         }
@@ -4621,7 +4621,7 @@ private struct GPGSigningSettingsView: View {
 
             InfoBlock(
                 title: "Export from GnuPG",
-                text: "Run `gpg --list-secret-keys --keyid-format=long`, copy the signing key ID, then run `gpg --armor --export-secret-keys KEY_ID`. Add the complete PGP PRIVATE KEY BLOCK in the credential sheet. Automic Vault never displays a stored private key."
+                text: String(localized: "Run `gpg --list-secret-keys --keyid-format=long`, copy the signing key ID, then run `gpg --armor --export-secret-keys KEY_ID`. Add the complete PGP PRIVATE KEY BLOCK in the credential sheet. Automic Vault never displays a stored private key.")
             )
 
             credentialEditor(

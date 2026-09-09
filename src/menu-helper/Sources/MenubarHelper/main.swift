@@ -17266,6 +17266,41 @@ private func runUpdatePreflight() async -> Int32 {
     }
 }
 
+if CommandLine.arguments.contains("--self-check-localization") {
+    let chinese = CommandLine.arguments.contains("--expect-chinese")
+    precondition(localizedUIString("Approval Required") == (chinese ? "需要批准" : "Approval Required"))
+    precondition(String(localized: "Approve Once") == (chinese ? "批准一次" : "Approve Once"))
+    precondition(localizedUIString("Allow for Session") == (chinese ? "在本会话中允许" : "Allow for Session"))
+    precondition(localizedUIString("Untranslated fallback") == "Untranslated fallback")
+
+    // Interpolation must preserve technical identifiers, even when they contain
+    // translation keys, format characters, shell syntax, or non-ASCII text.
+    let name = "Settings %1$@ $(id) /tmp/批准"
+    let status: Int32 = -25293
+    let message = String(localized: "Could not save \(name): \(String(status))")
+    precondition(message == (chinese ? "无法保存 \(name)：\(status)" : "Could not save \(name): \(status)"))
+    let sections = [ApprovalPromptSection("Secret Values", "key", [
+        ApprovalPromptRow("Settings", "/tmp/Secrets"),
+    ])]
+    precondition(approvalPromptDetails(sections) == (chinese
+        ? "Secret 值\nSettings: /tmp/Secrets" : "Secret Values\nSettings: /tmp/Secrets"))
+    precondition(sections[0].title == "Secret Values" && sections[0].rows[0].label == "Settings")
+
+    // Localizing a display must not change persisted policy labels, presets,
+    // or the classification that will be sent to the phone and history.
+    precondition(SecretGateProtection.noAccess.rawValue == "noAccess")
+    precondition(SecretGateProtection.noAccess.title == "Approval Required")
+    for level in SecretGateProtection.allCases {
+        precondition(!localizedUIString(level.title).isEmpty)
+        precondition(!level.allows(.unknown))
+    }
+    precondition(!SecretGateProtection.fullExceptSecretDumps.allows(.secretDump))
+    precondition(SecretGateProtection.fullIncludingSecretDumps.allows(.secretDump))
+    precondition(operationClassificationTitle(.unknown) == "Unknown")
+    print("Localization self-check passed")
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--self-check-sleep") {
     sleep(5)
     exit(0)
