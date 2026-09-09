@@ -10,12 +10,16 @@ public enum SecretValueCustodyError: Error, Equatable, LocalizedError, Sendable 
     case selectedValueInvalidUTF8(String)
     case selectedValueEmpty(String)
 
+    private static let availabilityGuidance = "Unlock the Mac and retry. You can allow Automic Vault to access the needed Secrets while locked: enable Available While Locked for them in the Automic Vault app. Authorization is still required. Login and credential changes may still require unlocking."
+
     public var errorDescription: String? {
         switch self {
         case .repairFailed(let status):
             "secret repair must complete before this request: \(status)"
         case .inventoryUnavailable(let status) where status == errSecInteractionNotAllowed:
-            "Stored Secrets are unavailable from Keychain. Unlock the Mac and retry. (\(status))"
+            "Secrets are unavailable from Keychain. \(Self.availabilityGuidance) (\(status))"
+        case .selectedValueUnavailable(let name, let status) where status == errSecInteractionNotAllowed:
+            "Secret \(name) is unavailable from Keychain. \(Self.availabilityGuidance) (\(status))"
         case .inventoryUnavailable(let status):
             "failed to inspect stored Secrets: \(status)"
         case .secretMissing(let name):
