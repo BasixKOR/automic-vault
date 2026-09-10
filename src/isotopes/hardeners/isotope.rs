@@ -35,7 +35,7 @@ pub(crate) const GH: Spec = Spec {
 };
 pub(crate) const STRIPE: Spec = Spec {
     hardener: "stripe",
-    formula: "stripe-cli",
+    formula: "stripe-isotope",
     repository: "stripe-cli",
     primary: "stripe",
     binaries: &["stripe"],
@@ -756,10 +756,10 @@ fn conflicting_formula(spec: Spec) -> Option<String> {
         return crate::test_env_string("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT")
             .filter(|formula| !formula.is_empty());
     }
-    let conflict = if spec.hardener == KUBECTL.hardener {
-        "kubernetes-cli"
-    } else {
-        spec.hardener
+    let conflict = match spec.hardener {
+        "kubectl" => "kubernetes-cli",
+        "stripe" => "stripe-cli",
+        hardener => hardener,
     };
     ["/opt/homebrew/opt", "/usr/local/opt"]
         .map(|root| {
@@ -982,6 +982,7 @@ mod tests {
     #[test]
     fn executable_isotopes_use_their_fork_formula_manifests() {
         for (isotope, formula, repository) in [
+            (STRIPE, "stripe-isotope", "stripe-cli"),
             (OPENTOFU, "opentofu-isotope", "opentofu"),
             (OXIDE, "oxide-cli-isotope", "oxide.rs"),
             (FASTLY, "fastly-cli-isotope", "fastly-cli"),

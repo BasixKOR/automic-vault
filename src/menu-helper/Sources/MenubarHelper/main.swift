@@ -14474,7 +14474,7 @@ private func runApprovalSelfCheck() -> Int32 {
     let stripeRequest = ApprovalRequest(
         op: "keys",
         keys: ["STRIPE_CLI_6163636F756E742E616363745F3132332E746573745F6D6F64655F6170695F6B6579".uppercased()],
-        target: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+        target: "/opt/homebrew/opt/stripe-isotope/bin/stripe",
         args: ["customers", "list"],
         cwd: "/tmp",
         replaceExistingEnv: true,
@@ -14495,7 +14495,7 @@ private func runApprovalSelfCheck() -> Int32 {
             routes: [SecretGateRoute(
                 operation: "keys",
                 scriptPath: nil,
-                targetPath: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+                targetPath: "/opt/homebrew/opt/stripe-isotope/bin/stripe",
                 callerIdentifiers: ["stripe"],
                 keyPatterns: ["STRIPE_CLI_*"],
                 replaceExistingEnv: true,
@@ -14617,7 +14617,7 @@ private func runApprovalSelfCheck() -> Int32 {
               rules: directRules
           ) == nil,
           isTrustedStripeCaller(
-              path: "/opt/homebrew/opt/stripe-cli/bin/stripe",
+              path: "/opt/homebrew/opt/stripe-isotope/bin/stripe",
               signing: stripeSigning
           ),
           !isTrustedStripeCaller(path: "/tmp/stripe", signing: ghSigning),

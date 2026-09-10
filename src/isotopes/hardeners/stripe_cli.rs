@@ -116,7 +116,17 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
 }
 
 pub(crate) fn detect() -> HardenerDetection {
-    isotope::detect(isotope::STRIPE)
+    let mut detection = isotope::detect(isotope::STRIPE);
+    let legacy = super::homebrew::brew_prefix().join("opt/stripe-cli/bin/stripe");
+    if !detection.hardened && super::executable(&legacy) {
+        detection.diagnostics.push(super::HardenerDiagnostic {
+            kind: "stripe_isotope_reinstall_required",
+            message: "Stripe is installed under `stripe-cli`; Automic Vault now requires the `stripe-isotope` formula.".into(),
+            remediation: "Run `brew update`, then `av harden stripe` to install `automic-vault/isotopes/stripe-isotope`, then rerun `av doctor stripe`.".into(),
+            path: Some(legacy.display().to_string()),
+        });
+    }
+    detection
 }
 
 pub(crate) fn secret_gate() -> SecretGateDescriptor {

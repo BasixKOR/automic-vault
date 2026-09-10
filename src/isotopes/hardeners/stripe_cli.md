@@ -3,7 +3,10 @@
 ## How Automic Vault Hardens `stripe`
 
 `av harden stripe` installs the patched [Stripe CLI fork] from the Automic Vault
-Isotopes tap when Homebrew is available. Without Homebrew it installs the same
+Isotopes tap as `stripe-isotope` when Homebrew is available. `av doctor stripe`
+reports when an existing `stripe-cli` installation needs to be replaced. Run
+`brew update`, then `av harden stripe` to install the renamed Isotope.
+Without Homebrew it installs the same
 signed release at `/usr/local/bin/stripe`; `av doctor stripe` reports direct
 install updates. On macOS it stores and retrieves Stripe CLI credentials through
 the authenticated Automic Vault XPC broker instead of Keychain or plaintext

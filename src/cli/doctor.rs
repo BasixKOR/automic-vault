@@ -391,13 +391,14 @@ fn diagnose(
     Ok(hardeners
         .into_iter()
         .filter(|hardener| {
-            hardener.detection.commands.iter().any(|command| {
-                command.hardened
-                    || command
-                        .stub_path
-                        .as_deref()
-                        .is_some_and(|path| fs::symlink_metadata(path).is_ok())
-            })
+            !hardener.detection.diagnostics.is_empty()
+                || hardener.detection.commands.iter().any(|command| {
+                    command.hardened
+                        || command
+                            .stub_path
+                            .as_deref()
+                            .is_some_and(|path| fs::symlink_metadata(path).is_ok())
+                })
         })
         .map(|hardener| diagnose_one(hardener, None, path))
         .collect())
@@ -1300,6 +1301,49 @@ mod tests {
         .unwrap();
 
         assert_eq!(results[0].issues[0].kind, "target_unavailable");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stripe_formula_migration_is_reported_by_explicit_and_aggregate_doctor() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = temp_dir("stripe-formula-migration");
+        let legacy = dir.join("opt/stripe-cli/bin/stripe");
+        let target = dir.join("opt/stripe-isotope/bin/stripe");
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_PREFIX", &dir);
+            std::env::set_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH", &target);
+        }
+        let metadata = || HardenerMetadata {
+            name: "stripe",
+            documentation: "",
+            detection: hardeners::stripe_cli::detect(),
+            secret_gate: None,
+        };
+        assert!(metadata().detection.diagnostics.is_empty());
+        executable_file(&legacy);
+        for selector in [Some("stripe"), None] {
+            let results = diagnose(vec![metadata()], selector, OsStr::new("")).unwrap();
+            let issue = results[0]
+                .issues
+                .iter()
+                .find(|issue| issue.kind == "stripe_isotope_reinstall_required")
+                .unwrap();
+            assert!(
+                issue
+                    .remediation
+                    .contains("automic-vault/isotopes/stripe-isotope")
+            );
+            assert!(issue.remediation.contains("av harden stripe"));
+        }
+        executable_file(&target);
+        assert!(metadata().detection.diagnostics.is_empty());
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_PREFIX");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_STRIPE_CLI_PATH");
+        }
         let _ = fs::remove_dir_all(dir);
     }
 
