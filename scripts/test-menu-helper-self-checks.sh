@@ -36,6 +36,7 @@ if [[ ! -x "$menubar" ]]; then
 fi
 
 python3 "$repo/scripts/test-cli-install-refresh.py"
+python3 "$repo/scripts/test-localization.py" "$menubar"
 
 checks=(
   --self-check-approvals
