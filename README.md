@@ -76,6 +76,11 @@ Vault-compatible build of the Tool.
 > Docker hardening removes ambient registry-helper access.
 > Homebrew's Execution Gate controls supported operations even when no Secret is involved.
 
+> [!IMPORTANT]
+> Our hardeners prove their own necessity: we wouldn’t be able to migrate your
+> credentials into Automic Vault if they weren’t *already stored in an exposed
+> state*.
+
 [Hardening, verification, and AWS/Docker handoffs](docs/tool-hardening.md)
 
 ## Authorization Gates
