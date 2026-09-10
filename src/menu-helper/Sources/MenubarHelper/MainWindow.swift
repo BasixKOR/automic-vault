@@ -2070,13 +2070,20 @@ struct DashboardRootView: View {
                         .labelStyle(.titleAndIcon)
                         .help("Allow Verified Launcher to List Secret Names")
                     }
-                    Button {
-                        requestScan()
-                        model.reload()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                    if model.isReloading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refresh")
+                    } else {
+                        Button {
+                            requestScan()
+                            model.reload()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .help("Refresh")
+                        .accessibilityLabel("Refresh")
                     }
-                    .help("Refresh")
                 }
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
