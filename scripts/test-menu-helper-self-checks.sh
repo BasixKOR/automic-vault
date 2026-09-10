@@ -36,7 +36,11 @@ if [[ ! -x "$menubar" ]]; then
 fi
 
 python3 "$repo/scripts/test-cli-install-refresh.py"
-python3 "$repo/scripts/test-localization.py" "$menubar"
+localization_args=("$menubar")
+if [[ "$signed" -eq 1 ]]; then
+  localization_args=(--signed "$menubar")
+fi
+python3 "$repo/scripts/test-localization.py" "${localization_args[@]}"
 
 checks=(
   --self-check-approvals

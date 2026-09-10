@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check shipped localization resources and native language selection in a fresh app process."""
+import argparse
 import collections
 import json
 from pathlib import Path
@@ -7,12 +8,15 @@ import plistlib
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 
 repo = Path(__file__).resolve().parent.parent
 helper = repo / "src/menu-helper"
 resources = helper / "Resources"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--signed", action="store_true")
+parser.add_argument("binary", type=Path)
+args = parser.parse_args()
 
 
 def strings(path):
@@ -35,18 +39,29 @@ for key, translation in chinese.items():
     assert re.findall(r"`([^`]+)`", key) == re.findall(r"`([^`]+)`", translation), key
 
 with tempfile.TemporaryDirectory(prefix="av-localization-") as temporary:
-    app = Path(temporary) / "Automic Vault.app/Contents"
-    (app / "MacOS").mkdir(parents=True)
-    (app / "Resources").mkdir()
-    shutil.copy2(helper / "Info.plist", app / "Info.plist")
+    binary = args.binary.resolve()
+    if args.signed:
+        # The release signature seals its Info.plist and resources. Test that
+        # bundle in place; reconstructing it invalidates the signature.
+        app = binary.parent.parent
+        assert binary.parent.name == "MacOS" and app.name == "Contents"
+        assert app.parent.suffix == ".app"
+        subprocess.run(["codesign", "--verify", "--strict", str(app.parent)], check=True)
+        for language, expected in [("en", english), ("zh-Hans", chinese)]:
+            assert strings(app / "Resources" / f"{language}.lproj/Localizable.strings") == expected
+    else:
+        app = Path(temporary) / "Automic Vault.app/Contents"
+        (app / "MacOS").mkdir(parents=True)
+        (app / "Resources").mkdir()
+        shutil.copy2(helper / "Info.plist", app / "Info.plist")
+        for localization in resources.glob("*.lproj"):
+            shutil.copytree(localization, app / "Resources" / localization.name)
+        shutil.copy2(binary, app / "MacOS/AutomicVaultMenubar")
+        binary = app / "MacOS/AutomicVaultMenubar"
     with (app / "Info.plist").open("rb") as file:
         info = plistlib.load(file)
     assert info["CFBundleDevelopmentRegion"] == "en"
     assert info["CFBundleLocalizations"] == ["en", "zh-Hans"]
-    for localization in resources.glob("*.lproj"):
-        shutil.copytree(localization, app / "Resources" / localization.name)
-    binary = app / "MacOS/AutomicVaultMenubar"
-    shutil.copy2(sys.argv[1], binary)
     for preferences, expect_chinese in [
         (["zh-Hans"], True),
         (["zh-CN"], True),
