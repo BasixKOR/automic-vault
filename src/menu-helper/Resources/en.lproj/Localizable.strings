@@ -204,7 +204,8 @@
 "Inspecting the selected app for Verified Launcher Helpers…" = "Inspecting the selected app for Verified Launcher Helpers…";
 "Install %@ and relaunch Automic Vault?" = "Install %@ and relaunch Automic Vault?";
 "Install and Relaunch" = "Install and Relaunch";
-"Install av-cli" = "Install av-cli";
+"Install av CLI" = "Install av CLI";
+"Update av CLI" = "Update av CLI";
 "Install location" = "Install location";
 "Installs in" = "Installs in";
 "Invalidate every enrolled device?" = "Invalidate every enrolled device?";

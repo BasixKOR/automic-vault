@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyEquivalent: ""
     )
     private lazy var installCLIItem = NSMenuItem(
-        title: String(localized: "Install av-cli"),
+        title: localizedUIString(CLIInstallState.missing.actionTitle!),
         action: #selector(installCLI),
         keyEquivalent: ""
     )
@@ -998,10 +998,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshCLIInstallState() {
         scanQueue.async { [weak self] in
-            let isCurrent = currentCLIInstallState() == .current
+            let state = currentCLIInstallState()
             Task { @MainActor in
                 guard self?.isStatusMenuOpen == false else { return }
-                self?.installCLIItem.isHidden = isCurrent
+                self?.installCLIItem.title = state.actionTitle.map(localizedUIString) ?? ""
+                self?.installCLIItem.isHidden = state == .current
             }
         }
     }

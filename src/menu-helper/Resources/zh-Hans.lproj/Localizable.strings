@@ -204,7 +204,8 @@
 "Inspecting the selected app for Verified Launcher Helpers…" = "正在检查所选应用的已验证启动器辅助程序…";
 "Install %@ and relaunch Automic Vault?" = "安装 %@ 并重新启动 Automic Vault？";
 "Install and Relaunch" = "安装并重新启动";
-"Install av-cli" = "安装 av-cli";
+"Install av CLI" = "安装 av CLI";
+"Update av CLI" = "更新 av CLI";
 "Install location" = "安装位置";
 "Installs in" = "安装到";
 "Invalidate every enrolled device?" = "使所有已登记设备失效？";
