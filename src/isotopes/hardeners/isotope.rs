@@ -986,12 +986,33 @@ mod tests {
     fn stripe_installation_requires_the_isotope_signature() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let dir = TemporaryDirectory::new("stripe-unsigned").unwrap();
-        let target = dir.path.join("stripe");
+        let target = dir.path.join("opt/stripe-isotope/bin/stripe");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
         fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(executable(&target));
         assert!(!installed(STRIPE, &target));
+
+        unsafe {
+            std::env::set_var("AUTOMIC_VAULT_TEST_BREW_PREFIX", &dir.path);
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH", "/test/bin/brew");
+            std::env::set_var("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT", "stripe-cli");
+        }
+        let repair = plan(STRIPE);
+        unsafe {
+            std::env::remove_var("AUTOMIC_VAULT_TEST_BREW_PREFIX");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_BREW_PATH");
+            std::env::remove_var("AUTOMIC_VAULT_TEST_ISOTOPE_CONFLICT");
+        }
+        let repair = repair.unwrap();
+        assert!(repair.needed());
+        let mut output = Vec::new();
+        repair.write(&mut output, STRIPE);
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "├─ run `/test/bin/brew unlink stripe-cli`\n├─ run `/test/bin/brew install automic-vault/isotopes/stripe-isotope`\n"
+        );
     }
 
     #[test]
