@@ -809,6 +809,9 @@ fn installed(spec: Spec, path: &Path) -> bool {
     if !executable(path) {
         return false;
     }
+    if spec.hardener == STRIPE.hardener {
+        return signature_valid(path, spec.primary);
+    }
     if spec.hardener == OPENTOFU.hardener {
         return super::terraform::verify_target(super::terraform::Tool::OpenTofu, path).is_ok();
     }
@@ -977,6 +980,18 @@ mod tests {
                 Some(expected.hardener)
             );
         }
+    }
+
+    #[test]
+    fn stripe_installation_requires_the_isotope_signature() {
+        let _guard = crate::global_test_env_lock().lock().unwrap();
+        let dir = TemporaryDirectory::new("stripe-unsigned").unwrap();
+        let target = dir.path.join("stripe");
+        fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(executable(&target));
+        assert!(!installed(STRIPE, &target));
     }
 
     #[test]
