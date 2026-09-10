@@ -399,7 +399,7 @@ pub(crate) fn detect() -> HardenerDetection {
             id: gid,
         },
     });
-    detection.diagnostics = doctor_diagnostics(&prefix, uid, gid);
+    detection.diagnostics = doctor_diagnostics(&prefix, &stub, uid, gid);
     detection
 }
 
@@ -421,9 +421,19 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
 
 fn doctor_diagnostics(
     prefix: &Path,
+    stub: &Path,
     uid: Option<u32>,
     gid: Option<u32>,
 ) -> Vec<HardenerDiagnostic> {
+    // Doctor verifies an installed intervention, not prerequisites for opting in.
+    // Keep partial state and dangling launchers visible even if accounts are gone.
+    if uid.is_none()
+        && fs::symlink_metadata(stub).is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+        && fs::symlink_metadata(prefix.join("var/automic"))
+            .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+    {
+        return Vec::new();
+    }
     let mut diagnostics = match (uid, gid) {
         (Some(uid), Some(gid)) => state_directory_diagnostics(prefix, uid, gid),
         _ => Vec::new(),
@@ -1458,6 +1468,33 @@ fn brew_stub_source_path() -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn doctor_omits_unconfigured_homebrew_but_retains_partial_hardening() {
+        let prefix = temp_path("brew-doctor-unconfigured");
+        let stub = prefix.join("stub");
+        fs::create_dir_all(&prefix).unwrap();
+        let unconfigured = doctor_diagnostics(&prefix, &stub, None, None);
+
+        fs::create_dir_all(prefix.join("var/automic")).unwrap();
+        let partial = doctor_diagnostics(&prefix, &stub, None, None);
+        fs::remove_dir_all(prefix.join("var/automic")).unwrap();
+        std::os::unix::fs::symlink(prefix.join("missing"), &stub).unwrap();
+        let broken_stub = doctor_diagnostics(&prefix, &stub, None, None);
+        fs::remove_dir_all(&prefix).unwrap();
+
+        assert!(unconfigured.is_empty());
+        assert!(
+            partial
+                .iter()
+                .any(|issue| issue.kind == "brew_user_missing")
+        );
+        assert!(
+            broken_stub
+                .iter()
+                .any(|issue| issue.kind == "brew_user_missing")
+        );
+    }
 
     #[test]
     fn identifies_loaded_and_registered_homebrew_services() {

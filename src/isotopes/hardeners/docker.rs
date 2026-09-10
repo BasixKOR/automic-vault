@@ -135,12 +135,30 @@ pub(crate) fn install_privileged() -> Result<(), String> {
 pub(crate) fn detect() -> HardenerDetection {
     let helper = helper_path();
     let config = config_path().ok();
-    let config_valid = config
-        .as_deref()
-        .and_then(|path| read_config(path).ok())
-        .is_some_and(|value| validate_config(&value).ok().flatten().as_deref() == Some("av"));
-    let stub_valid = helper_valid(&helper, test_config_path().is_some());
-    let vendor = test_config_path().is_some() || verify_vendor_install().is_ok();
+    detect_installation(
+        &helper,
+        config.as_deref(),
+        test_config_path().is_some(),
+        verify_vendor_install,
+    )
+}
+
+fn detect_installation(
+    helper: &Path,
+    config: Option<&Path>,
+    testing: bool,
+    verify_vendor: impl FnOnce() -> Result<(), String>,
+) -> HardenerDetection {
+    let config_value = config.and_then(|path| read_config(path).ok());
+    let config_valid = config_value
+        .as_ref()
+        .is_some_and(|value| validate_config(value).ok().flatten().as_deref() == Some("av"));
+    let av_configured = config_value
+        .as_ref()
+        .is_some_and(|value| value.get("credsStore").and_then(Value::as_str) == Some("av"));
+    let stub_valid = helper_valid(helper, testing);
+    let vendor_result = if testing { Ok(()) } else { verify_vendor() };
+    let vendor = vendor_result.is_ok();
     let hardened = config_valid && stub_valid && vendor;
     let commands = TARGETS
         .iter()
@@ -150,7 +168,7 @@ pub(crate) fn detect() -> HardenerDetection {
             stub_valid,
             stub_path: Some(helper.display().to_string()),
             target_path: (*target).into(),
-            required_paths: if test_config_path().is_some() {
+            required_paths: if testing {
                 Vec::new()
             } else {
                 vec![RequiredExecutable {
@@ -158,19 +176,24 @@ pub(crate) fn detect() -> HardenerDetection {
                     path: AV_PATH.into(),
                 }]
             },
-            stub_requirements: Some(stub_requirements(&helper, test_config_path().is_some())),
+            stub_requirements: Some(stub_requirements(helper, testing)),
             injected_keys: Vec::new(),
             assignment_keys: Vec::new(),
             isotope: None,
         })
         .collect();
     let mut detection = HardenerDetection::commands(hardened, commands);
-    detection.applicable =
-        config.as_deref().is_some_and(Path::exists) || Path::new(TARGETS[0].1).exists();
-    if !vendor && test_config_path().is_none() {
+    detection.applicable = config.is_some_and(Path::exists) || Path::new(TARGETS[0].1).exists();
+    // A missing Docker installation is only a repair issue after opting in.
+    // A broken helper still counts as evidence; do not require a valid launcher.
+    if !vendor
+        && (av_configured
+            || !fs::symlink_metadata(helper)
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound))
+    {
         detection.diagnostics.push(HardenerDiagnostic {
             kind: "docker_vendor_cli_invalid",
-            message: verify_vendor_install().unwrap_err(),
+            message: vendor_result.unwrap_err(),
             remediation: "Reinstall or update Docker Desktop, then rerun `av harden docker`."
                 .into(),
             path: Some(DOCKER_APP.into()),
@@ -703,6 +726,41 @@ fn codesign_output(args: &[&str], path: &Path) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doctor_omits_absent_docker_but_retains_missing_vendor_after_hardening() {
+        let root = std::env::temp_dir().join(format!("av-docker-doctor-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let helper = root.join("docker-credential-av");
+        let config = root.join("config.json");
+        let detect = || {
+            detect_installation(&helper, Some(&config), false, || {
+                Err("Docker Desktop is not installed in /Applications".into())
+            })
+        };
+        let absent = detect();
+        fs::write(&config, r#"{"credsStore":"desktop"}"#).unwrap();
+        let unconfigured = detect();
+        fs::write(&config, r#"{"credsStore":"av"}"#).unwrap();
+        let configured = detect();
+        fs::write(
+            &config,
+            r#"{"credsStore":"av","auths":{"example.com":{"auth":"invalid"}}}"#,
+        )
+        .unwrap();
+        let damaged_config = detect();
+        fs::remove_file(&config).unwrap();
+        std::os::unix::fs::symlink(root.join("missing"), &helper).unwrap();
+        let broken_helper = detect();
+        fs::remove_dir_all(root).unwrap();
+
+        assert!(absent.diagnostics.is_empty());
+        assert!(unconfigured.diagnostics.is_empty());
+        for detection in [configured, damaged_config, broken_helper] {
+            assert!(!detection.hardened);
+            assert_eq!(detection.diagnostics[0].kind, "docker_vendor_cli_invalid");
+        }
+    }
 
     #[test]
     fn config_validation_fails_closed_and_accepts_av() {
