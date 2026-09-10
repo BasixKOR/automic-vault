@@ -1107,7 +1107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if shouldShowAutomaticAccessToast(record) {
             showAutomaticAccessToast(automaticAccessRecord(record), below: statusItem.button)
         }
-        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reload()
+        (mainWindow?.contentViewController as? AutomicVaultMainWindowController)?.reloadAccessRequests()
     }
 
     private func refreshAutoApprovalMenuItems() {

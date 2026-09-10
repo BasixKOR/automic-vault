@@ -143,6 +143,10 @@ final class AutomicVaultMainWindowController: NSHostingController<DashboardRootV
         model.reload()
     }
 
+    func reloadAccessRequests() {
+        model.reloadAccessRequests()
+    }
+
     func updateDetectorFindings(_ findings: [DetectorFinding]) {
         model.updateDetectorFindings(findings)
     }
@@ -239,6 +243,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var pendingLauncherHelperReview: LauncherHelperReview?
 
     private var reloadTask: Task<Void, Never>?
+    private var reloadPending = false
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
     let authorityApproval = AuthorityApprovalState()
 
@@ -747,9 +752,18 @@ final class DashboardModel: ObservableObject {
     }
 
     func reload() {
-        reloadTask?.cancel()
+        guard reloadTask == nil else {
+            reloadPending = true
+            return
+        }
+        reloadPending = false
         isReloading = true
         reloadTask = Task {
+            defer {
+                reloadTask = nil
+                isReloading = false
+                if reloadPending { reload() }
+            }
             let cliInstallState = await Task.detached(priority: .background) {
                 currentCLIInstallState()
             }.value
@@ -761,17 +775,28 @@ final class DashboardModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
+            next.accessRequests = loadAccessRequestRecords()
             snapshot = next
             self.launcherBundles = launcherBundles
             normalizeSelection()
-            isReloading = false
         }
     }
 
-    private func reloadAuthorizationState() {
+    func reloadAccessRequests() {
+        snapshot.accessRequests = loadAccessRequestRecords()
+        normalizeSelection()
+    }
+
+    private func invalidateReload() {
+        // Cancellation invalidates the result, but synchronous checks still run.
+        // Retain the task until they finish so a new reload cannot overlap them.
         reloadTask?.cancel()
-        reloadTask = nil
+        reloadPending = false
         isReloading = false
+    }
+
+    private func reloadAuthorizationState() {
+        invalidateReload()
         snapshot = reloadDashboardAuthorizationState(from: snapshot)
         launcherBundles = loadLauncherBundleEnrollments()
         normalizeSelection()
@@ -1245,9 +1270,7 @@ final class DashboardModel: ObservableObject {
             errorMessage = String(localized: "\(error): \(String(status))")
             return
         }
-        reloadTask?.cancel()
-        reloadTask = nil
-        isReloading = false
+        invalidateReload()
         guard let index = snapshot.secretGates.firstIndex(where: { $0.id == gate.id }) else {
             errorMessage = String(localized: "The policy was saved, but the Authorization Gate is no longer available")
             return
