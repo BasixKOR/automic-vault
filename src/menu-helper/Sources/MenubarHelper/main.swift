@@ -12649,7 +12649,7 @@ private struct ApprovalPromptProcessNodeView: View {
                 Text(node.name.isEmpty ? node.path : node.name)
                     .font(.system(.headline, design: .monospaced))
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .fixedSize(horizontal: true, vertical: false)
                 if node.isAutomicVaultSigned,
                    let imageURL = Bundle.main.url(forResource: "NSMenuItem", withExtension: "png"),
                    let image = NSImage(contentsOf: imageURL)
@@ -12685,8 +12685,9 @@ private struct ApprovalPromptProcessNodeView: View {
                     .foregroundStyle(.secondary)
             }
             ApprovalPromptPathView(path: escapedSecurityPath(node.path))
+                .frame(width: 150)
         }
-        .frame(width: 150)
+        .frame(minWidth: 150)
         .help(node.details)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
@@ -14107,6 +14108,21 @@ private func runApprovalSelfCheck() -> Int32 {
         explanation: "Hardened Runtime is not enabled; Executes mutable JavaScript and dependencies",
         isAutomicVaultSigned: false, invocationName: "npm"
     )
+    for name in ["cargo-binstall", "cargo-binstall-with-a-long-executable-name"] {
+        let node = ApprovalProcessSecurityNode(
+            pid: 43, path: "/opt/homebrew/bin/\(name)", roles: ["Intermediary"],
+            posture: .doesNotMeetRequirements, explanation: "Hardened Runtime is not enabled",
+            isAutomicVaultSigned: false
+        )
+        let labelWidth = NSHostingView(rootView:
+            Text(name).font(.system(.headline, design: .monospaced))
+        ).fittingSize.width
+        let nodeWidth = NSHostingView(rootView: ApprovalPromptProcessNodeView(node: node)).fittingSize.width
+        guard nodeWidth >= labelWidth + 28 else {
+            print("Execution chain executable name sizing self-check failed: \(name)")
+            return 1
+        }
+    }
     guard sshPromptContent.operationTitle == "SSH Authentication",
           sshPromptContent.writeAccessUnavailableReason == nil,
           promptContent.operationTitle == promptContent.operation,
