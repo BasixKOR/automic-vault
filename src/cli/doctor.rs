@@ -463,11 +463,16 @@ fn diagnose_one(
             resolved_path: None,
         })
         .collect::<Vec<_>>();
-    issues.extend(
-        commands
-            .iter()
-            .flat_map(|command| diagnose_command(hardener.name, command, path)),
-    );
+    if !issues
+        .iter()
+        .any(|issue| issue.kind == "stripe_isotope_reinstall_required")
+    {
+        issues.extend(
+            commands
+                .iter()
+                .flat_map(|command| diagnose_command(hardener.name, command, path)),
+        );
+    }
     if hardener.name == "aws"
         && hardener.detection.diagnostics.is_empty()
         && let Some(command) = commands.iter().find(|command| {
@@ -1326,11 +1331,15 @@ mod tests {
         executable_file(&legacy);
         for selector in [Some("stripe"), None] {
             let results = diagnose(vec![metadata()], selector, OsStr::new("")).unwrap();
-            let issue = results[0]
-                .issues
-                .iter()
-                .find(|issue| issue.kind == "stripe_isotope_reinstall_required")
-                .unwrap();
+            assert_eq!(
+                results[0]
+                    .issues
+                    .iter()
+                    .map(|issue| issue.kind)
+                    .collect::<Vec<_>>(),
+                ["stripe_isotope_reinstall_required"]
+            );
+            let issue = &results[0].issues[0];
             assert!(
                 issue
                     .remediation
