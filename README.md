@@ -2,7 +2,14 @@
 
 [English](README.md) · [简体中文](README.zh-Hans.md)
 
-> Your secrets manager should know what the secrets *do*.
+Most secrets managers guard secrets.
+That’s it.
+The secret is either stored securely or delivered to its destination.
+Is the destination safe? That’s *your* problem.
+
+We think the secrets manager should know what the secrets *do*.
+
+---
 
 Automic Vault is a macOS secrets manager for developer tools and agents. It
 moves supported credentials out of plaintext files and checks the complete
@@ -11,31 +18,36 @@ operation before applying a credential.
 Your terminals, IDEs, agents, and projects keep their normal commands. Agents
 need no Automic Vault plugin, and repositories need no policy file.
 
+&nbsp;
+
+
 ## Quickstart
 
 Download the [latest release], or install with Homebrew:
 
 ```sh
-$ brew install --cask automic-vault/isotopes/automic-vault
-$ open /Applications/Automic\ Vault.app
+brew install --cask automic-vault/isotopes/automic-vault
+open /Applications/Automic\ Vault.app
 ```
 
 Scan for exposed credentials, harden a supported Tool, then verify the result:
 
 ```sh
-$ av scan
-$ av harden gh
-$ av doctor gh
+av scan   # or open the app
+av harden gh
+av doctor gh
 ```
 
-Automic Vault has several other mechanisms (Blessed Scripts, Launcher
-Bundles, the Secret Proxy, Direct Secret Access) for situations a Hardener
-doesn't cover. See [Choosing a Mechanism](docs/choosing-a-mechanism.md) for
-which one fits your situation.
-
-For the rest: [user manual] or `av help`.
+> [!TIP]
+> Automic Vault has several other mechanisms (Blessed Scripts, Launcher
+> Bundles, the Secret Proxy, Direct Secret Access) for situations a Hardener
+> doesn't cover. See [Choosing a Mechanism](docs/choosing-a-mechanism.md) for
+> which one fits your situation.
 
 &nbsp;
+
+
+# Product Overview
 
 ## Detectors
 
@@ -45,7 +57,7 @@ items, and ambient credential helpers. Each Finding includes a mitigation.
 
 Detectors inspect without changing your environment or requesting Secrets. A
 clean Scan means no supported Detector found an issue; it cannot certify that
-your machine is secure.
+your machine is holistically secure.
 
 [Detection coverage and interpreting Findings](docs/tool-hardening.md)
 
@@ -56,16 +68,19 @@ Protection Keychain and configure the Tool's Authorization Gate. Depending on
 the Tool, this can mean a credential helper, wrapper, or Isotope: an Automic
 Vault-compatible build of the Tool.
 
-`av doctor` verifies the protection Automic Vault installed. AWS hardening gives
-normal commands short-lived credentials; Docker hardening removes ambient
-registry-helper access. Homebrew's Execution Gate controls supported operations
-even when no Secret is involved.
+`av doctor` verifies the protection Automic Vault installed.
+
+> [!NOTE]
+> Our hardeners are best in class.
+> AWS hardening gives normal commands short-lived credentials;
+> Docker hardening removes ambient registry-helper access.
+> Homebrew's Execution Gate controls supported operations even when no Secret is involved.
 
 [Hardening, verification, and AWS/Docker handoffs](docs/tool-hardening.md)
 
 ## Authorization Gates
 
-Most secrets managers check who may retrieve a named secret. Automic Vault
+Automic Vault
 checks the Verified Launcher, Tool, Target, command, arguments, working
 directory, Secret Names, and selected Value sources before allowing the
 complete operation on the Mac where it will run.
@@ -88,6 +103,17 @@ Access Level.
 Automic Vault controls the handoff. The Target controls the Secret after
 receiving it.
 
+> [!TIP]
+> Default authorization gates to: approval required.
+> Give agents: read only.
+> Give your terminal: write.
+>
+> Consider giving your terminal read only also and investing time into
+> Blessed Scripts in order to reduce approval fatigue.
+>
+> Run supply-chain attack sensitive operations like `npm i` in a separate terminal
+> with no Automic Authorizations and no macOS TCC permissions.
+
 [Access Levels, Approval, and locked-device behavior](docs/authorization.md)
 
 ### Temporary Access Grants
@@ -102,6 +128,10 @@ countdown, or end the grant.
 The task identifier is a forgeable narrowing label; the Verified Launcher
 remains the identity boundary. Grants exclude direct Secret access, Secret
 mutations, elevated credential use, disclosure, and unknown operations.
+
+> [!TIP]
+> This helps you to keep agents at read-only and approve escalation
+> on a task by task basis.
 
 [Grant scope, expiry, and controls](docs/authorization.md#temporary-access-grants)
 
@@ -122,7 +152,6 @@ Authorization History local; the iPhone never receives Secret Values.
 
 Enabling iPhone Approval removes pointer- and keyboard-driven allow actions
 from that Mac. Separately enabled Touch ID Approval can still carry an Approval.
-An iPhone needs an active iPhone Approval subscription to send an allow response.
 
 > [!WARNING]
 > iPhone Mirroring and **Show on Mac** can put Approval controls back onto a Mac
@@ -130,18 +159,6 @@ An iPhone needs an active iPhone Approval subscription to send an allow response
 > control the Mac, or require Face ID or Touch ID on every eligible iPhone.
 
 [Enrollment, notifications, and account-wide recovery](docs/authorization.md#iphone-approval)
-
-### GPG Signing
-
-Sign Git commits and tags without giving Git the private key or passphrase.
-The GPG Signing Gate authorizes private-key use while your normal Git commands
-keep working. You can select a separate signing credential for exact Verified
-Launchers so agents use a distinct signing identity.
-
-The gate offers **Approval Required** and **Allow Signing**. The signing
-Target handles the private key while creating the signature.
-
-[Configure Git signing](docs/securing-git.md#gate-gpg-commit-signing)
 
 ### Authorization History
 
@@ -178,15 +195,109 @@ A Launcher Bundle establishes identity for that packaged code. It cannot
 establish publisher trust or make the CLI safe. Scripts and directory-shaped
 Tools are unsupported.
 
+> [!TIP]
+> Hardened Runtime is an important part of the security model. Without it
+> malware and agents can literally read the memory of a running process to
+> exfiltrate secrets.
+
 [Create and update a Launcher Bundle](docs/signed-cli-launchers.md#create-a-launcher-bundle)
 
-## Blessed Scripts
+&nbsp;
+
+
+## Secrets
+
+> [!NOTE]
+> Hardeners migrate secrets from exposed storage into Automic Vault. You do not
+> need to use `av save` yourself—the `av harden` operation does it for you.
+
+Save a secret:
+
+```sh
+$ av save API_TOKEN   # prompts via stdin
+```
+
+Save a project secret:
+
+```sh
+$ av save --project-directory=. API_TOKEN
+```
+
+Automic Vault selects the nearest Project Value at or above the physical working
+directory, falling back to the Global Value when none matches. A read failure for
+the selected Value ends the request without trying another value.
+
+The directory selects a Value and grants no authority. The same name-based
+policy covers all Values of that Secret.
+
+- [Project Values, dotenvx, and mise](docs/project-secrets.md)
+- [Varlock](docs/varlock.md)
+
+### Save multiline or exact input
+
+```sh
+$ av save --multiline DEPLOY_PRIVATE_KEY
+# Hidden input; Ctrl-D finishes after the final newline.
+$ av save --stdin API_TOKEN <&3
+# Read exact bytes from an existing descriptor until EOF.
+```
+
+Both modes require Approval. `--stdin` preserves whitespace and newlines;
+Values must be nonempty UTF-8 without NUL bytes, at most 1 MiB.
+
+[Input modes](docs/project-secrets.md#multiline-and-exact-input) ·
+[Copy selected v1 Secrets](docs/migrating-from-v1.md)
+
+&nbsp;
+
+    
+## Scripting
+
+You can inject secrets into anything:
+
+```sh
+av inject +SECRET_NAME -- /path/to/something
+```
+
+> [!NOTE]
+> `av inject` is a primitive we use to build other parts of Automic Vault.
+> Direct use (by humans) is rare. Typically if you find yourself using it you
+> may be better served reaching for one of our other tools.
+
+> [!TIP]
+> Hardened tools have named secrets you can use with `av inject`, eg. `AWS_ACCESS_KEY_ID`.
+
+> [!NOTE]
+> There is no direct way to print a secret to stdout. This is deliberate.
+> Any situation that requires you to take and hold a secret is a bad situation
+> that you should try to work around.
+>
+> All the same if you must: `av inject +FOO -- sh -c "echo $FOO"`
+
+For reduced exposure†, we support injecting via file descriptors instead of
+environment variables:
+
+```sh
+$ av inject --mode=fd +FOO:3 +BAR:4 -- /path/to/something
+```
+
+Each Secret arrives through its own anonymous pipe as exact stored bytes,
+followed by EOF. Automic Vault removes the requested names from the Target's
+environment and requires fresh Approval for every invocation. Descriptors must
+be unused, and each Value must fit the available pipe buffer.
+
+[FD delivery and its limits](docs/direct-secret-access.md#apply-secrets-through-file-descriptors)
+
+> † Environment variables both spread to child processes and allow any part of
+> large codebases to read them.
+
+### Blessed Scripts
 
 Review a script once and bind its canonical path, exact contents, declaration,
 and capabilities to a Blessing:
 
 ```sh
-$ av bless --endorse-launcher ./scripts/deploy
+$ av bless ./path/to/script
 ```
 
 The script declares the Secrets and Tool capabilities it needs:
@@ -242,7 +353,7 @@ Blessed Script. FD mode in an `av inject` shebang is unsupported.
 [Blessings and execution guarantees](docs/domain-language.md#blessed-script) ·
 [Running scripts across app restarts](docs/direct-secret-access.md#blessed-script-lifecycle)
 
-### Reentrant Blessed Scripts
+#### Reentrant Blessed Scripts
 
 A reentrant Blessed Script does deterministic work until it needs agent input,
 then prints a prompt and exits. The prompt names the required output, fixed
@@ -255,55 +366,32 @@ the script's execution and validate agent output before using it.
 includes input validation, digest checks, conditional writes, and idempotent
 retries.
 
-## Project Secrets
+&nbsp;
 
-Keep the same Secret Name across projects, with one Global Value and separate
-Project Values:
 
-```sh
-$ av save API_TOKEN
-$ av save --project-directory=. API_TOKEN
-```
+## GPG Signing
 
-Automic Vault selects the nearest Project Value at or above the physical working
-directory, falling back to the Global Value when none matches. A read failure for
-the selected Value ends the request without trying another value.
+Sign Git commits and tags without giving Git the private key or passphrase.
+The GPG Signing Gate authorizes private-key use while your normal Git commands
+keep working. You can select a separate signing credential for exact Verified
+Launchers so agents use a distinct signing identity.
 
-The directory selects a Value and grants no authority. The same name-based
-policy covers all Values of that Secret.
+The gate offers **Approval Required** and **Allow Signing**. The signing
+Target handles the private key while creating the signature.
 
-[Project Values, dotenvx, and mise](docs/project-secrets.md)
+[Configure Git signing](docs/securing-git.md#gate-gpg-commit-signing)
+    
+## SSH Agent
 
-### Save multiline or exact input
+Use our SSH-agent; not because you are exposed—that is easy to mitigate—but because
+agents and malware should not be able to `ssh` to any host your keys connect to without
+your consent.
 
-```sh
-$ av save --multiline DEPLOY_PRIVATE_KEY
-# Hidden input; Ctrl-D finishes after the final newline.
-$ av save --stdin API_TOKEN <&3
-# Read exact bytes from an existing descriptor until EOF.
-```
+With our ssh-agent allow specific apps to `ssh`; everything else gets a gate.
 
-Both modes require Approval. `--stdin` preserves whitespace and newlines;
-Values must be nonempty UTF-8 without NUL bytes, at most 1 MiB.
+&nbsp;
 
-[Input modes](docs/project-secrets.md#multiline-and-exact-input) ·
-[Copy selected v1 Secrets](docs/migrating-from-v1.md)
-
-## File descriptor delivery
-
-For a consumer that reads credentials from file descriptors:
-
-```sh
-$ av inject --mode=fd +FOO:3 +BAR:4 -- /path/to/consumer
-```
-
-Each Secret arrives through its own anonymous pipe as exact stored bytes,
-followed by EOF. Automic Vault removes the requested names from the Target's
-environment and requires fresh Approval for every invocation. Descriptors must
-be unused, and each Value must fit the available pipe buffer.
-
-[FD delivery and its limits](docs/direct-secret-access.md#apply-secrets-through-file-descriptors)
-
+    
 ## Credential Proxies
 
 AV's Secret Proxy gives your application a random, session-specific Secret
@@ -330,6 +418,9 @@ can compose with Varlock's own credential proxy. It requires one Approval per
 run and does not support Automic Authorization or Blessings. Varlock's proxy
 and `av proxy` are separate sessions; don't nest them.
 
+&nbsp;
+
+
 ## Security Boundaries
 
 Automic Vault protects against untrusted or compromised code running with your
@@ -341,6 +432,9 @@ after receiving a Secret remain outside the product boundary. Wrappers cannot
 intercept every process execution. Keep your terminal and agent harness's
 [macOS permissions minimal](docs/tool-hardening.md#rescind-unneeded-terminal-permissions).
 
+&nbsp;
+
+    
 ## Documentation
 
 - [User manual][user manual]
@@ -349,13 +443,10 @@ intercept every process execution. Keep your terminal and agent harness's
 - [Domain language](docs/domain-language.md), [architecture](docs/architecture.md), and [positioning](docs/positioning.md)
 - [Architecture decisions](docs/adr/)
 - [Homebrew tap](https://github.com/automic-vault/homebrew-isotopes)
-
-Automic Vault is free and open source under Apache-2.0. iPhone Approval requires
-a subscription to send allow responses.
-
-[![Chat w/Maintainer](https://knock-knock.mxcl.dev/badge.svg)](https://knock-knock.mxcl.dev/automic-vault/automic-vault)
+- [![Chat w/Maintainer](https://knock-knock.mxcl.dev/badge.svg)](https://knock-knock.mxcl.dev/automic-vault/automic-vault)
 
 &nbsp;
+
 
 > [!IMPORTANT]
 > Automic Vault is not associated or affiliated with any cryptocurrency or
