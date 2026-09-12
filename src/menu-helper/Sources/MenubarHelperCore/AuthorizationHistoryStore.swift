@@ -186,6 +186,14 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
 
     public func records(since: Date? = nil, limit: Int? = nil) throws -> [AccessRequestRecord] {
         try lock.withLock {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try prune(preserving: nil)
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
+            }
             var statement: OpaquePointer?
             let sql =
                 "SELECT id, retention_bucket, ciphertext FROM authorization_history ORDER BY sequence DESC"
@@ -303,31 +311,40 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
 
     private func prune(preserving recordID: UUID?) throws {
         let currentDate = now()
+        let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
         let retained = retainedBuckets(
-            from: currentDate.addingTimeInterval(-retention.maximumAge),
+            from: cutoff,
             through: currentDate
         )
-        var expired: OpaquePointer?
-        try prepare("SELECT id, retention_bucket FROM authorization_history", into: &expired)
         var expiredIDs: [String] = []
-        while true {
-            switch sqlite3_step(expired) {
-            case SQLITE_ROW:
-                let id = String(cString: sqlite3_column_text(expired, 0))
-                if id != recordID?.uuidString,
-                    !retained.contains(data(at: 1, from: expired))
-                {
-                    expiredIDs.append(id)
+        do {
+            var expired: OpaquePointer?
+            try prepare(
+                "SELECT id, retention_bucket, ciphertext FROM authorization_history",
+                into: &expired
+            )
+            defer { sqlite3_finalize(expired) }
+            scan: while true {
+                switch sqlite3_step(expired) {
+                case SQLITE_ROW:
+                    let id = String(cString: sqlite3_column_text(expired, 0))
+                    if id != recordID?.uuidString {
+                        let bucket = data(at: 1, from: expired)
+                        if !retained.contains(bucket) || bucket == retentionBucket(for: cutoff) {
+                            let record = try decode(
+                                data(at: 2, from: expired), id: id, bucket: bucket
+                            )
+                            if record.date < cutoff || record.date > currentDate {
+                                expiredIDs.append(id)
+                            }
+                        }
+                    }
+                case SQLITE_DONE:
+                    break scan
+                default:
+                    throw sqliteError("expiry query failed")
                 }
-            case SQLITE_DONE:
-                sqlite3_finalize(expired)
-                expired = nil
-                break
-            default:
-                sqlite3_finalize(expired)
-                throw sqliteError("expiry query failed")
             }
-            if expired == nil { break }
         }
         for id in expiredIDs { try delete(id: id) }
 

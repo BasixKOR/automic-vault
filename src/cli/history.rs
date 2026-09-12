@@ -92,7 +92,11 @@ impl Options {
 }
 
 fn parse_duration_seconds(value: &str) -> Result<u64, String> {
-    let (number, unit) = value.split_at(value.len().saturating_sub(1));
+    let (unit_start, _) = value
+        .char_indices()
+        .last()
+        .ok_or_else(|| "duration must end in s, m, h, d, or w".to_string())?;
+    let (number, unit) = value.split_at(unit_start);
     let multiplier = match unit {
         "s" => 1,
         "m" => 60,
@@ -232,5 +236,7 @@ mod tests {
         assert!(parse_duration_seconds("31d").is_err());
         assert!(parse_duration_seconds("1.5h").is_err());
         assert!(parse_duration_seconds("yesterday").is_err());
+        assert!(parse_duration_seconds("1é").is_err());
+        assert!(parse_duration_seconds("é").is_err());
     }
 }

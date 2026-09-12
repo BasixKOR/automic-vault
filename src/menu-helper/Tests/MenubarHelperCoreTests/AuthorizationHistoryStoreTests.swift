@@ -120,6 +120,60 @@ func authorizationHistoryStoreImportIsIdempotentButNeverReplacesARecord() throws
     #expect(try fixture.store.records() == [record])
 }
 
+@Test
+func authorizationHistoryStorePrunesExpiredRowsOnRead() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now)
+    defer { fixture.remove() }
+    #expect(fixture.store.append(fixture.record(index: 0)))
+
+    let later = now.addingTimeInterval(30 * 24 * 60 * 60 + 1)
+    let reopened = try AuthorizationHistoryStore(
+        url: fixture.url,
+        keyData: Data(repeating: 7, count: 32),
+        now: { later }
+    )
+    #expect(try reopened.records().isEmpty)
+
+    var database: OpaquePointer?
+    guard sqlite3_open(fixture.url.path, &database) == SQLITE_OK else {
+        throw AuthorizationHistoryStoreError.sqlite("test database open failed")
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+        database, "SELECT count(*) FROM authorization_history", -1, &statement, nil
+    ) == SQLITE_OK else {
+        throw AuthorizationHistoryStoreError.sqlite("test count query failed")
+    }
+    defer { sqlite3_finalize(statement) }
+    #expect(sqlite3_step(statement) == SQLITE_ROW)
+    #expect(sqlite3_column_int(statement, 0) == 0)
+}
+
+@Test
+func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    let record = fixture.record(index: 1)
+    let data = try JSONEncoder().encode([record])
+
+    try importLegacyAccessRequestRecords(
+        keychainData: nil,
+        defaultsData: data,
+        into: fixture.store
+    )
+    #expect(try fixture.store.records() == [record])
+    #expect(throws: DecodingError.self) {
+        try importLegacyAccessRequestRecords(
+            keychainData: nil,
+            defaultsData: Data("malformed".utf8),
+            into: fixture.store
+        )
+    }
+    #expect(try fixture.store.records() == [record])
+}
+
 private final class HistoryStoreFixture {
     let directory: URL
     let url: URL

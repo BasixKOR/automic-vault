@@ -1775,25 +1775,54 @@ private let productionAuthorizationHistoryStore: AuthorizationHistoryStore? = {
         allowCreation: !FileManager.default.fileExists(atPath: url.path)
     ) else { return nil }
     guard let store = try? AuthorizationHistoryStore(url: url, keyData: key) else { return nil }
+    let legacyKeychainData: Data?
     switch loadKeychainDataResult(
         service: accessRequestLogKeychainService,
         account: accessRequestLogDefaultsKey
     ) {
     case .notFound:
-        return store
+        legacyKeychainData = nil
     case .failure:
         return nil
     case .success(let data):
-        guard let records = try? JSONDecoder().decode([AccessRequestRecord].self, from: data),
-              (try? store.importRecords(records)) != nil
-        else { return nil }
+        legacyKeychainData = data
+    }
+    let legacyDefaultsData = UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
+    if legacyKeychainData != nil || legacyDefaultsData != nil {
+        guard (try? importLegacyAccessRequestRecords(
+            keychainData: legacyKeychainData,
+            defaultsData: legacyDefaultsData,
+            into: store
+        )) != nil else { return nil }
+    }
+    if legacyKeychainData != nil {
         let status = deleteKeychainData(
             service: accessRequestLogKeychainService,
             account: accessRequestLogDefaultsKey
         )
-        return status == errSecSuccess || status == errSecItemNotFound ? store : nil
+        guard status == errSecSuccess || status == errSecItemNotFound else { return nil }
     }
+    if legacyDefaultsData != nil {
+        UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
+        _ = UserDefaults.standard.synchronize()
+    }
+    return store
 }()
+
+func importLegacyAccessRequestRecords(
+    keychainData: Data?,
+    defaultsData: Data?,
+    into store: AuthorizationHistoryStore
+) throws {
+    let decoder = JSONDecoder()
+    let keychainRecords = try keychainData.map {
+        try decoder.decode([AccessRequestRecord].self, from: $0)
+    } ?? []
+    let defaultsRecords = try defaultsData.map {
+        try decoder.decode([AccessRequestRecord].self, from: $0)
+    } ?? []
+    try store.importRecords(keychainRecords + defaultsRecords)
+}
 
 private func loadOrCreateAuthorizationHistoryEncryptionKey(allowCreation: Bool) -> Data? {
     switch loadKeychainDataResult(

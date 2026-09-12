@@ -24,16 +24,18 @@ keys. Record timestamps remain inside the ciphertext; keyed hourly retention
 buckets permit expiry without disclosing activity times. Each row's opaque ID
 and retention bucket are authenticated with its ciphertext.
 
-The store keeps records for 30 days and caps encrypted record payloads at 25
-MiB, deleting the oldest records first. It is excluded from backup. SQLite
-provides synchronous transactions; an allowed Secret Use succeeds only after
+The store prunes expired records transactionally on each read or write and caps
+encrypted record payloads at 25 MiB, deleting the oldest records first. A
+dormant database may retain expired ciphertext until its next access. The
+database is excluded from backup. SQLite provides synchronous transactions; an
+allowed Secret Use succeeds only after
 its complete record is committed, read back, authenticated, decoded, and
 compared with the expected record.
 
-On first use, the app imports the existing Keychain history, commits and
-verifies every imported record, applies retention, and only then deletes the
-legacy item. A database without its encryption key is unavailable and never
-receives a replacement key.
+On first use, the app imports existing Keychain and older UserDefaults history,
+commits and verifies every imported record, applies retention, and only then
+removes the legacy items. A database without its encryption key is unavailable
+and never receives a replacement key.
 
 The dashboard continues to show the newest 50 records. `av history` returns the
 newest 50 by default; `--since <duration>` may request a narrower time window up
