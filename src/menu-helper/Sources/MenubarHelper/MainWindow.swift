@@ -2462,7 +2462,11 @@ private struct DashboardListView: View {
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                         }
-                        Button("Load Older Records") { model.loadMoreHistory(retry: true) }
+                        if model.isLoadingOlderHistory {
+                            ProgressView("Loading older records…")
+                        } else {
+                            Button("Load Older Records") { model.loadMoreHistory(retry: true) }
+                        }
                     }
                     if model.isReloading {
                         ProgressView()
@@ -2493,7 +2497,7 @@ private struct DashboardListView: View {
             if model.selectedSection == .secretUsage,
                model.historyNextSequence != nil {
                 if model.hasSearchQuery {
-                    Text("Search covers loaded records. Scroll to load older records.")
+                    Text("Search covers loaded records. Load older records to continue searching.")
                         .foregroundStyle(.secondary)
                 }
                 if model.historyLoadFailed {
