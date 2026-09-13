@@ -15,9 +15,9 @@ import Testing
 
 @Test func authorizationHistoryHasADedicatedWireOperation() {
     #expect(ApprovalServiceOperation.history.rawValue == "history")
-    #expect(ApprovalServiceOperation.historyProtocolVersion.rawValue == "history-protocol-version")
-    #expect(!ApprovalServiceOperation.historyProtocolVersion.disclosesProtectedMetadata)
+    #expect(ApprovalServiceOperation.historyWindow.rawValue == "history-window")
     #expect(ApprovalServiceOperation.history.disclosesProtectedMetadata)
+    #expect(ApprovalServiceOperation.historyWindow.disclosesProtectedMetadata)
     #expect(ApprovalServiceOperation.list.disclosesProtectedMetadata)
     #expect(!ApprovalServiceOperation.inject.disclosesProtectedMetadata)
 }

@@ -25,6 +25,39 @@ func authorizationHistoryStoreRetainsMoreThanTheDashboardWindow() throws {
 }
 
 @Test
+func authorizationHistoryStoreBoundsDisclosureDuringRead() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    for index in 0..<3 {
+        #expect(fixture.store.append(fixture.record(index: index)))
+    }
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.sortedKeys]
+    let records = try fixture.store.records()
+    let bytes = try encoder.encode(records.map(\.redactedForDisclosure)).count
+    #expect(try fixture.store.records(maximumDisclosureBytes: bytes).count == 3)
+    #expect(throws: AuthorizationHistoryStoreError.disclosureTooLarge) {
+        try fixture.store.records(maximumDisclosureBytes: bytes - 1)
+    }
+}
+
+@Test
+func productionAuthorizationHistoryStoreRetriesFailedOpen() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    var attempts = 0
+    let holder = ProductionAuthorizationHistoryStore {
+        attempts += 1
+        return attempts == 1 ? nil : fixture.store
+    }
+    #expect(holder.get() == nil)
+    #expect(holder.get() === fixture.store)
+    #expect(holder.get() === fixture.store)
+    #expect(attempts == 2)
+}
+
+@Test
 func authorizationHistoryStoreFiltersAndExpiresByTime() throws {
     let now = Date(timeIntervalSince1970: 4_000_000)
     let fixture = try HistoryStoreFixture(now: now)

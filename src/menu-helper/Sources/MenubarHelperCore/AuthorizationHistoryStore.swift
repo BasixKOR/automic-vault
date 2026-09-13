@@ -25,6 +25,7 @@ public enum AuthorizationHistoryStoreError: Error, Equatable {
     case decoding
     case recordTooLarge
     case invalidLimit
+    case disclosureTooLarge
     case verificationFailed
 }
 
@@ -185,8 +186,13 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         }
     }
 
-    public func records(since: Date? = nil, limit: Int? = nil) throws -> [AccessRequestRecord] {
-        guard limit.map({ $0 > 0 }) ?? true else {
+    public func records(
+        since: Date? = nil,
+        limit: Int? = nil,
+        maximumDisclosureBytes: Int? = nil
+    ) throws -> [AccessRequestRecord] {
+        guard limit.map({ $0 > 0 }) ?? true,
+              maximumDisclosureBytes.map({ $0 >= 2 }) ?? true else {
             throw AuthorizationHistoryStoreError.invalidLimit
         }
         return try lock.withLock {
@@ -207,6 +213,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
             let effectiveSince = max(since ?? cutoff, cutoff)
             var records: [AccessRequestRecord] = []
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys]
+            var disclosureBytes = 2 // JSON array brackets.
             while true {
                 switch sqlite3_step(statement) {
                 case SQLITE_ROW:
@@ -218,6 +228,16 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         bucket: bucket
                     )
                     if record.date < effectiveSince { continue }
+                    if let maximumDisclosureBytes {
+                        let encoded = try encoder.encode(record.redactedForDisclosure)
+                        let (bytes, overflow) = disclosureBytes.addingReportingOverflow(
+                            encoded.count + (records.isEmpty ? 0 : 1)
+                        )
+                        guard !overflow, bytes <= maximumDisclosureBytes else {
+                            throw AuthorizationHistoryStoreError.disclosureTooLarge
+                        }
+                        disclosureBytes = bytes
+                    }
                     records.append(record)
                     if let limit, records.count == limit { return records }
                 case SQLITE_DONE:

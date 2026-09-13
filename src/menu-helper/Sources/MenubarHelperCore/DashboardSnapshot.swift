@@ -1724,7 +1724,7 @@ public func appendAccessRequestRecord(
     accessRequestLogLock.lock()
     defer { accessRequestLogLock.unlock() }
     if defaults == nil, key == accessRequestLogDefaultsKey, service == accessRequestLogKeychainService {
-        return productionAuthorizationHistoryStore?.append(record) == true
+        return productionAuthorizationHistoryStore.get()?.append(record) == true
     }
     guard case .success(let existing) = loadAccessRequestRecordsResult(
         defaults: defaults,
@@ -1755,58 +1755,82 @@ public func appendAccessRequestRecord(
 
 public func loadAccessRequestRecordsForDisclosure(
     since: Date? = nil,
-    limit: Int? = nil
+    limit: Int? = nil,
+    maximumDisclosureBytes: Int? = nil
 ) -> [AccessRequestRecord]? {
-    guard let store = productionAuthorizationHistoryStore else { return nil }
-    return try? store.records(since: since, limit: limit)
+    guard let store = productionAuthorizationHistoryStore.get() else { return nil }
+    return try? store.records(
+        since: since, limit: limit, maximumDisclosureBytes: maximumDisclosureBytes)
 }
 
-private let productionAuthorizationHistoryStore: AuthorizationHistoryStore? = {
-    guard let applicationSupport = FileManager.default.urls(
-              for: .applicationSupportDirectory,
-              in: .userDomainMask
-          ).first
-    else { return nil }
-    let url = applicationSupport
-        .appendingPathComponent("com.automicvault", isDirectory: true)
-        .appendingPathComponent("AuthorizationHistory", isDirectory: true)
-        .appendingPathComponent("History-v1.sqlite3")
-    guard let key = loadOrCreateAuthorizationHistoryEncryptionKey(
-        allowCreation: !FileManager.default.fileExists(atPath: url.path)
-    ) else { return nil }
-    guard let store = try? AuthorizationHistoryStore(url: url, keyData: key) else { return nil }
-    let legacyKeychainData: Data?
-    switch loadKeychainDataResult(
-        service: accessRequestLogKeychainService,
-        account: accessRequestLogDefaultsKey
-    ) {
-    case .notFound:
-        legacyKeychainData = nil
-    case .failure:
-        return nil
-    case .success(let data):
-        legacyKeychainData = data
+final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: AuthorizationHistoryStore?
+    private let open: () -> AuthorizationHistoryStore?
+
+    init(open: @escaping () -> AuthorizationHistoryStore?) {
+        self.open = open
     }
-    let legacyDefaultsData = UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
-    guard (try? importLegacyAccessRequestRecords(
-        keychainData: legacyKeychainData,
-        defaultsData: legacyDefaultsData,
-        into: store,
-        deleteKeychain: {
-            let status = deleteKeychainData(
-                service: accessRequestLogKeychainService,
-                account: accessRequestLogDefaultsKey
-            )
-            return status == errSecSuccess || status == errSecItemNotFound
-        },
-        deleteDefaults: {
-            UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
-            return UserDefaults.standard.synchronize()
-                && UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
+
+    func get() -> AuthorizationHistoryStore? {
+        lock.withLock {
+            if let cached { return cached }
+            let store = open()
+            cached = store
+            return store
         }
-    )) != nil else { return nil }
-    return store
-}()
+    }
+
+    fileprivate static func openProduction() -> AuthorizationHistoryStore? {
+        guard let applicationSupport = FileManager.default.urls(
+                  for: .applicationSupportDirectory,
+                  in: .userDomainMask
+              ).first
+        else { return nil }
+        let url = applicationSupport
+            .appendingPathComponent("com.automicvault", isDirectory: true)
+            .appendingPathComponent("AuthorizationHistory", isDirectory: true)
+            .appendingPathComponent("History-v1.sqlite3")
+        guard let key = loadOrCreateAuthorizationHistoryEncryptionKey(
+            allowCreation: !FileManager.default.fileExists(atPath: url.path)
+        ) else { return nil }
+        guard let store = try? AuthorizationHistoryStore(url: url, keyData: key) else { return nil }
+        let legacyKeychainData: Data?
+        switch loadKeychainDataResult(
+            service: accessRequestLogKeychainService,
+            account: accessRequestLogDefaultsKey
+        ) {
+        case .notFound:
+            legacyKeychainData = nil
+        case .failure:
+            return nil
+        case .success(let data):
+            legacyKeychainData = data
+        }
+        let legacyDefaultsData = UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
+        guard (try? importLegacyAccessRequestRecords(
+            keychainData: legacyKeychainData,
+            defaultsData: legacyDefaultsData,
+            into: store,
+            deleteKeychain: {
+                let status = deleteKeychainData(
+                    service: accessRequestLogKeychainService,
+                    account: accessRequestLogDefaultsKey
+                )
+                return status == errSecSuccess || status == errSecItemNotFound
+            },
+            deleteDefaults: {
+                UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
+                return UserDefaults.standard.synchronize()
+                    && UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
+            }
+        )) != nil else { return nil }
+        return store
+    }
+}
+
+private let productionAuthorizationHistoryStore = ProductionAuthorizationHistoryStore(
+    open: ProductionAuthorizationHistoryStore.openProduction)
 
 func importLegacyAccessRequestRecords(
     keychainData: Data?,

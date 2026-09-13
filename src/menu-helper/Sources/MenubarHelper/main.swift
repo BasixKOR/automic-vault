@@ -3435,7 +3435,6 @@ private struct ApprovedFulfillmentMaterial: Sendable {
 }
 
 private let registryHelperProtocolVersion: UInt64 = 3
-private let historyProtocolVersion: UInt64 = 2
 
 private enum MetadataDisclosure {
     case secretNames(globalOnly: Bool)
@@ -3464,15 +3463,14 @@ private func metadataDisclosureHasAutomaticAccess(
 private func authorizationHistoryDisclosureValue(
     record: AccessRequestRecord,
     since: Date?,
-    records: (Date?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
+    records: (Date?, Int?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
     onAccessRequest: (AccessRequestRecord) -> Bool
 ) -> String? {
     // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
     let maximumReplyBytes = 1_048_576
     let limit = since == nil ? 50 : nil
     guard onAccessRequest(record),
-          let disclosedRecords = records(since, limit),
-          disclosedRecords.contains(where: { $0.id == record.id })
+          let disclosedRecords = records(since, limit, maximumReplyBytes)
     else { return nil }
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -3688,13 +3686,6 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: String(registryHelperProtocolVersion))
-        case .historyProtocolVersion where isTrustedAvCaller(path: callerPath, signing: signing):
-            let requested = xpc_dictionary_get_uint64(message, "requested_version")
-            guard requested == historyProtocolVersion else {
-                reply(peer, to: message, ok: false, error: "Authorization History protocol upgrade is required")
-                return
-            }
-            reply(peer, to: message, ok: true, error: nil, value: String(historyProtocolVersion))
         case .goatHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -3900,11 +3891,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 kind: .secretNames(globalOnly: xpc_dictionary_get_bool(message, "global_only"))
             )
-        case .history where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .history where isTrustedAvCaller(path: callerPath, signing: signing),
+             .historyWindow where isTrustedAvCaller(path: callerPath, signing: signing):
+            let window = op == .historyWindow
             let sinceSeconds = xpc_dictionary_get_uint64(message, "since")
-            let since = sinceSeconds == 0
-                ? nil
-                : Date(timeIntervalSince1970: TimeInterval(sinceSeconds))
+            guard window ? sinceSeconds > 0 : xpc_dictionary_get_value(message, "since") == nil else {
+                reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
+                return
+            }
+            let since = window ? Date(timeIntervalSince1970: TimeInterval(sinceSeconds)) : nil
             guard authorizationHistorySinceIsValid(since) else {
                 reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
                 return
@@ -11479,7 +11474,7 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .historyProtocolVersion, .goatHelperVersion,
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
              .ordercliHelperVersion, .openhueHelperVersion, .plumberHelperVersion, .uaaHelperVersion,
              .railwayHelperVersion, .oxideHelperVersion, .terraformHelperVersion,
              .fastlyHelperVersion,
@@ -13881,8 +13876,8 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
     guard let disclosure = authorizationHistoryDisclosureValue(
         record: record,
         since: nil,
-        records: { _, limit in
-            guard limit == 50 else { return nil }
+        records: { _, limit, maximumBytes in
+            guard limit == 50, maximumBytes == 1_048_576 else { return nil }
             historyReadCount += 1
             guard recordedSuccessfulDisclosure else { return nil }
             return [record]
@@ -13911,8 +13906,9 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
     guard let window = authorizationHistoryDisclosureValue(
         record: record,
         since: since,
-        records: { forwardedSince, limit in
-            guard forwardedSince == since, limit == nil else { return nil }
+        records: { forwardedSince, limit, maximumBytes in
+            guard forwardedSince == since, limit == nil,
+                  maximumBytes == 1_048_576 else { return nil }
             windowReads += 1
             guard windowRecorded else { return nil }
             return Array(repeating: record, count: 51)
@@ -13926,23 +13922,30 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
         windowRecords.count == 51
     else { return 1 }
+    // A concurrent burst may push this request's committed audit row outside the newest 50.
+    guard authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, _, _ in [] },
+        onAccessRequest: { _ in true }
+    ) == "[]" else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: since,
-        records: { _, _ in Array(repeating: record, count: 4_000) },
+        records: { _, _, _ in Array(repeating: record, count: 4_000) },
         onAccessRequest: { _ in true }
     ) == nil else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: nil,
-        records: { _, _ in [record] },
+        records: { _, _, _ in [record] },
         onAccessRequest: { _ in false }
     ) == nil else { return 1 }
     var recordedUnavailableHistory = false
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: nil,
-        records: { _, _ in nil },
+        records: { _, _, _ in nil },
         onAccessRequest: { _ in
             recordedUnavailableHistory = true
             return true

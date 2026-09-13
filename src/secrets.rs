@@ -3,7 +3,6 @@ use std::path::PathBuf;
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const ALIYUN_HELPER_PROTOCOL_VERSION: u64 = 1;
 const REGISTRY_HELPER_PROTOCOL_VERSION: u64 = 3;
-const HISTORY_PROTOCOL_VERSION: u64 = 2;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const FASTLY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const SQLCMD_HELPER_PROTOCOL_VERSION: u64 = 1;
@@ -163,34 +162,30 @@ pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
 }
 
 pub(crate) fn authorization_history(since: Option<u64>) -> Result<String, String> {
-    if since.is_some() {
-        let version = xpc_request(
-            "history-protocol-version",
-            None,
-            None,
-            None,
-            Some((b"requested_version\0", HISTORY_PROTOCOL_VERSION)),
-        )
-        .map_err(|error| format!(
-            "Authorization History window requires an updated running Automic Vault app: {error}"
-        ))?
-        .value;
-        if version != Some(HISTORY_PROTOCOL_VERSION.to_string()) {
-            return Err(
-                "the running Automic Vault app does not support Authorization History windows"
-                    .into(),
-            );
-        }
-    }
-    xpc_request(
-        "history",
+    let reply = xpc_request(
+        history_operation(since),
         None,
         None,
         None,
         since.map(|value| (b"since\0" as &'static [u8], value)),
-    )?
-    .value
-    .ok_or_else(|| "the approval service returned no Authorization History".into())
+    ).map_err(|error| {
+        if since.is_some() && error == "invalid XPC operation" {
+            format!("Authorization History window requires an updated running Automic Vault app: {error}")
+        } else {
+            error
+        }
+    })?;
+    reply
+        .value
+        .ok_or_else(|| "the approval service returned no Authorization History".into())
+}
+
+fn history_operation(since: Option<u64>) -> &'static str {
+    if since.is_some() {
+        "history-window"
+    } else {
+        "history"
+    }
 }
 
 fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> {
@@ -1140,6 +1135,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explicit_history_window_uses_an_atomic_wire_operation() {
+        assert_eq!(history_operation(None), "history");
+        assert_eq!(history_operation(Some(1)), "history-window");
+    }
+
+    #[test]
     fn reports_only_known_human_approval_decisions() {
         assert_eq!(human_approval_message(b"approved"), Some("approved"));
         assert_eq!(human_approval_message(b"denied"), Some("denied"));
@@ -1161,7 +1162,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("uaa-save"));
         assert!(!xpc_operation_requires_cwd("bless"));
         assert!(!xpc_operation_requires_cwd("docker-helper-version"));
-        assert!(!xpc_operation_requires_cwd("history-protocol-version"));
+        assert!(!xpc_operation_requires_cwd("history-window"));
         assert!(!xpc_operation_requires_cwd("list"));
     }
 }

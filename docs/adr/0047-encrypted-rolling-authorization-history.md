@@ -43,9 +43,9 @@ to 30 days. A single reply exceeding 1 MiB fails rather than truncating the
 result; a narrower `--since` window can be requested. Filtering occurs inside
 the menu bar app before disclosure. CLI
 formats receive only display-safe commands as defined by ADR 0046.
-An explicit window first negotiates history protocol version 2 with the signed
-menu helper, so an older helper cannot silently ignore `--since` and return its
-default 50-record view.
+An explicit window uses the dedicated `history-window` XPC operation with the
+signed menu helper. An older helper rejects that operation rather than silently
+ignoring `--since` and returning its default 50-record view.
 
 ## Consequences
 
