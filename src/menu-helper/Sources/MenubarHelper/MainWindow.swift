@@ -2159,7 +2159,7 @@ struct DashboardRootView: View {
                     if model.selectedSection == .settings,
                        model.selectedItem?.id == "secret-name-access" {
                         AuthorityApprovalButton(
-                            title: "Allow Verified Launcher to List Secret Names",
+                            title: "Add Verified Launcher",
                             approval: model.authorityApproval, action: "secret-name-access"
                         ) { model.addSecretNameAccessApp() }
                         .labelStyle(.titleAndIcon)
@@ -2168,7 +2168,7 @@ struct DashboardRootView: View {
                     if model.selectedSection == .settings,
                        model.selectedItem?.id == "authorization-history-access" {
                         AuthorityApprovalButton(
-                            title: "Allow Verified Launcher to Read Authorization History",
+                            title: "Add Verified Launcher",
                             approval: model.authorityApproval, action: "authorization-history-access"
                         ) { model.addAuthorizationHistoryAccessApp() }
                         .labelStyle(.titleAndIcon)
@@ -2507,7 +2507,7 @@ private struct DashboardDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .contentMargins(.top, 8, for: .scrollContent)
+        .contentMargins(.top, 24, for: .scrollContent)
         .ignoresSafeArea(.container, edges: .top)
         .background(.ultraThinMaterial)
         .sheet(isPresented: $model.isRenamingSecret) {
