@@ -45,7 +45,7 @@ extension String {
 typealias AccessRequestRecord = String
 struct AuthorizationHistoryPage {
     let records: [String]
-    let nextSequence: Int64?
+    let olderPageCursor: Int64?
 }
 enum DashboardSection { case secretUsage }
 
@@ -78,10 +78,10 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     if beforeSequence != nil && failOlderPage.withLock({ $0 }) { return nil }
     if beforeSequence == nil {
         return AuthorizationHistoryPage(
-            records: ["latest"] + (0..<49).map { "older-\($0)" }, nextSequence: 50)
+            records: ["latest"] + (0..<49).map { "older-\($0)" }, olderPageCursor: 50)
     }
     return AuthorizationHistoryPage(
-        records: (49..<74).map { "older-\($0)" }, nextSequence: nil)
+        records: (49..<74).map { "older-\($0)" }, olderPageCursor: nil)
 }
 
 @MainActor final class Model {
@@ -89,7 +89,7 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var accessRequestsReloadTask: Task<Void, Never>?
     var accessRequestsReloadPending = false
     var accessRequestsGeneration = 0
-    var historyNextSequence: Int64?
+    var historyOlderPageCursor: Int64?
     var isLoadingOlderHistory = false
     var historyLoadFailed = false
     var pendingAccessRequestID: UUID?
@@ -142,7 +142,7 @@ assert(!first.isCancelled, "refresh must not cancel a usable result")
 finishSnapshot.signal()
 await first.value
 assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
-assert(model.historyNextSequence == 50)
+assert(model.historyOlderPageCursor == 50)
 assert(model.snapshot.detectorFindings == ["preserved"])
 // A burst queues exactly one follow-up, after the first load finishes.
 for await _ in snapshotStarted { break }
@@ -208,14 +208,14 @@ for _ in 0..<10_000 {
     await Task.yield()
 }
 assert(model.snapshot.accessRequests.count == 75, "older history page was not appended")
-assert(model.historyNextSequence == nil)
+assert(model.historyOlderPageCursor == nil)
 assert(model.normalizationCount == normalizationsBeforeOlderPage + 1,
        "older history page did not normalize selection")
 assert(model.pendingAccessRequestStatus == String(localized: "Authorization History record unavailable"))
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
-assert(model.historyNextSequence == 50, "refresh did not reset the paging cursor")
+assert(model.historyOlderPageCursor == 50, "refresh did not reset the paging cursor")
 blockHistory.withLock { $0 = true }
 model.reloadAccessRequests()
 for await _ in historyStarted { break }
@@ -227,8 +227,9 @@ blockHistory.withLock { $0 = false }
 failFirstPage.withLock { $0 = true }
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
-assert(model.snapshot.accessRequests.isEmpty && model.historyNextSequence == nil)
+assert(model.snapshot.accessRequests.isEmpty && model.historyOlderPageCursor == nil)
 assert(model.historyLoadFailed, "failed first-page read looked successful")
+assert(model.pendingAccessRequestStatus == String(localized: "Authorization History unavailable"))
 failFirstPage.withLock { $0 = false }
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
@@ -239,7 +240,7 @@ for _ in 0..<10_000 {
     if !model.isLoadingOlderHistory { break }
     await Task.yield()
 }
-assert(model.snapshot.accessRequests.count == 50 && model.historyNextSequence == 50)
+assert(model.snapshot.accessRequests.count == 50 && model.historyOlderPageCursor == 50)
 assert(model.historyLoadFailed, "failed older-page read looked successful")
 assert(model.pendingAccessRequestStatus == String(localized: "Older Authorization History unavailable"))
 failOlderPage.withLock { $0 = false }

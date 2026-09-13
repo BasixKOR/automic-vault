@@ -20,7 +20,7 @@ public struct AuthorizationHistoryRetention: Sendable {
 
 public struct AuthorizationHistoryPage: Sendable {
     public let records: [AccessRequestRecord]
-    public let nextSequence: Int64?
+    public let olderPageCursor: Int64?
 }
 
 public enum AuthorizationHistoryStoreError: Error, Equatable {
@@ -266,10 +266,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                     }
                     records.append(record)
                     if let limit, records.count == limit {
-                        return AuthorizationHistoryPage(records: records, nextSequence: sequence)
+                        return AuthorizationHistoryPage(records: records, olderPageCursor: sequence)
                     }
                 case SQLITE_DONE:
-                    return AuthorizationHistoryPage(records: records, nextSequence: nil)
+                    return AuthorizationHistoryPage(records: records, olderPageCursor: nil)
                 default:
                     throw sqliteError("read failed")
                 }

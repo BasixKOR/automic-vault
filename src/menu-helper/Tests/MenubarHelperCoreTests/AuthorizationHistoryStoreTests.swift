@@ -34,14 +34,14 @@ func authorizationHistoryPagesReachEveryRecordAcrossNewWrites() throws {
     let first = try fixture.store.page(limit: 25)
     #expect(first.records.map(\.command) == (50..<75).reversed().map { "fixture \($0)" })
     #expect(fixture.store.append(fixture.record(index: 75)))
-    let second = try fixture.store.page(beforeSequence: first.nextSequence, limit: 25)
-    let third = try fixture.store.page(beforeSequence: second.nextSequence, limit: 25)
-    let fourth = try fixture.store.page(beforeSequence: third.nextSequence, limit: 25)
+    let second = try fixture.store.page(beforeSequence: first.olderPageCursor, limit: 25)
+    let third = try fixture.store.page(beforeSequence: second.olderPageCursor, limit: 25)
+    let fourth = try fixture.store.page(beforeSequence: third.olderPageCursor, limit: 25)
     #expect((first.records + second.records + third.records).count == 75)
     #expect(second.records.map(\.command) == (25..<50).reversed().map { "fixture \($0)" })
     #expect(third.records.map(\.command) == (0..<25).reversed().map { "fixture \($0)" })
     #expect(fourth.records.isEmpty)
-    #expect(fourth.nextSequence == nil)
+    #expect(fourth.olderPageCursor == nil)
     #expect(throws: AuthorizationHistoryStoreError.invalidLimit) {
         try fixture.store.page(beforeSequence: 0)
     }
@@ -99,9 +99,9 @@ func authorizationHistoryStoreFiltersAndExpiresByTime() throws {
     )
     let firstPage = try fixture.store.page(limit: 1)
     #expect(firstPage.records.map(\.id) == [recent.id])
-    let secondPage = try fixture.store.page(beforeSequence: firstPage.nextSequence, limit: 1)
+    let secondPage = try fixture.store.page(beforeSequence: firstPage.olderPageCursor, limit: 1)
     #expect(secondPage.records.map(\.id) == [retained.id])
-    #expect(try fixture.store.page(beforeSequence: secondPage.nextSequence, limit: 1).records.isEmpty)
+    #expect(try fixture.store.page(beforeSequence: secondPage.olderPageCursor, limit: 1).records.isEmpty)
 }
 
 @Test

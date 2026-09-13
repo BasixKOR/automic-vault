@@ -238,7 +238,6 @@ final class DashboardModel: ObservableObject {
     }
     @Published private(set) var historyRows: [DashboardItem] = []
     @Published private(set) var historySections: [HistoryDay] = []
-    private var allHistoryRows: [DashboardItem] = []
     private var allHistorySections: [HistoryDay] = []
     private var historyRecordsByID: [UUID: AccessRequestRecord] = [:]
     @Published private(set) var cliInstallState: CLIInstallState?
@@ -254,7 +253,7 @@ final class DashboardModel: ObservableObject {
     @Published private var accessRequestsReloadTask: Task<Void, Never>?
     private var accessRequestsReloadPending = false
     private var accessRequestsGeneration = 0
-    @Published private(set) var historyNextSequence: Int64?
+    @Published private(set) var historyOlderPageCursor: Int64?
     @Published private(set) var isLoadingOlderHistory = false
     @Published private(set) var historyLoadFailed = false
     private var pendingAccessRequestID: UUID?
@@ -283,15 +282,13 @@ final class DashboardModel: ObservableObject {
 
     private func setHistoryRecords(_ records: [AccessRequestRecord]) {
         historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        allHistoryRows = records.map(historyRow)
-        allHistorySections = historyDays(allHistoryRows)
+        allHistorySections = historyDays(records.map(historyRow))
         refreshHistorySearch()
     }
 
     fileprivate func appendHistoryRecords(_ records: [AccessRequestRecord]) {
         for record in records { historyRecordsByID[record.id] = record }
         let added = records.map(historyRow)
-        allHistoryRows += added
         allHistorySections = mergeHistoryDays(allHistorySections, historyDays(added))
         let query = searchQuery
         if query.isEmpty {
@@ -307,7 +304,7 @@ final class DashboardModel: ObservableObject {
     private func refreshHistorySearch() {
         let query = searchQuery
         guard !query.isEmpty else {
-            historyRows = allHistoryRows
+            historyRows = allHistorySections.flatMap(\.items)
             historySections = allHistorySections
             return
         }
@@ -550,10 +547,12 @@ final class DashboardModel: ObservableObject {
         if accessRequestsReloadTask != nil || isLoadingOlderHistory {
             return String(localized: "Loading Authorization History…")
         }
-        if historyLoadFailed, historyNextSequence != nil {
-            return String(localized: "Older Authorization History unavailable")
+        if historyLoadFailed {
+            return historyOlderPageCursor == nil
+                ? String(localized: "Authorization History unavailable")
+                : String(localized: "Older Authorization History unavailable")
         }
-        if historyNextSequence != nil {
+        if historyOlderPageCursor != nil {
             return String(localized: "Load older records to find this Authorization History record.")
         }
         return String(localized: "Authorization History record unavailable")
@@ -913,7 +912,7 @@ final class DashboardModel: ObservableObject {
             snapshot = next
             setHistoryRecords(next.accessRequests)
             if generation == accessRequestsGeneration {
-                historyNextSequence = page?.nextSequence
+                historyOlderPageCursor = page?.olderPageCursor
                 isLoadingOlderHistory = false
                 historyLoadFailed = page == nil
             }
@@ -953,12 +952,12 @@ final class DashboardModel: ObservableObject {
             if let page {
                 snapshot.accessRequests = page.records
                 setHistoryRecords(page.records)
-                historyNextSequence = page.nextSequence
+                historyOlderPageCursor = page.olderPageCursor
                 historyLoadFailed = false
             } else {
                 snapshot.accessRequests = []
                 setHistoryRecords([])
-                historyNextSequence = nil
+                historyOlderPageCursor = nil
                 historyLoadFailed = true
             }
             if let id = pendingAccessRequestID {
@@ -973,7 +972,7 @@ final class DashboardModel: ObservableObject {
     }
 
     func loadMoreHistory(retry: Bool = false) {
-        guard let cursor = historyNextSequence, !isLoadingOlderHistory,
+        guard let cursor = historyOlderPageCursor, !isLoadingOlderHistory,
               reloadTask == nil, accessRequestsReloadTask == nil,
               !historyLoadFailed || retry else { return }
         isLoadingOlderHistory = true
@@ -984,7 +983,7 @@ final class DashboardModel: ObservableObject {
                 loadAccessRequestRecordsPage(beforeSequence: cursor)
             }.value
             guard let self, generation == accessRequestsGeneration,
-                  historyNextSequence == cursor else { return }
+                  historyOlderPageCursor == cursor else { return }
             isLoadingOlderHistory = false
             guard let page else {
                 historyLoadFailed = true
@@ -992,7 +991,7 @@ final class DashboardModel: ObservableObject {
             }
             snapshot.accessRequests += page.records
             appendHistoryRecords(page.records)
-            historyNextSequence = page.nextSequence
+            historyOlderPageCursor = page.olderPageCursor
             if let id = pendingAccessRequestID,
                historyRecordsByID[id] != nil {
                 pendingAccessRequestID = nil
@@ -1118,7 +1117,7 @@ final class DashboardModel: ObservableObject {
             if pendingAccessRequestID != nil {
                 selectedItemID = nil
             } else if selectedAccessRequest == nil {
-                selectedItemID = historyRows.first?.id
+                selectedItemID = historySections.first?.items.first?.id
             }
             return
         }
@@ -2157,6 +2156,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         DashboardItem(id: "newest", title: "", subtitle: "", detail: "", date: recentDate.addingTimeInterval(60)),
     ], calendar: calendar))
     guard merged.map(\.day) == days.map(\.day),
+          merged[1] === days[1],
           merged[0].items.map(\.id) == ["newest", "recent"],
           merged[1].items.map(\.id) == ["old", "middle", "older"]
     else { return 1 }
@@ -2179,6 +2179,10 @@ func runDashboardSearchSelfCheck() -> Int32 {
           pageModel.historySections[0].items.map(\.id) == [nextPageRecord.id.uuidString],
           pageModel.historySections[1].items.map(\.id) == [otherAccessRequest.id.uuidString]
     else { return 1 }
+    pageModel.selectSection(.secretUsage)
+    pageModel.searchText = "no matching history"
+    pageModel.searchText = ""
+    guard pageModel.selectedItemID == nextPageRecord.id.uuidString else { return 1 }
     var boundedSnapshot = DashboardSnapshot.empty
     boundedSnapshot.accessRequests = Array(repeating: accessRequest, count: 51)
     let boundedModel = DashboardModel(snapshot: boundedSnapshot)
@@ -2479,7 +2483,7 @@ private struct DashboardSidebarView: View {
                 } else {
                     SidebarCountText(
                         count: count,
-                        isPartial: section == .secretUsage && model.historyNextSequence != nil)
+                        isPartial: section == .secretUsage && model.historyOlderPageCursor != nil)
                         .fixedSize()
                 }
             }
@@ -2502,7 +2506,7 @@ private struct DashboardListView: View {
             if items.isEmpty {
                 VStack(spacing: 12) {
                     if model.selectedSection == .secretUsage && model.historyLoadFailed,
-                       model.historyNextSequence == nil {
+                       model.historyOlderPageCursor == nil {
                         Text("Authorization History unavailable")
                             .foregroundStyle(.secondary)
                         Button("Retry") { model.reloadAccessRequests() }
@@ -2510,7 +2514,7 @@ private struct DashboardListView: View {
                         EmptyListView(section: model.selectedSection)
                     }
                     if model.selectedSection == .secretUsage,
-                       model.historyNextSequence != nil {
+                       model.historyOlderPageCursor != nil {
                         if model.historyLoadFailed {
                             Text("Older Authorization History unavailable")
                                 .foregroundStyle(.secondary)
@@ -2553,7 +2557,7 @@ private struct DashboardListView: View {
         List(selection: itemSelection) {
             rows(items)
             if model.selectedSection == .secretUsage,
-               model.historyNextSequence != nil {
+               model.historyOlderPageCursor != nil {
                 if model.hasSearchQuery {
                     Text("Search covers loaded records. Load older records to continue searching.")
                         .foregroundStyle(.secondary)
@@ -2606,9 +2610,14 @@ private struct DashboardListView: View {
     }
 }
 
-struct HistoryDay {
+final class HistoryDay {
     let day: Date
     var items: [DashboardItem]
+
+    init(day: Date, items: [DashboardItem]) {
+        self.day = day
+        self.items = items
+    }
 }
 
 private func historyItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) -> Bool {
