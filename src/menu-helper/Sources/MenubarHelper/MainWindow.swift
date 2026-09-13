@@ -238,8 +238,11 @@ final class DashboardModel: ObservableObject {
     }
     @Published private(set) var historyRows: [DashboardItem] = []
     @Published private(set) var historySections: [HistoryDay] = []
+    @Published private(set) var isSearchingHistory = false
     private var allHistorySections: [HistoryDay] = []
     private var historyRecordsByID: [UUID: AccessRequestRecord] = [:]
+    private var historySearchTask: Task<Void, Never>?
+    private var historySearchGeneration = 0
     @Published private(set) var cliInstallState: CLIInstallState?
     @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
@@ -279,6 +282,7 @@ final class DashboardModel: ObservableObject {
     }
 
     var hasSearchQuery: Bool { !searchQuery.isEmpty }
+    var isLoadingFirstHistoryPage: Bool { accessRequestsReloadTask != nil }
 
     private func setHistoryRecords(_ records: [AccessRequestRecord]) {
         historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -295,26 +299,50 @@ final class DashboardModel: ObservableObject {
             historyRows += added
             historySections = allHistorySections
         } else {
-            let visible = added.filter { matchesSearch($0, query: query) }
-            historySections = mergeHistoryDays(historySections, historyDays(visible))
-            historyRows = historySections.flatMap(\.items)
+            refreshHistorySearch()
         }
     }
 
     private func refreshHistorySearch() {
+        historySearchTask?.cancel()
+        historySearchGeneration += 1
         let query = searchQuery
         guard !query.isEmpty else {
+            isSearchingHistory = false
             historyRows = allHistorySections.flatMap(\.items)
             historySections = allHistorySections
             return
         }
-        var visibleRows: [DashboardItem] = []
-        historySections = allHistorySections.compactMap { group in
-            let matches = group.items.filter { matchesSearch($0, query: query) }
-            visibleRows += matches
-            return matches.isEmpty ? nil : HistoryDay(day: group.day, items: matches)
+        let loadedCount = allHistorySections.reduce(0) { $0 + $1.items.count }
+        // ponytail: small pages filter inline; offload only when retained history grows large.
+        guard loadedCount > 2_000 else {
+            isSearchingHistory = false
+            let source = allHistorySections.map { HistorySearchDay(day: $0.day, items: $0.items) }
+            applyHistorySearch(filterHistoryDays(source, query: query))
+            return
         }
-        historyRows = visibleRows
+        let generation = historySearchGeneration
+        let source = allHistorySections.map { HistorySearchDay(day: $0.day, items: $0.items) }
+        isSearchingHistory = true
+        historyRows = []
+        historySections = []
+        historySearchTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(150)) }
+            catch { return }
+            guard let self, generation == self.historySearchGeneration else { return }
+            let matches = await Task.detached(priority: .userInitiated) {
+                return filterHistoryDays(source, query: query)
+            }.value
+            guard generation == self.historySearchGeneration else { return }
+            self.applyHistorySearch(matches)
+            self.isSearchingHistory = false
+            self.normalizeSelection()
+        }
+    }
+
+    private func applyHistorySearch(_ groups: [HistorySearchDay]) {
+        historyRows = groups.flatMap(\.items)
+        historySections = groups.map { HistoryDay(day: $0.day, items: $0.items) }
     }
 
     private func historyRow(_ record: AccessRequestRecord) -> DashboardItem {
@@ -325,12 +353,6 @@ final class DashboardModel: ObservableObject {
             detail: record.reason,
             date: record.date
         )
-    }
-
-    private func matchesSearch(_ item: DashboardItem, query: String) -> Bool {
-        item.title.localizedCaseInsensitiveContains(query)
-            || item.subtitle.localizedCaseInsensitiveContains(query)
-            || item.detail.localizedCaseInsensitiveContains(query)
     }
 
     private func items(for section: DashboardSection) -> [DashboardItem] {
@@ -538,7 +560,7 @@ final class DashboardModel: ObservableObject {
         guard pendingAccessRequestID == nil, let selectedItemID,
               let id = UUID(uuidString: selectedItemID),
               let record = historyRecordsByID[id] else { return nil }
-        return searchQuery.isEmpty || matchesSearch(historyRow(record), query: searchQuery)
+        return searchQuery.isEmpty || historyMatchesSearch(historyRow(record), query: searchQuery)
             ? record : nil
     }
 
@@ -2143,13 +2165,15 @@ func runDashboardSearchSelfCheck() -> Int32 {
     let recentDate = oldDate.addingTimeInterval(86_400)
     let days = historyDays([
         DashboardItem(id: "old", title: "", subtitle: "", detail: "", date: oldDate),
-        DashboardItem(id: "recent", title: "", subtitle: "", detail: "", date: recentDate),
+        DashboardItem(id: "recent", title: "recent", subtitle: "", detail: "", date: recentDate),
         DashboardItem(id: "older", title: "", subtitle: "", detail: "", date: oldDate.addingTimeInterval(-60)),
     ], calendar: calendar)
     guard days.count == 2,
           days[0].items.map(\.id) == ["recent"],
           days[1].items.map(\.id) == ["old", "older"]
     else { return 1 }
+    let searchedDays = filterHistoryDays(days.map { HistorySearchDay(day: $0.day, items: $0.items) }, query: "recent")
+    guard searchedDays.count == 1, searchedDays[0].items.map(\.id) == ["recent"] else { return 1 }
     let merged = mergeHistoryDays(days, historyDays([
         DashboardItem(id: "middle", title: "", subtitle: "", detail: "", date: oldDate.addingTimeInterval(-30)),
         DashboardItem(id: "newest", title: "", subtitle: "", detail: "", date: recentDate.addingTimeInterval(60)),
@@ -2238,7 +2262,7 @@ enum DashboardSection: String, CaseIterable, Identifiable {
     }
 }
 
-struct DashboardItem: Identifiable, Equatable {
+struct DashboardItem: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let kind: String?
@@ -2504,7 +2528,12 @@ private struct DashboardListView: View {
         Group {
             if items.isEmpty {
                 VStack(spacing: 12) {
-                    if model.selectedSection == .secretUsage && model.historyLoadFailed,
+                    if model.selectedSection == .secretUsage && model.isSearchingHistory {
+                        ProgressView()
+                            .controlSize(.large)
+                    } else if model.selectedSection == .secretUsage && model.isLoadingFirstHistoryPage {
+                        ProgressView("Loading Authorization History…")
+                    } else if model.selectedSection == .secretUsage && model.historyLoadFailed,
                        model.historyOlderPageCursor == nil {
                         Text("Authorization History unavailable")
                             .foregroundStyle(.secondary)
@@ -2606,6 +2635,24 @@ private struct DashboardListView: View {
                     .tag(item.id)
             }
         }
+    }
+}
+
+private struct HistorySearchDay: Sendable {
+    let day: Date
+    let items: [DashboardItem]
+}
+
+private func historyMatchesSearch(_ item: DashboardItem, query: String) -> Bool {
+    item.title.localizedCaseInsensitiveContains(query)
+        || item.subtitle.localizedCaseInsensitiveContains(query)
+        || item.detail.localizedCaseInsensitiveContains(query)
+}
+
+private func filterHistoryDays(_ groups: [HistorySearchDay], query: String) -> [HistorySearchDay] {
+    groups.compactMap { group in
+        let items = group.items.filter { historyMatchesSearch($0, query: query) }
+        return items.isEmpty ? nil : HistorySearchDay(day: group.day, items: items)
     }
 }
 

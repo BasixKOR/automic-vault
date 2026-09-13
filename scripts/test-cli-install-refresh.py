@@ -241,8 +241,14 @@ assert(model.snapshot.accessRequests.isEmpty && model.historyOlderPageCursor == 
 assert(model.historyLoadFailed, "failed first-page read looked successful")
 assert(model.pendingAccessRequestStatus == String(localized: "Authorization History unavailable"))
 failFirstPage.withLock { $0 = false }
+blockHistory.withLock { $0 = true }
 model.reloadAccessRequests()
+for await _ in historyStarted { break }
+assert(model.historyLoadFailed && model.accessRequestsReloadTask != nil,
+       "first-page retry did not expose a loading state")
+finishHistory.signal()
 await model.accessRequestsReloadTask!.value
+blockHistory.withLock { $0 = false }
 assert(model.snapshot.accessRequests.count == 50 && !model.historyLoadFailed)
 failOlderPage.withLock { $0 = true }
 model.loadMoreHistory()
