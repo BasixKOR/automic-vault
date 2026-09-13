@@ -2191,6 +2191,9 @@ struct DashboardRootView: View {
                 }
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
+        .onChange(of: proxySessions.historyRevision) { _, _ in
+            model.reloadAccessRequests()
+        }
         .sheet(isPresented: $model.isCreatingLauncherBundle) {
             CreateLauncherBundleView(model: model)
         }

@@ -1812,6 +1812,14 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
             keychainData: legacyKeychainData,
             defaultsData: legacyDefaultsData,
             into: store,
+            readKeychain: {
+                guard case .success(let data) = loadKeychainDataResult(
+                    service: accessRequestLogKeychainService,
+                    account: accessRequestLogDefaultsKey
+                ) else { return nil }
+                return data
+            },
+            readDefaults: { UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey) },
             deleteKeychain: {
                 let status = deleteKeychainData(
                     service: accessRequestLogKeychainService,
@@ -1836,6 +1844,8 @@ func importLegacyAccessRequestRecords(
     keychainData: Data?,
     defaultsData: Data?,
     into store: AuthorizationHistoryStore,
+    readKeychain: () -> Data?,
+    readDefaults: () -> Data?,
     deleteKeychain: () -> Bool,
     deleteDefaults: () -> Bool
 ) throws {
@@ -1847,6 +1857,10 @@ func importLegacyAccessRequestRecords(
         try decoder.decode([AccessRequestRecord].self, from: $0)
     } ?? []
     try store.importRecords(keychainRecords + defaultsRecords)
+    guard (keychainData == nil || readKeychain() == keychainData),
+          (defaultsData == nil || readDefaults() == defaultsData) else {
+        throw AuthorizationHistoryStoreError.verificationFailed
+    }
     if keychainData != nil {
         guard deleteKeychain() else { throw AuthorizationHistoryStoreError.verificationFailed }
     }

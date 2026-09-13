@@ -249,6 +249,8 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
         keychainData: nil,
         defaultsData: data,
         into: fixture.store,
+        readKeychain: { nil },
+        readDefaults: { data },
         deleteKeychain: { false },
         deleteDefaults: {
             #expect((try? fixture.store.records()) == [record])
@@ -261,6 +263,8 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             keychainData: nil,
             defaultsData: Data("malformed".utf8),
             into: fixture.store,
+            readKeychain: { nil },
+            readDefaults: { nil },
             deleteKeychain: { false },
             deleteDefaults: { Issue.record("deleted malformed legacy data"); return true }
         )
@@ -273,6 +277,8 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             keychainData: nil,
             defaultsData: outOfRangeData,
             into: fixture.store,
+            readKeychain: { nil },
+            readDefaults: { outOfRangeData },
             deleteKeychain: { false },
             deleteDefaults: { Issue.record("deleted out-of-range legacy data"); return true }
         )
@@ -301,6 +307,29 @@ func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
             keychainData: nil,
             defaultsData: legacy,
             into: fixture.store,
+            readKeychain: { nil },
+            readDefaults: { legacy },
+            deleteKeychain: { deleted = true; return true },
+            deleteDefaults: { deleted = true; return true }
+        )
+    }
+    #expect(!deleted)
+}
+
+@Test
+func changedLegacyHistoryIsNotDeletedDuringMigration() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    let snapshot = try JSONEncoder().encode([fixture.record(index: 1)])
+    let changed = try JSONEncoder().encode([fixture.record(index: 2)])
+    var deleted = false
+    #expect(throws: AuthorizationHistoryStoreError.verificationFailed) {
+        try importLegacyAccessRequestRecords(
+            keychainData: nil,
+            defaultsData: snapshot,
+            into: fixture.store,
+            readKeychain: { nil },
+            readDefaults: { changed },
             deleteKeychain: { deleted = true; return true },
             deleteDefaults: { deleted = true; return true }
         )

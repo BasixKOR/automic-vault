@@ -62,9 +62,14 @@ final class ProxySessionViewModel: ObservableObject {
     static let shared = ProxySessionViewModel()
 
     @Published private(set) var sessions: [ProxySessionSummary] = []
+    @Published private(set) var historyRevision = 0
 
     func update(_ sessions: [ProxySessionSummary]) {
         self.sessions = sessions
+    }
+
+    func historyDidChange() {
+        historyRevision &+= 1
     }
 
     func terminate(_ id: UUID) {
@@ -412,7 +417,7 @@ actor SecretProxyCoordinator {
         }
         guard !cancellation.isCanceled else { return }
         guard decision != .deny else {
-            _ = appendAccessRequestRecord(proxyRecord(
+            _ = recordAccessRequest(proxyRecord(
                 session: session,
                 method: method,
                 origin: origin,
@@ -442,7 +447,7 @@ actor SecretProxyCoordinator {
                 names: sortedNames
             )
         } catch {
-            _ = appendAccessRequestRecord(proxyRecord(
+            _ = recordAccessRequest(proxyRecord(
                 session: session,
                 method: method,
                 origin: origin,
@@ -474,7 +479,7 @@ actor SecretProxyCoordinator {
             approvalSource: approvalSource,
             reason: decision == .allowForSession ? "Allowed for Proxy Session" : "Allowed once"
         )
-        guard appendAccessRequestRecord(record) else {
+        guard recordAccessRequest(record) else {
             deny(sessionID: sessionID, requestID: requestID, reason: "Authorization History is unavailable")
             return
         }
@@ -573,6 +578,12 @@ actor SecretProxyCoordinator {
             )
         }.sorted { $0.startedAt > $1.startedAt }
         Task { @MainActor in ProxySessionViewModel.shared.update(summaries) }
+    }
+
+    private func recordAccessRequest(_ record: AccessRequestRecord) -> Bool {
+        guard appendAccessRequestRecord(record) else { return false }
+        Task { @MainActor in ProxySessionViewModel.shared.historyDidChange() }
+        return true
     }
 
     private func validOrigin(_ origin: String) -> Bool {

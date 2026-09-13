@@ -3445,6 +3445,21 @@ private func authorizationHistorySinceIsValid(_ since: Date?, now: Date = Date()
     since.map { $0 <= now } ?? true
 }
 
+private func validatedAuthorizationHistorySince(
+    operation: ApprovalServiceOperation,
+    message: xpc_object_t,
+    now: Date = Date()
+) -> (valid: Bool, since: Date?) {
+    let value = xpc_dictionary_get_value(message, "since")
+    if operation == .history { return (value == nil, nil) }
+    guard operation == .historyWindow, let value,
+          xpc_get_type(value) == XPC_TYPE_UINT64 else { return (false, nil) }
+    let seconds = xpc_dictionary_get_uint64(message, "since")
+    guard seconds > 0 else { return (false, nil) }
+    let since = Date(timeIntervalSince1970: TimeInterval(seconds))
+    return (authorizationHistorySinceIsValid(since, now: now), since)
+}
+
 private func metadataDisclosureHasAutomaticAccess(
     _ kind: MetadataDisclosure,
     launchers: [LauncherIdentity],
@@ -3893,14 +3908,8 @@ private final class ApprovalServer: @unchecked Sendable {
             )
         case .history where isTrustedAvCaller(path: callerPath, signing: signing),
              .historyWindow where isTrustedAvCaller(path: callerPath, signing: signing):
-            let window = op == .historyWindow
-            let sinceSeconds = xpc_dictionary_get_uint64(message, "since")
-            guard window ? sinceSeconds > 0 : xpc_dictionary_get_value(message, "since") == nil else {
-                reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
-                return
-            }
-            let since = window ? Date(timeIntervalSince1970: TimeInterval(sinceSeconds)) : nil
-            guard authorizationHistorySinceIsValid(since) else {
+            let window = validatedAuthorizationHistorySince(operation: op, message: message)
+            guard window.valid else {
                 reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
                 return
             }
@@ -3912,7 +3921,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 callerPath: callerPath,
                 signing: signing,
-                kind: .authorizationHistory(since: since)
+                kind: .authorizationHistory(since: window.since)
             )
         case .save where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
@@ -13823,6 +13832,34 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
 }
 
 private func runMetadataDisclosureSelfCheck() -> Int32 {
+    let wire = xpc_dictionary_create_empty()
+    let wireNow = Date(timeIntervalSince1970: 1_000_000)
+    guard validatedAuthorizationHistorySince(
+        operation: .history, message: wire, now: wireNow
+    ).valid,
+        !validatedAuthorizationHistorySince(
+            operation: .historyWindow, message: wire, now: wireNow
+        ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 0)
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_string(wire, "since", "999999")
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 1_000_001)
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 999_999)
+    guard !validatedAuthorizationHistorySince(
+        operation: .history, message: wire, now: wireNow
+    ).valid,
+        validatedAuthorizationHistorySince(
+            operation: .historyWindow, message: wire, now: wireNow
+        ).since == Date(timeIntervalSince1970: 999_999) else { return 1 }
+
     let requirement = #"identifier "com.apple.Terminal" and anchor apple"#
     let launcher = LauncherIdentity(
         pid: 42,
