@@ -242,6 +242,7 @@ final class DashboardModel: ObservableObject {
     private var allHistorySections: [HistoryDay] = []
     private var historyRecordsByID: [UUID: AccessRequestRecord] = [:]
     private var historySearchTask: Task<Void, Never>?
+    private var historySearchWorker: Task<[HistorySearchDay], Never>?
     private var historySearchGeneration = 0
     @Published private(set) var cliInstallState: CLIInstallState?
     @Published fileprivate var availableUpdateVersion: String?
@@ -282,7 +283,7 @@ final class DashboardModel: ObservableObject {
     }
 
     var hasSearchQuery: Bool { !searchQuery.isEmpty }
-    var isLoadingFirstHistoryPage: Bool { accessRequestsReloadTask != nil }
+    var isRefreshingHistory: Bool { reloadTask != nil || accessRequestsReloadTask != nil }
 
     private func setHistoryRecords(_ records: [AccessRequestRecord]) {
         historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -305,6 +306,9 @@ final class DashboardModel: ObservableObject {
 
     private func refreshHistorySearch() {
         historySearchTask?.cancel()
+        historySearchWorker?.cancel()
+        historySearchTask = nil
+        historySearchWorker = nil
         historySearchGeneration += 1
         let query = searchQuery
         guard !query.isEmpty else {
@@ -330,10 +334,13 @@ final class DashboardModel: ObservableObject {
             do { try await Task.sleep(for: .milliseconds(150)) }
             catch { return }
             guard let self, generation == self.historySearchGeneration else { return }
-            let matches = await Task.detached(priority: .userInitiated) {
-                return filterHistoryDays(source, query: query)
-            }.value
-            guard generation == self.historySearchGeneration else { return }
+            let worker = Task.detached(priority: .userInitiated) {
+                filterHistoryDays(source, query: query, shouldCancel: { Task.isCancelled })
+            }
+            self.historySearchWorker = worker
+            let matches = await worker.value
+            guard generation == self.historySearchGeneration, !worker.isCancelled else { return }
+            self.historySearchWorker = nil
             self.applyHistorySearch(matches)
             self.isSearchingHistory = false
             self.normalizeSelection()
@@ -2173,7 +2180,10 @@ func runDashboardSearchSelfCheck() -> Int32 {
           days[1].items.map(\.id) == ["old", "older"]
     else { return 1 }
     let searchedDays = filterHistoryDays(days.map { HistorySearchDay(day: $0.day, items: $0.items) }, query: "recent")
-    guard searchedDays.count == 1, searchedDays[0].items.map(\.id) == ["recent"] else { return 1 }
+    guard searchedDays.count == 1, searchedDays[0].items.map(\.id) == ["recent"],
+          filterHistoryDays(days.map { HistorySearchDay(day: $0.day, items: $0.items) },
+                            query: "recent", shouldCancel: { true }).isEmpty
+    else { return 1 }
     let merged = mergeHistoryDays(days, historyDays([
         DashboardItem(id: "middle", title: "", subtitle: "", detail: "", date: oldDate.addingTimeInterval(-30)),
         DashboardItem(id: "newest", title: "", subtitle: "", detail: "", date: recentDate.addingTimeInterval(60)),
@@ -2531,7 +2541,7 @@ private struct DashboardListView: View {
                     if model.selectedSection == .secretUsage && model.isSearchingHistory {
                         ProgressView()
                             .controlSize(.large)
-                    } else if model.selectedSection == .secretUsage && model.isLoadingFirstHistoryPage {
+                    } else if model.selectedSection == .secretUsage && model.isRefreshingHistory {
                         ProgressView("Loading Authorization History…")
                     } else if model.selectedSection == .secretUsage && model.historyLoadFailed,
                        model.historyOlderPageCursor == nil {
@@ -2542,6 +2552,7 @@ private struct DashboardListView: View {
                         EmptyListView(section: model.selectedSection)
                     }
                     if model.selectedSection == .secretUsage,
+                       !model.isRefreshingHistory,
                        model.historyOlderPageCursor != nil {
                         if model.historyLoadFailed {
                             Text("Older Authorization History unavailable")
@@ -2558,7 +2569,7 @@ private struct DashboardListView: View {
                             Button("Load Older Records") { model.loadMoreHistory(retry: true) }
                         }
                     }
-                    if model.isReloading {
+                    if model.isReloading && model.selectedSection != .secretUsage {
                         ProgressView()
                             .controlSize(.large)
                     }
@@ -2590,7 +2601,9 @@ private struct DashboardListView: View {
                     Text("Search covers loaded records. Load older records to continue searching.")
                         .foregroundStyle(.secondary)
                 }
-                if model.historyLoadFailed {
+                if model.isRefreshingHistory {
+                    ProgressView("Loading Authorization History…")
+                } else if model.historyLoadFailed {
                     Button("Retry Loading Older Records") {
                         model.loadMoreHistory(retry: true)
                     }
@@ -2649,11 +2662,20 @@ private func historyMatchesSearch(_ item: DashboardItem, query: String) -> Bool 
         || item.detail.localizedCaseInsensitiveContains(query)
 }
 
-private func filterHistoryDays(_ groups: [HistorySearchDay], query: String) -> [HistorySearchDay] {
-    groups.compactMap { group in
-        let items = group.items.filter { historyMatchesSearch($0, query: query) }
-        return items.isEmpty ? nil : HistorySearchDay(day: group.day, items: items)
+private func filterHistoryDays(
+    _ groups: [HistorySearchDay], query: String, shouldCancel: () -> Bool = { false }
+) -> [HistorySearchDay] {
+    var result: [HistorySearchDay] = []
+    for group in groups {
+        if shouldCancel() { return [] }
+        var items: [DashboardItem] = []
+        for (index, item) in group.items.enumerated() {
+            if index.isMultiple(of: 64), shouldCancel() { return [] }
+            if historyMatchesSearch(item, query: query) { items.append(item) }
+        }
+        if !items.isEmpty { result.append(HistorySearchDay(day: group.day, items: items)) }
     }
+    return result
 }
 
 final class HistoryDay {
