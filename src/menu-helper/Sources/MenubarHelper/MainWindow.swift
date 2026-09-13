@@ -538,7 +538,7 @@ final class DashboardModel: ObservableObject {
 
     var pendingAccessRequestStatus: String? {
         guard pendingAccessRequestID != nil else { return nil }
-        return accessRequestsReloadTask == nil
+        return accessRequestsReloadTask == nil && !isLoadingOlderHistory
             ? String(localized: "Authorization History record unavailable")
             : String(localized: "Loading Authorization History…")
     }

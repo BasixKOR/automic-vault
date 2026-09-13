@@ -11,6 +11,9 @@ model_source = source.split("final class DashboardModel:", 1)[1]
 show_method = "    func showAccessRequest(" + model_source.split(
     "    func showAccessRequest(", 1
 )[1].split("    func showSecretGate(", 1)[0]
+pending_status = "    var pendingAccessRequestStatus:" + model_source.split(
+    "    var pendingAccessRequestStatus:", 1
+)[1].split("    var selectedProxySession:", 1)[0]
 reload_method = model_source.split(
     "    func reload() {", 1
 )[1].split(
@@ -117,7 +120,7 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
         for record in records { historyRecordsByID[record.id] = record }
     }
     func invalidateForTest() { invalidateReload() }
-""" + show_method + """
+""" + show_method + pending_status + """
     func reload() {
 """ + reload_method + """
 }
@@ -195,7 +198,9 @@ model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
 let normalizationsBeforeOlderPage = model.normalizationCount
+model.pendingAccessRequestID = UUID()
 model.loadMoreHistory()
+assert(model.pendingAccessRequestStatus == String(localized: "Loading Authorization History…"))
 for _ in 0..<10_000 {
     if !model.isLoadingOlderHistory { break }
     await Task.yield()
@@ -204,6 +209,7 @@ assert(model.snapshot.accessRequests.count == 75, "older history page was not ap
 assert(model.historyNextSequence == nil)
 assert(model.normalizationCount == normalizationsBeforeOlderPage + 1,
        "older history page did not normalize selection")
+assert(model.pendingAccessRequestStatus == String(localized: "Authorization History record unavailable"))
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
