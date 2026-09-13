@@ -4034,7 +4034,8 @@ private final class ApprovalServer: @unchecked Sendable {
                     reason: "Always allowed in Settings",
                     peer: peer,
                     message: message,
-                    kind: kind
+                    kind: kind,
+                    cancellation: cancellation
                 )
             }
             return
@@ -4102,7 +4103,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 reason: "Allowed once in prompt",
                 peer: peer,
                 message: message,
-                kind: kind
+                kind: kind,
+                cancellation: cancellation
             )
         }
     }
@@ -4115,8 +4117,15 @@ private final class ApprovalServer: @unchecked Sendable {
         reason: String,
         peer: xpc_connection_t,
         message: xpc_object_t,
-        kind: MetadataDisclosure
+        kind: MetadataDisclosure,
+        cancellation: ApprovalCancellation
     ) async {
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
+            return
+        }
         var names: [String]?
         if case .secretNames(let globalOnly) = kind {
             switch loadStoredSecretsResult() {
@@ -4146,15 +4155,29 @@ private final class ApprovalServer: @unchecked Sendable {
             reason: reason,
             launcher: launcher
         )
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
+            return
+        }
         if case .authorizationHistory(let since) = kind {
             let audit = onAccessRequest
-            guard let value = await Task.detached(priority: .userInitiated, operation: {
-                authorizationHistoryDisclosureValue(
+            let value = await Task.detached(priority: .userInitiated, operation: { () -> String? in
+                guard !cancellation.isCanceled else { return nil }
+                return authorizationHistoryDisclosureValue(
                     record: record,
                     since: since,
                     onAccessRequest: audit
                 )
-            }).value else {
+            }).value
+            guard !cancellation.isCanceled else {
+                _ = onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
+            guard let value else {
                 reply(peer, to: message, ok: false, error: "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
                 return
             }
@@ -4163,6 +4186,12 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         guard onAccessRequest(record) else {
             reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+            return
+        }
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
             return
         }
         reply(peer, to: message, ok: true, error: nil, names: names)

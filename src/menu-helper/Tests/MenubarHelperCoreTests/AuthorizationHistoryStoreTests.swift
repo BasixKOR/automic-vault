@@ -249,7 +249,7 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
         keychainData: nil,
         defaultsData: data,
         into: fixture.store,
-        readKeychain: { nil },
+        readKeychain: { .notFound },
         readDefaults: { data },
         deleteKeychain: { false },
         deleteDefaults: {
@@ -263,7 +263,7 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             keychainData: nil,
             defaultsData: Data("malformed".utf8),
             into: fixture.store,
-            readKeychain: { nil },
+            readKeychain: { .notFound },
             readDefaults: { nil },
             deleteKeychain: { false },
             deleteDefaults: { Issue.record("deleted malformed legacy data"); return true }
@@ -277,7 +277,7 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             keychainData: nil,
             defaultsData: outOfRangeData,
             into: fixture.store,
-            readKeychain: { nil },
+            readKeychain: { .notFound },
             readDefaults: { outOfRangeData },
             deleteKeychain: { false },
             deleteDefaults: { Issue.record("deleted out-of-range legacy data"); return true }
@@ -307,7 +307,7 @@ func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
             keychainData: nil,
             defaultsData: legacy,
             into: fixture.store,
-            readKeychain: { nil },
+            readKeychain: { .notFound },
             readDefaults: { legacy },
             deleteKeychain: { deleted = true; return true },
             deleteDefaults: { deleted = true; return true }
@@ -320,21 +320,54 @@ func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
 func changedLegacyHistoryIsNotDeletedDuringMigration() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
-    let snapshot = try JSONEncoder().encode([fixture.record(index: 1)])
-    let changed = try JSONEncoder().encode([fixture.record(index: 2)])
+    let original = fixture.record(index: 1)
+    let snapshot = try JSONEncoder().encode([original])
+    let changed = try JSONEncoder().encode([
+        fixture.record(index: 1, reason: "Changed", id: original.id)
+    ])
     var deleted = false
     #expect(throws: AuthorizationHistoryStoreError.verificationFailed) {
         try importLegacyAccessRequestRecords(
             keychainData: nil,
             defaultsData: snapshot,
             into: fixture.store,
-            readKeychain: { nil },
+            readKeychain: { .notFound },
             readDefaults: { changed },
             deleteKeychain: { deleted = true; return true },
             deleteDefaults: { deleted = true; return true }
         )
     }
     #expect(!deleted)
+    #expect(try fixture.store.records().isEmpty)
+    try importLegacyAccessRequestRecords(
+        keychainData: nil,
+        defaultsData: changed,
+        into: fixture.store,
+        readKeychain: { .notFound },
+        readDefaults: { changed },
+        deleteKeychain: { false },
+        deleteDefaults: { true }
+    )
+    #expect(try fixture.store.records().first?.reason == "Changed")
+}
+
+@Test
+func newlyCreatedLegacyHistoryAbortsMigration() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    let newData = try JSONEncoder().encode([fixture.record(index: 1)])
+    #expect(throws: AuthorizationHistoryStoreError.verificationFailed) {
+        try importLegacyAccessRequestRecords(
+            keychainData: nil,
+            defaultsData: nil,
+            into: fixture.store,
+            readKeychain: { .success(newData) },
+            readDefaults: { nil },
+            deleteKeychain: { Issue.record("deleted newly created legacy history"); return true },
+            deleteDefaults: { Issue.record("deleted newly created legacy history"); return true }
+        )
+    }
+    #expect(try fixture.store.records().isEmpty)
 }
 
 private final class HistoryStoreFixture {
@@ -362,8 +395,14 @@ private final class HistoryStoreFixture {
         )
     }
 
-    func record(index: Int, date: Date? = nil, reason: String = "Allowed") -> AccessRequestRecord {
+    func record(
+        index: Int,
+        date: Date? = nil,
+        reason: String = "Allowed",
+        id: UUID = UUID()
+    ) -> AccessRequestRecord {
         AccessRequestRecord(
+            id: id,
             date: date ?? now.addingTimeInterval(TimeInterval(index) - 100),
             tool: "fixture",
             command: "fixture \(index)",

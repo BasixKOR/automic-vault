@@ -150,7 +150,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         }
     }
 
-    public func importRecords(_ records: [AccessRequestRecord]) throws {
+    public func importRecords(
+        _ records: [AccessRequestRecord],
+        verifyBeforeCommit: () throws -> Void = {}
+    ) throws {
         try lock.withLock {
             try execute("BEGIN IMMEDIATE")
             do {
@@ -165,6 +168,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         throw AuthorizationHistoryStoreError.verificationFailed
                     }
                 }
+                try verifyBeforeCommit()
                 try execute("COMMIT")
             } catch {
                 try? execute("ROLLBACK")

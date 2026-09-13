@@ -33,9 +33,10 @@ its complete record is committed, read back, authenticated, decoded, and
 compared with the expected record.
 
 On first use, the app imports existing Keychain and older UserDefaults history,
-commits and verifies every imported record, applies retention, and rechecks the
-legacy snapshots before removing the legacy items. A changed source aborts
-migration without deleting it. A database without its encryption key is unavailable
+verifies every imported record and rechecks both legacy sources before committing
+the import, then applies retention and removes the legacy items. A changed
+source rolls back the import without deleting it. A database without its
+encryption key is unavailable
 and never receives a replacement key.
 
 The dashboard continues to show the newest 50 records. `av history` returns the

@@ -1813,11 +1813,10 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
             defaultsData: legacyDefaultsData,
             into: store,
             readKeychain: {
-                guard case .success(let data) = loadKeychainDataResult(
+                loadKeychainDataResult(
                     service: accessRequestLogKeychainService,
                     account: accessRequestLogDefaultsKey
-                ) else { return nil }
-                return data
+                )
             },
             readDefaults: { UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey) },
             deleteKeychain: {
@@ -1844,7 +1843,7 @@ func importLegacyAccessRequestRecords(
     keychainData: Data?,
     defaultsData: Data?,
     into store: AuthorizationHistoryStore,
-    readKeychain: () -> Data?,
+    readKeychain: () -> KeychainDataLoad,
     readDefaults: () -> Data?,
     deleteKeychain: () -> Bool,
     deleteDefaults: () -> Bool
@@ -1856,10 +1855,12 @@ func importLegacyAccessRequestRecords(
     let defaultsRecords = try defaultsData.map {
         try decoder.decode([AccessRequestRecord].self, from: $0)
     } ?? []
-    try store.importRecords(keychainRecords + defaultsRecords)
-    guard (keychainData == nil || readKeychain() == keychainData),
-          (defaultsData == nil || readDefaults() == defaultsData) else {
-        throw AuthorizationHistoryStoreError.verificationFailed
+    let expectedKeychain: KeychainDataLoad = keychainData.map { .success($0) } ?? .notFound
+    try store.importRecords(keychainRecords + defaultsRecords) {
+        guard readKeychain() == expectedKeychain,
+              readDefaults() == defaultsData else {
+            throw AuthorizationHistoryStoreError.verificationFailed
+        }
     }
     if keychainData != nil {
         guard deleteKeychain() else { throw AuthorizationHistoryStoreError.verificationFailed }
@@ -2659,7 +2660,7 @@ private func loadKeychainData(service: String, account: String) -> Data? {
     return data
 }
 
-enum KeychainDataLoad {
+enum KeychainDataLoad: Equatable {
     case success(Data)
     case notFound
     case failure(OSStatus)
