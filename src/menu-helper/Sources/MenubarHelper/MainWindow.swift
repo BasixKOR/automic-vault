@@ -601,6 +601,9 @@ final class DashboardModel: ObservableObject {
     }
 
     func count(for section: DashboardSection) -> Int {
+        if section == .secretUsage && selectedSection != .secretUsage {
+            return snapshot.accessRequests.count
+        }
         guard searchQuery.isEmpty else { return items(for: section).count }
         return switch section {
         case .detectors: snapshot.detectorDisplayCount
@@ -2219,7 +2222,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard pageModel.selectedItemID == nextPageRecord.id.uuidString else { return 1 }
     pageModel.selectSection(.settings)
     pageModel.searchText = "no matching history"
-    guard !pageModel.historyRows.isEmpty else { return 1 }
+    guard !pageModel.historyRows.isEmpty,
+          pageModel.count(for: .secretUsage) == pageModel.snapshot.accessRequests.count
+    else { return 1 }
     pageModel.selectSection(.secretUsage)
     guard pageModel.historyRows.isEmpty, pageModel.selectedItemID == nil else { return 1 }
     var boundedSnapshot = DashboardSnapshot.empty
