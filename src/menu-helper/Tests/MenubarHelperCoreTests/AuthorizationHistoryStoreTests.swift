@@ -209,14 +209,21 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
     try importLegacyAccessRequestRecords(
         keychainData: nil,
         defaultsData: data,
-        into: fixture.store
+        into: fixture.store,
+        deleteKeychain: { false },
+        deleteDefaults: {
+            #expect((try? fixture.store.records()) == [record])
+            return true
+        }
     )
     #expect(try fixture.store.records() == [record])
     #expect(throws: DecodingError.self) {
         try importLegacyAccessRequestRecords(
             keychainData: nil,
             defaultsData: Data("malformed".utf8),
-            into: fixture.store
+            into: fixture.store,
+            deleteKeychain: { false },
+            deleteDefaults: { Issue.record("deleted malformed legacy data"); return true }
         )
     }
     #expect(try fixture.store.records() == [record])
@@ -226,10 +233,40 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
         try importLegacyAccessRequestRecords(
             keychainData: nil,
             defaultsData: outOfRangeData,
-            into: fixture.store
+            into: fixture.store,
+            deleteKeychain: { false },
+            deleteDefaults: { Issue.record("deleted out-of-range legacy data"); return true }
         )
     }
     #expect(try fixture.store.records() == [record])
+}
+
+@Test
+func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    #expect(fixture.store.append(fixture.record(index: 1)))
+    var database: OpaquePointer?
+    #expect(sqlite3_open(fixture.url.path, &database) == SQLITE_OK)
+    defer { sqlite3_close(database) }
+    #expect(sqlite3_exec(
+        database,
+        "UPDATE authorization_history SET ciphertext = zeroblob(32)",
+        nil, nil, nil
+    ) == SQLITE_OK)
+
+    let legacy = try JSONEncoder().encode([fixture.record(index: 2)])
+    var deleted = false
+    #expect(throws: AuthorizationHistoryStoreError.self) {
+        try importLegacyAccessRequestRecords(
+            keychainData: nil,
+            defaultsData: legacy,
+            into: fixture.store,
+            deleteKeychain: { deleted = true; return true },
+            deleteDefaults: { deleted = true; return true }
+        )
+    }
+    #expect(!deleted)
 }
 
 private final class HistoryStoreFixture {

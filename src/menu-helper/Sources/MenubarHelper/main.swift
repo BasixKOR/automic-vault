@@ -3465,8 +3465,7 @@ private func authorizationHistoryDisclosureValue(
     // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
     let maximumReplyBytes = 1_048_576
     let limit = since == nil ? 50 : nil
-    guard records(since, limit) != nil,
-          onAccessRequest(record),
+    guard onAccessRequest(record),
           let disclosedRecords = records(since, limit),
           disclosedRecords.contains(where: { $0.id == record.id })
     else { return nil }
@@ -13874,13 +13873,14 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         records: { _, limit in
             guard limit == 50 else { return nil }
             historyReadCount += 1
-            return historyReadCount == 1 ? [] : [record]
+            guard recordedSuccessfulDisclosure else { return nil }
+            return [record]
         },
         onAccessRequest: { _ in
             recordedSuccessfulDisclosure = true
             return true
         }
-    ), recordedSuccessfulDisclosure, historyReadCount == 2,
+    ), recordedSuccessfulDisclosure, historyReadCount == 1,
         let disclosureData = disclosure.data(using: .utf8)
     else { return 1 }
     let decoder = JSONDecoder()
@@ -13899,13 +13899,14 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         records: { forwardedSince, limit in
             guard forwardedSince == since, limit == nil else { return nil }
             windowReads += 1
-            return windowReads == 1 ? [] : Array(repeating: record, count: 51)
+            guard windowRecorded else { return nil }
+            return Array(repeating: record, count: 51)
         },
         onAccessRequest: { _ in
             windowRecorded = true
             return true
         }
-    ), windowRecorded, windowReads == 2,
+    ), windowRecorded, windowReads == 1,
         let windowData = window.data(using: .utf8),
         let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
         windowRecords.count == 51
@@ -13931,7 +13932,7 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
             recordedUnavailableHistory = true
             return true
         }
-    ) == nil, !recordedUnavailableHistory else { return 1 }
+    ) == nil, recordedUnavailableHistory else { return 1 }
     return 0
 }
 

@@ -1788,33 +1788,32 @@ private let productionAuthorizationHistoryStore: AuthorizationHistoryStore? = {
         legacyKeychainData = data
     }
     let legacyDefaultsData = UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
-    if legacyKeychainData != nil || legacyDefaultsData != nil {
-        guard (try? importLegacyAccessRequestRecords(
-            keychainData: legacyKeychainData,
-            defaultsData: legacyDefaultsData,
-            into: store
-        )) != nil else { return nil }
-    }
-    if legacyKeychainData != nil {
-        let status = deleteKeychainData(
-            service: accessRequestLogKeychainService,
-            account: accessRequestLogDefaultsKey
-        )
-        guard status == errSecSuccess || status == errSecItemNotFound else { return nil }
-    }
-    if legacyDefaultsData != nil {
-        UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
-        guard UserDefaults.standard.synchronize(),
-              UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
-        else { return nil }
-    }
+    guard (try? importLegacyAccessRequestRecords(
+        keychainData: legacyKeychainData,
+        defaultsData: legacyDefaultsData,
+        into: store,
+        deleteKeychain: {
+            let status = deleteKeychainData(
+                service: accessRequestLogKeychainService,
+                account: accessRequestLogDefaultsKey
+            )
+            return status == errSecSuccess || status == errSecItemNotFound
+        },
+        deleteDefaults: {
+            UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
+            return UserDefaults.standard.synchronize()
+                && UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
+        }
+    )) != nil else { return nil }
     return store
 }()
 
 func importLegacyAccessRequestRecords(
     keychainData: Data?,
     defaultsData: Data?,
-    into store: AuthorizationHistoryStore
+    into store: AuthorizationHistoryStore,
+    deleteKeychain: () -> Bool,
+    deleteDefaults: () -> Bool
 ) throws {
     let decoder = JSONDecoder()
     let keychainRecords = try keychainData.map {
@@ -1824,6 +1823,12 @@ func importLegacyAccessRequestRecords(
         try decoder.decode([AccessRequestRecord].self, from: $0)
     } ?? []
     try store.importRecords(keychainRecords + defaultsRecords)
+    if keychainData != nil {
+        guard deleteKeychain() else { throw AuthorizationHistoryStoreError.verificationFailed }
+    }
+    if defaultsData != nil {
+        guard deleteDefaults() else { throw AuthorizationHistoryStoreError.verificationFailed }
+    }
 }
 
 private func loadOrCreateAuthorizationHistoryEncryptionKey(allowCreation: Bool) -> Data? {

@@ -56,5 +56,5 @@ or loss of its private control channel.
   would add installation, entitlement, and system-wide interception costs. It
   would reduce cross-process replay, not make an injectable Target trustworthy.
 - Authorization History remains the single bounded local record. Proxy records
-  shared its original global limit of 50; [ADR 0047](0047-encrypted-rolling-authorization-history.md)
+  shared their original global limit of 50; [ADR 0047](0047-encrypted-rolling-authorization-history.md)
   later replaced that storage limit with rolling encrypted retention.
