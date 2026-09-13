@@ -51,7 +51,8 @@ and never receives a replacement key.
 
 The dashboard initially showed the newest 50 records. It now browses all
 retained records grouped by day, loading older records in 50-record pages as
-they scroll into view. The cursor uses the store's sequence rather than an
+they scroll into view. While searching, the user loads older pages explicitly
+to extend the search. The cursor uses the store's sequence rather than an
 offset, so a new record does not skip an older page. `av history` returns the
 newest 50 by default; `--since <duration>` may request a narrower time window up
 to 30 days. A single reply exceeding 1 MiB fails rather than truncating the

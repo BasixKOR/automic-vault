@@ -849,7 +849,11 @@ final class DashboardModel: ObservableObject {
     }
 
     func accessRequests(for item: DashboardItem) -> [AccessRequestRecord] {
-        snapshot.accessRequests.filter { $0.tool == item.title }
+        recentAccessRequests.filter { $0.tool == item.title }
+    }
+
+    var recentAccessRequests: [AccessRequestRecord] {
+        Array(snapshot.accessRequests.prefix(50))
     }
 
     func reload() {
@@ -965,10 +969,8 @@ final class DashboardModel: ObservableObject {
                 historyLoadFailed = true
                 return
             }
-            let loadedIDs = Set(snapshot.accessRequests.map(\.id))
-            let added = page.records.filter { !loadedIDs.contains($0.id) }
-            snapshot.accessRequests += added
-            appendHistoryRecords(added)
+            snapshot.accessRequests += page.records
+            appendHistoryRecords(page.records)
             historyNextSequence = page.nextSequence
             if let id = pendingAccessRequestID,
                snapshot.accessRequests.contains(where: { $0.id == id }) {
@@ -1091,6 +1093,10 @@ final class DashboardModel: ObservableObject {
     }
 
     private func normalizeSelection() {
+        if selectedSection == .secretUsage, pendingAccessRequestID != nil {
+            selectedItemID = nil
+            return
+        }
         let items = items
         guard selectedItemID.map({ id in items.contains { $0.id == id } }) != true else { return }
         selectedItemID = items.first?.id
@@ -2129,6 +2135,14 @@ func runDashboardSearchSelfCheck() -> Int32 {
           merged[0].items.map(\.id) == ["newest", "recent"],
           merged[1].items.map(\.id) == ["old", "middle", "older"]
     else { return 1 }
+    var boundedSnapshot = DashboardSnapshot.empty
+    boundedSnapshot.accessRequests = Array(repeating: accessRequest, count: 51)
+    let boundedModel = DashboardModel(snapshot: boundedSnapshot)
+    guard boundedModel.recentAccessRequests.count == 50,
+          boundedModel.accessRequests(for: DashboardItem(
+            id: "aws", title: "aws", subtitle: "", detail: ""
+          )).count == 50
+    else { return 1 }
     return 0
 }
 
@@ -2625,7 +2639,7 @@ private struct DashboardDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .proxySessions,
                       let session = model.selectedProxySession {
-                ProxySessionDetailView(session: session, history: model.snapshot.accessRequests)
+                ProxySessionDetailView(session: session, history: model.recentAccessRequests)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
