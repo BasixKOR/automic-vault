@@ -101,7 +101,8 @@ grant in the Data Protection Keychain. Secret Name Access never satisfies this
 grant. The service records the history read before returning the records, and a
 recording failure denies disclosure. The default view returns the newest 50
 records; `--since` requests a window of at most 30 days and is filtered before
-disclosure. See [ADR 0046](adr/0046-cli-authorization-history-access.md) and
+disclosure. A reply exceeding 1 MiB fails rather than truncating records. See
+[ADR 0046](adr/0046-cli-authorization-history-access.md) and
 [ADR 0047](adr/0047-encrypted-rolling-authorization-history.md).
 
 The Direct Secret Gate handles direct `av inject` requests that do not match a

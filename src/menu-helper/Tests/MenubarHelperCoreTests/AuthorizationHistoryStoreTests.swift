@@ -93,6 +93,54 @@ func authorizationHistoryStoreAuthenticatesRetentionMetadata() throws {
 }
 
 @Test
+func authorizationHistoryStoreRejectsCorruptRecordIDWithoutTrapping() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    #expect(fixture.store.append(fixture.record(index: 1)))
+
+    var database: OpaquePointer?
+    #expect(sqlite3_open(fixture.url.path, &database) == SQLITE_OK)
+    defer { sqlite3_close(database) }
+    #expect(sqlite3_exec(
+        database,
+        "UPDATE authorization_history SET id = CAST(x'80' AS TEXT)",
+        nil, nil, nil
+    ) == SQLITE_OK)
+    #expect(throws: AuthorizationHistoryStoreError.self) {
+        try fixture.store.records()
+    }
+    #expect(!fixture.store.append(fixture.record(index: 2)))
+}
+
+@Test
+func authorizationHistoryStoreRejectsCorruptCiphertextBeforeAppend() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    #expect(fixture.store.append(fixture.record(index: 1)))
+
+    var database: OpaquePointer?
+    #expect(sqlite3_open(fixture.url.path, &database) == SQLITE_OK)
+    defer { sqlite3_close(database) }
+    #expect(sqlite3_exec(
+        database,
+        "UPDATE authorization_history SET ciphertext = zeroblob(32)",
+        nil, nil, nil
+    ) == SQLITE_OK)
+    #expect(!fixture.store.append(fixture.record(index: 2)))
+}
+
+@Test
+func authorizationHistoryStorePrunesFutureRecordsInTheCurrentHour() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now)
+    defer { fixture.remove() }
+    try fixture.store.importRecords([
+        fixture.record(index: 1, date: now.addingTimeInterval(60))
+    ])
+    #expect(try fixture.store.records().isEmpty)
+}
+
+@Test
 func authorizationHistoryStoreImportIsIdempotentButNeverReplacesARecord() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
@@ -172,6 +220,16 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
         )
     }
     #expect(try fixture.store.records() == [record])
+    let outOfRange = fixture.record(index: 2, date: Date(timeIntervalSince1970: 1e24))
+    let outOfRangeData = try JSONEncoder().encode([outOfRange])
+    #expect(throws: AuthorizationHistoryStoreError.self) {
+        try importLegacyAccessRequestRecords(
+            keychainData: nil,
+            defaultsData: outOfRangeData,
+            into: fixture.store
+        )
+    }
+    #expect(try fixture.store.records() == [record])
 }
 
 private final class HistoryStoreFixture {
@@ -201,7 +259,7 @@ private final class HistoryStoreFixture {
 
     func record(index: Int, date: Date? = nil, reason: String = "Allowed") -> AccessRequestRecord {
         AccessRequestRecord(
-            date: date ?? now.addingTimeInterval(TimeInterval(index)),
+            date: date ?? now.addingTimeInterval(TimeInterval(index) - 100),
             tool: "fixture",
             command: "fixture \(index)",
             displayCommand: "fixture \(index)",

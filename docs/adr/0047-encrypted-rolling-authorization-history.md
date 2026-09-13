@@ -39,7 +39,9 @@ and never receives a replacement key.
 
 The dashboard continues to show the newest 50 records. `av history` returns the
 newest 50 by default; `--since <duration>` may request a narrower time window up
-to 30 days. Filtering occurs inside the menu bar app before disclosure. CLI
+to 30 days. A single reply exceeding 1 MiB fails rather than truncating the
+result; a narrower `--since` window can be requested. Filtering occurs inside
+the menu bar app before disclosure. CLI
 formats receive only display-safe commands as defined by ADR 0046.
 
 ## Consequences

@@ -206,7 +206,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             while true {
                 switch sqlite3_step(statement) {
                 case SQLITE_ROW:
-                    let id = String(cString: sqlite3_column_text(statement, 0))
+                    let id = try storedRecordID(from: statement)
                     let bucket = data(at: 1, from: statement)
                     let record = try decode(
                         data(at: 2, from: statement),
@@ -265,7 +265,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
     }
 
     private func seal(_ record: AccessRequestRecord) throws -> (Data, Data) {
-        let bucket = retentionBucket(for: record.date)
+        let bucket = try retentionBucket(for: record.date)
         do {
             let plaintext = try JSONEncoder().encode(record)
             guard
@@ -309,36 +309,39 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         return Data(bytes: bytes, count: count)
     }
 
+    private func storedRecordID(from statement: OpaquePointer?) throws -> String {
+        guard sqlite3_column_type(statement, 0) == SQLITE_TEXT,
+              let bytes = sqlite3_column_text(statement, 0),
+              let id = String(data: Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0))), encoding: .utf8),
+              UUID(uuidString: id)?.uuidString == id
+        else { throw AuthorizationHistoryStoreError.decoding }
+        return id
+    }
+
     private func prune(preserving recordID: UUID?) throws {
         let currentDate = now()
         let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
-        let retained = retainedBuckets(
-            from: cutoff,
-            through: currentDate
-        )
-        var expiredIDs: [String] = []
+        var rows: [(id: String, size: Int64, expired: Bool)] = []
+        var totalBytes: Int64 = 0
         do {
-            var expired: OpaquePointer?
+            var statement: OpaquePointer?
             try prepare(
-                "SELECT id, retention_bucket, ciphertext FROM authorization_history",
-                into: &expired
+                "SELECT id, retention_bucket, ciphertext FROM authorization_history ORDER BY sequence ASC",
+                into: &statement
             )
-            defer { sqlite3_finalize(expired) }
+            defer { sqlite3_finalize(statement) }
             scan: while true {
-                switch sqlite3_step(expired) {
+                switch sqlite3_step(statement) {
                 case SQLITE_ROW:
-                    let id = String(cString: sqlite3_column_text(expired, 0))
-                    if id != recordID?.uuidString {
-                        let bucket = data(at: 1, from: expired)
-                        if !retained.contains(bucket) || bucket == retentionBucket(for: cutoff) {
-                            let record = try decode(
-                                data(at: 2, from: expired), id: id, bucket: bucket
-                            )
-                            if record.date < cutoff || record.date > currentDate {
-                                expiredIDs.append(id)
-                            }
-                        }
-                    }
+                    let id = try storedRecordID(from: statement)
+                    let bucket = data(at: 1, from: statement)
+                    let ciphertext = data(at: 2, from: statement)
+                    let record = try decode(ciphertext, id: id, bucket: bucket)
+                    let expired = id != recordID?.uuidString
+                        && (record.date < cutoff || record.date > currentDate)
+                    let size = Int64(ciphertext.count)
+                    totalBytes += size
+                    rows.append((id, size, expired))
                 case SQLITE_DONE:
                     break scan
                 default:
@@ -346,22 +349,17 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                 }
             }
         }
-        for id in expiredIDs { try delete(id: id) }
-
-        while try encryptedByteCount() > retention.maximumEncryptedBytes {
-            var statement: OpaquePointer?
-            let sql =
-                recordID == nil
-                ? "DELETE FROM authorization_history WHERE sequence = (SELECT sequence FROM authorization_history ORDER BY sequence ASC LIMIT 1)"
-                : "DELETE FROM authorization_history WHERE sequence = (SELECT sequence FROM authorization_history WHERE id != ? ORDER BY sequence ASC LIMIT 1)"
-            try prepare(sql, into: &statement)
-            defer { sqlite3_finalize(statement) }
-            if let recordID {
-                sqlite3_bind_text(statement, 1, recordID.uuidString, -1, SQLITE_TRANSIENT)
-            }
-            guard sqlite3_step(statement) == SQLITE_DONE, sqlite3_changes(database) == 1 else {
-                throw AuthorizationHistoryStoreError.recordTooLarge
-            }
+        for row in rows where row.expired {
+            try delete(id: row.id)
+            totalBytes -= row.size
+        }
+        for row in rows where !row.expired && totalBytes > retention.maximumEncryptedBytes {
+            guard row.id != recordID?.uuidString else { continue }
+            try delete(id: row.id)
+            totalBytes -= row.size
+        }
+        guard totalBytes <= retention.maximumEncryptedBytes else {
+            throw AuthorizationHistoryStoreError.recordTooLarge
         }
     }
 
@@ -375,8 +373,13 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         }
     }
 
-    private func retentionBucket(for date: Date) -> Data {
-        var hour = Int64(floor(date.timeIntervalSince1970 / 3_600)).bigEndian
+    private func retentionBucket(for date: Date) throws -> Data {
+        let hourValue = floor(date.timeIntervalSince1970 / 3_600)
+        guard hourValue.isFinite,
+              hourValue >= Double(Int64.min),
+              hourValue < 9_223_372_036_854_775_808.0
+        else { throw AuthorizationHistoryStoreError.decoding }
+        var hour = Int64(hourValue).bigEndian
         let value = withUnsafeBytes(of: &hour) { Data($0) }
         return Data(HMAC<SHA256>.authenticationCode(for: value, using: bucketKey))
     }
@@ -386,27 +389,6 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         data.append(0)
         data.append(bucket)
         return data
-    }
-
-    private func retainedBuckets(from start: Date, through end: Date) -> Set<Data> {
-        let first = Int64(floor(start.timeIntervalSince1970 / 3_600))
-        let last = Int64(floor(end.timeIntervalSince1970 / 3_600))
-        guard first <= last else { return [] }
-        return Set(
-            (first...last).map { hour in
-                retentionBucket(for: Date(timeIntervalSince1970: TimeInterval(hour) * 3_600))
-            })
-    }
-
-    private func encryptedByteCount() throws -> Int64 {
-        var statement: OpaquePointer?
-        try prepare(
-            "SELECT COALESCE(SUM(length(ciphertext)), 0) FROM authorization_history",
-            into: &statement
-        )
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW else { throw sqliteError("size query failed") }
-        return sqlite3_column_int64(statement, 0)
     }
 
     private func execute(_ sql: String) throws {

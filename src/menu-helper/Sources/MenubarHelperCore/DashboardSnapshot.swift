@@ -1804,7 +1804,9 @@ private let productionAuthorizationHistoryStore: AuthorizationHistoryStore? = {
     }
     if legacyDefaultsData != nil {
         UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
-        _ = UserDefaults.standard.synchronize()
+        guard UserDefaults.standard.synchronize(),
+              UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
+        else { return nil }
     }
     return store
 }()

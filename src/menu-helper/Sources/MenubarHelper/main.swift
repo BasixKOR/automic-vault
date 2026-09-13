@@ -3462,6 +3462,8 @@ private func authorizationHistoryDisclosureValue(
     records: (Date?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
     onAccessRequest: (AccessRequestRecord) -> Bool
 ) -> String? {
+    // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
+    let maximumReplyBytes = 1_048_576
     let limit = since == nil ? 50 : nil
     guard records(since, limit) != nil,
           onAccessRequest(record),
@@ -3472,6 +3474,7 @@ private func authorizationHistoryDisclosureValue(
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys]
     guard let data = try? encoder.encode(disclosedRecords.map(\.redactedForDisclosure)),
+          data.count <= maximumReplyBytes,
           let value = String(data: data, encoding: .utf8)
     else { return nil }
     return value
@@ -4138,7 +4141,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 since: since,
                 onAccessRequest: onAccessRequest
             ) else {
-                reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+                reply(peer, to: message, ok: false, error: "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: value)
@@ -13887,6 +13890,32 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
           disclosedRecords.first?.command == record.commandForDisplay,
           disclosedRecords.first?.command != record.command
     else { return 1 }
+    let since = Date(timeIntervalSince1970: 123)
+    var windowReads = 0
+    var windowRecorded = false
+    guard let window = authorizationHistoryDisclosureValue(
+        record: record,
+        since: since,
+        records: { forwardedSince, limit in
+            guard forwardedSince == since, limit == nil else { return nil }
+            windowReads += 1
+            return windowReads == 1 ? [] : Array(repeating: record, count: 51)
+        },
+        onAccessRequest: { _ in
+            windowRecorded = true
+            return true
+        }
+    ), windowRecorded, windowReads == 2,
+        let windowData = window.data(using: .utf8),
+        let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
+        windowRecords.count == 51
+    else { return 1 }
+    guard authorizationHistoryDisclosureValue(
+        record: record,
+        since: since,
+        records: { _, _ in Array(repeating: record, count: 4_000) },
+        onAccessRequest: { _ in true }
+    ) == nil else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: nil,

@@ -174,7 +174,8 @@ Use's record before releasing the Secret; recording failure denies release.
 History is bounded and local. It provides neither tamper resistance nor a
 complete forensic log. History is available for up to 30 days, capped at 25 MiB
 of encrypted record payloads. `av history --since 7d --json` reads an explicit window through
-the same approved Authorization History Access surface.
+the same approved Authorization History Access surface. Replies over 1 MiB fail
+without truncation; use a narrower window.
 
 [Authorization History and its limits](docs/authorization.md#authorization-history)
 
