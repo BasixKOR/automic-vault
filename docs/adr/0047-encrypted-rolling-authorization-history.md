@@ -49,7 +49,10 @@ acquire the rolling store's retention guarantee. A database without its
 encryption key is unavailable
 and never receives a replacement key.
 
-The dashboard continues to show the newest 50 records. `av history` returns the
+The dashboard initially showed the newest 50 records. It now browses all
+retained records grouped by day, loading older records in 50-record pages as
+they scroll into view. The cursor uses the store's sequence rather than an
+offset, so a new record does not skip an older page. `av history` returns the
 newest 50 by default; `--since <duration>` may request a narrower time window up
 to 30 days. A single reply exceeding 1 MiB fails rather than truncating the
 result; a narrower `--since` window can be requested. Filtering occurs inside
@@ -70,5 +73,9 @@ ignoring `--since` and returning its default 50-record view.
   Keychain-held key.
 - New writes use one durable history store; retained legacy sources are
   read-only to the current helper and may be reimported after a restart.
+- Browsing older records changes only the local dashboard view, not the
+  Approval or Verified Launcher requirements for `av history`. More metadata
+  may be visible to software with access to the open window or its accessibility
+  tree; the dashboard already exposes its visible records on that surface.
 - GUI export remains unnecessary while the attended, authorized CLI can emit
   JSON for an explicit time window.

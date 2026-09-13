@@ -675,9 +675,9 @@ The Mac makes Authorization History available for up to 30 days and 25 MiB of
 encrypted record payloads, whichever bound is reached first. Expired ciphertext
 is filtered from reads immediately and pruned on writes or a coalesced
 background pass after a read. A dormant database may temporarily retain it.
-The dashboard and an unqualified `av history` show the newest 50
-records; `av history --since` may request an explicit window up to the retention
-limit. A single CLI reply is capped at 1 MiB rather than truncated; use a
+The dashboard browses all retained records, grouped by day. An unqualified
+`av history` shows the newest 50 records; `av history --since` may request an
+explicit window up to the retention limit. A single CLI reply is capped at 1 MiB rather than truncated; use a
 narrower window if it exceeds that cap. Retention does not make
 Authorization History complete: same-user compromise or storage failure can
 damage or delete it.

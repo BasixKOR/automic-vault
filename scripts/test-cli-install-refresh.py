@@ -30,8 +30,18 @@ let finishHistory = DispatchSemaphore(value: 0)
 let blockHistory = Mutex(false)
 let historyReads = Mutex(0)
 let fixtureRecordID = UUID()
-extension String { var id: UUID { fixtureRecordID } }
+extension String {
+    var id: UUID {
+        if self == "latest" { return fixtureRecordID }
+        let index = Int(split(separator: "-").last!)! + 1
+        return UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!
+    }
+}
 typealias AccessRequestRecord = String
+struct AuthorizationHistoryPage {
+    let records: [String]
+    let nextSequence: Int64?
+}
 enum DashboardSection { case secretUsage }
 
 struct DashboardSnapshot: Sendable {
@@ -53,13 +63,18 @@ struct DashboardSnapshot: Sendable {
 enum CLIInstallState { case current, outdated }
 func currentCLIInstallState() -> CLIInstallState { .current }
 func loadLauncherBundleEnrollments() -> [String] { [] }
-func loadAccessRequestRecords() -> [String] {
+func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> AuthorizationHistoryPage? {
     if blockHistory.withLock({ $0 }) {
         historyReads.withLock { $0 += 1 }
         historySignal.yield(())
         finishHistory.wait()
     }
-    return ["latest"]
+    if beforeSequence == nil {
+        return AuthorizationHistoryPage(
+            records: ["latest"] + (0..<49).map { "older-\($0)" }, nextSequence: 50)
+    }
+    return AuthorizationHistoryPage(
+        records: (49..<74).map { "older-\($0)" }, nextSequence: nil)
 }
 
 @MainActor final class Model {
@@ -67,6 +82,9 @@ func loadAccessRequestRecords() -> [String] {
     var accessRequestsReloadTask: Task<Void, Never>?
     var accessRequestsReloadPending = false
     var accessRequestsGeneration = 0
+    var historyNextSequence: Int64?
+    var isLoadingOlderHistory = false
+    var historyLoadFailed = false
     var pendingAccessRequestID: UUID?
     var selectedSection = DashboardSection.secretUsage
     var selectedItemID: String?
@@ -98,7 +116,8 @@ for _ in 0..<100 { model.reload() }
 assert(!first.isCancelled, "refresh must not cancel a usable result")
 finishSnapshot.signal()
 await first.value
-assert(model.snapshot.accessRequests == ["latest"])
+assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
+assert(model.historyNextSequence == 50)
 assert(model.snapshot.detectorFindings == ["preserved"])
 // A burst queues exactly one follow-up, after the first load finishes.
 for await _ in snapshotStarted { break }
@@ -118,7 +137,7 @@ model.invalidateForTest()
 model.snapshot.policy = "edited"
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
-assert(model.snapshot.accessRequests == ["latest"])
+assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
 assert(invalidated.isCancelled)
 assert(!model.isReloading)
 assert(!model.reloadPending)
@@ -153,6 +172,13 @@ assert(model.selectedItemID == nil, "missing record selected an unrelated histor
 model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
+model.loadMoreHistory()
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 75, "older history page was not appended")
+assert(model.historyNextSequence == nil)
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 

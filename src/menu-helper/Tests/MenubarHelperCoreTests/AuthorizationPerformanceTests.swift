@@ -60,4 +60,21 @@ func rollingAuthorizationHistoryPerformance() throws {
     #expect(store.append(record(10_000, reason: "Allowed")))
     let cpu = Double(clock() - cpuStart) / Double(CLOCKS_PER_SEC)
     print("Rolling Authorization History: 10k rows / 20 MiB append, wall=\(start.duration(to: .now)), CPU=\(cpu)s")
+    let readStart = ContinuousClock.now
+    let readCPUStart = clock()
+    let recordCount = try store.records().count
+    #expect(recordCount == 10_001)
+    let readCPU = Double(clock() - readCPUStart) / Double(CLOCKS_PER_SEC)
+    print("Rolling Authorization History: 10k rows / 20 MiB read, wall=\(readStart.duration(to: .now)), CPU=\(readCPU)s")
+    let compactStore = try AuthorizationHistoryStore(
+        url: directory.appendingPathComponent("compact.sqlite3"),
+        keyData: Data(repeating: 7, count: 32),
+        now: { now }
+    )
+    try compactStore.importRecords((0..<50_000).map { record($0 % 10_000, reason: "Read Only") })
+    let compactReadStart = ContinuousClock.now
+    let compactReadCPUStart = clock()
+    #expect(try compactStore.records().count == 50_000)
+    let compactReadCPU = Double(clock() - compactReadCPUStart) / Double(CLOCKS_PER_SEC)
+    print("Rolling Authorization History: 50k compact rows read, wall=\(compactReadStart.duration(to: .now)), CPU=\(compactReadCPU)s")
 }

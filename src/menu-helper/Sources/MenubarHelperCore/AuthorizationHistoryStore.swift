@@ -18,6 +18,11 @@ public struct AuthorizationHistoryRetention: Sendable {
     }
 }
 
+public struct AuthorizationHistoryPage: Sendable {
+    public let records: [AccessRequestRecord]
+    public let nextSequence: Int64?
+}
+
 public enum AuthorizationHistoryStoreError: Error, Equatable {
     case invalidKey
     case sqlite(String)
@@ -195,16 +200,37 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
         limit: Int? = nil,
         maximumDisclosureBytes: Int? = nil
     ) throws -> [AccessRequestRecord] {
+        try readRecords(
+            since: since, limit: limit, maximumDisclosureBytes: maximumDisclosureBytes,
+            beforeSequence: nil).records
+    }
+
+    public func page(beforeSequence: Int64? = nil, limit: Int = 50) throws -> AuthorizationHistoryPage {
+        try readRecords(
+            since: nil, limit: limit, maximumDisclosureBytes: nil,
+            beforeSequence: beforeSequence)
+    }
+
+    private func readRecords(
+        since: Date?, limit: Int?, maximumDisclosureBytes: Int?, beforeSequence: Int64?
+    ) throws -> AuthorizationHistoryPage {
         guard limit.map({ $0 > 0 }) ?? true,
+              beforeSequence.map({ $0 > 0 }) ?? true,
               maximumDisclosureBytes.map({ $0 >= 2 }) ?? true else {
             throw AuthorizationHistoryStoreError.invalidLimit
         }
         return try lock.withLock {
             var statement: OpaquePointer?
-            let sql =
-                "SELECT id, retention_bucket, ciphertext FROM authorization_history ORDER BY sequence DESC"
+            let sql = beforeSequence == nil
+                ? "SELECT id, retention_bucket, ciphertext, sequence FROM authorization_history ORDER BY sequence DESC"
+                : "SELECT id, retention_bucket, ciphertext, sequence FROM authorization_history WHERE sequence < ? ORDER BY sequence DESC"
             try prepare(sql, into: &statement)
             defer { sqlite3_finalize(statement) }
+            if let beforeSequence {
+                guard sqlite3_bind_int64(statement, 1, beforeSequence) == SQLITE_OK else {
+                    throw sqliteError("history cursor bind failed")
+                }
+            }
             let currentDate = now()
             let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
             let effectiveSince = max(since ?? cutoff, cutoff)
@@ -216,6 +242,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             while true {
                 switch sqlite3_step(statement) {
                 case SQLITE_ROW:
+                    guard sqlite3_column_type(statement, 3) == SQLITE_INTEGER else {
+                        throw AuthorizationHistoryStoreError.decoding
+                    }
+                    let sequence = sqlite3_column_int64(statement, 3)
                     let id = try storedRecordID(from: statement)
                     let bucket = data(at: 1, from: statement)
                     let record = try decode(
@@ -235,9 +265,11 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         disclosureBytes = bytes
                     }
                     records.append(record)
-                    if let limit, records.count == limit { return records }
+                    if let limit, records.count == limit {
+                        return AuthorizationHistoryPage(records: records, nextSequence: sequence)
+                    }
                 case SQLITE_DONE:
-                    return records
+                    return AuthorizationHistoryPage(records: records, nextSequence: nil)
                 default:
                     throw sqliteError("read failed")
                 }

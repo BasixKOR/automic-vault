@@ -5,7 +5,7 @@ import Testing
 @testable import MenubarHelperCore
 
 @Test
-func authorizationHistoryStoreRetainsMoreThanTheDashboardWindow() throws {
+func authorizationHistoryStoreRetainsMoreThanTheFirstDashboardPage() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
     for index in 0..<75 {
@@ -21,6 +21,29 @@ func authorizationHistoryStoreRetainsMoreThanTheDashboardWindow() throws {
     }
     #expect(throws: AuthorizationHistoryStoreError.invalidLimit) {
         try fixture.store.records(limit: -1)
+    }
+}
+
+@Test
+func authorizationHistoryPagesReachEveryRecordAcrossNewWrites() throws {
+    let fixture = try HistoryStoreFixture()
+    defer { fixture.remove() }
+    for index in 0..<75 {
+        #expect(fixture.store.append(fixture.record(index: index)))
+    }
+    let first = try fixture.store.page(limit: 25)
+    #expect(first.records.map(\.command) == (50..<75).reversed().map { "fixture \($0)" })
+    #expect(fixture.store.append(fixture.record(index: 75)))
+    let second = try fixture.store.page(beforeSequence: first.nextSequence, limit: 25)
+    let third = try fixture.store.page(beforeSequence: second.nextSequence, limit: 25)
+    let fourth = try fixture.store.page(beforeSequence: third.nextSequence, limit: 25)
+    #expect((first.records + second.records + third.records).count == 75)
+    #expect(second.records.map(\.command) == (25..<50).reversed().map { "fixture \($0)" })
+    #expect(third.records.map(\.command) == (0..<25).reversed().map { "fixture \($0)" })
+    #expect(fourth.records.isEmpty)
+    #expect(fourth.nextSequence == nil)
+    #expect(throws: AuthorizationHistoryStoreError.invalidLimit) {
+        try fixture.store.page(beforeSequence: 0)
     }
 }
 
@@ -74,6 +97,11 @@ func authorizationHistoryStoreFiltersAndExpiresByTime() throws {
             recent.id
         ]
     )
+    let firstPage = try fixture.store.page(limit: 1)
+    #expect(firstPage.records.map(\.id) == [recent.id])
+    let secondPage = try fixture.store.page(beforeSequence: firstPage.nextSequence, limit: 1)
+    #expect(secondPage.records.map(\.id) == [retained.id])
+    #expect(try fixture.store.page(beforeSequence: secondPage.nextSequence, limit: 1).records.isEmpty)
 }
 
 @Test

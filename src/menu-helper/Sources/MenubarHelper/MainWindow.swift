@@ -246,6 +246,9 @@ final class DashboardModel: ObservableObject {
     @Published private var accessRequestsReloadTask: Task<Void, Never>?
     private var accessRequestsReloadPending = false
     private var accessRequestsGeneration = 0
+    @Published private(set) var historyNextSequence: Int64?
+    @Published private(set) var isLoadingOlderHistory = false
+    @Published private(set) var historyLoadFailed = false
     private var pendingAccessRequestID: UUID?
     private var reloadPending = false
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
@@ -807,6 +810,7 @@ final class DashboardModel: ObservableObject {
             return
         }
         accessRequestsGeneration += 1
+        isLoadingOlderHistory = false
         let generation = accessRequestsGeneration
         reloadPending = false
         isReloading = true
@@ -827,15 +831,20 @@ final class DashboardModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
-            let records = await Task.detached(priority: .background) {
-                loadAccessRequestRecords()
+            let page = await Task.detached(priority: .background) {
+                loadAccessRequestRecordsPage()
             }.value
             guard !Task.isCancelled else { return }
             next.accessRequests = generation == accessRequestsGeneration
-                ? records : snapshot.accessRequests
+                ? (page?.records ?? []) : snapshot.accessRequests
             snapshot = next
+            if generation == accessRequestsGeneration {
+                historyNextSequence = page?.nextSequence
+                isLoadingOlderHistory = false
+                historyLoadFailed = page == nil
+            }
             if generation == accessRequestsGeneration, let id = pendingAccessRequestID {
-                if records.contains(where: { $0.id == id }) {
+                if next.accessRequests.contains(where: { $0.id == id }) {
                     pendingAccessRequestID = nil
                     selectedSection = .secretUsage
                     selectedItemID = id.uuidString
@@ -848,6 +857,7 @@ final class DashboardModel: ObservableObject {
 
     func reloadAccessRequests() {
         accessRequestsGeneration += 1
+        isLoadingOlderHistory = false
         guard accessRequestsReloadTask == nil else {
             accessRequestsReloadPending = true
             return
@@ -861,14 +871,25 @@ final class DashboardModel: ObservableObject {
                     self?.reloadAccessRequests()
                 }
             }
-            let records = await Task.detached(priority: .background) {
-                loadAccessRequestRecords()
+            let page = await Task.detached(priority: .background) {
+                loadAccessRequestRecordsPage()
             }.value
             guard !Task.isCancelled, let self,
                   generation == accessRequestsGeneration else { return }
-            snapshot.accessRequests = records
+            if let page {
+                let recentIDs = Set(page.records.map(\.id))
+                snapshot.accessRequests = page.records + snapshot.accessRequests.filter {
+                    !recentIDs.contains($0.id)
+                }
+                historyNextSequence = historyNextSequence ?? page.nextSequence
+                historyLoadFailed = false
+            } else {
+                snapshot.accessRequests = []
+                historyNextSequence = nil
+                historyLoadFailed = true
+            }
             if let id = pendingAccessRequestID {
-                if records.contains(where: { $0.id == id }) {
+                if snapshot.accessRequests.contains(where: { $0.id == id }) {
                     pendingAccessRequestID = nil
                     selectedSection = .secretUsage
                     selectedItemID = id.uuidString
@@ -878,12 +899,42 @@ final class DashboardModel: ObservableObject {
         }
     }
 
+    func loadMoreHistory(retry: Bool = false) {
+        guard let cursor = historyNextSequence, !isLoadingOlderHistory,
+              !historyLoadFailed || retry else { return }
+        isLoadingOlderHistory = true
+        historyLoadFailed = false
+        let generation = accessRequestsGeneration
+        Task { [weak self] in
+            let page = await Task.detached(priority: .background) {
+                loadAccessRequestRecordsPage(beforeSequence: cursor)
+            }.value
+            guard let self, generation == accessRequestsGeneration,
+                  historyNextSequence == cursor else { return }
+            isLoadingOlderHistory = false
+            guard let page else {
+                historyLoadFailed = true
+                return
+            }
+            let loadedIDs = Set(snapshot.accessRequests.map(\.id))
+            snapshot.accessRequests += page.records.filter { !loadedIDs.contains($0.id) }
+            historyNextSequence = page.nextSequence
+            if let id = pendingAccessRequestID,
+               snapshot.accessRequests.contains(where: { $0.id == id }) {
+                pendingAccessRequestID = nil
+                selectedSection = .secretUsage
+                selectedItemID = id.uuidString
+            }
+        }
+    }
+
     private func invalidateReload() {
         // Cancellation invalidates the result, but synchronous checks still run.
         // Retain the task until they finish so a new reload cannot overlap them.
         reloadTask?.cancel()
         accessRequestsReloadTask?.cancel()
         accessRequestsGeneration += 1
+        isLoadingOlderHistory = false
         accessRequestsReloadPending = false
         reloadPending = false
         isReloading = false
@@ -1988,6 +2039,19 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.selectedItemID == accessRequest.id.uuidString,
           model.selectedAccessRequest == accessRequest
     else { return 1 }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let recentDate = oldDate.addingTimeInterval(86_400)
+    let days = historyDays([
+        DashboardItem(id: "old", title: "", subtitle: "", detail: "", date: oldDate),
+        DashboardItem(id: "recent", title: "", subtitle: "", detail: "", date: recentDate),
+        DashboardItem(id: "older", title: "", subtitle: "", detail: "", date: oldDate.addingTimeInterval(-60)),
+    ], calendar: calendar)
+    guard days.count == 2,
+          days[0].items.map(\.id) == ["recent"],
+          days[1].items.map(\.id) == ["old", "older"]
+    else { return 1 }
     return 0
 }
 
@@ -2278,7 +2342,9 @@ private struct DashboardSidebarView: View {
                         .fixedSize()
                         .accessibilityLabel("Scripts needing reblessing: \(reblessingCount)")
                 } else {
-                    SidebarCountText(count: count)
+                    SidebarCountText(
+                        count: count,
+                        isPartial: section == .secretUsage && model.historyNextSequence != nil)
                         .fixedSize()
                 }
             }
@@ -2300,7 +2366,27 @@ private struct DashboardListView: View {
         Group {
             if items.isEmpty {
                 VStack(spacing: 12) {
-                    EmptyListView(section: model.selectedSection)
+                    if model.selectedSection == .secretUsage && model.historyLoadFailed,
+                       model.historyNextSequence == nil {
+                        Text("Authorization History unavailable")
+                            .foregroundStyle(.secondary)
+                        Button("Retry") { model.reloadAccessRequests() }
+                    } else {
+                        EmptyListView(section: model.selectedSection)
+                    }
+                    if model.selectedSection == .secretUsage,
+                       model.historyNextSequence != nil {
+                        if model.historyLoadFailed {
+                            Text("Older Authorization History unavailable")
+                                .foregroundStyle(.secondary)
+                        }
+                        if !model.searchText.isEmpty {
+                            Text("Search covers loaded records. Load older records to continue searching.")
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        Button("Load Older Records") { model.loadMoreHistory(retry: true) }
+                    }
                     if model.isReloading {
                         ProgressView()
                             .controlSize(.large)
@@ -2327,6 +2413,23 @@ private struct DashboardListView: View {
     private func itemList(_ items: [DashboardItem]) -> some View {
         List(selection: itemSelection) {
             rows(items)
+            if model.selectedSection == .secretUsage,
+               model.historyNextSequence != nil {
+                if !model.searchText.isEmpty {
+                    Text("Search covers loaded records. Scroll to load older records.")
+                        .foregroundStyle(.secondary)
+                }
+                if model.historyLoadFailed {
+                    Button("Retry Loading Older Records") {
+                        model.loadMoreHistory(retry: true)
+                    }
+                } else if model.isLoadingOlderHistory {
+                    ProgressView("Loading older records…")
+                } else {
+                    Button("Load Older Records") { model.loadMoreHistory() }
+                        .onAppear { model.loadMoreHistory() }
+                }
+            }
         }
         .listStyle(.inset)
         .overlay(alignment: .top) {
@@ -2340,12 +2443,39 @@ private struct DashboardListView: View {
         }
     }
 
+    @ViewBuilder
     private func rows(_ items: [DashboardItem]) -> some View {
-        ForEach(items) { item in
-            DashboardRow(item: item)
-                .tag(item.id)
+        if model.selectedSection == .secretUsage {
+            ForEach(historyDays(items), id: \.day) { group in
+                Section {
+                    ForEach(group.items) { item in
+                        DashboardRow(item: item)
+                            .tag(item.id)
+                    }
+                } header: {
+                    Text(group.day, format: .dateTime.weekday(.wide).month(.wide).day().year())
+                }
+            }
+        } else {
+            ForEach(items) { item in
+                DashboardRow(item: item)
+                    .tag(item.id)
+            }
         }
     }
+}
+
+private func historyDays(
+    _ items: [DashboardItem], calendar: Calendar = .autoupdatingCurrent
+) -> [(day: Date, items: [DashboardItem])] {
+    Dictionary(grouping: items) { calendar.startOfDay(for: $0.date ?? .distantPast) }
+        .map { day, items in
+            (day: day, items: items.sorted {
+                if $0.date == $1.date { return $0.id < $1.id }
+                return ($0.date ?? .distantPast) > ($1.date ?? .distantPast)
+            })
+        }
+        .sorted { $0.day > $1.day }
 }
 
 private struct DashboardDetailView: View {
@@ -3353,9 +3483,10 @@ private enum SidebarCountMetrics {
 
 private struct SidebarCountText: View {
     let count: Int
+    var isPartial = false
 
     var body: some View {
-        Text(count.formatted())
+        Text(count.formatted() + (isPartial ? "+" : ""))
             .font(.system(size: 11, weight: .regular))
             .foregroundStyle(.secondary)
             .monospacedDigit()
