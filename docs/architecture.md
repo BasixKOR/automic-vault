@@ -680,8 +680,9 @@ inspection or migration.
 Authorization History is bounded local operational history. Same-user compromise or storage failure can damage it. Product copy must not promise an append-only audit trail or complete forensic evidence.
 
 The rolling store makes at most 30 days and 25 MiB of encrypted record
-payloads available. It prunes expired rows on reads and writes; an unused
-database can retain expired ciphertext until its next access. Each allowed
+payloads available. Reads filter expired rows; writes prune them, and a
+coalesced background pass prunes after reads. An unused database can retain
+expired ciphertext until its next access. Each allowed
 Secret Use commits and verifies its record synchronously before release. See
 [ADR 0047](adr/0047-encrypted-rolling-authorization-history.md).
 

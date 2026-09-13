@@ -33,12 +33,19 @@ retain expired ciphertext until its next access. The
 database is excluded from backup. SQLite provides synchronous transactions; an
 allowed Secret Use succeeds only after
 its complete record is committed, read back, authenticated, decoded, and
-compared with the expected record.
+compared with the expected record. Each write also authenticates retained rows
+before pruning; the bounded scan can add latency, but a cleartext date index
+would disclose activity times and skipping authentication would weaken
+fail-closed storage checks.
 
-On first use, the app imports existing Keychain and older UserDefaults history,
+On first use and subsequent restarts, the app idempotently imports existing
+Keychain and older UserDefaults history,
 verifies every imported record and rechecks both legacy sources before committing
-the import, then applies retention and rechecks each source immediately before
-removing it. A changed source fails closed without deleting it. A database without its
+the import, then applies retention. A changed source fails closed. Legacy
+sources remain in place: an older helper can write between a source comparison
+and deletion, and neither Keychain nor UserDefaults provides a conditional
+delete of the observed value. Their pre-existing copies therefore do not
+acquire the rolling store's retention guarantee. A database without its
 encryption key is unavailable
 and never receives a replacement key.
 
@@ -61,6 +68,7 @@ ignoring `--since` and returning its default 50-record view.
   approximate storage volume. Equal bucket values reveal which records share a
   retention hour, but not that hour or record contents without the
   Keychain-held key.
-- There is one durable history store after migration and no background writer.
+- New writes use one durable history store; retained legacy sources are
+  read-only to the current helper and may be reimported after a restart.
 - GUI export remains unnecessary while the attended, authorized CLI can emit
   JSON for an explicit time window.

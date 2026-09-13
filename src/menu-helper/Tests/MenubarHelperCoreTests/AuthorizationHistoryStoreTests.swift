@@ -77,6 +77,19 @@ func authorizationHistoryStoreFiltersAndExpiresByTime() throws {
 }
 
 @Test
+func authorizationHistoryStoreNeverDisclosesFutureRecordsBeforeMaintenance() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now)
+    defer { fixture.remove() }
+    #expect(fixture.store.append(
+        fixture.record(index: 1, date: now.addingTimeInterval(3_600))
+    ))
+    #expect(try fixture.store.records().isEmpty)
+    try fixture.store.maintain()
+    #expect(try fixture.store.records().isEmpty)
+}
+
+@Test
 func authorizationHistoryStorePrunesOldestRecordsAtTheByteLimit() throws {
     let fixture = try HistoryStoreFixture(maximumEncryptedBytes: 1_800)
     defer { fixture.remove() }
@@ -268,12 +281,7 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
         defaultsData: data,
         into: fixture.store,
         readKeychain: { .notFound },
-        readDefaults: { data },
-        deleteKeychain: { false },
-        deleteDefaults: {
-            #expect((try? fixture.store.records()) == [record])
-            return true
-        }
+        readDefaults: { data }
     )
     #expect(try fixture.store.records() == [record])
     #expect(throws: DecodingError.self) {
@@ -282,9 +290,7 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             defaultsData: Data("malformed".utf8),
             into: fixture.store,
             readKeychain: { .notFound },
-            readDefaults: { nil },
-            deleteKeychain: { false },
-            deleteDefaults: { Issue.record("deleted malformed legacy data"); return true }
+            readDefaults: { nil }
         )
     }
     #expect(try fixture.store.records() == [record])
@@ -296,16 +302,14 @@ func legacyDefaultsHistoryIsImportedOnlyWhenValid() throws {
             defaultsData: outOfRangeData,
             into: fixture.store,
             readKeychain: { .notFound },
-            readDefaults: { outOfRangeData },
-            deleteKeychain: { false },
-            deleteDefaults: { Issue.record("deleted out-of-range legacy data"); return true }
+            readDefaults: { outOfRangeData }
         )
     }
     #expect(try fixture.store.records() == [record])
 }
 
 @Test
-func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
+func legacyHistoryImportFailsWhenAuthenticationFails() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
     #expect(fixture.store.append(fixture.record(index: 1)))
@@ -319,23 +323,19 @@ func legacyHistoryIsNotDeletedWhenAuthenticatedMigrationFails() throws {
     ) == SQLITE_OK)
 
     let legacy = try JSONEncoder().encode([fixture.record(index: 2)])
-    var deleted = false
     #expect(throws: AuthorizationHistoryStoreError.self) {
         try importLegacyAccessRequestRecords(
             keychainData: nil,
             defaultsData: legacy,
             into: fixture.store,
             readKeychain: { .notFound },
-            readDefaults: { legacy },
-            deleteKeychain: { deleted = true; return true },
-            deleteDefaults: { deleted = true; return true }
+            readDefaults: { legacy }
         )
     }
-    #expect(!deleted)
 }
 
 @Test
-func changedLegacyHistoryIsNotDeletedDuringMigration() throws {
+func changedLegacyHistoryAbortsImportAndCanBeRetried() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
     let original = fixture.record(index: 1)
@@ -343,28 +343,22 @@ func changedLegacyHistoryIsNotDeletedDuringMigration() throws {
     let changed = try JSONEncoder().encode([
         fixture.record(index: 1, reason: "Changed", id: original.id)
     ])
-    var deleted = false
     #expect(throws: AuthorizationHistoryStoreError.verificationFailed) {
         try importLegacyAccessRequestRecords(
             keychainData: nil,
             defaultsData: snapshot,
             into: fixture.store,
             readKeychain: { .notFound },
-            readDefaults: { changed },
-            deleteKeychain: { deleted = true; return true },
-            deleteDefaults: { deleted = true; return true }
+            readDefaults: { changed }
         )
     }
-    #expect(!deleted)
     #expect(try fixture.store.records().isEmpty)
     try importLegacyAccessRequestRecords(
         keychainData: nil,
         defaultsData: changed,
         into: fixture.store,
         readKeychain: { .notFound },
-        readDefaults: { changed },
-        deleteKeychain: { false },
-        deleteDefaults: { true }
+        readDefaults: { changed }
     )
     #expect(try fixture.store.records().first?.reason == "Changed")
 }
@@ -380,9 +374,7 @@ func newlyCreatedLegacyHistoryAbortsMigration() throws {
             defaultsData: nil,
             into: fixture.store,
             readKeychain: { .success(newData) },
-            readDefaults: { nil },
-            deleteKeychain: { Issue.record("deleted newly created legacy history"); return true },
-            deleteDefaults: { Issue.record("deleted newly created legacy history"); return true }
+            readDefaults: { nil }
         )
     }
     #expect(try fixture.store.records().isEmpty)

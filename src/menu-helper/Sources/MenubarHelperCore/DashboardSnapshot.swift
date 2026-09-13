@@ -1830,26 +1830,7 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
                     account: accessRequestLogDefaultsKey
                 )
             },
-            readDefaults: { UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey) },
-            deleteKeychain: {
-                guard let expected = legacyKeychainData,
-                      case .success(let current) = loadKeychainDataResult(
-                          service: accessRequestLogKeychainService,
-                          account: accessRequestLogDefaultsKey
-                      ), current == expected else { return false }
-                let status = deleteKeychainData(
-                    service: accessRequestLogKeychainService,
-                    account: accessRequestLogDefaultsKey
-                )
-                return status == errSecSuccess || status == errSecItemNotFound
-            },
-            deleteDefaults: {
-                guard UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
-                    == legacyDefaultsData else { return false }
-                UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
-                return UserDefaults.standard.synchronize()
-                    && UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil
-            }
+            readDefaults: { UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey) }
         )) != nil else { return nil }
         return store
     }
@@ -1863,9 +1844,7 @@ func importLegacyAccessRequestRecords(
     defaultsData: Data?,
     into store: AuthorizationHistoryStore,
     readKeychain: () -> KeychainDataLoad,
-    readDefaults: () -> Data?,
-    deleteKeychain: () -> Bool,
-    deleteDefaults: () -> Bool
+    readDefaults: () -> Data?
 ) throws {
     let decoder = JSONDecoder()
     let keychainRecords = try keychainData.map {
@@ -1880,12 +1859,6 @@ func importLegacyAccessRequestRecords(
               readDefaults() == defaultsData else {
             throw AuthorizationHistoryStoreError.verificationFailed
         }
-    }
-    if keychainData != nil {
-        guard deleteKeychain() else { throw AuthorizationHistoryStoreError.verificationFailed }
-    }
-    if defaultsData != nil {
-        guard deleteDefaults() else { throw AuthorizationHistoryStoreError.verificationFailed }
     }
 }
 

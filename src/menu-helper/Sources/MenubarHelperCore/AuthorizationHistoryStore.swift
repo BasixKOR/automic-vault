@@ -223,7 +223,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         id: id,
                         bucket: bucket
                     )
-                    if record.date < effectiveSince { continue }
+                    if record.date < effectiveSince || record.date > currentDate { continue }
                     if let maximumDisclosureBytes {
                         let encoded = try encoder.encode(record.redactedForDisclosure)
                         let (bytes, overflow) = disclosureBytes.addingReportingOverflow(
@@ -352,6 +352,8 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
     }
 
     private func prune(preserving recordID: UUID?) throws {
+        // ponytail: O(rows) inside the 25 MiB ciphertext cap. Authenticate every row
+        // before allowing Secret Use; a cleartext date index would leak activity.
         let currentDate = now()
         let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
         var rows: [(id: String, size: Int64, expired: Bool, date: Date)] = []
