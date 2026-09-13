@@ -77,4 +77,7 @@ func rollingAuthorizationHistoryPerformance() throws {
     #expect(try compactStore.records().count == 50_000)
     let compactReadCPU = Double(clock() - compactReadCPUStart) / Double(CLOCKS_PER_SEC)
     print("Rolling Authorization History: 50k compact rows read, wall=\(compactReadStart.duration(to: .now)), CPU=\(compactReadCPU)s")
+    let pageStart = ContinuousClock.now
+    #expect(try compactStore.page().records.count == 50)
+    print("Rolling Authorization History: first page from 50k rows, wall=\(pageStart.duration(to: .now))")
 }
