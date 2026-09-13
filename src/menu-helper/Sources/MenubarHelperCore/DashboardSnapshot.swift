@@ -1832,6 +1832,11 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
             },
             readDefaults: { UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey) },
             deleteKeychain: {
+                guard let expected = legacyKeychainData,
+                      case .success(let current) = loadKeychainDataResult(
+                          service: accessRequestLogKeychainService,
+                          account: accessRequestLogDefaultsKey
+                      ), current == expected else { return false }
                 let status = deleteKeychainData(
                     service: accessRequestLogKeychainService,
                     account: accessRequestLogDefaultsKey
@@ -1839,6 +1844,8 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
                 return status == errSecSuccess || status == errSecItemNotFound
             },
             deleteDefaults: {
+                guard UserDefaults.standard.data(forKey: accessRequestLogDefaultsKey)
+                    == legacyDefaultsData else { return false }
                 UserDefaults.standard.removeObject(forKey: accessRequestLogDefaultsKey)
                 return UserDefaults.standard.synchronize()
                     && UserDefaults.standard.object(forKey: accessRequestLogDefaultsKey) == nil

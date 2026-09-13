@@ -37,8 +37,8 @@ compared with the expected record.
 
 On first use, the app imports existing Keychain and older UserDefaults history,
 verifies every imported record and rechecks both legacy sources before committing
-the import, then applies retention and removes the legacy items. A changed
-source rolls back the import without deleting it. A database without its
+the import, then applies retention and rechecks each source immediately before
+removing it. A changed source fails closed without deleting it. A database without its
 encryption key is unavailable
 and never receives a replacement key.
 

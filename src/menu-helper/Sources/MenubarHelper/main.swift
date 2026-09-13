@@ -3479,20 +3479,24 @@ private func authorizationHistoryDisclosureValue(
     record: AccessRequestRecord,
     since: Date?,
     records: (Date?, Int?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
+    isCanceled: () -> Bool = { false },
     onAccessRequest: (AccessRequestRecord) -> Bool
 ) -> String? {
     // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
     let maximumReplyBytes = 1_048_576
-    let limit = since == nil ? 50 : nil
-    guard onAccessRequest(record),
-          let disclosedRecords = records(since, limit, maximumReplyBytes)
+    let limit = since == nil ? 49 : nil
+    guard !isCanceled(),
+          let previousRecords = records(since, limit, maximumReplyBytes),
+          !isCanceled()
     else { return nil }
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys]
-    guard let data = try? encoder.encode(disclosedRecords.map(\.redactedForDisclosure)),
+    guard let data = try? encoder.encode(([record] + previousRecords).map(\.redactedForDisclosure)),
           data.count <= maximumReplyBytes,
-          let value = String(data: data, encoding: .utf8)
+          let value = String(data: data, encoding: .utf8),
+          !isCanceled(),
+          onAccessRequest(record)
     else { return nil }
     return value
 }
@@ -4168,6 +4172,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return authorizationHistoryDisclosureValue(
                     record: record,
                     since: since,
+                    isCanceled: { cancellation.isCanceled },
                     onAccessRequest: audit
                 )
             }).value
@@ -13943,10 +13948,10 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         record: record,
         since: nil,
         records: { _, limit, maximumBytes in
-            guard limit == 50, maximumBytes == 1_048_576 else { return nil }
+            guard limit == 49, maximumBytes == 1_048_576 else { return nil }
             historyReadCount += 1
-            guard recordedSuccessfulDisclosure else { return nil }
-            return [record]
+            guard !recordedSuccessfulDisclosure else { return nil }
+            return []
         },
         onAccessRequest: { _ in
             recordedSuccessfulDisclosure = true
@@ -13962,6 +13967,18 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
           disclosedRecords.first?.command == record.commandForDisplay,
           disclosedRecords.first?.command != record.command
     else { return 1 }
+    guard let bounded = authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, limit, _ in
+            guard limit == 49 else { return nil }
+            return Array(repeating: record, count: 49)
+        },
+        onAccessRequest: { _ in true }
+    ), let boundedData = bounded.data(using: .utf8),
+        let boundedRecords = try? decoder.decode([AccessRequestRecord].self, from: boundedData),
+        boundedRecords.count == 50, boundedRecords.first?.id == record.id
+    else { return 1 }
     let since = Date(timeIntervalSince1970: 123)
     let now = Date(timeIntervalSince1970: 4_000_000)
     guard authorizationHistorySinceIsValid(now.addingTimeInterval(-31 * 24 * 60 * 60), now: now),
@@ -13976,8 +13993,8 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
             guard forwardedSince == since, limit == nil,
                   maximumBytes == 1_048_576 else { return nil }
             windowReads += 1
-            guard windowRecorded else { return nil }
-            return Array(repeating: record, count: 51)
+            guard !windowRecorded else { return nil }
+            return Array(repeating: record, count: 50)
         },
         onAccessRequest: { _ in
             windowRecorded = true
@@ -13988,13 +14005,6 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
         windowRecords.count == 51
     else { return 1 }
-    // A concurrent burst may push this request's committed audit row outside the newest 50.
-    guard authorizationHistoryDisclosureValue(
-        record: record,
-        since: nil,
-        records: { _, _, _ in [] },
-        onAccessRequest: { _ in true }
-    ) == "[]" else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: since,
@@ -14004,7 +14014,7 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: nil,
-        records: { _, _, _ in [record] },
+        records: { _, _, _ in [] },
         onAccessRequest: { _ in false }
     ) == nil else { return 1 }
     var recordedUnavailableHistory = false
@@ -14016,7 +14026,19 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
             recordedUnavailableHistory = true
             return true
         }
-    ) == nil, recordedUnavailableHistory else { return 1 }
+    ) == nil, !recordedUnavailableHistory else { return 1 }
+    let canceledRead = ApprovalCancellation()
+    var recordedAfterCancellation = false
+    guard authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, _, _ in
+            canceledRead.cancel()
+            return []
+        },
+        isCanceled: { canceledRead.isCanceled },
+        onAccessRequest: { _ in recordedAfterCancellation = true; return true }
+    ) == nil, !recordedAfterCancellation else { return 1 }
     return 0
 }
 
