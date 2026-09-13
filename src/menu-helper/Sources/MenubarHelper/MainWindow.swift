@@ -294,21 +294,30 @@ final class DashboardModel: ObservableObject {
         allHistoryRows += added
         allHistorySections = mergeHistoryDays(allHistorySections, historyDays(added))
         let query = searchQuery
-        let visible = query.isEmpty ? added : added.filter { matchesSearch($0, query: query) }
-        historyRows += visible
-        historySections = query.isEmpty ? allHistorySections
-            : mergeHistoryDays(historySections, historyDays(visible))
+        if query.isEmpty {
+            historyRows += added
+            historySections = allHistorySections
+        } else {
+            let visible = added.filter { matchesSearch($0, query: query) }
+            historySections = mergeHistoryDays(historySections, historyDays(visible))
+            historyRows = historySections.flatMap(\.items)
+        }
     }
 
     private func refreshHistorySearch() {
         let query = searchQuery
-        historyRows = query.isEmpty ? allHistoryRows
-            : allHistoryRows.filter { matchesSearch($0, query: query) }
-        historySections = query.isEmpty ? allHistorySections
-            : allHistorySections.compactMap { group in
-                let matches = group.items.filter { matchesSearch($0, query: query) }
-                return matches.isEmpty ? nil : HistoryDay(day: group.day, items: matches)
-            }
+        guard !query.isEmpty else {
+            historyRows = allHistoryRows
+            historySections = allHistorySections
+            return
+        }
+        var visibleRows: [DashboardItem] = []
+        historySections = allHistorySections.compactMap { group in
+            let matches = group.items.filter { matchesSearch($0, query: query) }
+            visibleRows += matches
+            return matches.isEmpty ? nil : HistoryDay(day: group.day, items: matches)
+        }
+        historyRows = visibleRows
     }
 
     private func historyRow(_ record: AccessRequestRecord) -> DashboardItem {
@@ -538,9 +547,16 @@ final class DashboardModel: ObservableObject {
 
     var pendingAccessRequestStatus: String? {
         guard pendingAccessRequestID != nil else { return nil }
-        return accessRequestsReloadTask == nil && !isLoadingOlderHistory
-            ? String(localized: "Authorization History record unavailable")
-            : String(localized: "Loading Authorization History…")
+        if accessRequestsReloadTask != nil || isLoadingOlderHistory {
+            return String(localized: "Loading Authorization History…")
+        }
+        if historyLoadFailed, historyNextSequence != nil {
+            return String(localized: "Older Authorization History unavailable")
+        }
+        if historyNextSequence != nil {
+            return String(localized: "Load older records to find this Authorization History record.")
+        }
+        return String(localized: "Authorization History record unavailable")
     }
 
     var selectedProxySession: ProxySessionSummary? {
@@ -2158,7 +2174,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         target: "/bin/zsh", cwd: "/tmp", keys: [], detail: nil
     )
     pageModel.appendHistoryRecords([nextPageRecord])
-    guard pageModel.historyRows.map(\.id) == [otherAccessRequest.id.uuidString, nextPageRecord.id.uuidString],
+    guard pageModel.historyRows.map(\.id) == [nextPageRecord.id.uuidString, otherAccessRequest.id.uuidString],
           pageModel.historySections.count == 2,
           pageModel.historySections[0].items.map(\.id) == [nextPageRecord.id.uuidString],
           pageModel.historySections[1].items.map(\.id) == [otherAccessRequest.id.uuidString]

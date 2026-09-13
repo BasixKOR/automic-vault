@@ -194,6 +194,8 @@ model.showAccessRequest(id: missingID)
 await model.accessRequestsReloadTask!.value
 assert(model.pendingAccessRequestID == missingID)
 assert(model.selectedItemID == nil, "missing record selected an unrelated history row")
+assert(model.pendingAccessRequestStatus == String(localized:
+    "Load older records to find this Authorization History record."))
 model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
@@ -239,6 +241,7 @@ for _ in 0..<10_000 {
 }
 assert(model.snapshot.accessRequests.count == 50 && model.historyNextSequence == 50)
 assert(model.historyLoadFailed, "failed older-page read looked successful")
+assert(model.pendingAccessRequestStatus == String(localized: "Older Authorization History unavailable"))
 failOlderPage.withLock { $0 = false }
 model.loadMoreHistory(retry: true)
 for _ in 0..<10_000 {

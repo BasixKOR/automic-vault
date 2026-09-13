@@ -410,6 +410,7 @@
 "No Verified Launchers may read Authorization History without Approval." = "没有已验证启动器可以无需批准读取授权历史。";
 "Authorization History record unavailable" = "授权历史记录不可用";
 "Loading Authorization History…" = "正在加载授权历史…";
+"Load older records to find this Authorization History record." = "加载更早的记录以查找这条授权历史记录。";
 "These Verified Launchers may run av history without Approval." = "这些已验证启动器可以运行 av history，无需批准。";
 "Verified Launchers allowed to run av history" = "允许运行 av history 的已验证启动器";
 "Authorization History unavailable" = "授权历史不可用";
@@ -419,4 +420,3 @@
 "Retry" = "重试";
 "Retry Loading Older Records" = "重试加载更早的记录";
 "Search covers loaded records. Load older records to continue searching." = "搜索仅涵盖已加载的记录。加载更早的记录以继续搜索。";
-"Search covers loaded records. Scroll to load older records." = "搜索仅涵盖已加载的记录。滚动可加载更早的记录。";
