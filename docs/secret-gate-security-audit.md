@@ -23,7 +23,7 @@ The available evidence rules out the approval cache and confirms a helper bypass
 | Existing onboarding grants | Legacy Trusted Access was stored as an explicit choice | Preserve the stored grant under the Write Access label and persist every explicit default |
 | Launcher identity unavailable | Resolver applied “All Other Apps” without knowing whether an override matched | Disable durable automic authorization and require Approval |
 | Policy or human authorization | Reply could precede Authorization Record persistence | Persist and verify the record before returning secrets |
-| Authorization History storage | Same-user processes could alter `UserDefaults` | Store production records in the app-private Data Protection Keychain |
+| Authorization History storage | Same-user processes could alter `UserDefaults` | Store encrypted records in app-private Application Support SQLite with a root key in the Data Protection Keychain |
 | Transient PID Approval | Includes process birth time and complete request identity | No bypass found; every reuse remains recorded |
 | Installed CLI test hooks | Release/copy could use test Keychain and path overrides | Accept test overrides only from debug binaries inside their Cargo profile |
 | XPC server identity | Rust, GH, and Supabase clients checked an identifier only | Pin Apple anchor, team ID, and current app identifier |

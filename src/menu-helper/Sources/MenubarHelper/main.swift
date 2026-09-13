@@ -3435,6 +3435,7 @@ private struct ApprovedFulfillmentMaterial: Sendable {
 }
 
 private let registryHelperProtocolVersion: UInt64 = 3
+private let historyProtocolVersion: UInt64 = 2
 
 private enum MetadataDisclosure {
     case secretNames(globalOnly: Bool)
@@ -3687,6 +3688,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: String(registryHelperProtocolVersion))
+        case .historyProtocolVersion where isTrustedAvCaller(path: callerPath, signing: signing):
+            let requested = xpc_dictionary_get_uint64(message, "requested_version")
+            guard requested == historyProtocolVersion else {
+                reply(peer, to: message, ok: false, error: "Authorization History protocol upgrade is required")
+                return
+            }
+            reply(peer, to: message, ok: true, error: nil, value: String(historyProtocolVersion))
         case .goatHelperVersion where isTrustedAvCaller(path: callerPath, signing: signing):
             let requested = xpc_dictionary_get_uint64(message, "requested_version")
             guard requested == 1 else {
@@ -11466,7 +11474,7 @@ private func launcherBundleIntegrityError(for identity: AVProcessIdentity) -> St
 private extension ApprovalServiceOperation {
     var requiresLauncherBundleIntegrity: Bool {
         switch self {
-        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .goatHelperVersion,
+        case .openWindow, .awsHelperVersion, .dockerHelperVersion, .historyProtocolVersion, .goatHelperVersion,
              .ordercliHelperVersion, .openhueHelperVersion, .plumberHelperVersion, .uaaHelperVersion,
              .railwayHelperVersion, .oxideHelperVersion, .terraformHelperVersion,
              .fastlyHelperVersion,

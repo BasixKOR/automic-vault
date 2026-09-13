@@ -21,6 +21,10 @@ let loads = Mutex((count: 0, active: 0, peak: 0))
 
 let (snapshotStarted, started) = AsyncStream<Void>.makeStream()
 let finishSnapshot = DispatchSemaphore(value: 0)
+let (historyStarted, historySignal) = AsyncStream<Void>.makeStream()
+let finishHistory = DispatchSemaphore(value: 0)
+let blockHistory = Mutex(false)
+let historyReads = Mutex(0)
 
 struct DashboardSnapshot: Sendable {
     var policy = "loaded"
@@ -41,11 +45,20 @@ struct DashboardSnapshot: Sendable {
 enum CLIInstallState { case current, outdated }
 func currentCLIInstallState() -> CLIInstallState { .current }
 func loadLauncherBundleEnrollments() -> [String] { [] }
-func loadAccessRequestRecords() -> [String] { ["latest"] }
+func loadAccessRequestRecords() -> [String] {
+    if blockHistory.withLock({ $0 }) {
+        historyReads.withLock { $0 += 1 }
+        historySignal.yield(())
+        finishHistory.wait()
+    }
+    return ["latest"]
+}
 
 @MainActor final class Model {
     var reloadTask: Task<Void, Never>?
     var accessRequestsReloadTask: Task<Void, Never>?
+    var accessRequestsReloadPending = false
+    var accessRequestsGeneration = 0
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
@@ -108,6 +121,17 @@ finishSnapshot.signal()
 await replacement.value
 assert(loads.withLock { $0.count == 4 && $0.peak == 1 })
 assert(model.reloadTask == nil && !model.isReloading)
+blockHistory.withLock { $0 = true }
+model.reloadAccessRequests()
+for await _ in historyStarted { break }
+for _ in 0..<100 { model.reloadAccessRequests() }
+assert(historyReads.withLock { $0 == 1 }, "history burst queued duplicate reads")
+finishHistory.signal()
+for await _ in historyStarted { break }
+assert(historyReads.withLock { $0 == 2 }, "history burst did not coalesce")
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+assert(historyReads.withLock { $0 == 2 })
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 

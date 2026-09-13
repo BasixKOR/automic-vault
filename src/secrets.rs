@@ -3,6 +3,7 @@ use std::path::PathBuf;
 const APPROVAL_SERVICE: &str = "com.automicvault.av2.approval";
 const ALIYUN_HELPER_PROTOCOL_VERSION: u64 = 1;
 const REGISTRY_HELPER_PROTOCOL_VERSION: u64 = 3;
+const HISTORY_PROTOCOL_VERSION: u64 = 2;
 const OXIDE_HELPER_PROTOCOL_VERSION: u64 = 1;
 const FASTLY_HELPER_PROTOCOL_VERSION: u64 = 1;
 const SQLCMD_HELPER_PROTOCOL_VERSION: u64 = 1;
@@ -162,6 +163,25 @@ pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
 }
 
 pub(crate) fn authorization_history(since: Option<u64>) -> Result<String, String> {
+    if since.is_some() {
+        let version = xpc_request(
+            "history-protocol-version",
+            None,
+            None,
+            None,
+            Some((b"requested_version\0", HISTORY_PROTOCOL_VERSION)),
+        )
+        .map_err(|error| format!(
+            "Authorization History window requires an updated running Automic Vault app: {error}"
+        ))?
+        .value;
+        if version != Some(HISTORY_PROTOCOL_VERSION.to_string()) {
+            return Err(
+                "the running Automic Vault app does not support Authorization History windows"
+                    .into(),
+            );
+        }
+    }
     xpc_request(
         "history",
         None,
@@ -1141,6 +1161,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("uaa-save"));
         assert!(!xpc_operation_requires_cwd("bless"));
         assert!(!xpc_operation_requires_cwd("docker-helper-version"));
+        assert!(!xpc_operation_requires_cwd("history-protocol-version"));
         assert!(!xpc_operation_requires_cwd("list"));
     }
 }

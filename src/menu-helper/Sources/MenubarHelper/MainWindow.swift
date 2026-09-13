@@ -244,6 +244,8 @@ final class DashboardModel: ObservableObject {
 
     private var reloadTask: Task<Void, Never>?
     private var accessRequestsReloadTask: Task<Void, Never>?
+    private var accessRequestsReloadPending = false
+    private var accessRequestsGeneration = 0
     private var reloadPending = false
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
     let authorityApproval = AuthorityApprovalState()
@@ -523,11 +525,11 @@ final class DashboardModel: ObservableObject {
         selectedItemID = item.id
     }
 
-    func showAccessRequest(id: UUID, records: [AccessRequestRecord] = loadAccessRequestRecords()) {
-        snapshot.accessRequests = records
-        guard snapshot.accessRequests.contains(where: { $0.id == id }) else { return }
+    func showAccessRequest(id: UUID, records: [AccessRequestRecord]? = nil) {
+        if let records { snapshot.accessRequests = records }
         selectedSection = .secretUsage
         selectedItemID = id.uuidString
+        if records == nil { reloadAccessRequests() }
     }
 
     func showSecretGate(id: String) {
@@ -786,6 +788,8 @@ final class DashboardModel: ObservableObject {
             reloadPending = true
             return
         }
+        accessRequestsGeneration += 1
+        let generation = accessRequestsGeneration
         reloadPending = false
         isReloading = true
         reloadTask = Task {
@@ -805,10 +809,12 @@ final class DashboardModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
-            next.accessRequests = await Task.detached(priority: .background) {
+            let records = await Task.detached(priority: .background) {
                 loadAccessRequestRecords()
             }.value
             guard !Task.isCancelled else { return }
+            next.accessRequests = generation == accessRequestsGeneration
+                ? records : snapshot.accessRequests
             snapshot = next
             self.launcherBundles = launcherBundles
             normalizeSelection()
@@ -816,15 +822,27 @@ final class DashboardModel: ObservableObject {
     }
 
     func reloadAccessRequests() {
-        accessRequestsReloadTask?.cancel()
+        accessRequestsGeneration += 1
+        guard accessRequestsReloadTask == nil else {
+            accessRequestsReloadPending = true
+            return
+        }
+        let generation = accessRequestsGeneration
         accessRequestsReloadTask = Task { [weak self] in
+            defer {
+                self?.accessRequestsReloadTask = nil
+                if self?.accessRequestsReloadPending == true {
+                    self?.accessRequestsReloadPending = false
+                    self?.reloadAccessRequests()
+                }
+            }
             let records = await Task.detached(priority: .background) {
                 loadAccessRequestRecords()
             }.value
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self,
+                  generation == accessRequestsGeneration else { return }
             snapshot.accessRequests = records
             normalizeSelection()
-            accessRequestsReloadTask = nil
         }
     }
 
@@ -833,6 +851,8 @@ final class DashboardModel: ObservableObject {
         // Retain the task until they finish so a new reload cannot overlap them.
         reloadTask?.cancel()
         accessRequestsReloadTask?.cancel()
+        accessRequestsGeneration += 1
+        accessRequestsReloadPending = false
         reloadPending = false
         isReloading = false
     }
@@ -2326,7 +2346,7 @@ private struct DashboardDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .proxySessions,
                       let session = model.selectedProxySession {
-                ProxySessionDetailView(session: session)
+                ProxySessionDetailView(session: session, history: model.snapshot.accessRequests)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -2797,10 +2817,11 @@ private struct LauncherBundleDetailView: View {
 
 private struct ProxySessionDetailView: View {
     let session: ProxySessionSummary
+    let history: [AccessRequestRecord]
 
     private var records: [AccessRequestRecord] {
         let detail = "Proxy Session \(session.id.uuidString.lowercased())"
-        return loadAccessRequestRecords().filter { $0.detail == detail }
+        return history.filter { $0.detail == detail }
     }
 
     var body: some View {
