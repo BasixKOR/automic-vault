@@ -410,5 +410,13 @@
 "No Verified Launchers may read Authorization History without Approval." = "No Verified Launchers may read Authorization History without Approval.";
 "Authorization History record unavailable" = "Authorization History record unavailable";
 "Loading Authorization History…" = "Loading Authorization History…";
+"Load older records to find this Authorization History record." = "Load older records to find this Authorization History record.";
 "These Verified Launchers may run av history without Approval." = "These Verified Launchers may run av history without Approval.";
 "Verified Launchers allowed to run av history" = "Verified Launchers allowed to run av history";
+"Authorization History unavailable" = "Authorization History unavailable";
+"Load Older Records" = "Load Older Records";
+"Loading older records…" = "Loading older records…";
+"Older Authorization History unavailable" = "Older Authorization History unavailable";
+"Retry" = "Retry";
+"Retry Loading Older Records" = "Retry Loading Older Records";
+"Search covers loaded records. Load older records to continue searching." = "Search covers loaded records. Load older records to continue searching.";

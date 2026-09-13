@@ -11,6 +11,9 @@ model_source = source.split("final class DashboardModel:", 1)[1]
 show_method = "    func showAccessRequest(" + model_source.split(
     "    func showAccessRequest(", 1
 )[1].split("    func showSecretGate(", 1)[0]
+pending_status = "    var pendingAccessRequestStatus:" + model_source.split(
+    "    var pendingAccessRequestStatus:", 1
+)[1].split("    var selectedProxySession:", 1)[0]
 reload_method = model_source.split(
     "    func reload() {", 1
 )[1].split(
@@ -29,9 +32,21 @@ let (historyStarted, historySignal) = AsyncStream<Void>.makeStream()
 let finishHistory = DispatchSemaphore(value: 0)
 let blockHistory = Mutex(false)
 let historyReads = Mutex(0)
+let failFirstPage = Mutex(false)
+let failOlderPage = Mutex(false)
 let fixtureRecordID = UUID()
-extension String { var id: UUID { fixtureRecordID } }
+extension String {
+    var id: UUID {
+        if self == "latest" { return fixtureRecordID }
+        let index = Int(split(separator: "-").last!)! + 1
+        return UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!
+    }
+}
 typealias AccessRequestRecord = String
+struct AuthorizationHistoryPage {
+    let records: [String]
+    let olderPageCursor: Int64?
+}
 enum DashboardSection { case secretUsage }
 
 struct DashboardSnapshot: Sendable {
@@ -53,13 +68,20 @@ struct DashboardSnapshot: Sendable {
 enum CLIInstallState { case current, outdated }
 func currentCLIInstallState() -> CLIInstallState { .current }
 func loadLauncherBundleEnrollments() -> [String] { [] }
-func loadAccessRequestRecords() -> [String] {
+func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> AuthorizationHistoryPage? {
     if blockHistory.withLock({ $0 }) {
         historyReads.withLock { $0 += 1 }
         historySignal.yield(())
         finishHistory.wait()
     }
-    return ["latest"]
+    if beforeSequence == nil && failFirstPage.withLock({ $0 }) { return nil }
+    if beforeSequence != nil && failOlderPage.withLock({ $0 }) { return nil }
+    if beforeSequence == nil {
+        return AuthorizationHistoryPage(
+            records: ["latest"] + (0..<49).map { "older-\($0)" }, olderPageCursor: 50)
+    }
+    return AuthorizationHistoryPage(
+        records: (49..<74).map { "older-\($0)" }, olderPageCursor: nil)
 }
 
 @MainActor final class Model {
@@ -67,17 +89,38 @@ func loadAccessRequestRecords() -> [String] {
     var accessRequestsReloadTask: Task<Void, Never>?
     var accessRequestsReloadPending = false
     var accessRequestsGeneration = 0
+    var historyOlderPageCursor: Int64?
+    var isLoadingOlderHistory = false
+    var historyLoadFailed = false
     var pendingAccessRequestID: UUID?
     var selectedSection = DashboardSection.secretUsage
     var selectedItemID: String?
+    var searchText = ""
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
     var cliInstallState = CLIInstallState.outdated
     var launcherBundles: [String] = []
-    func normalizeSelection() {}
+    var normalizationCount = 0
+    var historyRecordsByID = [UUID: String]()
+    func normalizeSelection() {
+        normalizationCount += 1
+        if pendingAccessRequestID != nil {
+            selectedItemID = nil
+            return
+        }
+        if selectedItemID.map({ id in snapshot.accessRequests.contains { $0.id.uuidString == id } }) != true {
+            selectedItemID = snapshot.accessRequests.first?.id.uuidString
+        }
+    }
+    func setHistoryRecords(_ records: [String]) {
+        historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    func appendHistoryRecords(_ records: [String]) {
+        for record in records { historyRecordsByID[record.id] = record }
+    }
     func invalidateForTest() { invalidateReload() }
-""" + show_method + """
+""" + show_method + pending_status + """
     func reload() {
 """ + reload_method + """
 }
@@ -89,6 +132,9 @@ DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
 let model = Model()
 model.reload()
 for await _ in snapshotStarted { break }
+model.pendingAccessRequestID = UUID()
+assert(model.pendingAccessRequestStatus == String(localized: "Loading Authorization History…"))
+model.pendingAccessRequestID = nil
 guard model.cliInstallState == .current, model.isReloading else {
     print("FAIL: Update av CLI remains visible while dashboard loading is blocked")
     exit(1)
@@ -98,7 +144,8 @@ for _ in 0..<100 { model.reload() }
 assert(!first.isCancelled, "refresh must not cancel a usable result")
 finishSnapshot.signal()
 await first.value
-assert(model.snapshot.accessRequests == ["latest"])
+assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
+assert(model.historyOlderPageCursor == 50)
 assert(model.snapshot.detectorFindings == ["preserved"])
 // A burst queues exactly one follow-up, after the first load finishes.
 for await _ in snapshotStarted { break }
@@ -118,7 +165,7 @@ model.invalidateForTest()
 model.snapshot.policy = "edited"
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
-assert(model.snapshot.accessRequests == ["latest"])
+assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
 assert(invalidated.isCancelled)
 assert(!model.isReloading)
 assert(!model.reloadPending)
@@ -150,9 +197,78 @@ model.showAccessRequest(id: missingID)
 await model.accessRequestsReloadTask!.value
 assert(model.pendingAccessRequestID == missingID)
 assert(model.selectedItemID == nil, "missing record selected an unrelated history row")
+assert(model.pendingAccessRequestStatus == String(localized:
+    "Load older records to find this Authorization History record."))
 model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
+model.snapshot.accessRequests = []
+blockHistory.withLock { $0 = true }
+model.showAccessRequest(id: fixtureRecordID)
+for await _ in historyStarted { break }
+model.searchText = "hide requested record"
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+assert(model.searchText.isEmpty && model.selectedItemID == fixtureRecordID.uuidString,
+       "resolving a pending request selected a search-hidden row")
+blockHistory.withLock { $0 = false }
+let normalizationsBeforeOlderPage = model.normalizationCount
+model.pendingAccessRequestID = UUID()
+model.loadMoreHistory()
+assert(model.pendingAccessRequestStatus == String(localized: "Loading Authorization History…"))
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 75, "older history page was not appended")
+assert(model.historyOlderPageCursor == nil)
+assert(model.normalizationCount == normalizationsBeforeOlderPage + 1,
+       "older history page did not normalize selection")
+assert(model.pendingAccessRequestStatus == String(localized: "Authorization History record unavailable"))
+model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
+assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
+assert(model.historyOlderPageCursor == 50, "refresh did not reset the paging cursor")
+blockHistory.withLock { $0 = true }
+model.reloadAccessRequests()
+for await _ in historyStarted { break }
+model.loadMoreHistory()
+assert(!model.isLoadingOlderHistory, "older page started during first-page refresh")
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+blockHistory.withLock { $0 = false }
+failFirstPage.withLock { $0 = true }
+model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
+assert(model.snapshot.accessRequests.isEmpty && model.historyOlderPageCursor == nil)
+assert(model.historyLoadFailed, "failed first-page read looked successful")
+assert(model.pendingAccessRequestStatus == String(localized: "Authorization History unavailable"))
+failFirstPage.withLock { $0 = false }
+blockHistory.withLock { $0 = true }
+model.reloadAccessRequests()
+for await _ in historyStarted { break }
+assert(model.historyLoadFailed && model.accessRequestsReloadTask != nil,
+       "first-page retry did not expose a loading state")
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+blockHistory.withLock { $0 = false }
+assert(model.snapshot.accessRequests.count == 50 && !model.historyLoadFailed)
+failOlderPage.withLock { $0 = true }
+model.loadMoreHistory()
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 50 && model.historyOlderPageCursor == 50)
+assert(model.historyLoadFailed, "failed older-page read looked successful")
+assert(model.pendingAccessRequestStatus == String(localized: "Older Authorization History unavailable"))
+failOlderPage.withLock { $0 = false }
+model.loadMoreHistory(retry: true)
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 75 && !model.historyLoadFailed)
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 

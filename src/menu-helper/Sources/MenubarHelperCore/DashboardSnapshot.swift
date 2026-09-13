@@ -116,7 +116,7 @@ public struct DashboardSnapshot: Equatable, Sendable {
             secretNameAccessApps: loadSecretNameAccessApps(),
             authorizationHistoryAccessApps: loadAuthorizationHistoryAccessApps(),
             secrets: secrets,
-            accessRequests: loadAccessRequestRecords(),
+            accessRequests: [],
             doctorIssues: hardening.doctorIssues
         )
     }
@@ -1763,6 +1763,15 @@ public func loadAccessRequestRecordsForDisclosure(
         since: since, limit: limit, maximumDisclosureBytes: maximumDisclosureBytes)
     productionAuthorizationHistoryStore.scheduleMaintenanceIfDue(store)
     return records
+}
+
+public func loadAccessRequestRecordsPage(
+    beforeSequence: Int64? = nil
+) -> AuthorizationHistoryPage? {
+    guard let store = productionAuthorizationHistoryStore.get() else { return nil }
+    let page = try? store.page(beforeSequence: beforeSequence)
+    productionAuthorizationHistoryStore.scheduleMaintenanceIfDue(store)
+    return page
 }
 
 final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
