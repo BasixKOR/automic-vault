@@ -616,6 +616,11 @@ final class DashboardModel: ObservableObject {
             reloadAccessRequests()
             return
         }
+        resolvePendingAccessRequest(id)
+    }
+
+    private func resolvePendingAccessRequest(_ id: UUID) {
+        searchText = ""
         pendingAccessRequestID = nil
         selectedSection = .secretUsage
         selectedItemID = id.uuidString
@@ -918,9 +923,7 @@ final class DashboardModel: ObservableObject {
             }
             if generation == accessRequestsGeneration, let id = pendingAccessRequestID {
                 if next.accessRequests.contains(where: { $0.id == id }) {
-                    pendingAccessRequestID = nil
-                    selectedSection = .secretUsage
-                    selectedItemID = id.uuidString
+                    resolvePendingAccessRequest(id)
                 }
             }
             self.launcherBundles = launcherBundles
@@ -962,9 +965,7 @@ final class DashboardModel: ObservableObject {
             }
             if let id = pendingAccessRequestID {
                 if snapshot.accessRequests.contains(where: { $0.id == id }) {
-                    pendingAccessRequestID = nil
-                    selectedSection = .secretUsage
-                    selectedItemID = id.uuidString
+                    resolvePendingAccessRequest(id)
                 }
             }
             normalizeSelection()
@@ -994,9 +995,7 @@ final class DashboardModel: ObservableObject {
             historyOlderPageCursor = page.olderPageCursor
             if let id = pendingAccessRequestID,
                historyRecordsByID[id] != nil {
-                pendingAccessRequestID = nil
-                selectedSection = .secretUsage
-                selectedItemID = id.uuidString
+                resolvePendingAccessRequest(id)
             }
             normalizeSelection()
         }

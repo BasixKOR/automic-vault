@@ -199,6 +199,16 @@ assert(model.pendingAccessRequestStatus == String(localized:
 model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
+model.snapshot.accessRequests = []
+blockHistory.withLock { $0 = true }
+model.showAccessRequest(id: fixtureRecordID)
+for await _ in historyStarted { break }
+model.searchText = "hide requested record"
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+assert(model.searchText.isEmpty && model.selectedItemID == fixtureRecordID.uuidString,
+       "resolving a pending request selected a search-hidden row")
+blockHistory.withLock { $0 = false }
 let normalizationsBeforeOlderPage = model.normalizationCount
 model.pendingAccessRequestID = UUID()
 model.loadMoreHistory()
