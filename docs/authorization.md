@@ -186,8 +186,8 @@ recorded and included in the response.
 Each read requires Approval unless its exact Verified Launcher has
 Authorization History Access in Settings. This grant has its own setting row;
 Secret Name Access for `av list` does not grant history access, or vice versa.
-An unverifiable Launcher is denied. The menu bar app filters records before
-returning them to `av`.
+An unverifiable Launcher cannot use the automatic grant and needs Approval.
+The menu bar app filters records before returning them to `av`.
 
 Migration leaves older Keychain and UserDefaults history in place to avoid
 deleting an older helper's concurrent write. Those pre-existing copies can

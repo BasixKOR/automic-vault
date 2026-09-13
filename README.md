@@ -178,14 +178,14 @@ $ av history --since 7d --json
 
 Each read requires Approval unless you grant that exact Verified Launcher
 Authorization History Access in Settings. This is a separate setting from
-`av list`'s Secret Name Access. An unverifiable Launcher is denied. The read
-itself appears in the returned history.
+`av list`'s Secret Name Access. An unverifiable Launcher cannot use that grant
+and needs Approval. The read itself appears in the returned history.
 
 History is local, stored as encrypted rows in one SQLite file with its key in
 the Data Protection Keychain. It is available for up to 30 days or 25 MiB of
 encrypted record payloads, whichever comes first. Replies over 1 MiB fail
-without truncation; use a narrower window. History is neither tamper-resistant
-nor a complete forensic log.
+without truncation; use a narrower window. History is not tamper-proof or a
+complete forensic log.
 
 [Authorization History and its limits](docs/authorization.md#authorization-history)
 
