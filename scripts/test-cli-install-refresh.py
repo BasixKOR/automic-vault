@@ -45,6 +45,7 @@ func loadAccessRequestRecords() -> [String] { ["latest"] }
 
 @MainActor final class Model {
     var reloadTask: Task<Void, Never>?
+    var accessRequestsReloadTask: Task<Void, Never>?
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
@@ -91,6 +92,7 @@ model.reload() // A pending refresh must also be invalidated by a policy edit.
 model.invalidateForTest()
 model.snapshot.policy = "edited"
 model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests == ["latest"])
 assert(invalidated.isCancelled)
 assert(!model.isReloading)

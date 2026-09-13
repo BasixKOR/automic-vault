@@ -243,6 +243,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var pendingLauncherHelperReview: LauncherHelperReview?
 
     private var reloadTask: Task<Void, Never>?
+    private var accessRequestsReloadTask: Task<Void, Never>?
     private var reloadPending = false
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
     let authorityApproval = AuthorityApprovalState()
@@ -804,7 +805,10 @@ final class DashboardModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
-            next.accessRequests = loadAccessRequestRecords()
+            next.accessRequests = await Task.detached(priority: .background) {
+                loadAccessRequestRecords()
+            }.value
+            guard !Task.isCancelled else { return }
             snapshot = next
             self.launcherBundles = launcherBundles
             normalizeSelection()
@@ -812,14 +816,23 @@ final class DashboardModel: ObservableObject {
     }
 
     func reloadAccessRequests() {
-        snapshot.accessRequests = loadAccessRequestRecords()
-        normalizeSelection()
+        accessRequestsReloadTask?.cancel()
+        accessRequestsReloadTask = Task { [weak self] in
+            let records = await Task.detached(priority: .background) {
+                loadAccessRequestRecords()
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            snapshot.accessRequests = records
+            normalizeSelection()
+            accessRequestsReloadTask = nil
+        }
     }
 
     private func invalidateReload() {
         // Cancellation invalidates the result, but synchronous checks still run.
         // Retain the task until they finish so a new reload cannot overlap them.
         reloadTask?.cancel()
+        accessRequestsReloadTask?.cancel()
         reloadPending = false
         isReloading = false
     }

@@ -3441,6 +3441,10 @@ private enum MetadataDisclosure {
     case authorizationHistory(since: Date?)
 }
 
+private func authorizationHistorySinceIsValid(_ since: Date?, now: Date = Date()) -> Bool {
+    since.map { $0 <= now } ?? true
+}
+
 private func metadataDisclosureHasAutomaticAccess(
     _ kind: MetadataDisclosure,
     launchers: [LauncherIdentity],
@@ -3893,13 +3897,7 @@ private final class ApprovalServer: @unchecked Sendable {
             let since = sinceSeconds == 0
                 ? nil
                 : Date(timeIntervalSince1970: TimeInterval(sinceSeconds))
-            let now = Date()
-            guard since.map({
-                $0 <= now
-                    && $0 >= now.addingTimeInterval(
-                        -AuthorizationHistoryRetention.standard.maximumAge - 5
-                    )
-            }) ?? true else {
+            guard authorizationHistorySinceIsValid(since) else {
                 reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
                 return
             }
@@ -13891,6 +13889,10 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
           disclosedRecords.first?.command != record.command
     else { return 1 }
     let since = Date(timeIntervalSince1970: 123)
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    guard authorizationHistorySinceIsValid(now.addingTimeInterval(-31 * 24 * 60 * 60), now: now),
+          !authorizationHistorySinceIsValid(now.addingTimeInterval(1), now: now)
+    else { return 1 }
     var windowReads = 0
     var windowRecorded = false
     guard let window = authorizationHistoryDisclosureValue(

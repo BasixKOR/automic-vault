@@ -1488,21 +1488,25 @@ func backgroundMetadataMigratesWithoutChangingSecretAccessibility() throws {
     let policyService = "com.automicvault.tests.policy.\(UUID().uuidString)"
     let accessLogService = "com.automicvault.tests.log.\(UUID().uuidString)"
     let historyAccessService = "com.automicvault.tests.history-access.\(UUID().uuidString)"
+    let historyEncryptionService = "com.automicvault.tests.history-encryption.\(UUID().uuidString)"
     let secretService = "com.automicvault.tests.secret.\(UUID().uuidString)"
     let gpgSigningService = "com.automicvault.tests.gpg-config.\(UUID().uuidString)"
     let policyAccount = "policies"
     let accessLogAccount = "access-log"
     let historyAccessAccount = "history-access"
+    let historyEncryptionAccount = "history-encryption"
     let gpgSigningAccount = "configuration"
     defer { _ = deleteStoredSecret(account: policyAccount, service: policyService) }
     defer { _ = deleteStoredSecret(account: accessLogAccount, service: accessLogService) }
     defer { _ = deleteStoredSecret(account: historyAccessAccount, service: historyAccessService) }
+    defer { _ = deleteStoredSecret(account: historyEncryptionAccount, service: historyEncryptionService) }
     defer { _ = deleteStoredSecret(account: "API_TOKEN", service: secretService) }
     defer { _ = deleteStoredSecret(account: gpgSigningAccount, service: gpgSigningService) }
 
     #expect(saveStoredSecret(account: policyAccount, value: "[]", service: policyService) == errSecSuccess)
     #expect(saveStoredSecret(account: accessLogAccount, value: "[]", service: accessLogService) == errSecSuccess)
     #expect(saveStoredSecret(account: historyAccessAccount, value: "[]", service: historyAccessService) == errSecSuccess)
+    #expect(saveStoredSecret(account: historyEncryptionAccount, value: "test-key", service: historyEncryptionService) == errSecSuccess)
     #expect(saveStoredSecret(account: "API_TOKEN", value: "secret", service: secretService) == errSecSuccess)
     #expect(saveStoredSecret(
         account: gpgSigningAccount,
@@ -1517,12 +1521,15 @@ func backgroundMetadataMigratesWithoutChangingSecretAccessibility() throws {
         accessLogAccount: accessLogAccount,
         authorizationHistoryAccessService: historyAccessService,
         authorizationHistoryAccessAccount: historyAccessAccount,
+        authorizationHistoryEncryptionService: historyEncryptionService,
+        authorizationHistoryEncryptionAccount: historyEncryptionAccount,
         gpgSigningService: gpgSigningService,
         gpgSigningAccount: gpgSigningAccount
     ) == errSecSuccess)
     #expect(keychainAccessibility(account: policyAccount, service: policyService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: accessLogAccount, service: accessLogService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: historyAccessAccount, service: historyAccessService) == kSecAttrAccessibleAfterFirstUnlock as String)
+    #expect(keychainAccessibility(account: historyEncryptionAccount, service: historyEncryptionService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: gpgSigningAccount, service: gpgSigningService) == kSecAttrAccessibleAfterFirstUnlock as String)
     #expect(keychainAccessibility(account: "API_TOKEN", service: secretService) == kSecAttrAccessibleWhenUnlocked as String)
 }
