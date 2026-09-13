@@ -524,12 +524,8 @@ final class DashboardModel: ObservableObject {
     }
 
     var selectedAccessRequest: AccessRequestRecord? {
-        if pendingAccessRequestID != nil { return nil }
-        if let selectedItemID,
-           let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
-            return record
-        }
-        return snapshot.accessRequests.first
+        guard pendingAccessRequestID == nil, let item = selectedItem else { return nil }
+        return snapshot.accessRequests.first { $0.id.uuidString == item.id }
     }
 
     var pendingAccessRequestStatus: String? {
@@ -975,6 +971,7 @@ final class DashboardModel: ObservableObject {
                 selectedSection = .secretUsage
                 selectedItemID = id.uuidString
             }
+            normalizeSelection()
         }
     }
 
@@ -2092,7 +2089,8 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.historySections.count == 1
     else { return 1 }
     model.searchText = "no matching history"
-    guard model.historyRows.isEmpty, model.historySections.isEmpty else { return 1 }
+    guard model.historyRows.isEmpty, model.historySections.isEmpty,
+          model.selectedAccessRequest == nil else { return 1 }
     model.searchText = ""
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

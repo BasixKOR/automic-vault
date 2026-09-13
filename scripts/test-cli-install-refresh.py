@@ -93,7 +93,8 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var snapshot = DashboardSnapshot()
     var cliInstallState = CLIInstallState.outdated
     var launcherBundles: [String] = []
-    func normalizeSelection() {}
+    var normalizationCount = 0
+    func normalizeSelection() { normalizationCount += 1 }
     func setHistoryRecords(_ records: [String]) {}
     func appendHistoryRecords(_ records: [String]) {}
     func invalidateForTest() { invalidateReload() }
@@ -174,6 +175,7 @@ assert(model.selectedItemID == nil, "missing record selected an unrelated histor
 model.showAccessRequest(id: fixtureRecordID)
 assert(model.pendingAccessRequestID == nil)
 assert(model.selectedItemID == fixtureRecordID.uuidString)
+let normalizationsBeforeOlderPage = model.normalizationCount
 model.loadMoreHistory()
 for _ in 0..<10_000 {
     if !model.isLoadingOlderHistory { break }
@@ -181,6 +183,8 @@ for _ in 0..<10_000 {
 }
 assert(model.snapshot.accessRequests.count == 75, "older history page was not appended")
 assert(model.historyNextSequence == nil)
+assert(model.normalizationCount == normalizationsBeforeOlderPage + 1,
+       "older history page did not normalize selection")
 model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
