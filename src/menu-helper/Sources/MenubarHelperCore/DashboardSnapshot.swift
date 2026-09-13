@@ -1759,13 +1759,16 @@ public func loadAccessRequestRecordsForDisclosure(
     maximumDisclosureBytes: Int? = nil
 ) -> [AccessRequestRecord]? {
     guard let store = productionAuthorizationHistoryStore.get() else { return nil }
-    return try? store.records(
+    let records = try? store.records(
         since: since, limit: limit, maximumDisclosureBytes: maximumDisclosureBytes)
+    productionAuthorizationHistoryStore.scheduleMaintenanceIfDue(store)
+    return records
 }
 
 final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: AuthorizationHistoryStore?
+    private var lastMaintenance = Date.distantPast
     private let open: () -> AuthorizationHistoryStore?
 
     init(open: @escaping () -> AuthorizationHistoryStore?) {
@@ -1778,6 +1781,15 @@ final class ProductionAuthorizationHistoryStore: @unchecked Sendable {
             let store = open()
             cached = store
             return store
+        }
+    }
+
+    func scheduleMaintenanceIfDue(_ store: AuthorizationHistoryStore) {
+        lock.withLock {
+            let currentDate = Date()
+            guard currentDate.timeIntervalSince(lastMaintenance) >= 3_600 else { return }
+            lastMaintenance = currentDate
+            Task.detached(priority: .background) { try? store.maintain() }
         }
     }
 

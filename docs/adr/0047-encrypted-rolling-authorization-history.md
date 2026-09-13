@@ -24,9 +24,12 @@ keys. Record timestamps remain inside the ciphertext; keyed hourly retention
 buckets permit expiry without disclosing activity times. Each row's opaque ID
 and retention bucket are authenticated with its ciphertext.
 
-The store prunes expired records transactionally on each read or write and caps
-encrypted record payloads at 25 MiB, deleting the oldest records first. A
-dormant database may retain expired ciphertext until its next access. The
+The store prunes expired records transactionally on each write and on a
+coalesced background maintenance pass after a read. Reads filter expired
+records immediately without holding a write transaction. It caps encrypted
+record payloads at 25 MiB, deleting the oldest records by authenticated record
+date first while preserving a newly appended record. A dormant database may
+retain expired ciphertext until its next access. The
 database is excluded from backup. SQLite provides synchronous transactions; an
 allowed Secret Use succeeds only after
 its complete record is committed, read back, authenticated, decoded, and

@@ -93,6 +93,23 @@ func authorizationHistoryStorePrunesOldestRecordsAtTheByteLimit() throws {
 }
 
 @Test
+func authorizationHistoryStoreEvictsByRecordDateNotCommitOrder() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now, maximumEncryptedBytes: 1_800)
+    defer { fixture.remove() }
+    let newer = fixture.record(index: 1, date: now.addingTimeInterval(-3_600),
+                               reason: String(repeating: "x", count: 500))
+    let older = fixture.record(index: 2, date: now.addingTimeInterval(-10_800),
+                               reason: String(repeating: "x", count: 500))
+    let middle = fixture.record(index: 3, date: now.addingTimeInterval(-7_200),
+                                reason: String(repeating: "x", count: 500))
+    #expect(fixture.store.append(newer))
+    #expect(fixture.store.append(older))
+    #expect(fixture.store.append(middle))
+    #expect(Set(try fixture.store.records().map(\.id)) == Set([newer.id, middle.id]))
+}
+
+@Test
 func authorizationHistoryStoreEncryptsContentsAndRejectsTheWrongKey() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }
@@ -208,7 +225,7 @@ func authorizationHistoryStoreImportIsIdempotentButNeverReplacesARecord() throws
 }
 
 @Test
-func authorizationHistoryStorePrunesExpiredRowsOnRead() throws {
+func authorizationHistoryStoreFiltersExpiredRowsAndMaintainsOnDemand() throws {
     let now = Date(timeIntervalSince1970: 4_000_000)
     let fixture = try HistoryStoreFixture(now: now)
     defer { fixture.remove() }
@@ -221,6 +238,7 @@ func authorizationHistoryStorePrunesExpiredRowsOnRead() throws {
         now: { later }
     )
     #expect(try reopened.records().isEmpty)
+    try reopened.maintain()
 
     var database: OpaquePointer?
     guard sqlite3_open(fixture.url.path, &database) == SQLITE_OK else {

@@ -200,14 +200,6 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             throw AuthorizationHistoryStoreError.invalidLimit
         }
         return try lock.withLock {
-            try execute("BEGIN IMMEDIATE")
-            do {
-                try prune(preserving: nil)
-                try execute("COMMIT")
-            } catch {
-                try? execute("ROLLBACK")
-                throw error
-            }
             var statement: OpaquePointer?
             let sql =
                 "SELECT id, retention_bucket, ciphertext FROM authorization_history ORDER BY sequence DESC"
@@ -249,6 +241,19 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                 default:
                     throw sqliteError("read failed")
                 }
+            }
+        }
+    }
+
+    public func maintain() throws {
+        try lock.withLock {
+            try execute("BEGIN IMMEDIATE")
+            do {
+                try prune(preserving: nil)
+                try execute("COMMIT")
+            } catch {
+                try? execute("ROLLBACK")
+                throw error
             }
         }
     }
@@ -349,7 +354,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
     private func prune(preserving recordID: UUID?) throws {
         let currentDate = now()
         let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
-        var rows: [(id: String, size: Int64, expired: Bool)] = []
+        var rows: [(id: String, size: Int64, expired: Bool, date: Date)] = []
         var totalBytes: Int64 = 0
         do {
             var statement: OpaquePointer?
@@ -369,7 +374,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         && (record.date < cutoff || record.date > currentDate)
                     let size = Int64(ciphertext.count)
                     totalBytes += size
-                    rows.append((id, size, expired))
+                    rows.append((id, size, expired, record.date))
                 case SQLITE_DONE:
                     break scan
                 default:
@@ -381,6 +386,7 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             try delete(id: row.id)
             totalBytes -= row.size
         }
+        rows.sort { $0.date < $1.date }
         for row in rows where !row.expired && totalBytes > retention.maximumEncryptedBytes {
             guard row.id != recordID?.uuidString else { continue }
             try delete(id: row.id)
