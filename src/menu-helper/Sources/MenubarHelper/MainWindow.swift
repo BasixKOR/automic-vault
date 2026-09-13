@@ -278,6 +278,8 @@ final class DashboardModel: ObservableObject {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    var hasSearchQuery: Bool { !searchQuery.isEmpty }
+
     private func setHistoryRecords(_ records: [AccessRequestRecord]) {
         allHistoryRows = records.map(historyRow)
         allHistorySections = historyDays(allHistoryRows)
@@ -524,8 +526,9 @@ final class DashboardModel: ObservableObject {
     }
 
     var selectedAccessRequest: AccessRequestRecord? {
-        guard pendingAccessRequestID == nil, let item = selectedItem else { return nil }
-        return snapshot.accessRequests.first { $0.id.uuidString == item.id }
+        guard pendingAccessRequestID == nil, let selectedItemID,
+              historyRows.contains(where: { $0.id == selectedItemID }) else { return nil }
+        return snapshot.accessRequests.first { $0.id.uuidString == selectedItemID }
     }
 
     var pendingAccessRequestStatus: String? {
@@ -585,6 +588,7 @@ final class DashboardModel: ObservableObject {
             snapshot.accessRequests = records
             setHistoryRecords(records)
         }
+        searchText = ""
         guard snapshot.accessRequests.contains(where: { $0.id == id }) else {
             pendingAccessRequestID = id
             selectedSection = .secretUsage
@@ -945,6 +949,7 @@ final class DashboardModel: ObservableObject {
 
     func loadMoreHistory(retry: Bool = false) {
         guard let cursor = historyNextSequence, !isLoadingOlderHistory,
+              reloadTask == nil, accessRequestsReloadTask == nil,
               !historyLoadFailed || retry else { return }
         isLoadingOlderHistory = true
         historyLoadFailed = false
@@ -2088,6 +2093,17 @@ func runDashboardSearchSelfCheck() -> Int32 {
           model.historyRows.count == 1,
           model.historySections.count == 1
     else { return 1 }
+    let otherAccessRequest = AccessRequestRecord(
+        date: accessRequest.date.addingTimeInterval(-60),
+        tool: "git", command: "git status", decision: "Approved",
+        reason: "Allowed", launcher: "Terminal", callerPath: "/usr/local/bin/av",
+        target: "/bin/zsh", cwd: "/tmp", keys: [], detail: nil
+    )
+    model.showAccessRequest(id: otherAccessRequest.id, records: [accessRequest, otherAccessRequest])
+    model.searchText = "Terminal"
+    guard model.selectedAccessRequest == otherAccessRequest else { return 1 }
+    model.showAccessRequest(id: accessRequest.id)
+    guard model.searchText.isEmpty, model.selectedAccessRequest == accessRequest else { return 1 }
     model.searchText = "no matching history"
     guard model.historyRows.isEmpty, model.historySections.isEmpty,
           model.selectedAccessRequest == nil else { return 1 }
@@ -2441,7 +2457,7 @@ private struct DashboardListView: View {
                             Text("Older Authorization History unavailable")
                                 .foregroundStyle(.secondary)
                         }
-                        if !model.searchText.isEmpty {
+                        if model.hasSearchQuery {
                             Text("Search covers loaded records. Load older records to continue searching.")
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -2476,7 +2492,7 @@ private struct DashboardListView: View {
             rows(items)
             if model.selectedSection == .secretUsage,
                model.historyNextSequence != nil {
-                if !model.searchText.isEmpty {
+                if model.hasSearchQuery {
                     Text("Search covers loaded records. Scroll to load older records.")
                         .foregroundStyle(.secondary)
                 }
@@ -2488,7 +2504,9 @@ private struct DashboardListView: View {
                     ProgressView("Loading older records…")
                 } else {
                     Button("Load Older Records") { model.loadMoreHistory() }
-                        .onAppear { model.loadMoreHistory() }
+                        .onAppear {
+                            if !model.hasSearchQuery { model.loadMoreHistory() }
+                        }
                 }
             }
         }

@@ -29,6 +29,8 @@ let (historyStarted, historySignal) = AsyncStream<Void>.makeStream()
 let finishHistory = DispatchSemaphore(value: 0)
 let blockHistory = Mutex(false)
 let historyReads = Mutex(0)
+let failFirstPage = Mutex(false)
+let failOlderPage = Mutex(false)
 let fixtureRecordID = UUID()
 extension String {
     var id: UUID {
@@ -69,6 +71,8 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
         historySignal.yield(())
         finishHistory.wait()
     }
+    if beforeSequence == nil && failFirstPage.withLock({ $0 }) { return nil }
+    if beforeSequence != nil && failOlderPage.withLock({ $0 }) { return nil }
     if beforeSequence == nil {
         return AuthorizationHistoryPage(
             records: ["latest"] + (0..<49).map { "older-\($0)" }, nextSequence: 50)
@@ -88,6 +92,7 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var pendingAccessRequestID: UUID?
     var selectedSection = DashboardSection.secretUsage
     var selectedItemID: String?
+    var searchText = ""
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
@@ -189,6 +194,38 @@ model.reloadAccessRequests()
 await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
 assert(model.historyNextSequence == 50, "refresh did not reset the paging cursor")
+blockHistory.withLock { $0 = true }
+model.reloadAccessRequests()
+for await _ in historyStarted { break }
+model.loadMoreHistory()
+assert(!model.isLoadingOlderHistory, "older page started during first-page refresh")
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+blockHistory.withLock { $0 = false }
+failFirstPage.withLock { $0 = true }
+model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
+assert(model.snapshot.accessRequests.isEmpty && model.historyNextSequence == nil)
+assert(model.historyLoadFailed, "failed first-page read looked successful")
+failFirstPage.withLock { $0 = false }
+model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
+assert(model.snapshot.accessRequests.count == 50 && !model.historyLoadFailed)
+failOlderPage.withLock { $0 = true }
+model.loadMoreHistory()
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 50 && model.historyNextSequence == 50)
+assert(model.historyLoadFailed, "failed older-page read looked successful")
+failOlderPage.withLock { $0 = false }
+model.loadMoreHistory(retry: true)
+for _ in 0..<10_000 {
+    if !model.isLoadingOlderHistory { break }
+    await Task.yield()
+}
+assert(model.snapshot.accessRequests.count == 75 && !model.historyLoadFailed)
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 
