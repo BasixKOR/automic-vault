@@ -240,6 +240,7 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var historySections: [HistoryDay] = []
     private var allHistoryRows: [DashboardItem] = []
     private var allHistorySections: [HistoryDay] = []
+    private var historyRecordsByID: [UUID: AccessRequestRecord] = [:]
     @Published private(set) var cliInstallState: CLIInstallState?
     @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
@@ -281,12 +282,14 @@ final class DashboardModel: ObservableObject {
     var hasSearchQuery: Bool { !searchQuery.isEmpty }
 
     private func setHistoryRecords(_ records: [AccessRequestRecord]) {
+        historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         allHistoryRows = records.map(historyRow)
         allHistorySections = historyDays(allHistoryRows)
         refreshHistorySearch()
     }
 
-    private func appendHistoryRecords(_ records: [AccessRequestRecord]) {
+    fileprivate func appendHistoryRecords(_ records: [AccessRequestRecord]) {
+        for record in records { historyRecordsByID[record.id] = record }
         let added = records.map(historyRow)
         allHistoryRows += added
         allHistorySections = mergeHistoryDays(allHistorySections, historyDays(added))
@@ -527,8 +530,10 @@ final class DashboardModel: ObservableObject {
 
     var selectedAccessRequest: AccessRequestRecord? {
         guard pendingAccessRequestID == nil, let selectedItemID,
-              historyRows.contains(where: { $0.id == selectedItemID }) else { return nil }
-        return snapshot.accessRequests.first { $0.id.uuidString == selectedItemID }
+              let id = UUID(uuidString: selectedItemID),
+              let record = historyRecordsByID[id] else { return nil }
+        return searchQuery.isEmpty || matchesSearch(historyRow(record), query: searchQuery)
+            ? record : nil
     }
 
     var pendingAccessRequestStatus: String? {
@@ -2134,6 +2139,25 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard merged.map(\.day) == days.map(\.day),
           merged[0].items.map(\.id) == ["newest", "recent"],
           merged[1].items.map(\.id) == ["old", "middle", "older"]
+    else { return 1 }
+    var pageSnapshot = DashboardSnapshot.empty
+    pageSnapshot.accessRequests = [accessRequest]
+    let pageModel = DashboardModel(snapshot: pageSnapshot)
+    pageModel.appendHistoryRecords([otherAccessRequest])
+    guard pageModel.historyRows.map(\.id) == [accessRequest.id.uuidString, otherAccessRequest.id.uuidString],
+          pageModel.historySections.count == 1 else { return 1 }
+    pageModel.searchText = "Terminal"
+    let nextPageRecord = AccessRequestRecord(
+        date: accessRequest.date.addingTimeInterval(86_400),
+        tool: "git", command: "git log", decision: "Approved",
+        reason: "Allowed", launcher: "Terminal", callerPath: "/usr/local/bin/av",
+        target: "/bin/zsh", cwd: "/tmp", keys: [], detail: nil
+    )
+    pageModel.appendHistoryRecords([nextPageRecord])
+    guard pageModel.historyRows.map(\.id) == [otherAccessRequest.id.uuidString, nextPageRecord.id.uuidString],
+          pageModel.historySections.count == 2,
+          pageModel.historySections[0].items.map(\.id) == [nextPageRecord.id.uuidString],
+          pageModel.historySections[1].items.map(\.id) == [otherAccessRequest.id.uuidString]
     else { return 1 }
     var boundedSnapshot = DashboardSnapshot.empty
     boundedSnapshot.accessRequests = Array(repeating: accessRequest, count: 51)
