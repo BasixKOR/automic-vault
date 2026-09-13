@@ -7,7 +7,11 @@ import tempfile
 
 source = (Path(__file__).resolve().parents[1] /
           "src/menu-helper/Sources/MenubarHelper/MainWindow.swift").read_text()
-reload_method = source.split("final class DashboardModel:", 1)[1].split(
+model_source = source.split("final class DashboardModel:", 1)[1]
+show_method = "    func showAccessRequest(" + model_source.split(
+    "    func showAccessRequest(", 1
+)[1].split("    func showSecretGate(", 1)[0]
+reload_method = model_source.split(
     "    func reload() {", 1
 )[1].split(
     "    private func reloadAuthorizationState()", 1
@@ -25,6 +29,10 @@ let (historyStarted, historySignal) = AsyncStream<Void>.makeStream()
 let finishHistory = DispatchSemaphore(value: 0)
 let blockHistory = Mutex(false)
 let historyReads = Mutex(0)
+let fixtureRecordID = UUID()
+extension String { var id: UUID { fixtureRecordID } }
+typealias AccessRequestRecord = String
+enum DashboardSection { case secretUsage }
 
 struct DashboardSnapshot: Sendable {
     var policy = "loaded"
@@ -59,6 +67,9 @@ func loadAccessRequestRecords() -> [String] {
     var accessRequestsReloadTask: Task<Void, Never>?
     var accessRequestsReloadPending = false
     var accessRequestsGeneration = 0
+    var pendingAccessRequestID: UUID?
+    var selectedSection = DashboardSection.secretUsage
+    var selectedItemID: String?
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
@@ -66,6 +77,7 @@ func loadAccessRequestRecords() -> [String] {
     var launcherBundles: [String] = []
     func normalizeSelection() {}
     func invalidateForTest() { invalidateReload() }
+""" + show_method + """
     func reload() {
 """ + reload_method + """
 }
@@ -132,6 +144,15 @@ assert(historyReads.withLock { $0 == 2 }, "history burst did not coalesce")
 finishHistory.signal()
 await model.accessRequestsReloadTask!.value
 assert(historyReads.withLock { $0 == 2 })
+blockHistory.withLock { $0 = false }
+let missingID = UUID()
+model.showAccessRequest(id: missingID)
+await model.accessRequestsReloadTask!.value
+assert(model.pendingAccessRequestID == missingID)
+assert(model.selectedItemID == nil, "missing record selected an unrelated history row")
+model.showAccessRequest(id: fixtureRecordID)
+assert(model.pendingAccessRequestID == nil)
+assert(model.selectedItemID == fixtureRecordID.uuidString)
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 

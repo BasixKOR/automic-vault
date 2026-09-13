@@ -24,6 +24,7 @@ public enum AuthorizationHistoryStoreError: Error, Equatable {
     case encryption
     case decoding
     case recordTooLarge
+    case invalidLimit
     case verificationFailed
 }
 
@@ -185,7 +186,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
     }
 
     public func records(since: Date? = nil, limit: Int? = nil) throws -> [AccessRequestRecord] {
-        try lock.withLock {
+        guard limit.map({ $0 > 0 }) ?? true else {
+            throw AuthorizationHistoryStoreError.invalidLimit
+        }
+        return try lock.withLock {
             try execute("BEGIN IMMEDIATE")
             do {
                 try prune(preserving: nil)

@@ -16,6 +16,12 @@ func authorizationHistoryStoreRetainsMoreThanTheDashboardWindow() throws {
     #expect(records.count == 75)
     #expect(records.first?.command == "fixture 74")
     #expect(try fixture.store.records(limit: 50).count == 50)
+    #expect(throws: AuthorizationHistoryStoreError.invalidLimit) {
+        try fixture.store.records(limit: 0)
+    }
+    #expect(throws: AuthorizationHistoryStoreError.invalidLimit) {
+        try fixture.store.records(limit: -1)
+    }
 }
 
 @Test

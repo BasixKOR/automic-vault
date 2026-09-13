@@ -4021,16 +4021,18 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         if hasAutomaticAccess
         {
-            discloseMetadata(
-                request: request,
-                callerPath: callerPath,
-                launcher: launcher,
-                approvalSource: "Auto",
-                reason: "Always allowed in Settings",
-                peer: peer,
-                message: message,
-                kind: kind
-            )
+            Task {
+                await discloseMetadata(
+                    request: request,
+                    callerPath: callerPath,
+                    launcher: launcher,
+                    approvalSource: "Auto",
+                    reason: "Always allowed in Settings",
+                    peer: peer,
+                    message: message,
+                    kind: kind
+                )
+            }
             return
         }
         Task { @MainActor in
@@ -4088,7 +4090,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
-            self.discloseMetadata(
+            await self.discloseMetadata(
                 request: request,
                 callerPath: callerPath,
                 launcher: launcher,
@@ -4110,7 +4112,7 @@ private final class ApprovalServer: @unchecked Sendable {
         peer: xpc_connection_t,
         message: xpc_object_t,
         kind: MetadataDisclosure
-    ) {
+    ) async {
         var names: [String]?
         if case .secretNames(let globalOnly) = kind {
             switch loadStoredSecretsResult() {
@@ -4141,11 +4143,14 @@ private final class ApprovalServer: @unchecked Sendable {
             launcher: launcher
         )
         if case .authorizationHistory(let since) = kind {
-            guard let value = authorizationHistoryDisclosureValue(
-                record: record,
-                since: since,
-                onAccessRequest: onAccessRequest
-            ) else {
+            let audit = onAccessRequest
+            guard let value = await Task.detached(priority: .userInitiated, operation: {
+                authorizationHistoryDisclosureValue(
+                    record: record,
+                    since: since,
+                    onAccessRequest: audit
+                )
+            }).value else {
                 reply(peer, to: message, ok: false, error: "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
                 return
             }
