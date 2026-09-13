@@ -99,6 +99,7 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var cliInstallState = CLIInstallState.outdated
     var launcherBundles: [String] = []
     var normalizationCount = 0
+    var historyRecordsByID = [UUID: String]()
     func normalizeSelection() {
         normalizationCount += 1
         if pendingAccessRequestID != nil {
@@ -109,8 +110,12 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
             selectedItemID = snapshot.accessRequests.first?.id.uuidString
         }
     }
-    func setHistoryRecords(_ records: [String]) {}
-    func appendHistoryRecords(_ records: [String]) {}
+    func setHistoryRecords(_ records: [String]) {
+        historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+    func appendHistoryRecords(_ records: [String]) {
+        for record in records { historyRecordsByID[record.id] = record }
+    }
     func invalidateForTest() { invalidateReload() }
 """ + show_method + """
     func reload() {

@@ -978,7 +978,7 @@ final class DashboardModel: ObservableObject {
             appendHistoryRecords(page.records)
             historyNextSequence = page.nextSequence
             if let id = pendingAccessRequestID,
-               snapshot.accessRequests.contains(where: { $0.id == id }) {
+               historyRecordsByID[id] != nil {
                 pendingAccessRequestID = nil
                 selectedSection = .secretUsage
                 selectedItemID = id.uuidString
@@ -1098,8 +1098,12 @@ final class DashboardModel: ObservableObject {
     }
 
     private func normalizeSelection() {
-        if selectedSection == .secretUsage, pendingAccessRequestID != nil {
-            selectedItemID = nil
+        if selectedSection == .secretUsage {
+            if pendingAccessRequestID != nil {
+                selectedItemID = nil
+            } else if selectedAccessRequest == nil {
+                selectedItemID = historyRows.first?.id
+            }
             return
         }
         let items = items
