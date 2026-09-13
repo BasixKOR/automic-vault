@@ -231,8 +231,15 @@ final class DashboardModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var selectedItemID: String?
     @Published var searchText = "" {
-        didSet { normalizeSelection() }
+        didSet {
+            refreshHistorySearch()
+            normalizeSelection()
+        }
     }
+    @Published private(set) var historyRows: [DashboardItem] = []
+    @Published private(set) var historySections: [HistoryDay] = []
+    private var allHistoryRows: [DashboardItem] = []
+    private var allHistorySections: [HistoryDay] = []
     @Published private(set) var cliInstallState: CLIInstallState?
     @Published fileprivate var availableUpdateVersion: String?
     @Published private(set) var pendingBlessing: BlessedScriptReviewRequest?
@@ -259,6 +266,7 @@ final class DashboardModel: ObservableObject {
     init(snapshot: DashboardSnapshot = .empty, cliInstallState: CLIInstallState? = nil) {
         self.snapshot = snapshot
         self.cliInstallState = cliInstallState
+        setHistoryRecords(snapshot.accessRequests)
         normalizeSelection()
     }
 
@@ -268,6 +276,50 @@ final class DashboardModel: ObservableObject {
 
     private var searchQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func setHistoryRecords(_ records: [AccessRequestRecord]) {
+        allHistoryRows = records.map(historyRow)
+        allHistorySections = historyDays(allHistoryRows)
+        refreshHistorySearch()
+    }
+
+    private func appendHistoryRecords(_ records: [AccessRequestRecord]) {
+        let added = records.map(historyRow)
+        allHistoryRows += added
+        allHistorySections = mergeHistoryDays(allHistorySections, historyDays(added))
+        let query = searchQuery
+        let visible = query.isEmpty ? added : added.filter { matchesSearch($0, query: query) }
+        historyRows += visible
+        historySections = query.isEmpty ? allHistorySections
+            : mergeHistoryDays(historySections, historyDays(visible))
+    }
+
+    private func refreshHistorySearch() {
+        let query = searchQuery
+        historyRows = query.isEmpty ? allHistoryRows
+            : allHistoryRows.filter { matchesSearch($0, query: query) }
+        historySections = query.isEmpty ? allHistorySections
+            : allHistorySections.compactMap { group in
+                let matches = group.items.filter { matchesSearch($0, query: query) }
+                return matches.isEmpty ? nil : HistoryDay(day: group.day, items: matches)
+            }
+    }
+
+    private func historyRow(_ record: AccessRequestRecord) -> DashboardItem {
+        DashboardItem(
+            id: record.id.uuidString,
+            title: "\(record.launcher ?? "Launcher unavailable") used \(record.tool)",
+            subtitle: record.decision,
+            detail: record.reason,
+            date: record.date
+        )
+    }
+
+    private func matchesSearch(_ item: DashboardItem, query: String) -> Bool {
+        item.title.localizedCaseInsensitiveContains(query)
+            || item.subtitle.localizedCaseInsensitiveContains(query)
+            || item.detail.localizedCaseInsensitiveContains(query)
     }
 
     private func items(for section: DashboardSection) -> [DashboardItem] {
@@ -337,15 +389,7 @@ final class DashboardModel: ObservableObject {
                 DashboardItem(id: $0.account, title: $0.account, subtitle: $0.subtitle, detail: "Secret value is hidden.\n\($0.subtitle)")
             }
         case .secretUsage:
-            snapshot.accessRequests.map {
-                DashboardItem(
-                    id: $0.id.uuidString,
-                    title: "\($0.launcher ?? "Launcher unavailable") used \($0.tool)",
-                    subtitle: $0.decision,
-                    detail: $0.reason,
-                    date: $0.date
-                )
-            }
+            historyRows
         case .proxySessions:
             ProxySessionViewModel.shared.sessions.map {
                 DashboardItem(
@@ -424,6 +468,7 @@ final class DashboardModel: ObservableObject {
                 ),
             ]
         }
+        if section == .secretUsage { return base }
         let query = searchQuery
         guard !query.isEmpty else { return base }
         return base.filter {
@@ -540,7 +585,10 @@ final class DashboardModel: ObservableObject {
     }
 
     func showAccessRequest(id: UUID, records: [AccessRequestRecord]? = nil) {
-        if let records { snapshot.accessRequests = records }
+        if let records {
+            snapshot.accessRequests = records
+            setHistoryRecords(records)
+        }
         guard snapshot.accessRequests.contains(where: { $0.id == id }) else {
             pendingAccessRequestID = id
             selectedSection = .secretUsage
@@ -838,6 +886,7 @@ final class DashboardModel: ObservableObject {
             next.accessRequests = generation == accessRequestsGeneration
                 ? (page?.records ?? []) : snapshot.accessRequests
             snapshot = next
+            setHistoryRecords(next.accessRequests)
             if generation == accessRequestsGeneration {
                 historyNextSequence = page?.nextSequence
                 isLoadingOlderHistory = false
@@ -877,14 +926,13 @@ final class DashboardModel: ObservableObject {
             guard !Task.isCancelled, let self,
                   generation == accessRequestsGeneration else { return }
             if let page {
-                let recentIDs = Set(page.records.map(\.id))
-                snapshot.accessRequests = page.records + snapshot.accessRequests.filter {
-                    !recentIDs.contains($0.id)
-                }
-                historyNextSequence = historyNextSequence ?? page.nextSequence
+                snapshot.accessRequests = page.records
+                setHistoryRecords(page.records)
+                historyNextSequence = page.nextSequence
                 historyLoadFailed = false
             } else {
                 snapshot.accessRequests = []
+                setHistoryRecords([])
                 historyNextSequence = nil
                 historyLoadFailed = true
             }
@@ -917,7 +965,9 @@ final class DashboardModel: ObservableObject {
                 return
             }
             let loadedIDs = Set(snapshot.accessRequests.map(\.id))
-            snapshot.accessRequests += page.records.filter { !loadedIDs.contains($0.id) }
+            let added = page.records.filter { !loadedIDs.contains($0.id) }
+            snapshot.accessRequests += added
+            appendHistoryRecords(added)
             historyNextSequence = page.nextSequence
             if let id = pendingAccessRequestID,
                snapshot.accessRequests.contains(where: { $0.id == id }) {
@@ -2037,8 +2087,13 @@ func runDashboardSearchSelfCheck() -> Int32 {
     model.showAccessRequest(id: accessRequest.id, records: [accessRequest])
     guard model.selectedSection == .secretUsage,
           model.selectedItemID == accessRequest.id.uuidString,
-          model.selectedAccessRequest == accessRequest
+          model.selectedAccessRequest == accessRequest,
+          model.historyRows.count == 1,
+          model.historySections.count == 1
     else { return 1 }
+    model.searchText = "no matching history"
+    guard model.historyRows.isEmpty, model.historySections.isEmpty else { return 1 }
+    model.searchText = ""
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -2051,6 +2106,14 @@ func runDashboardSearchSelfCheck() -> Int32 {
     guard days.count == 2,
           days[0].items.map(\.id) == ["recent"],
           days[1].items.map(\.id) == ["old", "older"]
+    else { return 1 }
+    let merged = mergeHistoryDays(days, historyDays([
+        DashboardItem(id: "middle", title: "", subtitle: "", detail: "", date: oldDate.addingTimeInterval(-30)),
+        DashboardItem(id: "newest", title: "", subtitle: "", detail: "", date: recentDate.addingTimeInterval(60)),
+    ], calendar: calendar))
+    guard merged.map(\.day) == days.map(\.day),
+          merged[0].items.map(\.id) == ["newest", "recent"],
+          merged[1].items.map(\.id) == ["old", "middle", "older"]
     else { return 1 }
     return 0
 }
@@ -2446,7 +2509,7 @@ private struct DashboardListView: View {
     @ViewBuilder
     private func rows(_ items: [DashboardItem]) -> some View {
         if model.selectedSection == .secretUsage {
-            ForEach(historyDays(items), id: \.day) { group in
+            ForEach(model.historySections, id: \.day) { group in
                 Section {
                     ForEach(group.items) { item in
                         DashboardRow(item: item)
@@ -2465,17 +2528,43 @@ private struct DashboardListView: View {
     }
 }
 
+struct HistoryDay {
+    let day: Date
+    var items: [DashboardItem]
+}
+
+private func historyItemPrecedes(_ lhs: DashboardItem, _ rhs: DashboardItem) -> Bool {
+    if lhs.date == rhs.date { return lhs.id < rhs.id }
+    return (lhs.date ?? .distantPast) > (rhs.date ?? .distantPast)
+}
+
 private func historyDays(
     _ items: [DashboardItem], calendar: Calendar = .autoupdatingCurrent
-) -> [(day: Date, items: [DashboardItem])] {
+) -> [HistoryDay] {
     Dictionary(grouping: items) { calendar.startOfDay(for: $0.date ?? .distantPast) }
         .map { day, items in
-            (day: day, items: items.sorted {
-                if $0.date == $1.date { return $0.id < $1.id }
-                return ($0.date ?? .distantPast) > ($1.date ?? .distantPast)
-            })
+            HistoryDay(day: day, items: items.sorted(by: historyItemPrecedes))
         }
         .sorted { $0.day > $1.day }
+}
+
+private func mergeHistoryDays(_ existing: [HistoryDay], _ added: [HistoryDay]) -> [HistoryDay] {
+    var result = existing
+    for group in added {
+        guard let index = result.firstIndex(where: { $0.day == group.day }) else {
+            result.append(group)
+            continue
+        }
+        if let last = result[index].items.last, let first = group.items.first,
+           historyItemPrecedes(last, first) {
+            result[index].items += group.items
+        } else {
+            result[index].items = (result[index].items + group.items)
+                .sorted(by: historyItemPrecedes)
+        }
+    }
+    result.sort { $0.day > $1.day }
+    return result
 }
 
 private struct DashboardDetailView: View {

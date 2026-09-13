@@ -94,6 +94,8 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var cliInstallState = CLIInstallState.outdated
     var launcherBundles: [String] = []
     func normalizeSelection() {}
+    func setHistoryRecords(_ records: [String]) {}
+    func appendHistoryRecords(_ records: [String]) {}
     func invalidateForTest() { invalidateReload() }
 """ + show_method + """
     func reload() {
@@ -179,6 +181,10 @@ for _ in 0..<10_000 {
 }
 assert(model.snapshot.accessRequests.count == 75, "older history page was not appended")
 assert(model.historyNextSequence == nil)
+model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
+assert(model.snapshot.accessRequests.count == 50, "refresh retained evicted or older cached records")
+assert(model.historyNextSequence == 50, "refresh did not reset the paging cursor")
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 
