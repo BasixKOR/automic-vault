@@ -166,12 +166,32 @@ or storage failure can damage it. It provides neither tamper resistance nor a
 complete forensic log. The iPhone's separate Request History records only what
 that phone observed and does not prove that a Mac accepted a response.
 
-The Mac makes history available for up to 30 days, capped at 25 MiB of
-encrypted record payloads. The dashboard and `av history` show the newest 50 records by
-default. Use `av history --since 7d` to request a specific window, and add
-`--json` for machine-readable, display-safe output. A reply over 1 MiB fails
-without truncation; request a narrower window. History access requires
-Approval unless the exact Verified Launcher has Authorization History Access.
+The Mac stores separately encrypted records in one SQLite database in
+Application Support. The encryption key stays in the Data Protection Keychain.
+The rolling store makes up to 30 days or 25 MiB of encrypted record payloads
+available, whichever bound comes first. The dashboard and `av history` show the
+newest 50 records by default.
+
+```sh
+av history
+av history --since 7d --json
+```
+
+`--since` accepts whole-number seconds, minutes, hours, days, or weeks (`s`,
+`m`, `h`, `d`, `w`), up to 30 days. `--json` returns machine-readable records
+with display-safe commands, never Secret Values. A reply over 1 MiB fails
+without truncation; request a narrower window. The successful read is itself
+recorded and included in the response.
+
+Each read requires Approval unless its exact Verified Launcher has
+Authorization History Access in Settings. This grant has its own setting row;
+Secret Name Access for `av list` does not grant history access, or vice versa.
+An unverifiable Launcher is denied. The menu bar app filters records before
+returning them to `av`.
+
+Migration leaves older Keychain and UserDefaults history in place to avoid
+deleting an older helper's concurrent write. Those pre-existing copies can
+outlive the rolling store's limits; they are not part of its retention guarantee.
 
 See the [Domain Language](domain-language.md) and [Architecture](architecture.md)
 for the authoritative terms and security boundaries.

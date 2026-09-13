@@ -17,7 +17,7 @@ working directories, and software identities into an ordinary same-user file.
 ## Decision
 
 The menu bar app stores Authorization Records as independently authenticated
-AES-GCM ciphertext rows in Application Support. A random 256-bit root key is
+AES-GCM ciphertext rows in one SQLite database in Application Support. A random 256-bit root key is
 stored in the app's Data Protection Keychain access group with After First
 Unlock availability. HKDF derives separate encryption and retention-bucket
 keys. Record timestamps remain inside the ciphertext; keyed hourly retention
