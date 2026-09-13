@@ -232,7 +232,7 @@ final class DashboardModel: ObservableObject {
     @Published var selectedItemID: String?
     @Published var searchText = "" {
         didSet {
-            refreshHistorySearch()
+            if selectedSection == .secretUsage { refreshHistorySearch() }
             normalizeSelection()
         }
     }
@@ -573,7 +573,7 @@ final class DashboardModel: ObservableObject {
 
     var pendingAccessRequestStatus: String? {
         guard pendingAccessRequestID != nil else { return nil }
-        if accessRequestsReloadTask != nil || isLoadingOlderHistory {
+        if reloadTask != nil || accessRequestsReloadTask != nil || isLoadingOlderHistory {
             return String(localized: "Loading Authorization History…")
         }
         if historyLoadFailed {
@@ -624,6 +624,7 @@ final class DashboardModel: ObservableObject {
         pendingAccessRequestID = nil
         selectedSection = section
         selectedItemID = nil
+        if section == .secretUsage { refreshHistorySearch() }
         normalizeSelection()
     }
 
@@ -637,10 +638,10 @@ final class DashboardModel: ObservableObject {
             snapshot.accessRequests = records
             setHistoryRecords(records)
         }
-        searchText = ""
         guard snapshot.accessRequests.contains(where: { $0.id == id }) else {
             pendingAccessRequestID = id
             selectedSection = .secretUsage
+            searchText = ""
             selectedItemID = nil
             reloadAccessRequests()
             return
@@ -649,9 +650,9 @@ final class DashboardModel: ObservableObject {
     }
 
     private func resolvePendingAccessRequest(_ id: UUID) {
+        selectedSection = .secretUsage
         searchText = ""
         pendingAccessRequestID = nil
-        selectedSection = .secretUsage
         selectedItemID = id.uuidString
     }
 
@@ -2216,6 +2217,11 @@ func runDashboardSearchSelfCheck() -> Int32 {
     pageModel.searchText = "no matching history"
     pageModel.searchText = ""
     guard pageModel.selectedItemID == nextPageRecord.id.uuidString else { return 1 }
+    pageModel.selectSection(.settings)
+    pageModel.searchText = "no matching history"
+    guard !pageModel.historyRows.isEmpty else { return 1 }
+    pageModel.selectSection(.secretUsage)
+    guard pageModel.historyRows.isEmpty, pageModel.selectedItemID == nil else { return 1 }
     var boundedSnapshot = DashboardSnapshot.empty
     boundedSnapshot.accessRequests = Array(repeating: accessRequest, count: 51)
     let boundedModel = DashboardModel(snapshot: boundedSnapshot)

@@ -132,6 +132,9 @@ DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
 let model = Model()
 model.reload()
 for await _ in snapshotStarted { break }
+model.pendingAccessRequestID = UUID()
+assert(model.pendingAccessRequestStatus == String(localized: "Loading Authorization History…"))
+model.pendingAccessRequestID = nil
 guard model.cliInstallState == .current, model.isReloading else {
     print("FAIL: Update av CLI remains visible while dashboard loading is blocked")
     exit(1)
