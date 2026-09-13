@@ -33,3 +33,31 @@ func authorizationHistoryPerformance() throws {
     #expect(records.first?.command == record(549).command)
     #expect(records.last?.command == record(500).command)
 }
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["AV_BENCHMARK_AUTHORIZATION"] == "1"))
+func rollingAuthorizationHistoryPerformance() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("av-history-benchmark-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = try AuthorizationHistoryStore(
+        url: directory.appendingPathComponent("history.sqlite3"),
+        keyData: Data(repeating: 7, count: 32),
+        now: { now }
+    )
+    func record(_ index: Int, reason: String) -> AccessRequestRecord {
+        AccessRequestRecord(
+            date: now.addingTimeInterval(TimeInterval(index - 10_001)),
+            tool: "fixture", command: "fixture \(index)", decision: "Approved",
+            reason: reason, launcher: "Fixture", callerPath: "/fixture/av",
+            target: "/fixture/tool", cwd: "/fixture", keys: [], detail: nil
+        )
+    }
+    let payload = String(repeating: "x", count: 2_000)
+    try store.importRecords((0..<10_000).map { record($0, reason: payload) })
+    let start = ContinuousClock.now
+    let cpuStart = clock()
+    #expect(store.append(record(10_000, reason: "Allowed")))
+    let cpu = Double(clock() - cpuStart) / Double(CLOCKS_PER_SEC)
+    print("Rolling Authorization History: 10k rows / 20 MiB append, wall=\(start.duration(to: .now)), CPU=\(cpu)s")
+}

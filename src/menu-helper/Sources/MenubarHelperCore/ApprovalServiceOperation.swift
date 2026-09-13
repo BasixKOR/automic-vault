@@ -62,6 +62,7 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case terraformDelete = "terraform-delete"
     case list
     case history
+    case historyWindow = "history-window"
     case save
     case saveIfAbsentOrEqual = "save-if-absent"
     case bless
@@ -75,6 +76,6 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case stripeDelete = "stripe-delete"
 
     public var disclosesProtectedMetadata: Bool {
-        self == .list || self == .history
+        self == .list || self == .history || self == .historyWindow
     }
 }

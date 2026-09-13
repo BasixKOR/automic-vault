@@ -3438,7 +3438,26 @@ private let registryHelperProtocolVersion: UInt64 = 3
 
 private enum MetadataDisclosure {
     case secretNames(globalOnly: Bool)
-    case authorizationHistory
+    case authorizationHistory(since: Date?)
+}
+
+private func authorizationHistorySinceIsValid(_ since: Date?, now: Date = Date()) -> Bool {
+    since.map { $0 <= now } ?? true
+}
+
+private func validatedAuthorizationHistorySince(
+    operation: ApprovalServiceOperation,
+    message: xpc_object_t,
+    now: Date = Date()
+) -> (valid: Bool, since: Date?) {
+    let value = xpc_dictionary_get_value(message, "since")
+    if operation == .history { return (value == nil, nil) }
+    guard operation == .historyWindow, let value,
+          xpc_get_type(value) == XPC_TYPE_UINT64 else { return (false, nil) }
+    let seconds = xpc_dictionary_get_uint64(message, "since")
+    guard seconds > 0 else { return (false, nil) }
+    let since = Date(timeIntervalSince1970: TimeInterval(seconds))
+    return (authorizationHistorySinceIsValid(since, now: now), since)
 }
 
 private func metadataDisclosureHasAutomaticAccess(
@@ -3458,17 +3477,25 @@ private func metadataDisclosureHasAutomaticAccess(
 
 private func authorizationHistoryDisclosureValue(
     record: AccessRequestRecord,
-    records: () -> [AccessRequestRecord]? = { loadAccessRequestRecordsIfAvailable() },
+    since: Date?,
+    records: (Date?, Int?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
+    isCanceled: () -> Bool = { false },
     onAccessRequest: (AccessRequestRecord) -> Bool
 ) -> String? {
+    // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
+    let maximumReplyBytes = 1_048_576
+    let limit = since == nil ? 49 : nil
+    guard !isCanceled(),
+          let previousRecords = records(since, limit, maximumReplyBytes),
+          !isCanceled()
+    else { return nil }
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys]
-    guard let records = records() else { return nil }
-    let disclosedRecords = Array(([record] + records).prefix(50))
-        .map(\.redactedForDisclosure)
-    guard let data = try? encoder.encode(disclosedRecords),
+    guard let data = try? encoder.encode(([record] + previousRecords).map(\.redactedForDisclosure)),
+          data.count <= maximumReplyBytes,
           let value = String(data: data, encoding: .utf8),
+          !isCanceled(),
           onAccessRequest(record)
     else { return nil }
     return value
@@ -3883,7 +3910,13 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 kind: .secretNames(globalOnly: xpc_dictionary_get_bool(message, "global_only"))
             )
-        case .history where isTrustedAvCaller(path: callerPath, signing: signing):
+        case .history where isTrustedAvCaller(path: callerPath, signing: signing),
+             .historyWindow where isTrustedAvCaller(path: callerPath, signing: signing):
+            let window = validatedAuthorizationHistorySince(operation: op, message: message)
+            guard window.valid else {
+                reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
+                return
+            }
             handleMetadataDisclosure(
                 message,
                 on: peer,
@@ -3892,7 +3925,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 callerPath: callerPath,
                 signing: signing,
-                kind: .authorizationHistory
+                kind: .authorizationHistory(since: window.since)
             )
         case .save where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
@@ -3960,25 +3993,30 @@ private final class ApprovalServer: @unchecked Sendable {
             callerPID: pid,
             ancestorFallbackPath: ancestorFallbackPath
         )
-        let (operation, title, detail) = switch kind {
+        let disclosure: (operation: String, title: String, detail: String, arguments: [String]) = switch kind {
         case .secretNames(let globalOnly): (
             "list",
             "List saved secret names?",
             globalOnly
                 ? "Secret values will remain hidden. av will receive every saved Global Value name."
-                : "Secret values will remain hidden. av will receive every saved Secret Name."
+                : "Secret values will remain hidden. av will receive every saved Secret Name.",
+            ["list"]
         )
-        case .authorizationHistory: (
+        case .authorizationHistory(let since): (
             "history",
             "Read Authorization History?",
-            "av will receive the bounded local Authorization History, including Secret Names and request metadata."
+            since.map {
+                "av will receive Authorization History since \(ISO8601DateFormatter().string(from: $0)), including Secret Names and request metadata."
+            } ?? "av will receive the newest 50 Authorization History records, including Secret Names and request metadata.",
+            ["history"] + (since.map { ["--since", String(Int($0.timeIntervalSince1970))] } ?? [])
         )
         }
+        let (operation, title, detail, arguments) = disclosure
         let request = ApprovalRequest(
             op: operation,
             keys: [],
             target: callerPath,
-            args: [operation],
+            args: arguments,
             cwd: cwd,
             replaceExistingEnv: false,
             allowMissingKeys: false,
@@ -3991,16 +4029,19 @@ private final class ApprovalServer: @unchecked Sendable {
         )
         if hasAutomaticAccess
         {
-            discloseMetadata(
-                request: request,
-                callerPath: callerPath,
-                launcher: launcher,
-                approvalSource: "Auto",
-                reason: "Always allowed in Settings",
-                peer: peer,
-                message: message,
-                kind: kind
-            )
+            Task {
+                await discloseMetadata(
+                    request: request,
+                    callerPath: callerPath,
+                    launcher: launcher,
+                    approvalSource: "Auto",
+                    reason: "Always allowed in Settings",
+                    peer: peer,
+                    message: message,
+                    kind: kind,
+                    cancellation: cancellation
+                )
+            }
             return
         }
         Task { @MainActor in
@@ -4058,7 +4099,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 self.reply(peer, to: message, ok: false, error: "\(request.op) denied")
                 return
             }
-            self.discloseMetadata(
+            await self.discloseMetadata(
                 request: request,
                 callerPath: callerPath,
                 launcher: launcher,
@@ -4066,7 +4107,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 reason: "Allowed once in prompt",
                 peer: peer,
                 message: message,
-                kind: kind
+                kind: kind,
+                cancellation: cancellation
             )
         }
     }
@@ -4079,8 +4121,15 @@ private final class ApprovalServer: @unchecked Sendable {
         reason: String,
         peer: xpc_connection_t,
         message: xpc_object_t,
-        kind: MetadataDisclosure
-    ) {
+        kind: MetadataDisclosure,
+        cancellation: ApprovalCancellation
+    ) async {
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
+            return
+        }
         var names: [String]?
         if case .secretNames(let globalOnly) = kind {
             switch loadStoredSecretsResult() {
@@ -4110,12 +4159,31 @@ private final class ApprovalServer: @unchecked Sendable {
             reason: reason,
             launcher: launcher
         )
-        if case .authorizationHistory = kind {
-            guard let value = authorizationHistoryDisclosureValue(
-                record: record,
-                onAccessRequest: onAccessRequest
-            ) else {
-                reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
+            return
+        }
+        if case .authorizationHistory(let since) = kind {
+            let audit = onAccessRequest
+            let value = await Task.detached(priority: .userInitiated, operation: { () -> String? in
+                guard !cancellation.isCanceled else { return nil }
+                return authorizationHistoryDisclosureValue(
+                    record: record,
+                    since: since,
+                    isCanceled: { cancellation.isCanceled },
+                    onAccessRequest: audit
+                )
+            }).value
+            guard !cancellation.isCanceled else {
+                _ = onAccessRequest(canceledAccessRequestRecord(
+                    request: request, callerPath: callerPath, launcher: launcher
+                ))
+                return
+            }
+            guard let value else {
+                reply(peer, to: message, ok: false, error: "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
                 return
             }
             reply(peer, to: message, ok: true, error: nil, value: value)
@@ -4123,6 +4191,12 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         guard onAccessRequest(record) else {
             reply(peer, to: message, ok: false, error: "Authorization History is unavailable")
+            return
+        }
+        guard !cancellation.isCanceled else {
+            _ = onAccessRequest(canceledAccessRequestRecord(
+                request: request, callerPath: callerPath, launcher: launcher
+            ))
             return
         }
         reply(peer, to: message, ok: true, error: nil, names: names)
@@ -13792,6 +13866,34 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
 }
 
 private func runMetadataDisclosureSelfCheck() -> Int32 {
+    let wire = xpc_dictionary_create_empty()
+    let wireNow = Date(timeIntervalSince1970: 1_000_000)
+    guard validatedAuthorizationHistorySince(
+        operation: .history, message: wire, now: wireNow
+    ).valid,
+        !validatedAuthorizationHistorySince(
+            operation: .historyWindow, message: wire, now: wireNow
+        ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 0)
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_string(wire, "since", "999999")
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 1_000_001)
+    guard !validatedAuthorizationHistorySince(
+        operation: .historyWindow, message: wire, now: wireNow
+    ).valid else { return 1 }
+    xpc_dictionary_set_uint64(wire, "since", 999_999)
+    guard !validatedAuthorizationHistorySince(
+        operation: .history, message: wire, now: wireNow
+    ).valid,
+        validatedAuthorizationHistorySince(
+            operation: .historyWindow, message: wire, now: wireNow
+        ).since == Date(timeIntervalSince1970: 999_999) else { return 1 }
+
     let requirement = #"identifier "com.apple.Terminal" and anchor apple"#
     let launcher = LauncherIdentity(
         pid: 42,
@@ -13812,13 +13914,13 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         authorizationHistoryAccessApps: []
     ),
         !metadataDisclosureHasAutomaticAccess(
-            .authorizationHistory,
+            .authorizationHistory(since: nil),
             launchers: [launcher],
             secretNameAccessApps: [grant],
             authorizationHistoryAccessApps: []
         ),
         metadataDisclosureHasAutomaticAccess(
-            .authorizationHistory,
+            .authorizationHistory(since: nil),
             launchers: [launcher],
             secretNameAccessApps: [],
             authorizationHistoryAccessApps: [grant]
@@ -13841,14 +13943,21 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         detail: nil
     )
     var recordedSuccessfulDisclosure = false
+    var historyReadCount = 0
     guard let disclosure = authorizationHistoryDisclosureValue(
         record: record,
-        records: { [] },
+        since: nil,
+        records: { _, limit, maximumBytes in
+            guard limit == 49, maximumBytes == 1_048_576 else { return nil }
+            historyReadCount += 1
+            guard !recordedSuccessfulDisclosure else { return nil }
+            return []
+        },
         onAccessRequest: { _ in
             recordedSuccessfulDisclosure = true
             return true
         }
-    ), recordedSuccessfulDisclosure,
+    ), recordedSuccessfulDisclosure, historyReadCount == 1,
         let disclosureData = disclosure.data(using: .utf8)
     else { return 1 }
     let decoder = JSONDecoder()
@@ -13858,20 +13967,78 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
           disclosedRecords.first?.command == record.commandForDisplay,
           disclosedRecords.first?.command != record.command
     else { return 1 }
+    guard let bounded = authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, limit, _ in
+            guard limit == 49 else { return nil }
+            return Array(repeating: record, count: 49)
+        },
+        onAccessRequest: { _ in true }
+    ), let boundedData = bounded.data(using: .utf8),
+        let boundedRecords = try? decoder.decode([AccessRequestRecord].self, from: boundedData),
+        boundedRecords.count == 50, boundedRecords.first?.id == record.id
+    else { return 1 }
+    let since = Date(timeIntervalSince1970: 123)
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    guard authorizationHistorySinceIsValid(now.addingTimeInterval(-31 * 24 * 60 * 60), now: now),
+          !authorizationHistorySinceIsValid(now.addingTimeInterval(1), now: now)
+    else { return 1 }
+    var windowReads = 0
+    var windowRecorded = false
+    guard let window = authorizationHistoryDisclosureValue(
+        record: record,
+        since: since,
+        records: { forwardedSince, limit, maximumBytes in
+            guard forwardedSince == since, limit == nil,
+                  maximumBytes == 1_048_576 else { return nil }
+            windowReads += 1
+            guard !windowRecorded else { return nil }
+            return Array(repeating: record, count: 50)
+        },
+        onAccessRequest: { _ in
+            windowRecorded = true
+            return true
+        }
+    ), windowRecorded, windowReads == 1,
+        let windowData = window.data(using: .utf8),
+        let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
+        windowRecords.count == 51
+    else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
-        records: { [] },
+        since: since,
+        records: { _, _, _ in Array(repeating: record, count: 4_000) },
+        onAccessRequest: { _ in true }
+    ) == nil else { return 1 }
+    guard authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, _, _ in [] },
         onAccessRequest: { _ in false }
     ) == nil else { return 1 }
     var recordedUnavailableHistory = false
     guard authorizationHistoryDisclosureValue(
         record: record,
-        records: { nil },
+        since: nil,
+        records: { _, _, _ in nil },
         onAccessRequest: { _ in
             recordedUnavailableHistory = true
             return true
         }
     ) == nil, !recordedUnavailableHistory else { return 1 }
+    let canceledRead = ApprovalCancellation()
+    var recordedAfterCancellation = false
+    guard authorizationHistoryDisclosureValue(
+        record: record,
+        since: nil,
+        records: { _, _, _ in
+            canceledRead.cancel()
+            return []
+        },
+        isCanceled: { canceledRead.isCanceled },
+        onAccessRequest: { _ in recordedAfterCancellation = true; return true }
+    ) == nil, !recordedAfterCancellation else { return 1 }
     return 0
 }
 

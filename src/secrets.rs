@@ -161,10 +161,31 @@ pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
     list_secret_names_filtered(true)
 }
 
-pub(crate) fn authorization_history() -> Result<String, String> {
-    xpc_request("history", None, None, None, None)?
+pub(crate) fn authorization_history(since: Option<u64>) -> Result<String, String> {
+    let reply = xpc_request(
+        history_operation(since),
+        None,
+        None,
+        None,
+        since.map(|value| (b"since\0" as &'static [u8], value)),
+    ).map_err(|error| {
+        if since.is_some() && error == "invalid XPC operation" {
+            format!("Authorization History window requires an updated running Automic Vault app: {error}")
+        } else {
+            error
+        }
+    })?;
+    reply
         .value
         .ok_or_else(|| "the approval service returned no Authorization History".into())
+}
+
+fn history_operation(since: Option<u64>) -> &'static str {
+    if since.is_some() {
+        "history-window"
+    } else {
+        "history"
+    }
 }
 
 fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> {
@@ -1114,6 +1135,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explicit_history_window_uses_an_atomic_wire_operation() {
+        assert_eq!(history_operation(None), "history");
+        assert_eq!(history_operation(Some(1)), "history-window");
+    }
+
+    #[test]
     fn reports_only_known_human_approval_decisions() {
         assert_eq!(human_approval_message(b"approved"), Some("approved"));
         assert_eq!(human_approval_message(b"denied"), Some("denied"));
@@ -1135,6 +1162,7 @@ mod tests {
         assert!(xpc_operation_requires_cwd("uaa-save"));
         assert!(!xpc_operation_requires_cwd("bless"));
         assert!(!xpc_operation_requires_cwd("docker-helper-version"));
+        assert!(!xpc_operation_requires_cwd("history-window"));
         assert!(!xpc_operation_requires_cwd("list"));
     }
 }

@@ -243,6 +243,10 @@ final class DashboardModel: ObservableObject {
     @Published private(set) var pendingLauncherHelperReview: LauncherHelperReview?
 
     private var reloadTask: Task<Void, Never>?
+    @Published private var accessRequestsReloadTask: Task<Void, Never>?
+    private var accessRequestsReloadPending = false
+    private var accessRequestsGeneration = 0
+    private var pendingAccessRequestID: UUID?
     private var reloadPending = false
     private var launcherHelperDiscoveryTask: Task<Void, Never>?
     let authorityApproval = AuthorityApprovalState()
@@ -472,11 +476,19 @@ final class DashboardModel: ObservableObject {
     }
 
     var selectedAccessRequest: AccessRequestRecord? {
+        if pendingAccessRequestID != nil { return nil }
         if let selectedItemID,
            let record = snapshot.accessRequests.first(where: { $0.id.uuidString == selectedItemID }) {
             return record
         }
         return snapshot.accessRequests.first
+    }
+
+    var pendingAccessRequestStatus: String? {
+        guard pendingAccessRequestID != nil else { return nil }
+        return accessRequestsReloadTask == nil
+            ? String(localized: "Authorization History record unavailable")
+            : String(localized: "Loading Authorization History…")
     }
 
     var selectedProxySession: ProxySessionSummary? {
@@ -513,18 +525,27 @@ final class DashboardModel: ObservableObject {
     }
 
     func selectSection(_ section: DashboardSection) {
+        pendingAccessRequestID = nil
         selectedSection = section
         selectedItemID = nil
         normalizeSelection()
     }
 
     func select(_ item: DashboardItem) {
+        pendingAccessRequestID = nil
         selectedItemID = item.id
     }
 
-    func showAccessRequest(id: UUID, records: [AccessRequestRecord] = loadAccessRequestRecords()) {
-        snapshot.accessRequests = records
-        guard snapshot.accessRequests.contains(where: { $0.id == id }) else { return }
+    func showAccessRequest(id: UUID, records: [AccessRequestRecord]? = nil) {
+        if let records { snapshot.accessRequests = records }
+        guard snapshot.accessRequests.contains(where: { $0.id == id }) else {
+            pendingAccessRequestID = id
+            selectedSection = .secretUsage
+            selectedItemID = nil
+            reloadAccessRequests()
+            return
+        }
+        pendingAccessRequestID = nil
         selectedSection = .secretUsage
         selectedItemID = id.uuidString
     }
@@ -785,6 +806,8 @@ final class DashboardModel: ObservableObject {
             reloadPending = true
             return
         }
+        accessRequestsGeneration += 1
+        let generation = accessRequestsGeneration
         reloadPending = false
         isReloading = true
         reloadTask = Task {
@@ -804,22 +827,64 @@ final class DashboardModel: ObservableObject {
             }.value
             guard !Task.isCancelled else { return }
             next.detectorFindings = snapshot.detectorFindings
-            next.accessRequests = loadAccessRequestRecords()
+            let records = await Task.detached(priority: .background) {
+                loadAccessRequestRecords()
+            }.value
+            guard !Task.isCancelled else { return }
+            next.accessRequests = generation == accessRequestsGeneration
+                ? records : snapshot.accessRequests
             snapshot = next
+            if generation == accessRequestsGeneration, let id = pendingAccessRequestID {
+                if records.contains(where: { $0.id == id }) {
+                    pendingAccessRequestID = nil
+                    selectedSection = .secretUsage
+                    selectedItemID = id.uuidString
+                }
+            }
             self.launcherBundles = launcherBundles
             normalizeSelection()
         }
     }
 
     func reloadAccessRequests() {
-        snapshot.accessRequests = loadAccessRequestRecords()
-        normalizeSelection()
+        accessRequestsGeneration += 1
+        guard accessRequestsReloadTask == nil else {
+            accessRequestsReloadPending = true
+            return
+        }
+        let generation = accessRequestsGeneration
+        accessRequestsReloadTask = Task { [weak self] in
+            defer {
+                self?.accessRequestsReloadTask = nil
+                if self?.accessRequestsReloadPending == true {
+                    self?.accessRequestsReloadPending = false
+                    self?.reloadAccessRequests()
+                }
+            }
+            let records = await Task.detached(priority: .background) {
+                loadAccessRequestRecords()
+            }.value
+            guard !Task.isCancelled, let self,
+                  generation == accessRequestsGeneration else { return }
+            snapshot.accessRequests = records
+            if let id = pendingAccessRequestID {
+                if records.contains(where: { $0.id == id }) {
+                    pendingAccessRequestID = nil
+                    selectedSection = .secretUsage
+                    selectedItemID = id.uuidString
+                }
+            }
+            normalizeSelection()
+        }
     }
 
     private func invalidateReload() {
         // Cancellation invalidates the result, but synchronous checks still run.
         // Retain the task until they finish so a new reload cannot overlap them.
         reloadTask?.cancel()
+        accessRequestsReloadTask?.cancel()
+        accessRequestsGeneration += 1
+        accessRequestsReloadPending = false
         reloadPending = false
         isReloading = false
     }
@@ -2126,6 +2191,9 @@ struct DashboardRootView: View {
                 }
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search")
+        .onChange(of: proxySessions.historyRevision) { _, _ in
+            model.reloadAccessRequests()
+        }
         .sheet(isPresented: $model.isCreatingLauncherBundle) {
             CreateLauncherBundleView(model: model)
         }
@@ -2304,6 +2372,11 @@ private struct DashboardDetailView: View {
                     .padding(.top, 32)
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            } else if model.selectedSection == .secretUsage,
+                      let status = model.pendingAccessRequestStatus {
+                Text(status)
+                    .foregroundStyle(.secondary)
+                    .padding(22)
             } else if model.selectedSection == .launcherBundles,
                       let enrollment = model.selectedLauncherBundle {
                 LauncherBundleDetailView(model: model, enrollment: enrollment)
@@ -2313,7 +2386,7 @@ private struct DashboardDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .proxySessions,
                       let session = model.selectedProxySession {
-                ProxySessionDetailView(session: session)
+                ProxySessionDetailView(session: session, history: model.snapshot.accessRequests)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -2784,10 +2857,11 @@ private struct LauncherBundleDetailView: View {
 
 private struct ProxySessionDetailView: View {
     let session: ProxySessionSummary
+    let history: [AccessRequestRecord]
 
     private var records: [AccessRequestRecord] {
         let detail = "Proxy Session \(session.id.uuidString.lowercased())"
-        return loadAccessRequestRecords().filter { $0.detail == detail }
+        return history.filter { $0.detail == detail }
     }
 
     var body: some View {

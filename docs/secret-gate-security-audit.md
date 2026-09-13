@@ -23,7 +23,7 @@ The available evidence rules out the approval cache and confirms a helper bypass
 | Existing onboarding grants | Legacy Trusted Access was stored as an explicit choice | Preserve the stored grant under the Write Access label and persist every explicit default |
 | Launcher identity unavailable | Resolver applied “All Other Apps” without knowing whether an override matched | Disable durable automic authorization and require Approval |
 | Policy or human authorization | Reply could precede Authorization Record persistence | Persist and verify the record before returning secrets |
-| Authorization History storage | Same-user processes could alter `UserDefaults` | Store production records in the app-private Data Protection Keychain |
+| Authorization History storage | Same-user processes could alter `UserDefaults` | Store encrypted records in app-private Application Support SQLite with a root key in the Data Protection Keychain |
 | Transient PID Approval | Includes process birth time and complete request identity | No bypass found; every reuse remains recorded |
 | Installed CLI test hooks | Release/copy could use test Keychain and path overrides | Accept test overrides only from debug binaries inside their Cargo profile |
 | XPC server identity | Rust, GH, and Supabase clients checked an identifier only | Pin Apple anchor, team ID, and current app identifier |
@@ -93,7 +93,13 @@ The single-user migration completed on 2026-07-14. The signed transitional build
 
 ### Authorization History scope
 
-Keychain storage prevents ordinary same-user apps from rewriting Authorization History, and allowed requests fail closed if the record cannot be verified. The list retains only 50 records and is not a remote or append-only security log. Denied and failed requests remain best effort because they never receive a Secret.
+Authorization History records are AES-GCM encrypted with a key in the app's
+Data Protection Keychain access group. Allowed requests fail closed if their
+committed record cannot be authenticated, decoded, and compared with the
+expected record. Available history is bounded to 30 days and 25 MiB of encrypted
+payloads; the dashboard shows the newest 50. This is not a remote, append-only,
+or complete forensic log. Denied and failed requests remain best effort because
+they never receive a Secret.
 
 ### Deployment
 

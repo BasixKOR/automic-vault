@@ -7,7 +7,11 @@ import tempfile
 
 source = (Path(__file__).resolve().parents[1] /
           "src/menu-helper/Sources/MenubarHelper/MainWindow.swift").read_text()
-reload_method = source.split("final class DashboardModel:", 1)[1].split(
+model_source = source.split("final class DashboardModel:", 1)[1]
+show_method = "    func showAccessRequest(" + model_source.split(
+    "    func showAccessRequest(", 1
+)[1].split("    func showSecretGate(", 1)[0]
+reload_method = model_source.split(
     "    func reload() {", 1
 )[1].split(
     "    private func reloadAuthorizationState()", 1
@@ -21,6 +25,14 @@ let loads = Mutex((count: 0, active: 0, peak: 0))
 
 let (snapshotStarted, started) = AsyncStream<Void>.makeStream()
 let finishSnapshot = DispatchSemaphore(value: 0)
+let (historyStarted, historySignal) = AsyncStream<Void>.makeStream()
+let finishHistory = DispatchSemaphore(value: 0)
+let blockHistory = Mutex(false)
+let historyReads = Mutex(0)
+let fixtureRecordID = UUID()
+extension String { var id: UUID { fixtureRecordID } }
+typealias AccessRequestRecord = String
+enum DashboardSection { case secretUsage }
 
 struct DashboardSnapshot: Sendable {
     var policy = "loaded"
@@ -41,10 +53,23 @@ struct DashboardSnapshot: Sendable {
 enum CLIInstallState { case current, outdated }
 func currentCLIInstallState() -> CLIInstallState { .current }
 func loadLauncherBundleEnrollments() -> [String] { [] }
-func loadAccessRequestRecords() -> [String] { ["latest"] }
+func loadAccessRequestRecords() -> [String] {
+    if blockHistory.withLock({ $0 }) {
+        historyReads.withLock { $0 += 1 }
+        historySignal.yield(())
+        finishHistory.wait()
+    }
+    return ["latest"]
+}
 
 @MainActor final class Model {
     var reloadTask: Task<Void, Never>?
+    var accessRequestsReloadTask: Task<Void, Never>?
+    var accessRequestsReloadPending = false
+    var accessRequestsGeneration = 0
+    var pendingAccessRequestID: UUID?
+    var selectedSection = DashboardSection.secretUsage
+    var selectedItemID: String?
     var reloadPending = false
     var isReloading = false
     var snapshot = DashboardSnapshot()
@@ -52,6 +77,7 @@ func loadAccessRequestRecords() -> [String] { ["latest"] }
     var launcherBundles: [String] = []
     func normalizeSelection() {}
     func invalidateForTest() { invalidateReload() }
+""" + show_method + """
     func reload() {
 """ + reload_method + """
 }
@@ -91,6 +117,7 @@ model.reload() // A pending refresh must also be invalidated by a policy edit.
 model.invalidateForTest()
 model.snapshot.policy = "edited"
 model.reloadAccessRequests()
+await model.accessRequestsReloadTask!.value
 assert(model.snapshot.accessRequests == ["latest"])
 assert(invalidated.isCancelled)
 assert(!model.isReloading)
@@ -106,6 +133,26 @@ finishSnapshot.signal()
 await replacement.value
 assert(loads.withLock { $0.count == 4 && $0.peak == 1 })
 assert(model.reloadTask == nil && !model.isReloading)
+blockHistory.withLock { $0 = true }
+model.reloadAccessRequests()
+for await _ in historyStarted { break }
+for _ in 0..<100 { model.reloadAccessRequests() }
+assert(historyReads.withLock { $0 == 1 }, "history burst queued duplicate reads")
+finishHistory.signal()
+for await _ in historyStarted { break }
+assert(historyReads.withLock { $0 == 2 }, "history burst did not coalesce")
+finishHistory.signal()
+await model.accessRequestsReloadTask!.value
+assert(historyReads.withLock { $0 == 2 })
+blockHistory.withLock { $0 = false }
+let missingID = UUID()
+model.showAccessRequest(id: missingID)
+await model.accessRequestsReloadTask!.value
+assert(model.pendingAccessRequestID == missingID)
+assert(model.selectedItemID == nil, "missing record selected an unrelated history row")
+model.showAccessRequest(id: fixtureRecordID)
+assert(model.pendingAccessRequestID == nil)
+assert(model.selectedItemID == fixtureRecordID.uuidString)
 print("PASS: early CLI status, coalesced refreshes, fresh history, and stale policy rejection")
 """
 
