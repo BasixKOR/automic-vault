@@ -19,9 +19,12 @@ collect the exact live ancestors between socket peer and Verified Launcher.
 Match active Blessed Script executions and empty capability ceilings only within
 that verified chain. Recheck the same process executions, peer, Launcher,
 credential configuration, and authentication payload before the Authorization
-Record and Secret Application. A missing, replaced, or unverifiable execution
-fails closed. Keep per-request Authorization Records and prohibit transient
-decision reuse, Temporary Access Grants, and Retained Launcher Provenance.
+Record and again immediately before Secret Application. A revoked active
+Blessing acts as an empty ceiling until its execution ends, so revocation never
+exposes an outer Blessing or Launcher policy. A missing, replaced, or
+unverifiable execution fails closed. Keep per-request Authorization Records and
+prohibit transient decision reuse, Temporary Access Grants, and Retained Launcher
+Provenance.
 
 `ssh-agent: trusted` delegates authentication to the script's runtime and
 children, including possible remote writes. The gate cannot establish the

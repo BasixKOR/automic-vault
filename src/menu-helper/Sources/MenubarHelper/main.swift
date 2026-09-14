@@ -3349,6 +3349,11 @@ private struct ActiveScriptAuthority {
     }
 }
 
+private enum SSHScriptAuthorization {
+    case blessing(BlessedScript)
+    case inheritedPolicy
+}
+
 private func sshScriptAuthority(
     ancestors: [AVProcessIdentity],
     executions: [BlessedExecutionKey: BlessedScript],
@@ -3358,7 +3363,9 @@ private func sshScriptAuthority(
     let keys = ancestors.map { BlessedExecutionKey(pid: $0.pid, startUsec: $0.start_usec) }
     return ActiveScriptAuthority(
         blessings: keys.compactMap { executions[$0] }.filter { currentBlessings.contains($0) },
-        hasEmptyCapabilityCeiling: keys.contains { ceilings.contains($0) }
+        hasEmptyCapabilityCeiling: keys.contains { key in
+            ceilings.contains(key) || (executions[key].map { !currentBlessings.contains($0) } ?? false)
+        }
     )
 }
 
@@ -4661,7 +4668,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let automaticApprovalExplanation: String?
         if scriptAuthority.hasEmptyCapabilityCeiling {
-            automaticApprovalExplanation = "This script declared an empty capability ceiling, so inherited automatic access cannot authorize this request."
+            automaticApprovalExplanation = "Script authority in this execution blocks inherited automatic access. Approval applies only to this request."
         } else if let resolvedPolicy,
            let classification,
            let explanation = launcherRuntimeProtectionApprovalExplanation(
@@ -4805,6 +4812,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     identity: identity,
                     record: record,
                     launcher: authorizingLauncher,
+                    sshScriptAuthorization: request.sshPeer == nil ? nil : .inheritedPolicy,
                     activateAfterRecording: {
                         if let authorizingLauncher {
                             rememberRetainedProvenance(
@@ -4861,7 +4869,7 @@ private final class ApprovalServer: @unchecked Sendable {
             agentTaskContext: currentAgentTaskContext
         )
         let temporaryGrantUnavailableReason = scriptAuthority.hasEmptyCapabilityCeiling
-            ? "This script declared an empty capability ceiling."
+            ? "Script authority in this execution blocks automatic access."
             : temporaryAccessGrantUnavailableReason(
                 hasToolSpecificGate: configuredGate != nil,
                 classification: classification,
@@ -5876,9 +5884,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let executions = blessedExecutions
         blessedExecutionsLock.unlock()
 
-        let staleExecutions = executions.compactMap { key, script in
-            currentBlessings.contains(script) && executionIsLive(key) ? nil : key
-        }
+        let staleExecutions = executions.keys.filter { !executionIsLive($0) }
         blessedExecutionsLock.lock()
         for key in staleExecutions where blessedExecutions[key] == executions[key] {
             blessedExecutions.removeValue(forKey: key)
@@ -5893,7 +5899,7 @@ private final class ApprovalServer: @unchecked Sendable {
             if let script = activeExecutions[BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
-            )] {
+            )], currentBlessings.contains(script) {
                 scripts.append(script)
             }
             guard currentIdentity.ppid > 1 else { return scripts }
@@ -5904,6 +5910,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func activeSSHScriptAuthority(ancestors: [AVProcessIdentity]) -> ActiveScriptAuthority {
+        pruneInactiveScriptExecutions()
         let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
         let executions = blessedExecutions
@@ -5917,6 +5924,21 @@ private final class ApprovalServer: @unchecked Sendable {
         )
     }
 
+    private func pruneInactiveScriptExecutions() {
+        blessedExecutionsLock.lock()
+        let executions = blessedExecutions
+        let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+        let deadExecutions = executions.keys.filter { !executionIsLive($0) }
+        let deadCeilings = ceilings.filter { !executionIsLive($0) }
+        blessedExecutionsLock.lock()
+        for key in deadExecutions where blessedExecutions[key] == executions[key] {
+            blessedExecutions.removeValue(forKey: key)
+        }
+        emptyCapabilityCeilings.subtract(deadCeilings)
+        blessedExecutionsLock.unlock()
+    }
+
     private func registerEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) {
         blessedExecutionsLock.lock()
         emptyCapabilityCeilings.insert(BlessedExecutionKey(pid: pid, startUsec: identity.start_usec))
@@ -5924,8 +5946,10 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func activeEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) -> Bool {
+        let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
         let ceilings = emptyCapabilityCeilings
+        let executions = blessedExecutions
         blessedExecutionsLock.unlock()
 
         let staleCeilings = ceilings.filter { !executionIsLive($0) }
@@ -5937,10 +5961,13 @@ private final class ApprovalServer: @unchecked Sendable {
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
-            if activeCeilings.contains(BlessedExecutionKey(
+            let key = BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
-            )) {
+            )
+            if activeCeilings.contains(key)
+                || (executions[key].map { !currentBlessings.contains($0) } ?? false)
+            {
                 return true
             }
             guard currentIdentity.ppid > 1 else { return false }
@@ -5993,7 +6020,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 record: record,
                 launcher: launcher,
-                authorizedBlessing: request.sshPeer == nil ? nil : script,
+                sshScriptAuthorization: request.sshPeer == nil ? nil : .blessing(script),
                 activateAfterRecording: {
                     if let launcher {
                         Task { @MainActor in
@@ -8484,32 +8511,35 @@ private final class ApprovalServer: @unchecked Sendable {
         identity: AVProcessIdentity,
         record: AccessRequestRecord,
         launcher: LauncherIdentity?,
-        authorizedBlessing: BlessedScript? = nil,
+        sshScriptAuthorization: SSHScriptAuthorization? = nil,
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
-        func validateSSHScriptBlessing() throws {
-            guard let authorizedBlessing, let sshPeer = request.sshPeer else { return }
-            guard activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
-                .canUse(authorizedBlessing)
-            else { throw AppError("SSH Blessed Script authority changed before signing") }
+        func validateSSHScriptAuthority() throws {
+            guard let sshScriptAuthorization, let sshPeer = request.sshPeer else { return }
+            let authority = activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+            let allowed = switch sshScriptAuthorization {
+            case .blessing(let script): authority.canUse(script)
+            case .inheritedPolicy: authority.inheritsLauncherPolicy
+            }
+            guard allowed else { throw AppError("SSH script authority changed before signing") }
         }
         try request.sshPeer?.validate()
-        try validateSSHScriptBlessing()
+        try validateSSHScriptAuthority()
         let transaction = try prepareApprovedFulfillment(
             for: request,
             awsRegistration: awsRegistration
         )
         try request.sshPeer?.validate()
-        try validateSSHScriptBlessing()
-        return transaction.commit(
+        try validateSSHScriptAuthority()
+        return try transaction.commit(
             record: {
                 do {
                     try request.sshPeer?.validate()
-                    try validateSSHScriptBlessing()
+                    try validateSSHScriptAuthority()
                     guard onAccessRequest(record) else { return false }
                     try request.sshPeer?.validate()
-                    try validateSSHScriptBlessing()
+                    try validateSSHScriptAuthority()
                     return true
                 } catch { return false }
             },
@@ -8532,7 +8562,11 @@ private final class ApprovalServer: @unchecked Sendable {
                     identity: identity
                 )
             },
-            release: { material in release(material.payload) }
+            release: { material in
+                try request.sshPeer?.validate()
+                try validateSSHScriptAuthority()
+                release(material.payload)
+            }
         )
     }
 
@@ -14304,7 +14338,16 @@ private func runApprovalSelfCheck() -> Int32 {
             ancestors: [unrelatedAncestor, scriptAncestor],
             executions: [innerKey: blockingBlessing, scriptKey: sshBlessing],
             ceilings: [], currentBlessings: [blockingBlessing, sshBlessing]
-        ).canUse(sshBlessing)
+        ).canUse(sshBlessing),
+        !sshScriptAuthority(
+            ancestors: [unrelatedAncestor, scriptAncestor],
+            executions: [innerKey: blockingBlessing, scriptKey: sshBlessing],
+            ceilings: [], currentBlessings: [sshBlessing]
+        ).allowsAutomaticAuthority,
+        !sshScriptAuthority(
+            ancestors: [scriptAncestor], executions: executions,
+            ceilings: [scriptKey], currentBlessings: [sshBlessing]
+        ).inheritsLauncherPolicy
     else {
         print("SSH Blessed Script authority self-check failed")
         return 1

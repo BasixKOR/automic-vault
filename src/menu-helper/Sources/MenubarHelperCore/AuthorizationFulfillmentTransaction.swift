@@ -11,12 +11,12 @@ package struct AuthorizationFulfillmentTransaction<Material> {
         record: () -> Bool,
         activate: (Material) -> Void,
         observe: (Material) -> Void,
-        release: (Material) -> Void
-    ) -> Bool {
+        release: (Material) throws -> Void
+    ) rethrows -> Bool {
         guard record() else { return false }
         activate(material)
         observe(material)
-        release(material)
+        try release(material)
         return true
     }
 }
