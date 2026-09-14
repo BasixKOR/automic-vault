@@ -1,6 +1,6 @@
 # ADR 0044: Gate SSH authentication through a local SSH agent
 
-Status: accepted
+Status: accepted; script authority amended by [ADR 0048](0048-ssh-agent-blessed-scripts.md).
 
 ## Context
 

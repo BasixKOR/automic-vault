@@ -49,6 +49,10 @@ Automic Vault decides whether a complete operation may use it.
   capability declaration is present. `capabilities: {}` opts into an empty
   capability ceiling so later gated operations attributable to that live script
   execution require Approval regardless of the calling Launcher.
+- A Blessed Script with an explicit `ssh-agent: trusted` Capability can
+  authenticate through the SSH Agent Gate while its verified execution remains
+  in the SSH client's live ancestor chain. The Capability does not restrict SSH
+  destinations.
 - An explicitly recognized, vendor-signed CLI sealed inside its vendor's app
   may represent that app as a Verified Launcher; unrelated bundled executables
   do not inherit the app's authority.

@@ -190,9 +190,14 @@ authorizing. It rechecks the
 peer and credential configuration before releasing the single Global Value of
 `AV_SSH_CREDENTIAL`. The helper signs in memory and returns only the signature.
 Private keys are never added to the system agent. There is no decision reuse,
-Blessing, Temporary Access Grant, or retained provenance at this gate. Settings
-stores its enabled state and public key in the Data Protection Keychain.
-See [ADR 0044](adr/0044-ssh-agent-gate.md).
+Temporary Access Grant, or retained provenance at this gate. A live Blessed
+Script may authorize a signature when its explicit `ssh-agent: trusted`
+Capability matches an execution on the socket peer's verified original ancestor
+chain. That exact chain is rechecked before recording and signing. A script's
+empty capability ceiling suppresses automatic SSH authority from the Blessing
+and Launcher policy. Settings stores its enabled state and public key in the Data
+Protection Keychain.
+See [ADR 0044](adr/0044-ssh-agent-gate.md) and [ADR 0048](adr/0048-ssh-agent-blessed-scripts.md).
 
 ### Launcher Packaging
 

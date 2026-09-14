@@ -92,6 +92,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
 #   gh: trusted\n\
 #   aws: trusted\n\
 #   gpg-signing: local-write\n\
+#   ssh-agent: trusted\n\
 # ---\n"
     ));
     assert!(!PUBLISH_SCRIPT.contains("APPLE_PASSWORD"));
