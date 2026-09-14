@@ -3352,6 +3352,28 @@ private struct ActiveScriptAuthority {
 private enum SSHScriptAuthorization {
     case blessing(BlessedScript)
     case inheritedPolicy
+
+    func allows(_ authority: ActiveScriptAuthority) -> Bool {
+        switch self {
+        case .blessing(let script): authority.canUse(script)
+        case .inheritedPolicy: authority.inheritsLauncherPolicy
+        }
+    }
+}
+
+private func releaseAfterSSHAuthorizationCheck(
+    _ payload: ApprovedPayload,
+    authorization: SSHScriptAuthorization?,
+    validatePeer: () throws -> Void,
+    currentAuthority: () -> ActiveScriptAuthority?,
+    deliver: (ApprovedPayload) -> Void
+) throws {
+    try validatePeer()
+    if let authorization {
+        guard let authority = currentAuthority(), authorization.allows(authority)
+        else { throw AppError("SSH script authority changed before signing") }
+    }
+    deliver(payload)
 }
 
 private func sshScriptAuthority(
@@ -8517,12 +8539,9 @@ private final class ApprovalServer: @unchecked Sendable {
     ) throws -> Bool {
         func validateSSHScriptAuthority() throws {
             guard let sshScriptAuthorization, let sshPeer = request.sshPeer else { return }
-            let authority = activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
-            let allowed = switch sshScriptAuthorization {
-            case .blessing(let script): authority.canUse(script)
-            case .inheritedPolicy: authority.inheritsLauncherPolicy
-            }
-            guard allowed else { throw AppError("SSH script authority changed before signing") }
+            guard sshScriptAuthorization.allows(
+                activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+            ) else { throw AppError("SSH script authority changed before signing") }
         }
         try request.sshPeer?.validate()
         try validateSSHScriptAuthority()
@@ -8563,9 +8582,17 @@ private final class ApprovalServer: @unchecked Sendable {
                 )
             },
             release: { material in
-                try request.sshPeer?.validate()
-                try validateSSHScriptAuthority()
-                release(material.payload)
+                try releaseAfterSSHAuthorizationCheck(
+                    material.payload,
+                    authorization: sshScriptAuthorization,
+                    validatePeer: { try request.sshPeer?.validate() },
+                    currentAuthority: {
+                        request.sshPeer.map {
+                            activeSSHScriptAuthority(ancestors: $0.ancestors)
+                        }
+                    },
+                    deliver: release
+                )
             }
         )
     }
@@ -14352,6 +14379,51 @@ private func runApprovalSelfCheck() -> Int32 {
         print("SSH Blessed Script authority self-check failed")
         return 1
     }
+    let testPayload = ApprovedPayload(secrets: [:], value: "test payload")
+    var delivered = false
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing), validatePeer: {},
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: []
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+        return 1
+    } catch {}
+    guard !delivered else { return 1 }
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing), validatePeer: {},
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: [sshBlessing]
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+    } catch { return 1 }
+    guard delivered else { return 1 }
+    delivered = false
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing),
+            validatePeer: { throw AppError("test peer changed") },
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: [sshBlessing]
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+        return 1
+    } catch {}
+    guard !delivered else { return 1 }
     let nodePath = "/opt/homebrew/bin/node"
     let sshReuseRequest = sshRequest.decisionReuseRequest(
         clientIdentity: selfIdentity, callerPath: sshRequest.target, signing: helperSigning

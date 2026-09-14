@@ -189,8 +189,8 @@ ancestry deny use. The bounded SSH authentication payload digest is bound before
 authorizing. It rechecks the
 peer and credential configuration before releasing the single Global Value of
 `AV_SSH_CREDENTIAL`. The helper signs in memory and returns only the signature.
-Private keys are never added to the system agent. There is no decision reuse,
-Temporary Access Grant, or retained provenance at this gate. A live Blessed
+Private keys are never added to the system agent. This gate has no decision
+reuse, Temporary Access Grants, or retained provenance. A live Blessed
 Script may authorize a signature when its explicit `ssh-agent: trusted`
 Capability matches an execution on the socket peer's verified original ancestor
 chain. That exact chain is rechecked before recording and signing. A script's
