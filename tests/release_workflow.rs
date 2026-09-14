@@ -1,3 +1,5 @@
+use std::process::Command;
+
 const RELEASE_WORKFLOW: &str = include_str!("../.github/workflows/release.yml");
 const CI_WORKFLOW: &str = include_str!("../.github/workflows/ci.yml");
 const CARGO_MANIFEST: &str = include_str!("../Cargo.toml");
@@ -79,6 +81,48 @@ fn release_assets_are_immutable_and_never_replaced() {
     assert!(!PUBLISH_SCRIPT.contains("gh release create"));
     assert!(!RELEASE_WORKFLOW.contains("SCANNER_NAME"));
     assert!(!RELEASE_WORKFLOW.contains("scanner.tgz"));
+}
+
+#[test]
+fn published_release_cannot_resume_publication() {
+    let body = PUBLISH_SCRIPT
+        .split_once("check_requested_release() {")
+        .unwrap()
+        .1
+        .split_once("\n}\n")
+        .unwrap()
+        .0;
+    let script = format!(
+        "set -euo pipefail\ncheck_requested_release() {{{body}\n}}\n\
+         REQUESTED_VERSION=4.9.0\nCURRENT_VERSION=4.9.0\nFINISH_PUBLISHED=$FINISH_PUBLISHED_INPUT\nREPOSITORY=automic-vault/automic-vault\n\
+         gh() {{ [[ $GH_FAIL != 1 ]] || return 1; printf '%s\\n' \"$GH_RELEASE_INFO\"; }}\n\
+         check_requested_release\nprintf 'resumed=%s\\n' \"${{RESUMED_DRAFT:-0}}\""
+    );
+    for (release_info, gh_fail, finishing, expected_status, expected_text) in [
+        ("false\ttrue\thead\turl", "0", "0", 64, "already published"),
+        ("false\tfalse\thead\turl", "0", "0", 64, "already published"),
+        ("true\tfalse\thead\turl", "0", "0", 0, "resumed=1"),
+        ("", "0", "0", 0, "resumed=0"),
+        ("", "1", "0", 1, "cannot check GitHub releases"),
+        ("", "0", "1", 64, "does not exist"),
+        ("true\tfalse\thead\turl", "0", "1", 64, "still a draft"),
+        ("false\tfalse\thead\turl", "0", "1", 64, "immutable release"),
+    ] {
+        let output = Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .env("GH_RELEASE_INFO", release_info)
+            .env("GH_FAIL", gh_fail)
+            .env("FINISH_PUBLISHED_INPUT", finishing)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(expected_status));
+        assert!(
+            String::from_utf8_lossy(&[output.stdout, output.stderr].concat())
+                .contains(expected_text),
+            "expected {expected_text} for {release_info:?}"
+        );
+    }
 }
 
 #[test]
@@ -299,9 +343,9 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("Update Automic Vault cask to $version"));
     assert!(PUBLISH_SCRIPT.contains("Homebrew tap main must match origin/main"));
     assert!(PUBLISH_SCRIPT.contains("publish_website_assets \"$head\""));
-    assert!(PUBLISH_SCRIPT.contains("resume_published_release"));
-    assert!(PUBLISH_SCRIPT.contains("Resuming local publication for immutable release"));
-    assert!(PUBLISH_SCRIPT.contains("recovery requires an unmodified publish script"));
+    assert!(PUBLISH_SCRIPT.contains("check_requested_release"));
+    assert!(PUBLISH_SCRIPT.contains("--finish-version"));
+    assert!(PUBLISH_SCRIPT.contains("finishing requires the latest published release"));
     assert!(PUBLISH_SCRIPT.contains("finish_publication \"$VERSION\" \"$head\" \"$release_url\""));
     assert!(PUBLISH_SCRIPT.contains("contains(Aliases.Items, '$WEBSITE_ALIAS')"));
     assert!(!PUBLISH_SCRIPT.contains("contains(join(',', Aliases.Items)"));
@@ -329,7 +373,7 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
         .unwrap();
     let upload = PUBLISH_SCRIPT.find("aws s3 cp \"$archive\"").unwrap();
     assert!(build < verify && verify < upload);
-    assert!(PUBLISH_SCRIPT.contains("RECOVERED_RELEASE=1"));
+    assert!(PUBLISH_SCRIPT.contains("FINISH_PUBLISHED=1"));
     assert!(PUBLISH_SCRIPT.contains("RESUMED_DRAFT=1"));
     assert!(PUBLISH_SCRIPT.contains("repos/$REPOSITORY/releases?per_page=100"));
     assert!(PUBLISH_SCRIPT.contains(r#"select(.tag_name == \"$REQUESTED_VERSION\")"#));
@@ -345,10 +389,7 @@ fn release_actions_delegate_website_publication_to_the_local_script() {
     assert!(PUBLISH_SCRIPT.contains("version_matches_release_branch"));
     assert!(PUBLISH_SCRIPT.contains("--ref \"$RELEASE_BRANCH\""));
     assert!(PUBLISH_SCRIPT.contains("if [[ \"$RESUMED_DRAFT\" -eq 0 ]] && ! command -v codex"));
-    assert!(!PUBLISH_SCRIPT.contains("if resume_published_release; then"));
-    let resume = PUBLISH_SCRIPT
-        .rfind("\nresume_published_release\n")
-        .unwrap();
+    let resume = PUBLISH_SCRIPT.rfind("\ncheck_requested_release\n").unwrap();
     let codex = PUBLISH_SCRIPT.rfind("command -v codex").unwrap();
     assert!(resume < codex);
     let resumed_draft = PUBLISH_SCRIPT

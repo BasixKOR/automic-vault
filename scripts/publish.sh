@@ -10,18 +10,24 @@
 set -euo pipefail
 
 REQUESTED_VERSION=""
+FINISH_PUBLISHED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --version)
+    --version | --finish-version)
       if [[ $# -lt 2 || "$2" == --* ]]; then
-        echo "error: --version requires a value" >&2
+        echo "error: $1 requires a value" >&2
         exit 64
       fi
+      if [[ -n "$REQUESTED_VERSION" ]]; then
+        echo "error: specify only one version option" >&2
+        exit 64
+      fi
+      [[ "$1" != "--finish-version" ]] || FINISH_PUBLISHED=1
       REQUESTED_VERSION="$2"
       shift
       ;;
     *)
-      echo "usage: $0 [--version VERSION]" >&2
+      echo "usage: $0 [--version VERSION | --finish-version VERSION]" >&2
       exit 64
       ;;
   esac
@@ -49,7 +55,6 @@ RELEASE_NOTES=""
 INTERNAL_VERSION_METADATA=""
 INTERNAL_VERSION_FILES=()
 RESUME_RELEASE=0
-RECOVERED_RELEASE=0
 RESUMED_DRAFT=0
 DRAFT_HEAD=""
 DRAFT_URL=""
@@ -476,7 +481,7 @@ finish_publication() {
   echo "Published release: $release_url"
 }
 
-resume_published_release() {
+check_requested_release() {
   local release_info is_draft is_immutable head release_url
   [[ -n "$REQUESTED_VERSION" ]] || return 0
   if ! release_info="$(
@@ -487,49 +492,66 @@ resume_published_release() {
       --jq ".[] | select(.tag_name == \"$REQUESTED_VERSION\") | [.draft, .immutable, .target_commitish, .html_url] | @tsv" \
       2>/dev/null
   )"; then
+    echo "error: cannot check GitHub releases for $REQUESTED_VERSION" >&2
+    exit 1
+  fi
+  if [[ -z "$release_info" ]]; then
+    if [[ "$FINISH_PUBLISHED" -eq 1 ]]; then
+      echo "error: release $REQUESTED_VERSION does not exist" >&2
+      exit 64
+    fi
     return 0
   fi
-  [[ -n "$release_info" ]] || return 0
   if [[ "$release_info" == *$'\n'* ]]; then
     echo "error: multiple GitHub releases exist for $REQUESTED_VERSION" >&2
     exit 1
   fi
   read -r is_draft is_immutable head release_url <<<"$release_info"
-  if [[ "$is_draft" == "true" && "$is_immutable" == "false" ]]; then
-    if [[ "$REQUESTED_VERSION" != "$CURRENT_VERSION" ]]; then
-      echo "error: draft release $REQUESTED_VERSION does not match checkout version $CURRENT_VERSION" >&2
+  if [[ "$is_draft" == "false" ]]; then
+    if [[ "$FINISH_PUBLISHED" -eq 0 ]]; then
+      echo "error: release $REQUESTED_VERSION is already published; publish a new version" >&2
       exit 64
     fi
-    VERSION="$REQUESTED_VERSION"
-    DRAFT_HEAD="$head"
-    DRAFT_URL="$release_url"
-    RESUMED_DRAFT=1
-    return 0
+    if [[ "$is_immutable" != "true" || "$REQUESTED_VERSION" != "$CURRENT_VERSION" ]]; then
+      echo "error: finishing requires an immutable release matching the checkout version" >&2
+      exit 64
+    fi
+    if [[ "$(gh release list --repo "$REPOSITORY" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')" != "$REQUESTED_VERSION" ]]; then
+      echo "error: finishing requires the latest published release" >&2
+      exit 64
+    fi
+    if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all)" ]]; then
+      echo "error: finishing requires a clean checkout" >&2
+      exit 64
+    fi
+    git -C "$ROOT" fetch --quiet origin "$RELEASE_BRANCH"
+    if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]] ||
+      ! git -C "$ROOT" cat-file -e "$head^{commit}" 2>/dev/null ||
+      ! git -C "$ROOT" merge-base --is-ancestor "$head" "origin/$RELEASE_BRANCH"; then
+      echo "error: release $REQUESTED_VERSION does not target a commit on $RELEASE_BRANCH" >&2
+      exit 1
+    fi
+    prepare_cask_publish
+    prepare_website_publish
+    finish_publication "$REQUESTED_VERSION" "$head" "$release_url"
+    exit 0
   fi
-  if [[ "$is_draft" != "false" || "$is_immutable" != "true" ]]; then
-    return 0
-  fi
-
-  # The checkout may have changed while Actions ran, but the recovery logic itself must not have.
-  if [[ ! -f "$ROOT/scripts/publish.sh" || -L "$ROOT/scripts/publish.sh" ]] ||
-    ! git -C "$ROOT" diff --quiet HEAD -- scripts/publish.sh; then
-    echo "error: recovery requires an unmodified publish script" >&2
+  if [[ "$FINISH_PUBLISHED" -eq 1 ]]; then
+    echo "error: release $REQUESTED_VERSION is still a draft" >&2
     exit 64
   fi
-  git -C "$ROOT" fetch --quiet origin "$RELEASE_BRANCH"
-  if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]] ||
-    ! git -C "$ROOT" cat-file -e "$head^{commit}" 2>/dev/null ||
-    ! git -C "$ROOT" merge-base --is-ancestor "$head" "origin/$RELEASE_BRANCH"; then
-    echo "error: release $REQUESTED_VERSION does not target a commit on $RELEASE_BRANCH" >&2
+  if [[ "$is_draft" != "true" || "$is_immutable" != "false" ]]; then
+    echo "error: release $REQUESTED_VERSION has an unexpected draft or immutable state" >&2
     exit 1
   fi
-
+  if [[ "$REQUESTED_VERSION" != "$CURRENT_VERSION" ]]; then
+    echo "error: draft release $REQUESTED_VERSION does not match checkout version $CURRENT_VERSION" >&2
+    exit 64
+  fi
   VERSION="$REQUESTED_VERSION"
-  echo "Resuming local publication for immutable release $VERSION."
-  prepare_cask_publish
-  prepare_website_publish
-  finish_publication "$VERSION" "$head" "$release_url"
-  RECOVERED_RELEASE=1
+  DRAFT_HEAD="$head"
+  DRAFT_URL="$release_url"
+  RESUMED_DRAFT=1
 }
 
 verify_macos_14_launch() (
@@ -763,10 +785,7 @@ if [[ -n "$REQUESTED_VERSION" ]] && ! version_matches_release_branch "$REQUESTED
   echo "error: version $REQUESTED_VERSION does not belong to branch $RELEASE_BRANCH" >&2
   exit 64
 fi
-resume_published_release
-if [[ "$RECOVERED_RELEASE" -eq 1 ]]; then
-  exit 0
-fi
+check_requested_release
 if [[ "$RESUMED_DRAFT" -eq 0 ]] && ! command -v codex >/dev/null 2>&1; then
   echo "error: publish requires codex" >&2
   exit 64

@@ -123,7 +123,10 @@ scripts/publish.sh
 Pass `--version X.Y.Z` to require a particular version while still using Codex
 to write and validate the release notes. If a workflow fails after its release
 commit was pushed, fix and push the release branch, then pass that same version to retry
-without creating another version bump.
+without creating another version bump. An existing draft may be resumed;
+`--version` rejects an already published release before any website or Homebrew
+update. If interrupted after publishing the draft, use `--finish-version X.Y.Z`
+to finish the latest immutable release's scanner upload and Homebrew cask update.
 
 The script prints Codex's selected version and release notes, updates the Cargo
 version metadata and any required internal revisions, pushes the resulting
