@@ -48,3 +48,14 @@ import Testing
     #expect(!committed)
     #expect(events == ["record-failed"])
 }
+
+@Test func authorizationFulfillmentReleaseValidationFailurePropagates() {
+    enum Revoked: Error { case blessing }
+    let transaction = AuthorizationFulfillmentTransaction(material: "secret-material")
+    #expect(throws: Revoked.self) {
+        try transaction.commit(
+            record: { true }, activate: { _ in }, observe: { _ in },
+            release: { _ in throw Revoked.blessing }
+        )
+    }
+}

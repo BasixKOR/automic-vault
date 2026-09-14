@@ -94,6 +94,12 @@ original-parent evidence; unavailable or changed ancestry denies use.
 The gate defaults to **Approval Required** and offers **Allow Authentication**
 for recognized SSH authentication signatures. This delegates authentication,
 including access that may permit remote writes; it is not Read Only authority.
+Script-derived authority may authorize authentication only through an explicit
+`ssh-agent: trusted` Capability when the SSH socket peer's verified original
+ancestors include that exact script execution. An empty capability ceiling
+or a revoked active Blessing blocks inherited automatic authority. The ancestry
+and Blessing are rechecked before signing; a missing or changed link cannot
+borrow the script's authority.
 Public-key enumeration does not apply a Secret. Agent key mutation and arbitrary
 signing are unsupported. No destination-specific authority is claimed. A local
 client that forwards or shares its connection can carry other software's

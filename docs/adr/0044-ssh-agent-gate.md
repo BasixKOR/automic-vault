@@ -1,6 +1,6 @@
 # ADR 0044: Gate SSH authentication through a local SSH agent
 
-Status: accepted
+Status: accepted; script authority amended by [ADR 0048](0048-ssh-agent-blessed-scripts.md).
 
 ## Context
 
@@ -61,9 +61,10 @@ A Verified Launcher is required even for manual Approval. The signing Target
 remains the signed `av` helper, which alone receives usable credential bytes.
 The peer and Keychain configuration are rechecked before release. Each use must
 persist and verify an Authorization Record before credential bytes leave custody.
-No transient decision reuse, script authority, Temporary Access Grants or
-Retained Launcher Provenance applies. Policy offers Approval Required and Allow
-Authentication; authentication can enable remote writes.
+No transient decision reuse, Temporary Access Grants or Retained Launcher
+Provenance applies. [ADR 0048](0048-ssh-agent-blessed-scripts.md) permits
+strictly verified Blessed Script authority. Policy offers Approval Required and
+Allow Authentication; authentication can enable remote writes.
 Both approval and denial reuse are disabled: the long-running Gate Client serves
 unrelated SSH clients and Launchers, so a process-scoped denial quarantine would
 incorrectly suppress their subsequent Approval requests.

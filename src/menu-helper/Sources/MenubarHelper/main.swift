@@ -2039,8 +2039,14 @@ private func sshAgentPeerCWD(_ pid: pid_t) -> String? {
 
 // An SSH client cannot stand in as its own Launcher. Every ancestor must be the
 // same execution that parented its child, preventing an exec into an allowed app.
-private func sshAgentLaunchers(for identity: AVProcessIdentity) -> [LauncherIdentity] {
+private struct SSHAgentAncestry {
+    let launchers: [LauncherIdentity]
+    let ancestors: [AVProcessIdentity]
+}
+
+private func sshAgentAncestry(for identity: AVProcessIdentity) -> SSHAgentAncestry? {
     var child = identity
+    var ancestors: [AVProcessIdentity] = []
     for _ in 0..<32 {
         var parent = AVProcessIdentity()
         if !av_original_parent_identity(&child, &parent) {
@@ -2053,14 +2059,17 @@ private func sshAgentLaunchers(for identity: AVProcessIdentity) -> [LauncherIden
                   SecRequirementCreateWithString("anchor apple and identifier com.apple.login" as CFString, [], &requirement) == errSecSuccess,
                   let requirement,
                   SecCodeCheckValidity(code, [], requirement) == errSecSuccess
-            else { return [] }
+            else { return nil }
         }
+        ancestors.append(parent)
         let candidates = launcherIdentities(pid: parent.pid, identity: parent)
             .filter { $0.runtimeProtection.allowsSecretGateAccess }
-        if !candidates.isEmpty { return candidates }
+        if !candidates.isEmpty {
+            return SSHAgentAncestry(launchers: candidates, ancestors: ancestors)
+        }
         child = parent
     }
-    return []
+    return nil
 }
 
 /// Retains the kernel socket evidence through Approval and release.
@@ -2069,17 +2078,19 @@ private final class SSHAgentPeer: Sendable {
     let identity: AVProcessIdentity
     let configuration: SSHAgentConfiguration
     let launchers: [LauncherIdentity]
+    let ancestors: [AVProcessIdentity]
     let arguments: [String]
     let cwd: String
     let helperIdentity: AVProcessIdentity
 
     init(socket: FileHandle, identity: AVProcessIdentity, configuration: SSHAgentConfiguration,
-         launchers: [LauncherIdentity], arguments: [String], cwd: String,
+         launchers: [LauncherIdentity], ancestors: [AVProcessIdentity], arguments: [String], cwd: String,
          helperIdentity: AVProcessIdentity) {
         self.socket = socket
         self.identity = identity
         self.configuration = configuration
         self.launchers = launchers
+        self.ancestors = ancestors
         self.arguments = arguments
         self.cwd = cwd
         self.helperIdentity = helperIdentity
@@ -2098,9 +2109,11 @@ private final class SSHAgentPeer: Sendable {
               loadSSHAgentConfiguration() == configuration, configuration.enabled,
               launcherBundleIntegrityError(for: current) == nil
         else { throw AppError("SSH agent connection or configuration changed") }
-        let live = sshAgentLaunchers(for: current)
-        guard !launchers.isEmpty, launchers.allSatisfy({ expected in
-            live.contains { $0.designatedRequirement == expected.designatedRequirement
+        guard let live = sshAgentAncestry(for: current),
+              ancestors.count == live.ancestors.count,
+              zip(ancestors, live.ancestors).allSatisfy({ sameProcessIdentity($0, $1) }),
+              !launchers.isEmpty, launchers.allSatisfy({ expected in
+            live.launchers.contains { $0.designatedRequirement == expected.designatedRequirement
                 && $0.runtimeProtection == expected.runtimeProtection }
         }) else { throw AppError("SSH Verified Launcher changed before signing") }
     }
@@ -3325,6 +3338,57 @@ private struct ActiveScriptAuthority {
     var inheritsLauncherPolicy: Bool {
         allowsAutomaticAuthority && blessings.allSatisfy(\.usesCapabilityInheritance)
     }
+
+    func canUse(_ blessing: BlessedScript) -> Bool {
+        guard allowsAutomaticAuthority else { return false }
+        for active in blessings {
+            if active == blessing { return true }
+            if !active.usesCapabilityInheritance { return false }
+        }
+        return false
+    }
+}
+
+private enum SSHScriptAuthorization {
+    case blessing(BlessedScript)
+    case inheritedPolicy
+
+    func allows(_ authority: ActiveScriptAuthority) -> Bool {
+        switch self {
+        case .blessing(let script): authority.canUse(script)
+        case .inheritedPolicy: authority.inheritsLauncherPolicy
+        }
+    }
+}
+
+private func releaseAfterSSHAuthorizationCheck(
+    _ payload: ApprovedPayload,
+    authorization: SSHScriptAuthorization?,
+    validatePeer: () throws -> Void,
+    currentAuthority: () -> ActiveScriptAuthority?,
+    deliver: (ApprovedPayload) -> Void
+) throws {
+    try validatePeer()
+    if let authorization {
+        guard let authority = currentAuthority(), authorization.allows(authority)
+        else { throw AppError("SSH script authority changed before signing") }
+    }
+    deliver(payload)
+}
+
+private func sshScriptAuthority(
+    ancestors: [AVProcessIdentity],
+    executions: [BlessedExecutionKey: BlessedScript],
+    ceilings: Set<BlessedExecutionKey>,
+    currentBlessings: [BlessedScript]
+) -> ActiveScriptAuthority {
+    let keys = ancestors.map { BlessedExecutionKey(pid: $0.pid, startUsec: $0.start_usec) }
+    return ActiveScriptAuthority(
+        blessings: keys.compactMap { executions[$0] }.filter { currentBlessings.contains($0) },
+        hasEmptyCapabilityCeiling: keys.contains { key in
+            ceilings.contains(key) || (executions[key].map { !currentBlessings.contains($0) } ?? false)
+        }
+    )
 }
 
 private func blessedScriptMatches(
@@ -4426,10 +4490,14 @@ private final class ApprovalServer: @unchecked Sendable {
             callerPID: pid,
             ancestorFallbackPath: ancestorFallbackPath
         )
-        let scriptAuthority = ActiveScriptAuthority(
-            blessings: request.sshPeer == nil ? activeBlessedScripts(pid: pid, identity: identity) : [],
-            hasEmptyCapabilityCeiling: request.sshPeer == nil && activeEmptyCapabilityCeiling(pid: pid, identity: identity)
-        )
+        let scriptAuthority = if let sshPeer = request.sshPeer {
+            activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+        } else {
+            ActiveScriptAuthority(
+                blessings: activeBlessedScripts(pid: pid, identity: identity),
+                hasEmptyCapabilityCeiling: activeEmptyCapabilityCeiling(pid: pid, identity: identity)
+            )
+        }
         let activeBlessing = scriptAuthority.nearestBlessing
         if scriptAuthority.allowsAutomaticAuthority {
             for script in scriptAuthority.blessings {
@@ -4622,7 +4690,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let automaticApprovalExplanation: String?
         if scriptAuthority.hasEmptyCapabilityCeiling {
-            automaticApprovalExplanation = "This script declared an empty capability ceiling, so inherited automatic access cannot authorize this request."
+            automaticApprovalExplanation = "Script authority in this execution blocks inherited automatic access. Approval applies only to this request."
         } else if let resolvedPolicy,
            let classification,
            let explanation = launcherRuntimeProtectionApprovalExplanation(
@@ -4766,6 +4834,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     identity: identity,
                     record: record,
                     launcher: authorizingLauncher,
+                    sshScriptAuthorization: request.sshPeer == nil ? nil : .inheritedPolicy,
                     activateAfterRecording: {
                         if let authorizingLauncher {
                             rememberRetainedProvenance(
@@ -4822,7 +4891,7 @@ private final class ApprovalServer: @unchecked Sendable {
             agentTaskContext: currentAgentTaskContext
         )
         let temporaryGrantUnavailableReason = scriptAuthority.hasEmptyCapabilityCeiling
-            ? "This script declared an empty capability ceiling."
+            ? "Script authority in this execution blocks automatic access."
             : temporaryAccessGrantUnavailableReason(
                 hasToolSpecificGate: configuredGate != nil,
                 classification: classification,
@@ -5837,9 +5906,7 @@ private final class ApprovalServer: @unchecked Sendable {
         let executions = blessedExecutions
         blessedExecutionsLock.unlock()
 
-        let staleExecutions = executions.compactMap { key, script in
-            currentBlessings.contains(script) && executionIsLive(key) ? nil : key
-        }
+        let staleExecutions = executions.keys.filter { !executionIsLive($0) }
         blessedExecutionsLock.lock()
         for key in staleExecutions where blessedExecutions[key] == executions[key] {
             blessedExecutions.removeValue(forKey: key)
@@ -5854,7 +5921,7 @@ private final class ApprovalServer: @unchecked Sendable {
             if let script = activeExecutions[BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
-            )] {
+            )], currentBlessings.contains(script) {
                 scripts.append(script)
             }
             guard currentIdentity.ppid > 1 else { return scripts }
@@ -5864,6 +5931,36 @@ private final class ApprovalServer: @unchecked Sendable {
         return scripts
     }
 
+    private func activeSSHScriptAuthority(ancestors: [AVProcessIdentity]) -> ActiveScriptAuthority {
+        pruneInactiveScriptExecutions()
+        let currentBlessings = loadBlessedScripts()
+        blessedExecutionsLock.lock()
+        let executions = blessedExecutions
+        let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+        return sshScriptAuthority(
+            ancestors: ancestors,
+            executions: executions,
+            ceilings: ceilings,
+            currentBlessings: currentBlessings
+        )
+    }
+
+    private func pruneInactiveScriptExecutions() {
+        blessedExecutionsLock.lock()
+        let executions = blessedExecutions
+        let ceilings = emptyCapabilityCeilings
+        blessedExecutionsLock.unlock()
+        let deadExecutions = executions.keys.filter { !executionIsLive($0) }
+        let deadCeilings = ceilings.filter { !executionIsLive($0) }
+        blessedExecutionsLock.lock()
+        for key in deadExecutions where blessedExecutions[key] == executions[key] {
+            blessedExecutions.removeValue(forKey: key)
+        }
+        emptyCapabilityCeilings.subtract(deadCeilings)
+        blessedExecutionsLock.unlock()
+    }
+
     private func registerEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) {
         blessedExecutionsLock.lock()
         emptyCapabilityCeilings.insert(BlessedExecutionKey(pid: pid, startUsec: identity.start_usec))
@@ -5871,8 +5968,10 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func activeEmptyCapabilityCeiling(pid: pid_t, identity: AVProcessIdentity) -> Bool {
+        let currentBlessings = loadBlessedScripts()
         blessedExecutionsLock.lock()
         let ceilings = emptyCapabilityCeilings
+        let executions = blessedExecutions
         blessedExecutionsLock.unlock()
 
         let staleCeilings = ceilings.filter { !executionIsLive($0) }
@@ -5884,10 +5983,13 @@ private final class ApprovalServer: @unchecked Sendable {
         var currentPID = pid
         var currentIdentity = identity
         for _ in 0..<64 {
-            if activeCeilings.contains(BlessedExecutionKey(
+            let key = BlessedExecutionKey(
                 pid: currentPID,
                 startUsec: currentIdentity.start_usec
-            )) {
+            )
+            if activeCeilings.contains(key)
+                || (executions[key].map { !currentBlessings.contains($0) } ?? false)
+            {
                 return true
             }
             guard currentIdentity.ppid > 1 else { return false }
@@ -5940,6 +6042,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 identity: identity,
                 record: record,
                 launcher: launcher,
+                sshScriptAuthorization: request.sshPeer == nil ? nil : .blessing(script),
                 activateAfterRecording: {
                     if let launcher {
                         Task { @MainActor in
@@ -7041,13 +7144,15 @@ private final class ApprovalServer: @unchecked Sendable {
               request.args[1] == "public-key-sha256=" + SHA256.hash(data: publicBytes)
                 .map({ String(format: "%02x", $0) }).joined()
         else { throw AppError("SSH Agent is disabled or the requested key does not match") }
-        let launchers = sshAgentLaunchers(for: origin)
-        guard !launchers.isEmpty else { throw AppError("SSH authentication requires a live Verified Launcher ancestor with verifiable original process ancestry") }
+        guard let ancestry = sshAgentAncestry(for: origin) else {
+            throw AppError("SSH authentication requires a live Verified Launcher ancestor with verifiable original process ancestry")
+        }
         guard let cwd = sshAgentPeerCWD(origin.pid) else {
             throw AppError("SSH peer working directory is unavailable")
         }
         let originPeer = SSHAgentPeer(socket: socket, identity: origin, configuration: config,
-                                     launchers: launchers, arguments: arguments, cwd: cwd,
+                                     launchers: ancestry.launchers, ancestors: ancestry.ancestors,
+                                     arguments: arguments, cwd: cwd,
                                      helperIdentity: helperIdentity)
         try originPeer.validate()
         return ApprovalRequest(
@@ -8428,21 +8533,32 @@ private final class ApprovalServer: @unchecked Sendable {
         identity: AVProcessIdentity,
         record: AccessRequestRecord,
         launcher: LauncherIdentity?,
+        sshScriptAuthorization: SSHScriptAuthorization? = nil,
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
+        func validateSSHScriptAuthority() throws {
+            guard let sshScriptAuthorization, let sshPeer = request.sshPeer else { return }
+            guard sshScriptAuthorization.allows(
+                activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+            ) else { throw AppError("SSH script authority changed before signing") }
+        }
         try request.sshPeer?.validate()
+        try validateSSHScriptAuthority()
         let transaction = try prepareApprovedFulfillment(
             for: request,
             awsRegistration: awsRegistration
         )
         try request.sshPeer?.validate()
-        return transaction.commit(
+        try validateSSHScriptAuthority()
+        return try transaction.commit(
             record: {
                 do {
                     try request.sshPeer?.validate()
+                    try validateSSHScriptAuthority()
                     guard onAccessRequest(record) else { return false }
                     try request.sshPeer?.validate()
+                    try validateSSHScriptAuthority()
                     return true
                 } catch { return false }
             },
@@ -8465,7 +8581,19 @@ private final class ApprovalServer: @unchecked Sendable {
                     identity: identity
                 )
             },
-            release: { material in release(material.payload) }
+            release: { material in
+                try releaseAfterSSHAuthorizationCheck(
+                    material.payload,
+                    authorization: sshScriptAuthorization,
+                    validatePeer: { try request.sshPeer?.validate() },
+                    currentAuthority: {
+                        request.sshPeer.map {
+                            activeSSHScriptAuthority(ancestors: $0.ancestors)
+                        }
+                    },
+                    deliver: release
+                )
+            }
         )
     }
 
@@ -14173,10 +14301,129 @@ private func runApprovalSelfCheck() -> Int32 {
         scriptData: nil, tool: "ssh-agent", title: nil, detail: nil,
         sshPeer: SSHAgentPeer(
             socket: .nullDevice, identity: selfIdentity, configuration: SSHAgentConfiguration(),
-            launchers: [], arguments: [pathString(selfIdentity), "pangolin", "true"],
+            launchers: [], ancestors: [], arguments: [pathString(selfIdentity), "pangolin", "true"],
             cwd: "/tmp", helperIdentity: selfIdentity
         )
     )
+    var scriptAncestor = selfIdentity
+    scriptAncestor.pid &+= 1
+    scriptAncestor.start_usec &+= 1
+    var unrelatedAncestor = selfIdentity
+    unrelatedAncestor.pid &+= 2
+    unrelatedAncestor.start_usec &+= 2
+    let scriptKey = BlessedExecutionKey(pid: scriptAncestor.pid, startUsec: scriptAncestor.start_usec)
+    let sshBlessing = BlessedScript(
+        path: "/tmp/publish.sh", checksum: "reviewed", keys: [], target: "/bin/bash",
+        replaceExistingEnv: false, allowMissingKeys: false,
+        capabilities: ["ssh-agent": .fullExceptSecretDumps], launchers: []
+    )
+    let insufficientSSHBlessing = BlessedScript(
+        path: sshBlessing.path, checksum: sshBlessing.checksum, keys: [], target: sshBlessing.target,
+        replaceExistingEnv: false, allowMissingKeys: false,
+        capabilities: ["ssh-agent": .readOnlyAndLocalWrites], launchers: []
+    )
+    let sshDescriptor = SecretGateDescriptor(
+        id: "ssh-agent", keyPatterns: [sshCredentialSecretName],
+        routes: [SecretGateRoute(
+            operation: "ssh-sign", scriptPath: nil, targetPath: sshRequest.target,
+            callerIdentifiers: ["com.automicvault.av"], keyPatterns: [sshCredentialSecretName],
+            replaceExistingEnv: false, allowMissingKeys: false
+        )]
+    )
+    let sshSigning = SigningInfo(identifier: "com.automicvault.av", teamIdentifier: "TEAM")
+    let executions = [scriptKey: sshBlessing]
+    let innerKey = BlessedExecutionKey(pid: unrelatedAncestor.pid, startUsec: unrelatedAncestor.start_usec)
+    let blockingBlessing = BlessedScript(
+        path: "/tmp/inner.sh", checksum: "reviewed-inner", keys: [], target: "/bin/bash",
+        replaceExistingEnv: false, allowMissingKeys: false,
+        capabilities: ["gh": .readOnly], launchers: []
+    )
+    guard blessedScriptCanAutoApprove(
+        sshBlessing, request: sshRequest, signing: sshSigning, descriptors: [sshDescriptor]
+    ),
+        !blessedScriptCanAutoApprove(
+            insufficientSSHBlessing, request: sshRequest,
+            signing: sshSigning, descriptors: [sshDescriptor]
+        ),
+        sshScriptAuthority(
+            ancestors: [scriptAncestor, selfIdentity], executions: executions,
+            ceilings: [], currentBlessings: [sshBlessing]
+        ).canUse(sshBlessing),
+        sshScriptAuthority(
+            ancestors: [unrelatedAncestor, selfIdentity], executions: executions,
+            ceilings: [], currentBlessings: [sshBlessing]
+        ).nearestBlessing == nil,
+        sshScriptAuthority(
+            ancestors: [scriptAncestor], executions: executions,
+            ceilings: [], currentBlessings: []
+        ).nearestBlessing == nil,
+        !sshScriptAuthority(
+            ancestors: [scriptAncestor, selfIdentity], executions: executions,
+            ceilings: [scriptKey], currentBlessings: [sshBlessing]
+        ).canUse(sshBlessing),
+        !sshScriptAuthority(
+            ancestors: [unrelatedAncestor, scriptAncestor],
+            executions: [innerKey: blockingBlessing, scriptKey: sshBlessing],
+            ceilings: [], currentBlessings: [blockingBlessing, sshBlessing]
+        ).canUse(sshBlessing),
+        !sshScriptAuthority(
+            ancestors: [unrelatedAncestor, scriptAncestor],
+            executions: [innerKey: blockingBlessing, scriptKey: sshBlessing],
+            ceilings: [], currentBlessings: [sshBlessing]
+        ).allowsAutomaticAuthority,
+        !sshScriptAuthority(
+            ancestors: [scriptAncestor], executions: executions,
+            ceilings: [scriptKey], currentBlessings: [sshBlessing]
+        ).inheritsLauncherPolicy
+    else {
+        print("SSH Blessed Script authority self-check failed")
+        return 1
+    }
+    let testPayload = ApprovedPayload(secrets: [:], value: "test payload")
+    var delivered = false
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing), validatePeer: {},
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: []
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+        return 1
+    } catch {}
+    guard !delivered else { return 1 }
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing), validatePeer: {},
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: [sshBlessing]
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+    } catch { return 1 }
+    guard delivered else { return 1 }
+    delivered = false
+    do {
+        try releaseAfterSSHAuthorizationCheck(
+            testPayload, authorization: .blessing(sshBlessing),
+            validatePeer: { throw AppError("test peer changed") },
+            currentAuthority: {
+                sshScriptAuthority(
+                    ancestors: [scriptAncestor], executions: executions,
+                    ceilings: [], currentBlessings: [sshBlessing]
+                )
+            },
+            deliver: { _ in delivered = true }
+        )
+        return 1
+    } catch {}
+    guard !delivered else { return 1 }
     let nodePath = "/opt/homebrew/bin/node"
     let sshReuseRequest = sshRequest.decisionReuseRequest(
         clientIdentity: selfIdentity, callerPath: sshRequest.target, signing: helperSigning
