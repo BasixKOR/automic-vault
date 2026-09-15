@@ -350,7 +350,7 @@ const HARDENERS: &[HardenerSpec] = &[
     gated_hardener!(stripe_cli, "stripe", &[]),
     ungated_hardener!(sudo, "sudo", &[]),
     gated_hardener!(supabase, "supabase", &["supabase-cli"]),
-    gated_hardener!(wakatime_cli, "wakatime-cli", &["wakatime"]),
+    gated_hardener!(wakatime_cli, "wakatime-cli", &[]),
     HardenerSpec {
         name: "terraform",
         selectors: &[],
