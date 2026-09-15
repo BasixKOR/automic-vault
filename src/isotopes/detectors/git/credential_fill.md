@@ -16,6 +16,18 @@ helpers and every effective helper is an absolute path to the signed Automic
 Vault `gh` Isotope. That helper requests the token through the `gh` Secret Gate
 instead of making it ambient authority.
 
+Hardening the `gh` on your current `PATH` does not make a relative `helper = !gh
+auth git-credential` safe. Git resolves `gh` from the invoking process's `PATH`,
+and any process running as you can ask the configured helper for a usable token:
+
+```sh
+printf 'protocol=https\nhost=github.com\n\n' | git credential fill
+```
+
+The configuration is exempt only when the helper chain has the reset and
+absolute signed-Isotope path described above. The `gh` Secret Gate must still
+authorize the resulting Secret Disclosure.
+
 The Detector resolves includes and configuration precedence with
 `/usr/bin/git config`. It never runs `git credential fill` or invokes a
 configured helper.
