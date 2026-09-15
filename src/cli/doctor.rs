@@ -145,11 +145,13 @@ fn results(
     } else if let Some(agent) = select_agent_cli(selector) {
         vec![diagnose_agent_cli(agent, &path, vendor_signature_valid)]
     } else {
-        diagnose(
-            hardeners.unwrap_or_else(hardeners::metadata),
-            selector,
-            &path,
-        )?
+        let hardeners = hardeners.unwrap_or_else(|| {
+            selector
+                .and_then(hardeners::metadata_for)
+                .into_iter()
+                .collect()
+        });
+        diagnose(hardeners, selector, &path)?
     };
     Ok(results)
 }
@@ -1680,6 +1682,11 @@ mod tests {
     fn every_hardener_has_an_explicit_doctor_or_scan_boundary() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         for hardener in hardeners::metadata() {
+            assert!(
+                hardeners::metadata_selector_matches(hardener.name, hardener.name),
+                "{} is missing from targeted Doctor metadata",
+                hardener.name
+            );
             if hardener.detection.commands.is_empty() {
                 assert!(
                     matches!(hardener.name, "codex" | "sudo"),
@@ -1689,6 +1696,12 @@ mod tests {
                 continue;
             }
             for command in &hardener.detection.commands {
+                assert!(
+                    hardeners::metadata_selector_matches(hardener.name, &command.name),
+                    "{}:{} is missing from targeted Doctor metadata",
+                    hardener.name,
+                    command.name
+                );
                 if has_stub_checks(command) {
                     assert!(
                         command.stub_requirements.is_some(),

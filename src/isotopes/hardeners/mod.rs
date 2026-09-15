@@ -281,66 +281,119 @@ pub(crate) fn restore_config_rewrites(
     }
 }
 
+struct HardenerSpec {
+    name: &'static str,
+    selectors: &'static [&'static str],
+    load: fn() -> HardenerMetadata,
+}
+
+impl HardenerSpec {
+    fn accepts(&self, selector: &str) -> bool {
+        self.name == selector || self.selectors.contains(&selector)
+    }
+
+    fn load(&self) -> HardenerMetadata {
+        (self.load)()
+    }
+}
+
 macro_rules! gated_hardener {
-    ($module:ident, $name:literal) => {
-        HardenerMetadata {
+    ($module:ident, $name:literal, $selectors:expr) => {
+        HardenerSpec {
             name: $name,
-            documentation: include_str!(concat!(stringify!($module), ".md")),
-            detection: $module::detect(),
-            secret_gate: Some($module::secret_gate()),
+            selectors: $selectors,
+            load: || HardenerMetadata {
+                name: $name,
+                documentation: include_str!(concat!(stringify!($module), ".md")),
+                detection: $module::detect(),
+                secret_gate: Some($module::secret_gate()),
+            },
         }
     };
 }
 
 macro_rules! ungated_hardener {
-    ($module:ident, $name:literal) => {
-        HardenerMetadata {
+    ($module:ident, $name:literal, $selectors:expr) => {
+        HardenerSpec {
             name: $name,
-            documentation: include_str!(concat!(stringify!($module), ".md")),
-            detection: $module::detect(),
-            secret_gate: None,
+            selectors: $selectors,
+            load: || HardenerMetadata {
+                name: $name,
+                documentation: include_str!(concat!(stringify!($module), ".md")),
+                detection: $module::detect(),
+                secret_gate: None,
+            },
         }
     };
 }
 
-pub(crate) fn metadata() -> Vec<HardenerMetadata> {
-    let mut metadata = vec![
-        gated_hardener!(aliyun_cli, "aliyun-cli"),
-        gated_hardener!(aws_cli, "aws"),
-        ungated_hardener!(codex, "codex"),
-        gated_hardener!(docker, "docker"),
-        gated_hardener!(goat, "goat"),
-        gated_hardener!(ordercli, "ordercli"),
-        gated_hardener!(openhue_cli, "openhue-cli"),
-        gated_hardener!(plumber, "plumber"),
-        gated_hardener!(podman, "podman"),
-        gated_hardener!(uaa_cli, "uaa-cli"),
-        gated_hardener!(railway, "railway"),
-        gated_hardener!(rclone, "rclone"),
-        gated_hardener!(kubectl, "kubectl"),
-        gated_hardener!(oxide_cli, "oxide-cli"),
-        gated_hardener!(fastly_cli, "fastly-cli"),
-        gated_hardener!(sqlcmd, "sqlcmd"),
-        gated_hardener!(homebrew, "brew"),
-        gated_hardener!(gh_cli, "gh"),
-        gated_hardener!(wrangler, "wrangler"),
-        gated_hardener!(stripe_cli, "stripe"),
-        ungated_hardener!(sudo, "sudo"),
-        gated_hardener!(supabase, "supabase"),
-        gated_hardener!(wakatime_cli, "wakatime-cli"),
-        HardenerMetadata {
+const HARDENERS: &[HardenerSpec] = &[
+    gated_hardener!(aliyun_cli, "aliyun-cli", &["aliyun"]),
+    gated_hardener!(aws_cli, "aws", &[]),
+    ungated_hardener!(codex, "codex", &[]),
+    gated_hardener!(docker, "docker", &["docker-compose", "docker-buildx"]),
+    gated_hardener!(goat, "goat", &[]),
+    gated_hardener!(ordercli, "ordercli", &[]),
+    gated_hardener!(openhue_cli, "openhue-cli", &["openhue"]),
+    gated_hardener!(plumber, "plumber", &[]),
+    gated_hardener!(podman, "podman", &[]),
+    gated_hardener!(uaa_cli, "uaa-cli", &["uaa"]),
+    gated_hardener!(railway, "railway", &[]),
+    gated_hardener!(rclone, "rclone", &[]),
+    gated_hardener!(kubectl, "kubectl", &[]),
+    gated_hardener!(oxide_cli, "oxide-cli", &["oxide"]),
+    gated_hardener!(fastly_cli, "fastly-cli", &["fastly"]),
+    gated_hardener!(sqlcmd, "sqlcmd", &[]),
+    gated_hardener!(homebrew, "brew", &["homebrew"]),
+    gated_hardener!(gh_cli, "gh", &["gh-cli"]),
+    gated_hardener!(wrangler, "wrangler", &[]),
+    gated_hardener!(stripe_cli, "stripe", &[]),
+    ungated_hardener!(sudo, "sudo", &[]),
+    gated_hardener!(supabase, "supabase", &["supabase-cli"]),
+    gated_hardener!(wakatime_cli, "wakatime-cli", &[]),
+    HardenerSpec {
+        name: "terraform",
+        selectors: &[],
+        load: || HardenerMetadata {
             name: "terraform",
             documentation: include_str!("terraform.md"),
             detection: terraform::detect(terraform::Tool::Terraform),
             secret_gate: Some(terraform::secret_gate(terraform::Tool::Terraform)),
         },
-        HardenerMetadata {
+    },
+    HardenerSpec {
+        name: "opentofu",
+        selectors: &["tofu"],
+        load: || HardenerMetadata {
             name: "opentofu",
             documentation: include_str!("opentofu.md"),
             detection: terraform::detect(terraform::Tool::OpenTofu),
             secret_gate: Some(terraform::secret_gate(terraform::Tool::OpenTofu)),
         },
-    ];
+    },
+];
+
+fn metadata_for_in(selector: &str, hardeners: &[HardenerSpec]) -> Option<HardenerMetadata> {
+    hardeners
+        .iter()
+        .find(|hardener| hardener.accepts(selector))
+        .map(HardenerSpec::load)
+}
+
+pub(crate) fn metadata_for(selector: &str) -> Option<HardenerMetadata> {
+    metadata_for_in(selector, HARDENERS).or_else(|| env_wrapper::metadata_for(selector))
+}
+
+#[cfg(test)]
+pub(crate) fn metadata_selector_matches(hardener: &str, selector: &str) -> bool {
+    HARDENERS
+        .iter()
+        .any(|candidate| candidate.name == hardener && candidate.accepts(selector))
+        || env_wrapper::metadata_selector_matches(hardener, selector)
+}
+
+pub(crate) fn metadata() -> Vec<HardenerMetadata> {
+    let mut metadata = HARDENERS.iter().map(HardenerSpec::load).collect::<Vec<_>>();
     metadata.extend(env_wrapper::metadata());
     metadata
 }
@@ -404,6 +457,43 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
+
+    use super::{HardenerDetection, HardenerMetadata, HardenerSpec};
+
+    fn test_metadata() -> HardenerMetadata {
+        HardenerMetadata {
+            name: "selected",
+            documentation: "",
+            detection: HardenerDetection::configuration(false, false, None),
+            secret_gate: None,
+        }
+    }
+
+    fn unexpected_metadata() -> HardenerMetadata {
+        panic!("unselected hardener was loaded")
+    }
+
+    #[test]
+    fn targeted_metadata_loads_only_the_selected_hardener() {
+        let hardeners = [
+            HardenerSpec {
+                name: "selected",
+                selectors: &["alias"],
+                load: test_metadata,
+            },
+            HardenerSpec {
+                name: "unselected",
+                selectors: &[],
+                load: unexpected_metadata,
+            },
+        ];
+
+        assert!(super::metadata_for_in("missing", &hardeners).is_none());
+        assert_eq!(
+            super::metadata_for_in("alias", &hardeners).unwrap().name,
+            "selected"
+        );
+    }
 
     #[test]
     fn secret_gate_notices_match_the_policy_defaults() {

@@ -46,15 +46,33 @@ pub(crate) fn install_target(name: &str, targets: &[PathBuf]) -> Result<(), Stri
 }
 
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
+    WRAPPERS.iter().map(metadata_for_wrapper).collect()
+}
+
+pub(crate) fn metadata_for(selector: &str) -> Option<HardenerMetadata> {
     WRAPPERS
         .iter()
-        .map(|wrapper| HardenerMetadata {
-            name: wrapper.name,
-            documentation: DOCUMENTATION,
-            detection: detect(wrapper),
-            secret_gate: Some(secret_gate(wrapper)),
+        .find(|wrapper| {
+            wrapper.name == selector || stubs(wrapper).any(|stub| stub.command == selector)
         })
-        .collect()
+        .map(metadata_for_wrapper)
+}
+
+#[cfg(test)]
+pub(crate) fn metadata_selector_matches(hardener: &str, selector: &str) -> bool {
+    WRAPPERS.iter().any(|wrapper| {
+        wrapper.name == hardener
+            && (wrapper.name == selector || stubs(wrapper).any(|stub| stub.command == selector))
+    })
+}
+
+fn metadata_for_wrapper(wrapper: &EnvWrapper) -> HardenerMetadata {
+    HardenerMetadata {
+        name: wrapper.name,
+        documentation: DOCUMENTATION,
+        detection: detect(wrapper),
+        secret_gate: Some(secret_gate(wrapper)),
+    }
 }
 
 pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
