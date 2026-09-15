@@ -600,6 +600,10 @@ final class DashboardModel: ObservableObject {
         items(for: .blessedScripts).filter { $0.blessingStatus == "Changed" }.count
     }
 
+    var authorizationHistoryRetentionDays: Int {
+        Int(AuthorizationHistoryRetention.standard.maximumAge / 86_400)
+    }
+
     func count(for section: DashboardSection) -> Int {
         if section == .secretUsage && selectedSection != .secretUsage {
             return snapshot.accessRequests.count
@@ -2223,7 +2227,8 @@ func runDashboardSearchSelfCheck() -> Int32 {
     pageModel.selectSection(.settings)
     pageModel.searchText = "no matching history"
     guard !pageModel.historyRows.isEmpty,
-          pageModel.count(for: .secretUsage) == pageModel.snapshot.accessRequests.count
+          pageModel.count(for: .secretUsage) == pageModel.snapshot.accessRequests.count,
+          pageModel.authorizationHistoryRetentionDays == 30
     else { return 1 }
     pageModel.selectSection(.secretUsage)
     guard pageModel.historyRows.isEmpty, pageModel.selectedItemID == nil else { return 1 }
@@ -2508,7 +2513,10 @@ private struct DashboardSidebarView: View {
             Spacer(minLength: 0)
             let count = model.count(for: section)
             let reblessingCount = section == .blessedScripts ? model.scriptsNeedingReblessingCount : 0
-            if count > 0 {
+            if section == .secretUsage {
+                SidebarCountText(text: "\(model.authorizationHistoryRetentionDays)d")
+                    .fixedSize()
+            } else if count > 0 {
                 if section == .detectors, model.snapshot.flaggedDetectorCount > 0, model.selectedSection != .detectors {
                     DetectorCountPill(
                         count: count,
@@ -2525,9 +2533,7 @@ private struct DashboardSidebarView: View {
                         .fixedSize()
                         .accessibilityLabel("Scripts needing reblessing: \(reblessingCount)")
                 } else {
-                    SidebarCountText(
-                        count: count,
-                        isPartial: section == .secretUsage && model.historyOlderPageCursor != nil)
+                    SidebarCountText(text: count.formatted())
                         .fixedSize()
                 }
             }
@@ -3737,11 +3743,10 @@ private enum SidebarCountMetrics {
 }
 
 private struct SidebarCountText: View {
-    let count: Int
-    var isPartial = false
+    let text: String
 
     var body: some View {
-        Text(count.formatted() + (isPartial ? "+" : ""))
+        Text(text)
             .font(.system(size: 11, weight: .regular))
             .foregroundStyle(.secondary)
             .monospacedDigit()
