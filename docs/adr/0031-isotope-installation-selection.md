@@ -26,10 +26,13 @@ executable but no undeclared payload. The direct installer verifies the exact
 fork URL, SHA-256 digest, archive shape, Developer ID identity, Hardened Runtime,
 timestamp, and entitlements, then records the digest in a protected receipt.
 
-A verified multi-file vendor distribution uses a root-owned, versioned package
-prefix under `/opt/av/<tool>` and exposes its command through `/usr/local/bin`,
-as AWS CLI does. A non-executable-only Isotope from the tap has no direct
-fallback yet and must fail closed when Homebrew is unavailable.
+A verified multi-file distribution uses a root-owned package prefix under
+`/opt/av/<tool>` and exposes its command through `/usr/local/bin`. AWS CLI uses
+a versioned prefix for its verified upstream package. The Wrangler Isotope uses
+a Tool-specific direct installer for its signed bundle and treats the tap
+formula only as its constrained update manifest. Other non-executable-only
+Isotopes from the tap have no direct fallback and must fail closed when
+Homebrew is unavailable.
 
 The static Secret Gate catalog records the selected Target path. Runtime checks
 match that path, including normalized Homebrew Cellar paths, and independently
@@ -37,7 +40,7 @@ revalidate the live Target's signing identity and runtime protections.
 
 ## Consequences
 
-Every tap Isotope follows one predictable Homebrew-first update path while
-retaining a verified fallback on machines without Homebrew. Direct installation
-does not grow a speculative package-layout format. Supporting a multi-file tap
-Isotope without Homebrew requires a separate reviewed installer design.
+Tap Isotopes use Homebrew by default. A Tool-specific direct installer owns a
+multi-file runtime and its updates without keeping a duplicate Homebrew keg.
+Direct installation does not grow a generic package layout: each multi-file
+format requires a reviewed installer design.

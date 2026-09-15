@@ -22,9 +22,11 @@ ID identity, Hardened Runtime, trusted timestamp, and lack of entitlements.
 The signed Isotopes Homebrew formula is the update manifest for each Isotope.
 The Hardener accepts a formula only when it contains one URL under the exact
 expected `automic-vault` Tool fork and one valid SHA-256 digest. Homebrew
-installs the formula when it is available. Otherwise executable-only Isotopes
-are downloaded from that URL, installed as root-owned Targets under
-`/usr/local/bin`, and bound to the digest with a protected receipt.
+installs the formula when it is available unless a reviewed Tool-specific
+installer owns the Isotope's multi-file runtime. Otherwise the Hardener
+downloads the archive from that URL and binds the direct installation to the
+digest with a protected receipt. Executable-only Isotopes use `/usr/local/bin`;
+a reviewed multi-file Isotope may use a Tool-specific protected prefix.
 
 The Automic Vault app release contains only app-owned artifacts. It does not
 build, attest, checksum, or publish duplicate Tool Isotopes.

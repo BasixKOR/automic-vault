@@ -609,10 +609,10 @@ asset is produced by its Automic Vault-maintained fork and published on that
 fork's release. The signed Isotopes Homebrew tap pins the expected fork release
 URL and digest. A Hardener constrains that manifest to the Tool's exact fork,
 verifies the release digest and Automic Vault code signature, and installs the
-Isotope through the signed tap whenever Homebrew is available. Without
-Homebrew, a Hardener may install an executable-only Isotope directly and assume
-responsibility for its updates. Multi-file vendor distributions use a
-Tool-specific package prefix rather than this direct Isotope fallback. An
+Isotope through the signed tap when Homebrew is available unless a reviewed
+Tool-specific installer owns its multi-file runtime. A direct Hardener assumes
+responsibility for updates. Executable-only Isotopes use `/usr/local/bin`;
+reviewed multi-file distributions use a Tool-specific protected prefix. An
 Isotope is not a Detector, Hardener, or Secret.
 
 ## Reviewed automation
