@@ -178,6 +178,7 @@ fn cancelled_hardening_changes_nothing() {
         .unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(!stdout(&output).contains("av doctor"));
     assert!(!root.join("stubs/doctl").exists());
     assert_eq!(
         fs::read_to_string(config).unwrap(),

@@ -66,6 +66,7 @@ pub(crate) struct ReportBuilder<'a, W: Write + ?Sized> {
     output: &'a mut W,
     style: Style,
     pending: Vec<u8>,
+    cancelled: bool,
 }
 
 impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
@@ -74,7 +75,12 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
             output,
             style,
             pending: Vec::new(),
+            cancelled: false,
         }
+    }
+
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancelled
     }
 
     pub(crate) fn line(
@@ -106,6 +112,9 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
         tone: Tone,
         newline: bool,
     ) -> io::Result<()> {
+        if first_prefix == "╰─ " && text == "cancelled" {
+            self.cancelled = true;
+        }
         let first_width = self
             .style
             .width
@@ -313,5 +322,14 @@ mod tests {
             String::from_utf8(plain).unwrap(),
             "╭─ doctor\n╰─ hardened example\n"
         );
+    }
+
+    #[test]
+    fn records_the_standard_cancelled_outcome() {
+        let mut output = Vec::new();
+        let mut report = ReportBuilder::new(&mut output, Style::plain());
+        writeln!(report, "╰─ cancelled").unwrap();
+
+        assert!(report.cancelled());
     }
 }

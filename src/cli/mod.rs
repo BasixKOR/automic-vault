@@ -604,15 +604,17 @@ fn print_hardening_followup(stdout: &mut dyn Write, target: &str) {
     let _ = writeln!(stdout, "◇ next: run `av doctor {target}`");
 }
 
-fn finish_hardening<W: Write, E: Write>(
+fn finish_hardening<W: Write + ?Sized, E: Write>(
     result: Result<(), String>,
     target: &str,
-    stdout: &mut W,
+    stdout: &mut report::ReportBuilder<'_, W>,
     stderr: &mut E,
 ) -> i32 {
     match result {
         Ok(()) => {
-            print_hardening_followup(stdout, target);
+            if !stdout.cancelled() {
+                print_hardening_followup(stdout, target);
+            }
             0
         }
         Err(err) => {
