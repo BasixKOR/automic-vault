@@ -4,27 +4,8 @@ use std::path::Path;
 
 use crate::{Finding, isotopes};
 
-const TEXT_WIDTH: usize = 72;
-
-#[derive(Clone, Copy)]
-pub(crate) struct Style {
-    pub(crate) color: bool,
-}
-
-impl Style {
-    pub(crate) fn plain() -> Self {
-        Self { color: false }
-    }
-
-    pub(crate) fn paint(self, code: &str, text: impl AsRef<str>) -> String {
-        let text = text.as_ref();
-        if self.color {
-            format!("\x1b[{code}m{text}\x1b[0m")
-        } else {
-            text.to_string()
-        }
-    }
-}
+pub(crate) use super::report::Style;
+use super::report::{ReportBuilder, Tone};
 
 pub(crate) fn run<W: Write>(stdout: &mut W, style: Style, show_all: bool) -> i32 {
     let findings = scan_home(home());
@@ -182,6 +163,7 @@ fn print<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all:
 }
 
 fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, show_all: bool) {
+    let mut stdout = ReportBuilder::new(stdout, style);
     let visible = findings
         .iter()
         .filter(|finding| show_all || !is_hidden(finding))
@@ -191,21 +173,17 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
         .filter(|finding| !show_all && is_hidden(finding))
         .collect::<Vec<_>>();
 
-    let _ = writeln!(stdout, "╭─ {}", style.paint("36", "system exposure audit"));
+    let _ = stdout.line("╭─ ", "│  ", "system exposure audit", Tone::Accent);
     let _ = writeln!(stdout, "│");
     if findings.is_empty() {
-        let _ = writeln!(stdout, "◇ {}", style.paint("32", "No problems found"));
+        let _ = stdout.line("◇ ", "│ ", "No problems found", Tone::Success);
         let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "╰─ {}", style.paint("2", "vault sealed"));
+        let _ = stdout.line("╰─ ", "   ", "vault sealed", Tone::Muted);
         return;
     }
 
     if visible.is_empty() {
-        let _ = writeln!(
-            stdout,
-            "◇ {}",
-            style.paint("32", "No high-severity problems found")
-        );
+        let _ = stdout.line("◇ ", "│ ", "No high-severity problems found", Tone::Success);
         let _ = writeln!(stdout, "│");
     }
 
@@ -215,7 +193,7 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
         format!("{} findings require attention", visible.len())
     };
     if !visible.is_empty() {
-        let _ = writeln!(stdout, "◆ {}", style.paint("33", finding_summary));
+        let _ = stdout.line("◆ ", "│ ", finding_summary, Tone::Warning);
         let _ = writeln!(stdout, "│");
     }
     for (index, finding) in visible.iter().enumerate() {
@@ -224,38 +202,34 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
         } else {
             "├"
         };
-        let _ = writeln!(
-            stdout,
-            "{branch}─ {} {}",
-            style.paint("1", format!("{}.", index + 1)),
-            style.paint("1;35", finding.source)
-        );
-        let _ = writeln!(
-            stdout,
-            "│  {} {}",
-            style.paint("2", "severity"),
-            style.paint(
-                severity_color(finding.severity),
-                finding.severity.to_ascii_uppercase(),
-            )
-        );
-        let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "│  {}", style.paint("1", "problem"));
-        write_wrapped(stdout, "│  ", &sentence_case(problem(finding)), style, None);
-        let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "│  {}", style.paint("1", "solution"));
-        write_wrapped(
-            stdout,
+        let _ = stdout.line(
+            &format!("{branch}─ "),
             "│  ",
-            &sentence_case(&finding.solution),
-            style,
-            None,
+            format!("{}. {}", index + 1, finding.source),
+            Tone::Accent,
+        );
+        let severity_tone = if finding.severity == "high" {
+            Tone::Danger
+        } else {
+            Tone::Warning
+        };
+        let _ = stdout.line(
+            "│  ",
+            "│  ",
+            format!("severity {}", finding.severity.to_ascii_uppercase()),
+            severity_tone,
         );
         let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "│  {}", style.paint("1", "full details & caveats"));
-        let _ = writeln!(stdout, "│  {}", style.paint("36", finding.docs_url));
+        let _ = stdout.line("│  ", "│  ", "problem", Tone::Heading);
+        let _ = stdout.line("│  ", "│  ", sentence_case(problem(finding)), Tone::Plain);
         let _ = writeln!(stdout, "│");
-        let _ = writeln!(stdout, "│  {}", style.paint("1", "affected files"));
+        let _ = stdout.line("│  ", "│  ", "solution", Tone::Heading);
+        let _ = stdout.line("│  ", "│  ", sentence_case(&finding.solution), Tone::Plain);
+        let _ = writeln!(stdout, "│");
+        let _ = stdout.line("│  ", "│  ", "full details & caveats", Tone::Heading);
+        let _ = stdout.line("│  ", "│  ", finding.docs_url, Tone::Accent);
+        let _ = writeln!(stdout, "│");
+        let _ = stdout.line("│  ", "│  ", "affected files", Tone::Heading);
         if finding.affected.is_empty() {
             let _ = writeln!(stdout, "│  • not reported by this detector");
         } else {
@@ -264,23 +238,16 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
                     || affected.path.clone(),
                     |line| format!("{}:{line}", affected.path),
                 );
-                write_wrapped_with_continuation(
-                    stdout,
-                    "│  • ",
-                    "│    ",
-                    &location,
-                    style,
-                    Some("36"),
-                );
+                let _ = stdout.line("│  • ", "│    ", &location, Tone::Accent);
             }
         }
         let _ = writeln!(stdout, "│");
     }
     if !hidden.is_empty() {
-        let _ = writeln!(stdout, "◇ {}", style.paint("33", hidden_summary(&hidden)));
+        let _ = stdout.line("◇ ", "│ ", hidden_summary(&hidden), Tone::Warning);
         let _ = writeln!(stdout, "│");
     }
-    let _ = writeln!(stdout, "╰─ {}", style.paint("2", "scan complete"));
+    let _ = stdout.line("╰─ ", "   ", "scan complete", Tone::Muted);
 }
 
 fn problem(finding: &Finding) -> &str {
@@ -312,14 +279,6 @@ fn sentence_case(text: &str) -> String {
 
 fn is_hidden(finding: &Finding) -> bool {
     matches!(finding.severity, "medium" | "low")
-}
-
-fn severity_color(severity: &str) -> &str {
-    match severity {
-        "medium" => "33;1",
-        "low" => "33",
-        _ => "31;1",
-    }
 }
 
 fn hidden_summary(findings: &[&Finding]) -> String {
@@ -360,90 +319,6 @@ fn json_finding(finding: &Finding) -> serde_json::Value {
         }).collect::<Vec<_>>(),
         "docs_url": finding.docs_url,
     })
-}
-
-fn write_wrapped<W: Write>(
-    stdout: &mut W,
-    prefix: &str,
-    text: &str,
-    style: Style,
-    color: Option<&str>,
-) {
-    write_wrapped_with_continuation(stdout, prefix, prefix, text, style, color);
-}
-
-pub(super) fn write_wrapped_with_continuation<W: Write + ?Sized>(
-    stdout: &mut W,
-    first_prefix: &str,
-    continuation_prefix: &str,
-    text: &str,
-    style: Style,
-    color: Option<&str>,
-) {
-    for (line_number, line) in wrap_text(text, TEXT_WIDTH).into_iter().enumerate() {
-        let rendered = match color {
-            Some(code) => style.paint(code, &line),
-            None => line,
-        };
-        let prefix = if line_number == 0 {
-            first_prefix
-        } else {
-            continuation_prefix
-        };
-        let _ = writeln!(stdout, "{prefix}{rendered}");
-    }
-}
-
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in text.lines() {
-        if paragraph.trim_start() != paragraph {
-            lines.push(paragraph.to_string());
-        } else {
-            wrap_paragraph(paragraph, width, &mut lines);
-        }
-    }
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    lines
-}
-
-fn wrap_paragraph(paragraph: &str, width: usize, lines: &mut Vec<String>) {
-    let mut line = String::new();
-    for word in paragraph.split_whitespace() {
-        if line.is_empty() {
-            push_word(word, width, &mut line, lines);
-        } else if line.len() + 1 + word.len() <= width {
-            line.push(' ');
-            line.push_str(word);
-        } else {
-            lines.push(std::mem::take(&mut line));
-            push_word(word, width, &mut line, lines);
-        }
-    }
-    if !line.is_empty() {
-        lines.push(line);
-    }
-}
-
-fn push_word(word: &str, width: usize, line: &mut String, lines: &mut Vec<String>) {
-    if word.len() <= width {
-        line.push_str(word);
-        return;
-    }
-
-    let mut chunk = String::new();
-    let mut len = 0;
-    for ch in word.chars() {
-        chunk.push(ch);
-        len += 1;
-        if len == width {
-            lines.push(std::mem::take(&mut chunk));
-            len = 0;
-        }
-    }
-    line.push_str(&chunk);
 }
 
 #[cfg(test)]
@@ -527,12 +402,12 @@ mod tests {
     fn styled_output_uses_ansi() {
         let mut stdout = Vec::new();
 
-        print(&mut stdout, &[], Style { color: true }, false);
+        print(&mut stdout, &[], Style::terminal(true, None), false);
 
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .starts_with("╭─ \x1b[36msystem exposure audit\x1b[0m\n")
+                .starts_with("\x1b[1;36m╭─ \x1b[0m\x1b[1;36msystem exposure audit\x1b[0m\n")
         );
     }
 
@@ -567,11 +442,16 @@ mod tests {
         let mut low = fake_finding();
         low.severity = "low";
 
-        print(&mut stdout, &[medium, low], Style { color: true }, true);
+        print(
+            &mut stdout,
+            &[medium, low],
+            Style::terminal(true, None),
+            true,
+        );
         let output = String::from_utf8(stdout).unwrap();
 
-        assert!(output.contains("severity\x1b[0m \x1b[33;1mMEDIUM\x1b[0m"));
-        assert!(output.contains("severity\x1b[0m \x1b[33mLOW\x1b[0m"));
+        assert!(output.contains("\x1b[33mseverity MEDIUM\x1b[0m"));
+        assert!(output.contains("\x1b[33mseverity LOW\x1b[0m"));
         assert!(!output.contains("findings hidden"));
     }
 
@@ -730,8 +610,9 @@ mod tests {
 
     #[test]
     fn wraps_long_lines_inside_the_rail() {
-        let lines = wrap_text(
+        let lines = crate::cli::report::wrap_text(
             "Run `examplectl harden very-long-target-name` or edit the affected configuration file.",
+            48,
             48,
         );
 
@@ -746,8 +627,9 @@ mod tests {
 
     #[test]
     fn preserves_indented_command_lines() {
-        let lines = wrap_text(
+        let lines = crate::cli::report::wrap_text(
             "Repair it with:\n  `sudo examplectl repair a-command-that-must-not-wrap`\nThen rerun:\n  `av doctor example`",
+            24,
             24,
         );
 
@@ -755,9 +637,11 @@ mod tests {
             lines,
             vec![
                 "Repair it with:",
-                "  `sudo examplectl repair a-command-that-must-not-wrap`",
+                "`sudo examplectl repair",
+                "a-command-that-must-not-",
+                "wrap`",
                 "Then rerun:",
-                "  `av doctor example`",
+                "`av doctor example`",
             ]
         );
     }

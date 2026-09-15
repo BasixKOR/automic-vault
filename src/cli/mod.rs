@@ -23,6 +23,7 @@ pub(crate) mod plumber_credential;
 mod proxy;
 pub(crate) mod railway_credential;
 pub(crate) mod rclone_password;
+mod report;
 mod save;
 mod scan;
 mod shell_secrets;
@@ -104,8 +105,8 @@ where
         args,
         &mut stdout,
         &mut stderr,
-        scan::Style { color },
-        scan::Style { color: terminal },
+        scan::Style::terminal(color, terminal_width()),
+        scan::Style::terminal(terminal, terminal_width()),
     )
 }
 
@@ -120,9 +121,7 @@ where
         args,
         &mut stdout,
         &mut stderr,
-        scan::Style {
-            color: terminal && color_enabled(),
-        },
+        scan::Style::terminal(terminal && color_enabled(), terminal_width()),
     )
 }
 
@@ -393,104 +392,111 @@ where
             } else {
                 target
             };
+            let mut stdout = report::ReportBuilder::new(stdout, style);
             if target == "aws" {
-                let result = hardeners::aws_cli::run_aws(stdout, yes);
-                return finish_hardening(result, "aws", stdout, stderr);
+                let result = hardeners::aws_cli::run_aws(&mut stdout, yes);
+                return finish_hardening(result, "aws", &mut stdout, stderr);
             }
             if target == "docker" {
-                let result = hardeners::docker::run(stdout, yes);
-                return finish_hardening(result, "docker", stdout, stderr);
+                let result = hardeners::docker::run(&mut stdout, yes);
+                return finish_hardening(result, "docker", &mut stdout, stderr);
             }
             if target == "podman" {
-                let result = hardeners::podman::run(stdout, yes);
-                return finish_hardening(result, "podman", stdout, stderr);
+                let result = hardeners::podman::run(&mut stdout, yes);
+                return finish_hardening(result, "podman", &mut stdout, stderr);
             }
             if target == "terraform" || target == "terraform-core" {
-                let result =
-                    hardeners::terraform::run(hardeners::terraform::Tool::Terraform, stdout, yes);
-                return finish_hardening(result, "terraform", stdout, stderr);
+                let result = hardeners::terraform::run(
+                    hardeners::terraform::Tool::Terraform,
+                    &mut stdout,
+                    yes,
+                );
+                return finish_hardening(result, "terraform", &mut stdout, stderr);
             }
             if target == "opentofu" || target == "tofu" {
-                let result =
-                    hardeners::terraform::run(hardeners::terraform::Tool::OpenTofu, stdout, yes);
-                return finish_hardening(result, "opentofu", stdout, stderr);
+                let result = hardeners::terraform::run(
+                    hardeners::terraform::Tool::OpenTofu,
+                    &mut stdout,
+                    yes,
+                );
+                return finish_hardening(result, "opentofu", &mut stdout, stderr);
             }
             if target == "oxide" || target == "oxide-cli" {
-                let result = hardeners::oxide_cli::run(stdout, yes);
-                return finish_hardening(result, "oxide-cli", stdout, stderr);
+                let result = hardeners::oxide_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "oxide-cli", &mut stdout, stderr);
             }
             if target == "fastly" || target == "fastly-cli" {
-                let result = hardeners::fastly_cli::run(stdout, yes);
-                return finish_hardening(result, "fastly-cli", stdout, stderr);
+                let result = hardeners::fastly_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "fastly-cli", &mut stdout, stderr);
             }
             if target == "sqlcmd" {
-                let result = hardeners::sqlcmd::run(stdout, yes);
-                return finish_hardening(result, "sqlcmd", stdout, stderr);
+                let result = hardeners::sqlcmd::run(&mut stdout, yes);
+                return finish_hardening(result, "sqlcmd", &mut stdout, stderr);
             }
             if target == "aliyun" || target == "aliyun-cli" {
-                let result = hardeners::aliyun_cli::run(stdout, yes);
-                return finish_hardening(result, "aliyun-cli", stdout, stderr);
+                let result = hardeners::aliyun_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "aliyun-cli", &mut stdout, stderr);
             }
             if target == "goat" {
-                let result = hardeners::goat::run(stdout, yes);
-                return finish_hardening(result, "goat", stdout, stderr);
+                let result = hardeners::goat::run(&mut stdout, yes);
+                return finish_hardening(result, "goat", &mut stdout, stderr);
             }
             if target == "railway" {
-                let result = hardeners::railway::run(stdout, yes);
-                return finish_hardening(result, "railway", stdout, stderr);
+                let result = hardeners::railway::run(&mut stdout, yes);
+                return finish_hardening(result, "railway", &mut stdout, stderr);
             }
             if target == "ordercli" {
-                let result = hardeners::ordercli::run(stdout, yes);
-                return finish_hardening(result, "ordercli", stdout, stderr);
+                let result = hardeners::ordercli::run(&mut stdout, yes);
+                return finish_hardening(result, "ordercli", &mut stdout, stderr);
             }
             if target == "uaa" || target == "uaa-cli" {
-                let result = hardeners::uaa_cli::run(stdout, yes);
-                return finish_hardening(result, "uaa-cli", stdout, stderr);
+                let result = hardeners::uaa_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "uaa-cli", &mut stdout, stderr);
             }
             if target == "openhue" || target == "openhue-cli" {
-                let result = hardeners::openhue_cli::run(stdout, yes);
-                return finish_hardening(result, "openhue-cli", stdout, stderr);
+                let result = hardeners::openhue_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "openhue-cli", &mut stdout, stderr);
             }
             if target == "plumber" {
-                let result = hardeners::plumber::run(stdout, yes);
-                return finish_hardening(result, "plumber", stdout, stderr);
+                let result = hardeners::plumber::run(&mut stdout, yes);
+                return finish_hardening(result, "plumber", &mut stdout, stderr);
             }
             if target == "wakatime" || target == "wakatime-cli" {
-                let result = hardeners::wakatime_cli::run(stdout, yes);
-                return finish_hardening(result, "wakatime-cli", stdout, stderr);
+                let result = hardeners::wakatime_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "wakatime-cli", &mut stdout, stderr);
             }
             if target == "rclone" {
-                let result = hardeners::rclone::run(stdout, yes);
-                return finish_hardening(result, "rclone", stdout, stderr);
+                let result = hardeners::rclone::run(&mut stdout, yes);
+                return finish_hardening(result, "rclone", &mut stdout, stderr);
             }
             if target == "kubectl" || target == "kubernetes-cli" {
-                let result = hardeners::kubectl::run(stdout, yes);
-                return finish_hardening(result, "kubectl", stdout, stderr);
+                let result = hardeners::kubectl::run(&mut stdout, yes);
+                return finish_hardening(result, "kubectl", &mut stdout, stderr);
             }
             if target == "wrangler" {
-                let result = hardeners::wrangler::run(stdout, yes);
-                return finish_hardening(result, "wrangler", stdout, stderr);
+                let result = hardeners::wrangler::run(&mut stdout, yes);
+                return finish_hardening(result, "wrangler", &mut stdout, stderr);
             }
             if target == "gh" || target == "gh-cli" {
-                let result = hardeners::gh_cli::run(stdout, yes);
-                return finish_hardening(result, "gh", stdout, stderr);
+                let result = hardeners::gh_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "gh", &mut stdout, stderr);
             }
             if target == "stripe" || target == "stripe-cli" {
-                let result = hardeners::stripe_cli::run(stdout, yes);
-                return finish_hardening(result, "stripe", stdout, stderr);
+                let result = hardeners::stripe_cli::run(&mut stdout, yes);
+                return finish_hardening(result, "stripe", &mut stdout, stderr);
             }
             if target == "brew" || target == "homebrew" {
-                let result = hardeners::homebrew::run(stdout, yes);
-                return finish_hardening(result, "brew", stdout, stderr);
+                let result = hardeners::homebrew::run(&mut stdout, yes);
+                return finish_hardening(result, "brew", &mut stdout, stderr);
             }
             if target == "codex" {
-                let result = hardeners::codex::run(stdout, yes);
-                return finish_hardening(result, "codex", stdout, stderr);
+                let result = hardeners::codex::run(&mut stdout, yes);
+                return finish_hardening(result, "codex", &mut stdout, stderr);
             }
             if target == "sudo" {
-                return match hardeners::sudo::run(stdout, style.color) {
+                return match hardeners::sudo::run(&mut stdout, false) {
                     Ok(hardeners::RootOnlyOutcome::Hardened) => {
-                        print_hardening_followup(stdout, "sudo");
+                        print_hardening_followup(&mut stdout, "sudo");
                         0
                     }
                     Ok(hardeners::RootOnlyOutcome::Previewed) => 1,
@@ -501,13 +507,13 @@ where
                 };
             }
             if target == "supabase" || target == "supabase-cli" {
-                let result = hardeners::supabase::run(stdout, yes);
-                return finish_hardening(result, "supabase", stdout, stderr);
+                let result = hardeners::supabase::run(&mut stdout, yes);
+                return finish_hardening(result, "supabase", &mut stdout, stderr);
             }
             if let Some(target) = target.to_str()
-                && let Some(result) = hardeners::env_wrapper::run_target(target, stdout, yes)
+                && let Some(result) = hardeners::env_wrapper::run_target(target, &mut stdout, yes)
             {
-                return finish_hardening(result, target, stdout, stderr);
+                return finish_hardening(result, target, &mut stdout, stderr);
             }
             let _ = writeln!(
                 stderr,
@@ -684,6 +690,14 @@ fn split_shebang_inject_arg(value: &OsString) -> Option<Vec<OsString>> {
 fn color_enabled() -> bool {
     std::env::var_os("NO_COLOR").is_none()
         && std::env::var_os("TERM").is_none_or(|term| term != "dumb")
+}
+
+fn terminal_width() -> Option<usize> {
+    let mut size = std::mem::MaybeUninit::<libc::winsize>::zeroed();
+    let result = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, size.as_mut_ptr()) };
+    (result == 0)
+        .then(|| unsafe { size.assume_init().ws_col as usize })
+        .filter(|width| *width > 0)
 }
 
 #[cfg(test)]
@@ -1178,7 +1192,7 @@ mod tests {
         );
 
         let mut stdout = Vec::new();
-        write_help(&mut stdout, scan::Style { color: true });
+        write_help(&mut stdout, scan::Style::terminal(true, None));
         let stdout = String::from_utf8(stdout).unwrap();
         assert!(stdout.contains("  \x1b[2m$\x1b[0m av scan"));
         assert!(stdout.contains("\x1b[2m[\x1b[0m--show-all\x1b[2m|\x1b[0m--json\x1b[2m]\x1b[0m"));
@@ -1193,7 +1207,7 @@ mod tests {
                 &mut stdout,
                 &mut stderr,
                 scan::Style::plain(),
-                scan::Style { color: true },
+                scan::Style::terminal(true, None),
             ),
             0
         );

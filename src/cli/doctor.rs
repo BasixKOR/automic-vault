@@ -12,6 +12,7 @@ use crate::isotopes::hardeners::{
     executable, isotope,
 };
 
+use super::report::{ReportBuilder, Tone};
 use super::scan::Style;
 
 pub(crate) struct DoctorResult {
@@ -1044,55 +1045,41 @@ fn json_results(results: &[DoctorResult]) -> Vec<serde_json::Value> {
 }
 
 fn print_human(stdout: &mut dyn Write, results: &[DoctorResult], issue_count: usize, style: Style) {
+    let mut stdout = ReportBuilder::new(stdout, style);
     let _ = writeln!(stdout, "╭─ doctor");
     let _ = writeln!(stdout, "│");
     if results.is_empty() {
-        let _ = writeln!(
-            stdout,
-            "╰─ {}",
-            style.paint("32", "No applicable hardeners found")
-        );
+        let _ = stdout.line("╰─ ", "   ", "No applicable hardeners found", Tone::Success);
         return;
     }
     for result in results {
         if result.issues.is_empty() {
-            let _ = writeln!(
-                stdout,
-                "├─ {} {}",
-                result.name,
-                style.paint("32", "healthy ✔︎")
+            let _ = stdout.line(
+                "├─ ",
+                "│  ",
+                format!("{} healthy ✔︎", result.name),
+                Tone::Success,
             );
         } else {
             let _ = writeln!(stdout, "├─ {}", result.name);
             for issue in &result.issues {
-                super::scan::write_wrapped_with_continuation(
-                    stdout,
-                    "│  ├─ ",
-                    "│  │  ",
-                    &issue.message,
-                    style,
-                    Some("33"),
-                );
-                super::scan::write_wrapped_with_continuation(
-                    stdout,
-                    "│  ╰─ ",
-                    "│     ",
-                    &issue.remediation,
-                    style,
-                    None,
-                );
+                let _ = stdout.line("│  ├─ ", "│  │  ", &issue.message, Tone::Warning);
+                let _ = stdout.line("│  ╰─ ", "│     ", &issue.remediation, Tone::Plain);
             }
         }
     }
-    let summary = if issue_count == 0 {
-        style.paint("32", "No problems found")
+    let (summary, tone) = if issue_count == 0 {
+        ("No problems found".to_string(), Tone::Success)
     } else if issue_count == 1 {
-        style.paint("33", "1 issue requires attention")
+        ("1 issue requires attention".to_string(), Tone::Warning)
     } else {
-        style.paint("33", format!("{issue_count} issues require attention"))
+        (
+            format!("{issue_count} issues require attention"),
+            Tone::Warning,
+        )
     };
     let _ = writeln!(stdout, "│");
-    let _ = writeln!(stdout, "╰─ {summary}");
+    let _ = stdout.line("╰─ ", "   ", summary, tone);
 }
 
 #[cfg(test)]
