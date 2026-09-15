@@ -49,10 +49,10 @@ impl Tone {
         match self {
             Self::Plain => None,
             Self::Heading => Some("1"),
-            Self::Accent => Some("1;36"),
+            Self::Accent => Some("36"),
             Self::Success => Some("32"),
             Self::Warning => Some("33"),
-            Self::Danger => Some("1;31"),
+            Self::Danger => Some("31"),
             Self::Muted => Some("2"),
         }
     }
@@ -123,7 +123,7 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
             } else {
                 continuation_prefix
             };
-            let prefix = self.style.paint(prefix_code(prefix), prefix);
+            let prefix = prefix.to_string();
             let line = tone
                 .code()
                 .map_or_else(|| line.clone(), |code| self.style.paint(code, line));
@@ -188,8 +188,6 @@ fn split_rail(line: &str) -> (&str, &str, &str) {
 fn inferred_tone(prefix: &str, text: &str) -> Tone {
     if prefix == "╭─ " {
         Tone::Accent
-    } else if prefix == "◆ " {
-        Tone::Warning
     } else if prefix == "╰─ "
         && ["hardened", "installed", "migrated", "already"]
             .iter()
@@ -201,10 +199,6 @@ fn inferred_tone(prefix: &str, text: &str) -> Tone {
     } else {
         Tone::Plain
     }
-}
-
-fn prefix_code(prefix: &str) -> &'static str {
-    if prefix == "╭─ " { "1;36" } else { "2;36" }
 }
 
 pub(super) fn wrap_text(text: &str, first_width: usize, continuation_width: usize) -> Vec<String> {
@@ -308,7 +302,7 @@ mod tests {
         writeln!(report, "╭─ doctor\n╰─ hardened example").unwrap();
         drop(report);
         let colored = String::from_utf8(colored).unwrap();
-        assert!(colored.contains("\x1b[1;36mdoctor\x1b[0m"));
+        assert!(colored.contains("╭─ \x1b[36mdoctor\x1b[0m"));
         assert!(colored.contains("\x1b[32mhardened example\x1b[0m"));
 
         let mut plain = Vec::new();

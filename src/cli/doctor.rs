@@ -1058,12 +1058,12 @@ fn print_human(stdout: &mut dyn Write, results: &[DoctorResult], issue_count: us
                 "├─ ",
                 "│  ",
                 format!("{} healthy ✔︎", result.name),
-                Tone::Success,
+                Tone::Plain,
             );
         } else {
             let _ = writeln!(stdout, "├─ {}", result.name);
             for issue in &result.issues {
-                let _ = stdout.line("│  ├─ ", "│  │  ", &issue.message, Tone::Warning);
+                let _ = stdout.line("│  ├─ ", "│  │  ", &issue.message, Tone::Plain);
                 let _ = stdout.line("│  ╰─ ", "│     ", &issue.remediation, Tone::Plain);
             }
         }

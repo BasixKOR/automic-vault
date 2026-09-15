@@ -206,7 +206,7 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
             &format!("{branch}─ "),
             "│  ",
             format!("{}. {}", index + 1, finding.source),
-            Tone::Accent,
+            Tone::Heading,
         );
         let severity_tone = if finding.severity == "high" {
             Tone::Danger
@@ -238,7 +238,7 @@ fn print_report<W: Write>(stdout: &mut W, findings: &[Finding], style: Style, sh
                     || affected.path.clone(),
                     |line| format!("{}:{line}", affected.path),
                 );
-                let _ = stdout.line("│  • ", "│    ", &location, Tone::Accent);
+                let _ = stdout.line("│  • ", "│    ", &location, Tone::Plain);
             }
         }
         let _ = writeln!(stdout, "│");
@@ -407,7 +407,7 @@ mod tests {
         assert!(
             String::from_utf8(stdout)
                 .unwrap()
-                .starts_with("\x1b[1;36m╭─ \x1b[0m\x1b[1;36msystem exposure audit\x1b[0m\n")
+                .starts_with("╭─ \x1b[36msystem exposure audit\x1b[0m\n")
         );
     }
 
