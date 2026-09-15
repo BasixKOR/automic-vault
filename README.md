@@ -163,7 +163,7 @@ from that Mac. Separately enabled Touch ID Approval can still carry an Approval.
 > when phone biometrics are off. Disable those features wherever an agent can
 > control the Mac, or require Face ID or Touch ID on every eligible iPhone.
 
-[Enrollment, notifications, and account-wide recovery](docs/authorization.md#iphone-approval)
+[Enrollment, notifications, and account-wide recovery](docs/authorization.md#iphone-approval) · [Join the public iPhone beta on TestFlight](https://testflight.apple.com/join/cfnDU5kM)
 
 ### Authorization History
 
