@@ -66,6 +66,7 @@ pub(crate) struct ReportBuilder<'a, W: Write + ?Sized> {
     output: &'a mut W,
     style: Style,
     pending: Vec<u8>,
+    header_needs_gap: bool,
     cancelled: bool,
 }
 
@@ -75,6 +76,7 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
             output,
             style,
             pending: Vec::new(),
+            header_needs_gap: false,
             cancelled: false,
         }
     }
@@ -112,6 +114,13 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
         tone: Tone,
         newline: bool,
     ) -> io::Result<()> {
+        let is_spacer = first_prefix == "│" && text.is_empty();
+        if self.header_needs_gap {
+            if !is_spacer {
+                self.output.write_all("│\n".as_bytes())?;
+            }
+            self.header_needs_gap = false;
+        }
         if first_prefix == "╰─ " && text == "cancelled" {
             self.cancelled = true;
         }
@@ -142,6 +151,7 @@ impl<'a, W: Write + ?Sized> ReportBuilder<'a, W> {
                 self.output.write_all(b"\n")?;
             }
         }
+        self.header_needs_gap = first_prefix == "╭─ ";
         Ok(())
     }
 }
@@ -290,6 +300,24 @@ mod tests {
     }
 
     #[test]
+    fn inserts_exactly_one_gap_after_a_header() {
+        for input in [
+            "╭─ harden example\n├─ verify\n",
+            "╭─ harden example\n│\n├─ verify\n",
+        ] {
+            let mut output = Vec::new();
+            let mut report = ReportBuilder::new(&mut output, Style::plain());
+            write!(report, "{input}").unwrap();
+            drop(report);
+
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                "╭─ harden example\n│\n├─ verify\n"
+            );
+        }
+    }
+
+    #[test]
     fn conservatively_wraps_wide_characters() {
         let mut output = Vec::new();
         let mut report = ReportBuilder::new(&mut output, Style::terminal(false, Some(20)));
@@ -320,7 +348,7 @@ mod tests {
         drop(report);
         assert_eq!(
             String::from_utf8(plain).unwrap(),
-            "╭─ doctor\n╰─ hardened example\n"
+            "╭─ doctor\n│\n╰─ hardened example\n"
         );
     }
 

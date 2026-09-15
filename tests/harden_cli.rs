@@ -200,6 +200,10 @@ fn cancelled_wrangler_hardening_uses_standard_footer() {
     let stdout = stdout(&output);
 
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout.starts_with("╭─ harden wrangler\n│\n├─ verify"),
+        "{stdout}"
+    );
     assert!(stdout.contains("Isotope login\n│\n◇ Continue?"), "{stdout}");
     assert!(stdout.contains("╰─ cancelled"), "{stdout}");
     assert!(!stdout.contains("av doctor"), "{stdout}");
