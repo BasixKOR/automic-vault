@@ -48,6 +48,24 @@ func authorizationHistoryPagesReachEveryRecordAcrossNewWrites() throws {
 }
 
 @Test
+func firstAuthorizationHistoryPageCountsEveryStoredDay() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now)
+    defer { fixture.remove() }
+    for (index, daysAgo) in [0, 0, 1, 3].enumerated() {
+        #expect(fixture.store.append(fixture.record(
+            index: index,
+            date: now.addingTimeInterval(TimeInterval(-daysAgo * 86_400))
+        )))
+    }
+
+    let first = try fixture.store.page(limit: 1)
+    #expect(first.records.count == 1)
+    #expect(first.storedDayCount == 3)
+    #expect(try fixture.store.page(beforeSequence: first.olderPageCursor, limit: 1).storedDayCount == nil)
+}
+
+@Test
 func authorizationHistoryStoreBoundsDisclosureDuringRead() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }

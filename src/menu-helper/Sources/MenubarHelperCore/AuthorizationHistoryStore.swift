@@ -21,6 +21,7 @@ public struct AuthorizationHistoryRetention: Sendable {
 public struct AuthorizationHistoryPage: Sendable {
     public let records: [AccessRequestRecord]
     public let olderPageCursor: Int64?
+    public let storedDayCount: Int?
 }
 
 public enum AuthorizationHistoryStoreError: Error, Equatable {
@@ -208,11 +209,12 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
     public func page(beforeSequence: Int64? = nil, limit: Int = 50) throws -> AuthorizationHistoryPage {
         try readRecords(
             since: nil, limit: limit, maximumDisclosureBytes: nil,
-            beforeSequence: beforeSequence)
+            beforeSequence: beforeSequence, includeStoredDayCount: beforeSequence == nil)
     }
 
     private func readRecords(
-        since: Date?, limit: Int?, maximumDisclosureBytes: Int?, beforeSequence: Int64?
+        since: Date?, limit: Int?, maximumDisclosureBytes: Int?, beforeSequence: Int64?,
+        includeStoredDayCount: Bool = false
     ) throws -> AuthorizationHistoryPage {
         guard limit.map({ $0 > 0 }) ?? true,
               beforeSequence.map({ $0 > 0 }) ?? true,
@@ -235,6 +237,10 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
             let cutoff = currentDate.addingTimeInterval(-retention.maximumAge)
             let effectiveSince = max(since ?? cutoff, cutoff)
             var records: [AccessRequestRecord] = []
+            var olderPageCursor: Int64?
+            var storedDays: Set<Date> = []
+            var dayByHour: [Int64: Date] = [:]
+            let calendar = Calendar.autoupdatingCurrent
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys]
@@ -254,6 +260,13 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                         bucket: bucket
                     )
                     if record.date < effectiveSince || record.date > currentDate { continue }
+                    if includeStoredDayCount {
+                        let hour = Int64(floor(record.date.timeIntervalSince1970 / 3_600))
+                        let day = dayByHour[hour] ?? calendar.startOfDay(for: record.date)
+                        dayByHour[hour] = day
+                        storedDays.insert(day)
+                    }
+                    if limit.map({ records.count >= $0 }) == true { continue }
                     if let maximumDisclosureBytes {
                         let encoded = try encoder.encode(record.redactedForDisclosure)
                         let (bytes, overflow) = disclosureBytes.addingReportingOverflow(
@@ -266,10 +279,18 @@ public final class AuthorizationHistoryStore: @unchecked Sendable {
                     }
                     records.append(record)
                     if let limit, records.count == limit {
-                        return AuthorizationHistoryPage(records: records, olderPageCursor: sequence)
+                        olderPageCursor = sequence
+                        if !includeStoredDayCount {
+                            return AuthorizationHistoryPage(
+                                records: records, olderPageCursor: sequence, storedDayCount: nil)
+                        }
                     }
                 case SQLITE_DONE:
-                    return AuthorizationHistoryPage(records: records, olderPageCursor: nil)
+                    return AuthorizationHistoryPage(
+                        records: records,
+                        olderPageCursor: olderPageCursor,
+                        storedDayCount: includeStoredDayCount ? storedDays.count : nil
+                    )
                 default:
                     throw sqliteError("read failed")
                 }

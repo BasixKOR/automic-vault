@@ -238,6 +238,7 @@ final class DashboardModel: ObservableObject {
     }
     @Published private(set) var historyRows: [DashboardItem] = []
     @Published private(set) var historySections: [HistoryDay] = []
+    @Published private(set) var authorizationHistoryDayCount = 0
     @Published private(set) var isSearchingHistory = false
     private var allHistorySections: [HistoryDay] = []
     private var historyRecordsByID: [UUID: AccessRequestRecord] = [:]
@@ -285,9 +286,10 @@ final class DashboardModel: ObservableObject {
     var hasSearchQuery: Bool { !searchQuery.isEmpty }
     var isRefreshingHistory: Bool { reloadTask != nil || accessRequestsReloadTask != nil }
 
-    private func setHistoryRecords(_ records: [AccessRequestRecord]) {
+    private func setHistoryRecords(_ records: [AccessRequestRecord], storedDayCount: Int? = nil) {
         historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         allHistorySections = historyDays(records.map(historyRow))
+        authorizationHistoryDayCount = storedDayCount ?? allHistorySections.count
         refreshHistorySearch()
     }
 
@@ -598,10 +600,6 @@ final class DashboardModel: ObservableObject {
 
     var scriptsNeedingReblessingCount: Int {
         items(for: .blessedScripts).filter { $0.blessingStatus == "Changed" }.count
-    }
-
-    var authorizationHistoryRetentionDays: Int {
-        Int(AuthorizationHistoryRetention.standard.maximumAge / 86_400)
     }
 
     func count(for section: DashboardSection) -> Int {
@@ -952,7 +950,7 @@ final class DashboardModel: ObservableObject {
             next.accessRequests = generation == accessRequestsGeneration
                 ? (page?.records ?? []) : snapshot.accessRequests
             snapshot = next
-            setHistoryRecords(next.accessRequests)
+            setHistoryRecords(next.accessRequests, storedDayCount: page?.storedDayCount)
             if generation == accessRequestsGeneration {
                 historyOlderPageCursor = page?.olderPageCursor
                 isLoadingOlderHistory = false
@@ -991,7 +989,7 @@ final class DashboardModel: ObservableObject {
                   generation == accessRequestsGeneration else { return }
             if let page {
                 snapshot.accessRequests = page.records
-                setHistoryRecords(page.records)
+                setHistoryRecords(page.records, storedDayCount: page.storedDayCount)
                 historyOlderPageCursor = page.olderPageCursor
                 historyLoadFailed = false
             } else {
@@ -2228,7 +2226,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     pageModel.searchText = "no matching history"
     guard !pageModel.historyRows.isEmpty,
           pageModel.count(for: .secretUsage) == pageModel.snapshot.accessRequests.count,
-          pageModel.authorizationHistoryRetentionDays == 30
+          pageModel.authorizationHistoryDayCount == 1
     else { return 1 }
     pageModel.selectSection(.secretUsage)
     guard pageModel.historyRows.isEmpty, pageModel.selectedItemID == nil else { return 1 }
@@ -2513,8 +2511,8 @@ private struct DashboardSidebarView: View {
             Spacer(minLength: 0)
             let count = model.count(for: section)
             let reblessingCount = section == .blessedScripts ? model.scriptsNeedingReblessingCount : 0
-            if section == .secretUsage {
-                SidebarCountText(text: "\(model.authorizationHistoryRetentionDays)d")
+            if section == .secretUsage, model.authorizationHistoryDayCount > 0 {
+                SidebarCountText(text: "\(model.authorizationHistoryDayCount)d")
                     .fixedSize()
             } else if count > 0 {
                 if section == .detectors, model.snapshot.flaggedDetectorCount > 0, model.selectedSection != .detectors {
