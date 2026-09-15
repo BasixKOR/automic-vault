@@ -20,7 +20,7 @@ reload_method = model_source.split(
     "    private func reloadAuthorizationState()", 1
 )[0]
 
-fixture = """
+fixture = r"""
 import Foundation
 import Synchronization
 
@@ -46,6 +46,7 @@ typealias AccessRequestRecord = String
 struct AuthorizationHistoryPage {
     let records: [String]
     let olderPageCursor: Int64?
+    let storedDayCount: Int?
 }
 enum DashboardSection { case secretUsage }
 
@@ -78,10 +79,14 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     if beforeSequence != nil && failOlderPage.withLock({ $0 }) { return nil }
     if beforeSequence == nil {
         return AuthorizationHistoryPage(
-            records: ["latest"] + (0..<49).map { "older-\($0)" }, olderPageCursor: 50)
+            records: ["latest"] + (0..<49).map { "older-\($0)" },
+            olderPageCursor: 50,
+            storedDayCount: 30)
     }
     return AuthorizationHistoryPage(
-        records: (49..<74).map { "older-\($0)" }, olderPageCursor: nil)
+        records: (49..<74).map { "older-\($0)" },
+        olderPageCursor: nil,
+        storedDayCount: 30)
 }
 
 @MainActor final class Model {
@@ -92,6 +97,7 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
     var historyOlderPageCursor: Int64?
     var isLoadingOlderHistory = false
     var historyLoadFailed = false
+    var authorizationHistoryDayCount = 0
     var pendingAccessRequestID: UUID?
     var selectedSection = DashboardSection.secretUsage
     var selectedItemID: String?
@@ -113,14 +119,15 @@ func loadAccessRequestRecordsPage(beforeSequence: Int64? = nil) -> Authorization
             selectedItemID = snapshot.accessRequests.first?.id.uuidString
         }
     }
-    func setHistoryRecords(_ records: [String]) {
+    func setHistoryRecords(_ records: [String], storedDayCount: Int? = nil) {
         historyRecordsByID = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        authorizationHistoryDayCount = storedDayCount ?? (records.isEmpty ? 0 : 1)
     }
     func appendHistoryRecords(_ records: [String]) {
         for record in records { historyRecordsByID[record.id] = record }
     }
     func invalidateForTest() { invalidateReload() }
-""" + show_method + pending_status + """
+""" + show_method + pending_status + r"""
     func reload() {
 """ + reload_method + """
 }
@@ -146,6 +153,7 @@ finishSnapshot.signal()
 await first.value
 assert(model.snapshot.accessRequests.count == 50 && model.snapshot.accessRequests.first == "latest")
 assert(model.historyOlderPageCursor == 50)
+assert(model.authorizationHistoryDayCount == 30)
 assert(model.snapshot.detectorFindings == ["preserved"])
 // A burst queues exactly one follow-up, after the first load finishes.
 for await _ in snapshotStarted { break }
