@@ -26,7 +26,9 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         "├─ existing upstream credentials require logout before Isotope login"
     )
     .ok();
+    writeln!(stdout, "│").ok();
     if !super::gh_cli::confirm(stdout, yes)? {
+        writeln!(stdout, "╰─ cancelled").ok();
         return Ok(());
     }
     plan.apply(isotope::WRANGLER)?;

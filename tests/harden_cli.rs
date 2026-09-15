@@ -132,6 +132,7 @@ fn failed_secret_storage_leaves_plaintext_usable_behind_stub() {
         .unwrap();
 
     assert!(!output.status.success());
+    assert!(!stdout(&output).contains("av doctor"));
     assert!(root.join("stubs/doctl").exists());
     assert_eq!(
         fs::read_to_string(config).unwrap(),
@@ -185,6 +186,23 @@ fn cancelled_hardening_changes_nothing() {
         "access-token: do_secret\ncontext: default\n"
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cancelled_wrangler_hardening_uses_standard_footer() {
+    let root = fixture("cancelled-wrangler");
+    let output = base_av(&root)
+        .args(["harden", "wrangler"])
+        .env("AUTOMIC_VAULT_TEST_EUID", "501")
+        .env("AUTOMIC_VAULT_TEST_WRANGLER_TARGET", "/usr/bin/true")
+        .output()
+        .unwrap();
+    let stdout = stdout(&output);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout.contains("Isotope login\n│\n◇ Continue?"), "{stdout}");
+    assert!(stdout.contains("╰─ cancelled"), "{stdout}");
+    assert!(!stdout.contains("av doctor"), "{stdout}");
 }
 
 fn av(root: &Path, hardener: &str) -> Command {
