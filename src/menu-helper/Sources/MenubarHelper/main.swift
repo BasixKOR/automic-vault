@@ -2909,19 +2909,9 @@ final class ApprovalCancellation: @unchecked Sendable {
             return items
         }
         if !list.isEmpty {
-            if Thread.isMainThread {
-                MainActor.assumeIsolated {
-                    for item in list {
-                        item()
-                    }
-                }
-            } else {
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        for item in list {
-                            item()
-                        }
-                    }
+            Task { @MainActor in
+                for item in list {
+                    item()
                 }
             }
         }

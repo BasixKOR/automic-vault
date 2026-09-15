@@ -30,11 +30,7 @@ pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
         return Ok(());
     }
     plan.apply(isotope::WRANGLER)?;
-    writeln!(
-        stdout,
-        "╰─ installed Wrangler Isotope; run `wrangler login` to store a new Credential"
-    )
-    .ok();
+    writeln!(stdout, "╰─ installed Wrangler Isotope").ok();
     super::write_secret_gate_notice(stdout, "wrangler");
     Ok(())
 }

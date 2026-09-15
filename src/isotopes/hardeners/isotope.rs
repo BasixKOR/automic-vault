@@ -220,6 +220,10 @@ impl InstallPlan {
             }
             Self::Direct { update, .. } => {
                 let verb = if *update { "update" } else { "install" };
+                if spec.hardener == WRANGLER.hardener {
+                    writeln!(stdout, "├─ {verb} /opt/av/wrangler").ok();
+                    return;
+                }
                 for binary in spec.binaries {
                     writeln!(stdout, "├─ {verb} /usr/local/bin/{binary}").ok();
                 }
@@ -245,14 +249,6 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
             let manifest = current_manifest(spec)?;
             let current = fs::read_to_string(receipt_path(spec)).ok();
             if current.as_deref().map(str::trim) != Some(manifest.sha256.as_str()) {
-                if spec.hardener == WRANGLER.hardener
-                    && let Some(brew) = brew_path()
-                {
-                    return Ok(InstallPlan::Homebrew {
-                        brew,
-                        conflict: conflicting_formula(spec),
-                    });
-                }
                 return Ok(InstallPlan::Direct {
                     manifest,
                     update: true,
@@ -260,6 +256,12 @@ pub(crate) fn plan(spec: Spec) -> Result<InstallPlan, String> {
             }
         }
         return Ok(InstallPlan::Ready);
+    }
+    if spec.hardener == WRANGLER.hardener {
+        return Ok(InstallPlan::Direct {
+            manifest: current_manifest(spec)?,
+            update: false,
+        });
     }
     if let Some(brew) = brew_path() {
         return Ok(InstallPlan::Homebrew {
@@ -479,9 +481,6 @@ fn install_and_verify_with_homebrew(spec: Spec, brew: &Path) -> Result<(), Strin
         .map_err(|err| format!("failed to run {}: {err}", brew.display()))?;
     if !status.success() {
         return Err(format!("Homebrew isotope installation failed: {status}"));
-    }
-    if spec.hardener == WRANGLER.hardener {
-        return install_direct(spec, &current_manifest(spec)?);
     }
     let target = target(spec);
     if !executable(&target) || !signature_valid(&target, spec.primary) {
@@ -1104,7 +1103,7 @@ sha256 "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070""#,
     }
 
     #[test]
-    fn wrangler_receipt_updates_preserve_homebrew_selection() {
+    fn wrangler_uses_direct_install_even_with_homebrew() {
         let _guard = crate::global_test_env_lock().lock().unwrap();
         let directory = TemporaryDirectory::new("wrangler-plan").unwrap();
         let target = directory.path.join("wrangler");
@@ -1141,17 +1140,32 @@ sha256 "29e7f73c54cc1c278b7431bc04d581b468ca033d1782c39c87034515ae5d7070""#,
         fs::create_dir_all(receipt.parent().unwrap()).unwrap();
         fs::write(&receipt, "old-digest").unwrap();
         let update = plan(WRANGLER);
+        let mut output = Vec::new();
+        if let Ok(plan) = &update {
+            plan.write(&mut output, WRANGLER);
+        }
         fs::write(&receipt, format!("{digest}\n")).unwrap();
         let current = plan(WRANGLER);
+        fs::remove_file(&target).unwrap();
+        let missing = plan(WRANGLER);
         for (key, _) in variables {
             unsafe {
                 std::env::remove_var(key);
             }
         }
-        assert!(
-            matches!(update, Ok(InstallPlan::Homebrew { conflict: Some(conflict), .. }) if conflict == "upstream-wrangler")
+        assert!(matches!(
+            update,
+            Ok(InstallPlan::Direct { update: true, .. })
+        ));
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "├─ update /opt/av/wrangler\n"
         );
         assert!(matches!(current, Ok(InstallPlan::Ready)));
+        assert!(matches!(
+            missing,
+            Ok(InstallPlan::Direct { update: false, .. })
+        ));
     }
 
     #[test]

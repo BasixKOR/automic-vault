@@ -41,12 +41,11 @@ that installing the Isotope alone migrates credentials.
 ## Installation
 
 The fork publishes `cli-<version>.tgz`, pinned by the signed tap's
-`wrangler-isotope` formula. Homebrew installs the distribution into its keg.
-`av harden wrangler` uses the existing Isotope download, digest, privileged
-installer, and receipt path to install the verified bundle under `/opt/av/wrangler`.
-The same verified archive supports installation without Homebrew. There is no
-`.pkg` installer. A Homebrew upgrade requires re-running the Hardener to replace
-the protected runtime; Doctor compares its protected receipt with the tap digest.
+`wrangler-isotope` formula. `av harden wrangler` treats that formula as its
+constrained update manifest and uses the existing Isotope download, digest,
+privileged installer, and receipt path to install the verified bundle under
+`/opt/av/wrangler`. It does not install a duplicate Homebrew keg. There is no
+`.pkg` installer. Doctor compares the protected receipt with the tap digest.
 
 This extends ADR 0031's protected multi-file prefix to a fork-owned Isotope.
 The installer stages a root-owned copy, rechecks its digest, restricts archive
