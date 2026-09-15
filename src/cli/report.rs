@@ -19,7 +19,7 @@ impl Style {
     pub(crate) fn terminal(color: bool, width: Option<usize>) -> Self {
         Self {
             color,
-            width: width.unwrap_or(DEFAULT_WIDTH).max(8),
+            width: width.unwrap_or(DEFAULT_WIDTH).clamp(8, DEFAULT_WIDTH),
         }
     }
 
@@ -277,7 +277,11 @@ mod tests {
             drop(report);
 
             let output = String::from_utf8(output).unwrap();
-            assert!(output.lines().all(|line| display_width(line) <= width));
+            assert!(
+                output
+                    .lines()
+                    .all(|line| display_width(line) <= width.min(DEFAULT_WIDTH))
+            );
             assert!(output.lines().skip(1).all(|line| line.starts_with("│  ")));
         }
     }
