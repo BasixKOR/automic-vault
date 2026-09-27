@@ -13,6 +13,7 @@ public final class AuthorizationHistoryTransfer: @unchecked Sendable {
     private let lock = NSLock()
     private var started = false
     private var canceled = false
+    // ponytail: retain the window in memory; stream if measured memory pressure warrants it.
     private var snapshot: Data?
     private var offset = 0
 

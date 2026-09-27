@@ -57,7 +57,7 @@ commands:
   $ av proxy +KEY... [--] <command>       # proxy secret references for a command
   $ av git <clone|fetch|pull|push> <URL>  # protected GitHub HTTPS, main branch
   $ av list                               # list saved secret names
-  $ av history [--json] [--since 7d] [--no-pager] # show Authorization History
+  $ av history [--json] [--since 7d] [--no-pager]
   $ av save [options] KEY                 # store a global or Project Value
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
   $ av unharden brew [-y|--yes]           # temporarily restore Homebrew for cask migration
