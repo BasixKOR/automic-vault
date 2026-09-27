@@ -84,6 +84,43 @@ func authorizationHistoryStoreBoundsDisclosureDuringRead() throws {
 }
 
 @Test
+func sevenDayHistoryTransfersEveryRetainedRecordAboveOneMiB() throws {
+    let now = Date(timeIntervalSince1970: 4_000_000)
+    let fixture = try HistoryStoreFixture(now: now)
+    defer { fixture.remove() }
+    let records = (1...8).map { day in
+        fixture.record(index: day, date: now.addingTimeInterval(Double(-day * 86_400)),
+                       reason: String(repeating: "x", count: 200_000))
+    }
+    try fixture.store.importRecords(records)
+    let since = now.addingTimeInterval(-7 * 86_400)
+    #expect(throws: AuthorizationHistoryStoreError.disclosureTooLarge) {
+        try fixture.store.records(since: since, maximumDisclosureBytes: 1_048_576)
+    }
+    #expect(try fixture.store.records(since: now.addingTimeInterval(-3 * 86_400),
+                                      maximumDisclosureBytes: 1_048_576).count == 3)
+    let snapshot = try fixture.store.records(since: since).map(\.redactedForDisclosure)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let data = try encoder.encode(snapshot)
+    #expect(data.count > 1_048_576)
+    let transfer = AuthorizationHistoryTransfer()
+    #expect(transfer.begin())
+    #expect(transfer.prepare(data))
+    // New writes after preparation cannot change, skip, or duplicate snapshot records.
+    #expect(fixture.store.append(fixture.record(index: 99)))
+    var received = Data()
+    while received.count < data.count {
+        let chunk = try #require(transfer.next(offset: received.count))
+        received.append(chunk.bytes)
+    }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let result = try decoder.decode([AccessRequestRecord].self, from: received)
+    #expect(result.map(\.id) == Array(records.prefix(7)).map(\.id))
+}
+
+@Test
 func productionAuthorizationHistoryStoreRetriesFailedOpen() throws {
     let fixture = try HistoryStoreFixture()
     defer { fixture.remove() }

@@ -180,9 +180,15 @@ av history --since 7d --json
 
 `--since` accepts whole-number seconds, minutes, hours, days, or weeks (`s`,
 `m`, `h`, `d`, `w`), up to 30 days. `--json` returns machine-readable records
-with display-safe commands, never Secret Values. A reply over 1 MiB fails
-without truncation; request a narrower window. The successful read is itself
-recorded and included in the response.
+with display-safe commands, never Secret Values. The full retained window is
+retrieved automatically, even when it exceeds one transport reply. The successful
+read is itself recorded and included in the response.
+
+Tables shown in a terminal open in the system pager: use arrow keys to navigate
+and `q` to quit. `--no-pager` writes directly. JSON, pipes, and redirected output
+always bypass the pager; JSON remains one complete array. A failed retrieval
+returns a nonzero status without printing partial history. Older running apps
+must be updated to support complete-window retrieval.
 
 Each read requires Approval unless its exact Verified Launcher has
 Authorization History Access in Settings. This grant has its own setting row;

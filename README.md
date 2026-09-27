@@ -188,8 +188,9 @@ and needs Approval. The read itself appears in the returned history.
 
 History is local, stored as encrypted rows in one SQLite file with its key in
 the Data Protection Keychain. It is available for up to 30 days or 25 MiB of
-encrypted record payloads, whichever comes first. Replies over 1 MiB fail
-without truncation; use a narrower window. History is not tamper-proof or a
+encrypted record payloads, whichever comes first. `--since` returns every retained
+record in the window. Terminal tables use a pager; `--no-pager`, `--json`, and
+redirected output bypass it. History is not tamper-proof or a
 complete forensic log.
 
 [Authorization History and its limits](docs/authorization.md#authorization-history)

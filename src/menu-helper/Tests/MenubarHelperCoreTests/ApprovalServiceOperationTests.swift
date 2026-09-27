@@ -18,6 +18,8 @@ import Testing
     #expect(ApprovalServiceOperation.historyWindow.rawValue == "history-window")
     #expect(ApprovalServiceOperation.history.disclosesProtectedMetadata)
     #expect(ApprovalServiceOperation.historyWindow.disclosesProtectedMetadata)
+    #expect(ApprovalServiceOperation.historyRead.disclosesProtectedMetadata)
+    #expect(ApprovalServiceOperation.historyNext.disclosesProtectedMetadata)
     #expect(ApprovalServiceOperation.list.disclosesProtectedMetadata)
     #expect(!ApprovalServiceOperation.inject.disclosesProtectedMetadata)
 }

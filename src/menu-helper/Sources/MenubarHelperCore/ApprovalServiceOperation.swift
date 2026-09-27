@@ -69,6 +69,8 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
     case list
     case history
     case historyWindow = "history-window"
+    case historyRead = "history-read"
+    case historyNext = "history-next"
     case save
     case saveIfAbsentOrEqual = "save-if-absent"
     case bless
@@ -83,5 +85,6 @@ public enum ApprovalServiceOperation: String, CaseIterable, Sendable {
 
     public var disclosesProtectedMetadata: Bool {
         self == .list || self == .history || self == .historyWindow
+            || self == .historyRead || self == .historyNext
     }
 }

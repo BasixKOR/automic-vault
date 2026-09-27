@@ -57,7 +57,7 @@ commands:
   $ av proxy +KEY... [--] <command>       # proxy secret references for a command
   $ av git <clone|fetch|pull|push> <URL>  # protected GitHub HTTPS, main branch
   $ av list                               # list saved secret names
-  $ av history [--json] [--since 7d]      # show Authorization History
+  $ av history [--json] [--since 7d] [--no-pager] # show Authorization History
   $ av save [options] KEY                 # store a global or Project Value
   $ av harden <tool> [-y|--yes]           # harden a tool; migrate credentials
   $ av unharden brew [-y|--yes]           # temporarily restore Homebrew for cask migration
@@ -71,7 +71,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 60;
+pub(crate) const INSTALL_REVISION: u32 = 61;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -101,6 +101,7 @@ where
         stderr,
         scan::Style::plain(),
         scan::Style::plain(),
+        false,
     )
 }
 
@@ -118,6 +119,7 @@ where
         &mut stderr,
         scan::Style::terminal(color, terminal_width()),
         scan::Style::terminal(terminal, terminal_width()),
+        terminal,
     )
 }
 
@@ -174,6 +176,7 @@ fn run_with_style<I, W, E>(
     stderr: &mut E,
     style: scan::Style,
     help_style: scan::Style,
+    terminal: bool,
 ) -> i32
 where
     I: IntoIterator<Item = OsString>,
@@ -575,7 +578,7 @@ where
         Some("wakatime-credential") => wakatime_credential::run(rest, stdout, stderr),
         Some("rclone-password") => rclone_password::run(rest, stdout, stderr),
         Some("list" | "ls") => list::run(rest, stdout, stderr),
-        Some("history") => history::run(rest, stdout, stderr),
+        Some("history") => history::run(rest, stdout, stderr, terminal),
         Some("bless") => bless::run(rest, stderr),
         Some("open") => {
             let Some(secret_gate) = parse_open_args(&rest) else {
@@ -1238,6 +1241,7 @@ mod tests {
                 &mut stderr,
                 scan::Style::plain(),
                 scan::Style::terminal(true, None),
+                false,
             ),
             0
         );

@@ -134,7 +134,9 @@ grant in the Data Protection Keychain. Secret Name Access never satisfies this
 grant. The service records the history read before returning the records, and a
 recording failure denies disclosure. The default view returns the newest 50
 records; `--since` requests a window of at most 30 days and is filtered before
-disclosure. A reply exceeding 1 MiB fails rather than truncating records. See
+disclosure. The CLI retrieves the complete authorized snapshot in bounded
+chunks on the same XPC connection, without reauthorization or new store reads
+between chunks. See [ADR 0058](adr/0058-complete-cli-history-windows.md),
 [ADR 0046](adr/0046-cli-authorization-history-access.md) and
 [ADR 0047](adr/0047-encrypted-rolling-authorization-history.md).
 

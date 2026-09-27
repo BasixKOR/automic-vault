@@ -740,8 +740,10 @@ is filtered from reads immediately and pruned on writes or a coalesced
 background pass after a read. A dormant database may temporarily retain it.
 The dashboard browses all retained records, grouped by day. An unqualified
 `av history` shows the newest 50 records; `av history --since` may request an
-explicit window up to the retention limit. A single CLI reply is capped at 1 MiB rather than truncated; use a
-narrower window if it exceeds that cap. Retention does not make
+explicit window up to the retention limit. The CLI returns every retained record
+in that window from one authorized snapshot, transferred in bounded chunks.
+Terminal tables use a pager unless `--no-pager` is set; JSON and redirected
+output do not. Retention does not make
 Authorization History complete: same-user compromise or storage failure can
 damage or delete it.
 
