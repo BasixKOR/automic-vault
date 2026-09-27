@@ -3840,6 +3840,22 @@ private func authorizationHistoryDisclosureValue(
     return value
 }
 
+private func replyHistoryChunk(
+    _ chunk: AuthorizationHistoryTransfer.Chunk,
+    to message: xpc_object_t,
+    on peer: xpc_connection_t
+) {
+    let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
+    xpc_dictionary_set_bool(response, "ok", true)
+    xpc_dictionary_set_uint64(response, "offset", UInt64(chunk.offset))
+    xpc_dictionary_set_uint64(response, "total", UInt64(chunk.total))
+    chunk.bytes.withUnsafeBytes { bytes in
+        xpc_dictionary_set_data(response, "history_chunk", bytes.baseAddress!, bytes.count)
+    }
+    xpc_connection_send_message(peer, response)
+}
+
+
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
     private let teamIdentifier: String
@@ -9704,21 +9720,6 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
 
-    private func replyHistoryChunk(
-        _ chunk: AuthorizationHistoryTransfer.Chunk,
-        to message: xpc_object_t,
-        on peer: xpc_connection_t
-    ) {
-        let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
-        xpc_dictionary_set_bool(response, "ok", true)
-        xpc_dictionary_set_uint64(response, "offset", UInt64(chunk.offset))
-        xpc_dictionary_set_uint64(response, "total", UInt64(chunk.total))
-        chunk.bytes.withUnsafeBytes { bytes in
-            xpc_dictionary_set_data(response, "history_chunk", bytes.baseAddress!, bytes.count)
-        }
-        xpc_connection_send_message(peer, response)
-    }
-
     private func reply(
         _ peer: xpc_connection_t,
         to message: xpc_object_t,
@@ -15087,7 +15088,59 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
     return 0
 }
 
+// Exercise real XPC replies, including reuse of the request dictionary between chunks.
+private func historyTransferWireSelfCheck() -> Bool {
+    let data = Data(String(repeating: "history 界\n", count: 120_000).utf8)
+    let listener = xpc_connection_create(nil, DispatchQueue.global(qos: .userInitiated))
+    xpc_connection_set_event_handler(listener) { event in
+        guard xpc_get_type(event) == XPC_TYPE_CONNECTION else { return }
+        let peer = event
+        let transfer = AuthorizationHistoryTransfer()
+        guard transfer.begin(), transfer.prepare(data) else { return }
+        xpc_connection_set_event_handler(peer) { message in
+            guard xpc_get_type(message) == XPC_TYPE_DICTIONARY else {
+                transfer.cancel()
+                return
+            }
+            let offset = Int(xpc_dictionary_get_uint64(message, "offset"))
+            if let chunk = transfer.next(offset: offset) {
+                replyHistoryChunk(chunk, to: message, on: peer)
+            } else {
+                let response = xpc_dictionary_create_reply(message)!
+                xpc_dictionary_set_bool(response, "ok", false)
+                xpc_connection_send_message(peer, response)
+            }
+        }
+        xpc_connection_activate(peer)
+    }
+    xpc_connection_activate(listener)
+    defer { xpc_connection_cancel(listener) }
+    let client = xpc_connection_create_from_endpoint(xpc_endpoint_create(listener))
+    xpc_connection_set_event_handler(client) { _ in }
+    xpc_connection_activate(client)
+    defer { xpc_connection_cancel(client) }
+    let request = xpc_dictionary_create_empty()
+    var received = Data()
+    while received.count < data.count {
+        xpc_dictionary_set_uint64(request, "offset", UInt64(received.count))
+        let response = xpc_connection_send_message_with_reply_sync(client, request)
+        guard xpc_get_type(response) == XPC_TYPE_DICTIONARY,
+              xpc_dictionary_get_bool(response, "ok"),
+              xpc_dictionary_get_uint64(response, "offset") == UInt64(received.count),
+              xpc_dictionary_get_uint64(response, "total") == UInt64(data.count) else { return false }
+        var count = 0
+        guard let bytes = xpc_dictionary_get_data(response, "history_chunk", &count),
+              count > 0, count <= AuthorizationHistoryTransfer.chunkBytes else { return false }
+        received.append(bytes.assumingMemoryBound(to: UInt8.self), count: count)
+    }
+    xpc_dictionary_set_uint64(request, "offset", UInt64(received.count))
+    let exhausted = xpc_connection_send_message_with_reply_sync(client, request)
+    return received == data && xpc_get_type(exhausted) == XPC_TYPE_DICTIONARY
+        && !xpc_dictionary_get_bool(exhausted, "ok")
+}
+
 private func runMetadataDisclosureSelfCheck() -> Int32 {
+    guard historyTransferWireSelfCheck() else { return 1 }
     let wire = xpc_dictionary_create_empty()
     let wireNow = Date(timeIntervalSince1970: 1_000_000)
     guard validatedAuthorizationHistorySince(
