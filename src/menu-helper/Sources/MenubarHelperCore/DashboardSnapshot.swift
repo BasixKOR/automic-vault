@@ -914,6 +914,22 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// Recently approved apps are suggestions only; selection must reverify their identity.
+public func recentApprovedLauncherApps(
+    in records: [AccessRequestRecord],
+    excluding requirements: Set<String>
+) -> [AccessRequestRecord] {
+    var seen = requirements
+    return records.sorted { $0.date > $1.date }.filter { record in
+        guard record.decision == "Approved",
+              let requirement = record.launcherRequirement, !requirement.isEmpty,
+              let path = record.launcherIconPath, path.hasPrefix("/"),
+              URL(fileURLWithPath: path).pathExtension.lowercased() == "app"
+        else { return false }
+        return seen.insert(requirement).inserted
+    }
+}
+
 public func escapedSecurityPath(_ path: String) -> String {
     var escaped = ""
     escaped.reserveCapacity(path.utf8.count)
