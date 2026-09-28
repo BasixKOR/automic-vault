@@ -13677,7 +13677,7 @@ private struct ApprovalPromptHeaderView: View {
             if launcher != nil {
                 Label("Verified Launcher", systemImage: "checkmark.shield")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accentColor)
                     .textCase(.uppercase)
             }
             HStack(alignment: .top, spacing: approvalPromptColumnSpacing) {
