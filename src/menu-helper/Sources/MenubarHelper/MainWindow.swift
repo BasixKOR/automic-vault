@@ -2476,6 +2476,30 @@ func runDashboardSearchSelfCheck() -> Int32 {
             }
         }
     }
+    // Both native pickers must preserve the distinction between None and deny-all.
+    func policyPopup(in view: NSView) -> NSPopUpButton? {
+        (view as? NSPopUpButton) ?? view.subviews.lazy.compactMap { policyPopup(in: $0) }.first
+    }
+    for isDenial in [false, true] {
+        var selections: [SecretGateProtection?] = []
+        let host = NSHostingView(rootView: NativeProtectionMenu(gate: gate,
+            protection: isDenial ? nil : .readOnly, usesPhone: false, isDenial: isDenial) {
+                selections.append($0)
+            })
+        host.frame = NSRect(x: 0, y: 0, width: 170, height: 30)
+        host.layoutSubtreeIfNeeded()
+        guard let popup = policyPopup(in: host), !popup.isBordered,
+              popup.numberOfItems == gate.availableProtections.count + (isDenial ? 1 : 0),
+              popup.indexOfSelectedItem == (isDenial ? 0 : 1), let action = popup.action else { return 1 }
+        popup.selectItem(at: isDenial ? 1 : 0)
+        NSApp.sendAction(action, to: popup.target, from: popup)
+        guard selections == [.noAccess] else { return 1 }
+        if isDenial {
+            popup.selectItem(at: 0)
+            NSApp.sendAction(action, to: popup.target, from: popup)
+            guard selections == [.noAccess, nil] else { return 1 }
+        }
+    }
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
     let appPolicy = gate.appPolicies[0]
     let launcherBundleRequirement = #"cdhash H"0123456789abcdef0123456789abcdef01234567""#
@@ -6670,23 +6694,16 @@ private struct GatePolicyTable: View {
                                 setDenial: { stage(.denial($0), for: app) })
                 HStack {
                     Text("Allow through:").font(.caption).foregroundStyle(.secondary)
-                    NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) {
-                        stage(.allow($0), for: app)
+                    NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
+                        if let level { stage(.allow(level), for: app) }
                     }
                     .frame(maxWidth: 170)
                     Spacer(minLength: 4)
-                    Menu {
-                        Button("None") { stage(.denial(nil), for: app) }
-                        ForEach(gate.availableProtections) { level in
-                            Button(level == .noAccess ? String(localized: "All operations") : gate.protectionTitle(level)) {
-                                stage(.denial(level), for: app)
-                            }
-                        }
-                    } label: {
-                        Text("Deny from: \(denialTitle(denial))")
+                    Text("Deny from:").font(.caption).foregroundStyle(.secondary)
+                    NativeProtectionMenu(gate: gate, protection: denial, usesPhone: false, isDenial: true) {
+                        stage(.denial($0), for: app)
                     }
-                    .fixedSize()
-                    .accessibilityLabel("Denial Threshold")
+                    .frame(maxWidth: 170)
                 }
                 if app?.usesGateDefault == true && !rowChanges.contains(where: {
                     if case .allow = $0.value { return true }; return false
@@ -6925,9 +6942,14 @@ private struct ApprovedAppRow: View {
 
 private struct NativeProtectionMenu: NSViewRepresentable {
     let gate: SecretGate
-    let protection: SecretGateProtection
+    let protection: SecretGateProtection?
     let usesPhone: Bool
-    let setProtection: (SecretGateProtection) -> Void
+    var isDenial = false
+    let setProtection: (SecretGateProtection?) -> Void
+
+    private var candidates: [SecretGateProtection?] {
+        (isDenial ? [nil] : []) + gate.availableProtections.map(Optional.some)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -6939,7 +6961,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
         button.controlSize = .small
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectProtection(_:))
-        button.setAccessibilityLabel(String(localized: "Protection level"))
+        button.setAccessibilityLabel(isDenial ? String(localized: "Denial Threshold") : String(localized: "Protection level"))
         configureItems(in: button)
         updateSelection(in: button)
         return button
@@ -6953,9 +6975,16 @@ private struct NativeProtectionMenu: NSViewRepresentable {
 
     private func configureItems(in button: NSPopUpButton) {
         button.removeAllItems()
-        for candidate in gate.availableProtections {
-            button.addItem(withTitle: localizedUIString(gate.protectionTitle(candidate)))
-            if usesPhone && candidate.addsAuthority(over: protection) {
+        for value in candidates {
+            guard let candidate = value else {
+                button.addItem(withTitle: String(localized: "None"))
+                continue
+            }
+            button.addItem(withTitle: isDenial && candidate == .noAccess
+                ? String(localized: "All operations") : localizedUIString(gate.protectionTitle(candidate)))
+            // Allow explanations and warnings would misdescribe a denial choice.
+            if isDenial { continue }
+            if usesPhone && candidate.addsAuthority(over: protection ?? .noAccess) {
                 let title = NSMutableAttributedString(string: localizedUIString(gate.protectionTitle(candidate)) + "  ")
                 let attachment = NSTextAttachment()
                 attachment.image = NSImage(systemSymbolName: "iphone", accessibilityDescription: String(localized: "Approval on iPhone"))?
@@ -6977,7 +7006,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
     }
 
     private func updateSelection(in button: NSPopUpButton) {
-        guard let selectedIndex = gate.availableProtections.firstIndex(of: protection) else { return }
+        guard let selectedIndex = candidates.firstIndex(of: protection) else { return }
         button.selectItem(at: selectedIndex)
         for (index, item) in button.itemArray.enumerated() {
             item.state = index == selectedIndex ? .on : .off
@@ -6993,7 +7022,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
         }
 
         @MainActor @objc func selectProtection(_ sender: NSPopUpButton) {
-            let candidates = parent.gate.availableProtections
+            let candidates = parent.candidates
             let selectedIndex = sender.indexOfSelectedItem
             guard candidates.indices.contains(selectedIndex) else { return }
             parent.setProtection(candidates[selectedIndex])

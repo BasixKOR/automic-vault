@@ -538,3 +538,5 @@
 "Auto-allow requires Hardened Runtime." = "自动允许需要强化运行时。";
 
 "Denial applies regardless of runtime." = "无论运行时状态如何，拒绝规则均适用。";
+
+"Deny from:" = "拒绝起点：";
