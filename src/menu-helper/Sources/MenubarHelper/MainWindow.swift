@@ -4219,24 +4219,22 @@ private struct StoredSecretDetailView: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
             }
 
-            HStack {
-                Button { model.isRenamingSecret = true } label: {
-                    Label("Rename Secret", systemImage: "pencil")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                Button { isConfirmingDelete = true } label: {
-                    Label("Delete Secret", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.red)
-            }
-
             if let error = model.errorMessage {
                 InfoBlock(title: "Error", text: error)
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { model.isRenamingSecret = true } label: {
+                    Label("Rename Secret", systemImage: "pencil")
+                }
+                .labelStyle(.titleAndIcon)
+                .help("Rename Secret")
+                Button(role: .destructive) { isConfirmingDelete = true } label: {
+                    Label("Delete Secret", systemImage: "trash")
+                }
+                .labelStyle(.iconOnly)
+                .help("Delete Secret")
             }
         }
         .onChange(of: secret.accessibility) { _, accessibility in
