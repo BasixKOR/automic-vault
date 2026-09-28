@@ -27,7 +27,10 @@ history_visibility = history_visibility.replace("private var", "var")
 fixture = r'''
 import Foundation
 
-enum PhoneApprovalOutcome { case approved, denied, temporaryWriteAccess }
+enum PhoneApprovalOutcome {
+    case approved, denied, temporaryWriteAccess, temporaryDenial
+    var isDenial: Bool { self == .denied || self == .temporaryDenial }
+}
 struct PhoneApprovalRequest { let id = UUID() }
 struct PhoneApprovalTicket {
     let requestID: UUID
@@ -89,7 +92,7 @@ STARTUP_STATE
         return authenticates
     }
     func subscriptionPermits(_ outcome: PhoneApprovalOutcome) async -> Bool {
-        outcome == .denied || subscribed
+        outcome.isDenial || subscribed
     }
     func connect() async { onConnect() }
     func recordActivity(_ item: PhoneApprovalActivity) {}
@@ -128,11 +131,15 @@ HISTORY_VISIBILITY
             assert(!history.showsActivity)
         }
         for usesTicket in [false, true] {
-            for outcome in [PhoneApprovalOutcome.approved, .temporaryWriteAccess, .denied] {
+            for outcome in [PhoneApprovalOutcome.approved, .temporaryWriteAccess, .denied, .temporaryDenial] {
                 let model = Model()
                 let request = PhoneApprovalRequest()
                 let ticket = PhoneApprovalTicket(requestID: request.id)
                 model.pending = [request]
+                if outcome.isDenial {
+                    model.authenticates = false
+                    model.subscribed = false
+                }
                 let respond: () async -> Void = {
                     if usesTicket { await model.respond(to: ticket, outcome: outcome) }
                     else { await model.respond(to: request, outcome: outcome) }
@@ -151,7 +158,7 @@ HISTORY_VISIBILITY
                 assert(model.respondingRequestIDs.isEmpty)
                 assert(model.pending.count == 1 && model.errorMessage != nil)
                 assert(model.relay!.sends == 1)
-                assert(model.authentications == (outcome == .denied ? 0 : 1))
+                assert(model.authentications == (outcome.isDenial ? 0 : 1))
 
                 // Failed delivery clears busy state and allows retry.
                 model.relay!.fails = false
@@ -160,7 +167,7 @@ HISTORY_VISIBILITY
                 assert(model.relay!.sends == 2)
 
                 // Canceled authentication and unavailable subscriptions fail closed.
-                if outcome != .denied {
+                if !outcome.isDenial {
                     model.pending = [request]
                     model.authenticates = false
                     await respond()

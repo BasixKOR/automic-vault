@@ -223,6 +223,10 @@ final class ApprovalModel {
         await respond(to: request, outcome: .denied)
     }
 
+    func denyTemporarily(_ request: PhoneApprovalRequest) async {
+        await respond(to: request, outcome: .temporaryDenial)
+    }
+
     func denyAll() async {
         for request in pending { await deny(request) }
     }
@@ -359,7 +363,7 @@ final class ApprovalModel {
     private func respond(to request: PhoneApprovalRequest, outcome: PhoneApprovalOutcome) async {
         guard respondingRequestIDs.insert(request.id).inserted else { return }
         defer { respondingRequestIDs.remove(request.id) }
-        if outcome != .denied, biometricProtectionEnabled {
+        if !outcome.isDenial, biometricProtectionEnabled {
             guard await authenticateBiometrically() else { return }
         }
         guard await subscriptionPermits(outcome) else { return }
@@ -378,7 +382,7 @@ final class ApprovalModel {
     private func respond(to ticket: PhoneApprovalTicket, outcome: PhoneApprovalOutcome) async {
         guard respondingRequestIDs.insert(ticket.requestID).inserted else { return }
         defer { respondingRequestIDs.remove(ticket.requestID) }
-        if outcome != .denied, biometricProtectionEnabled {
+        if !outcome.isDenial, biometricProtectionEnabled {
             guard await authenticateBiometrically() else { return }
         }
         guard await subscriptionPermits(outcome) else { return }

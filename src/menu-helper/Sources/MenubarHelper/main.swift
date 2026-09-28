@@ -13040,18 +13040,19 @@ private final class ApprovalPromptState: @unchecked Sendable {
     }
 
     @MainActor
+    @discardableResult
     func resolve(
         _ result: ApprovalDecision,
         source: ApprovalDecisionSource = .programmatic,
         phoneEnabled: Bool = PhoneApprovalCoordinator.shared.isEnabled,
         touchIDEnabled: Bool = TouchIDApproval.isEnabled
-    ) {
+    ) -> Bool {
         let shouldResume: Bool = lock.withLock {
             guard !hasDecision else { return false }
             hasDecision = true
             return true
         }
-        guard shouldResume else { return }
+        guard shouldResume else { return false }
 
         var finalResult = result
         if result == .approved || result == .alwaysApproved || result == .temporaryWriteAccess {
@@ -13092,6 +13093,21 @@ private final class ApprovalPromptState: @unchecked Sendable {
         panel?.contentView = nil // Tear down any pending embedded biometric attempt.
         continuation?.resume(returning: finalResult)
         continuation = nil
+        return true
+    }
+
+    @MainActor
+    func denyTemporarily(
+        requirement: String, launcherName: String, scope: TemporaryLauncherDenialScope,
+        source: ApprovalDecisionSource,
+        phoneEnabled: Bool = PhoneApprovalCoordinator.shared.isEnabled
+    ) {
+        guard ActiveApprovalPrompt.current === self, cancellation?.isCanceled != true else { return }
+        if case .phone = source, !phoneEnabled { return }
+        // Claim the decision before publishing a denial notification. No suspension is
+        // allowed between resolving this prompt and installing its retained Mac scope.
+        guard resolve(.denied, source: source) else { return }
+        TemporaryLauncherDenials.shared.deny(requirement, launcherName: launcherName, scope: scope)
     }
 }
 
@@ -13272,10 +13288,9 @@ private func showApprovalAlert(
                 },
                 temporaryDenial: offersTemporaryDenial ? {
                     guard let eligibleDenialLauncher, let temporaryDenialScope else { return }
-                    TemporaryLauncherDenials.shared.deny(eligibleDenialLauncher.designatedRequirement,
+                    state.denyTemporarily(requirement: eligibleDenialLauncher.designatedRequirement,
                         launcherName: approvalPromptRequester(launcher: eligibleDenialLauncher, fallback: eligibleDenialLauncher.path).name,
-                        scope: temporaryDenialScope)
-                    state.resolve(.denied, source: .standardMac)
+                        scope: temporaryDenialScope, source: .standardMac)
                 } : nil,
                 temporaryDenialScope: temporaryDenialScope,
                 decide: { userDecision, source in
@@ -13286,6 +13301,10 @@ private func showApprovalAlert(
 
         if usesIPhoneApproval {
             do {
+                let phoneDenial = offersTemporaryDenial ? temporaryDenialScope.map { scope in
+                    PhoneTemporaryDenial(actionTitle: scope.actionTitle,
+                        scope: "\(approvalPromptRequester(launcher: eligibleDenialLauncher, fallback: eligibleDenialLauncher?.path ?? launcherFallbackPath).name) at \(scope.gateName)")
+                } : nil
                 let phoneRequest = try PhoneApprovalRequest(
                     macName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName,
                     launcher: content.requesterName,
@@ -13307,16 +13326,26 @@ private func showApprovalAlert(
                             title: section.title,
                             rows: section.rows.map { .init(label: $0.label, value: $0.value) }
                         )
-                    },
+                    } + (phoneDenial.map { [$0.detailSection] } ?? []),
                     temporaryAccessGrantScope: temporaryGrantCandidate.map { candidate in
                         "\(candidate.launcherName), \(candidate.authorizationGateName), and \(candidate.scope.agentTaskContext.provider.taskLabel) \(candidate.scope.agentTaskContext.abbreviatedID)"
                     }
                 )
                 state.remoteRequestID = phoneRequest.id
                 try PhoneApprovalCoordinator.shared.submit(phoneRequest) { result in
+                    if case .temporaryDenial = result {
+                        guard offersTemporaryDenial, let eligibleDenialLauncher, let temporaryDenialScope else {
+                            state.resolve(.denied, source: .phone)
+                            return
+                        }
+                        state.denyTemporarily(requirement: eligibleDenialLauncher.designatedRequirement,
+                            launcherName: approvalPromptRequester(launcher: eligibleDenialLauncher, fallback: eligibleDenialLauncher.path).name,
+                            scope: temporaryDenialScope, source: .phone)
+                        return
+                    }
                     let mapped: ApprovalDecision = switch result {
                     case .approved: .approved
-                    case .denied: .denied
+                    case .denied, .temporaryDenial: .denied
                     case .temporaryWriteAccess: .temporaryWriteAccess
                     case .canceled: .canceled
                     }
@@ -16850,6 +16879,37 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
     guard progDenied == .denied else {
         fputs("programmatic denial failed\n", stderr)
         return 34
+    }
+
+    // Temporary phone denials act only on a live, undecided request, exactly once.
+    let phoneDenialGate = SecretGate(id: "gh", keyPatterns: [], routes: [], defaultProtection: .noAccess, appPolicies: [])
+    let phoneDenialScope = TemporaryLauncherDenialScope(gate: phoneDenialGate, classification: .mutating)!
+    for scenario in ["live", "canceled", "resolved", "inactive", "phone-disabled"] {
+        let requirement = "phone-denial-self-check-\(UUID().uuidString)"
+        let cancellation = ApprovalCancellation()
+        let result = await withCheckedContinuation { cont in
+            let state = ApprovalPromptState(continuation: cont, panel: panel1)
+            state.cancellation = cancellation
+            ActiveApprovalPrompt.current = state
+            if scenario == "canceled" { cancellation.cancel() }
+            if scenario == "resolved" { state.resolve(.approved, source: .programmatic) }
+            if scenario == "inactive" { ActiveApprovalPrompt.current = nil }
+            state.denyTemporarily(requirement: requirement, launcherName: "Self check", scope: phoneDenialScope,
+                                  source: .phone, phoneEnabled: scenario != "phone-disabled")
+            let deadline = TemporaryLauncherDenials.shared.deadline(for: requirement, scope: phoneDenialScope)
+            // A replay cannot replace the rule or extend its deadline.
+            state.denyTemporarily(requirement: requirement, launcherName: "Self check", scope: phoneDenialScope,
+                                  source: .phone, phoneEnabled: scenario != "phone-disabled")
+            precondition(TemporaryLauncherDenials.shared.deadline(for: requirement, scope: phoneDenialScope) == deadline)
+            state.resolve(.canceled)
+        }
+        let rules = TemporaryLauncherDenials.shared.active().filter { $0.requirement == requirement }
+        guard rules.count == (scenario == "live" ? 1 : 0),
+              result == (scenario == "live" ? .denied : scenario == "resolved" ? .approved : .canceled) else {
+            fputs("Temporary phone denial failed for \(scenario)\n", stderr)
+            return 35
+        }
+        for rule in rules { TemporaryLauncherDenials.shared.cancel(rule.id) }
     }
 
     // 4. Callsite reevaluation through real AuthorizationDecisionReuseCache

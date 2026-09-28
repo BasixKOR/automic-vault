@@ -131,6 +131,35 @@ public struct ApprovalDetailSection: Codable, Equatable, Sendable {
     }
 }
 
+/// Encoded in existing detail rows so older phones preserve the complete request digest.
+/// These strings describe the action; only the Mac's retained scope controls enforcement.
+public struct PhoneTemporaryDenial: Equatable, Sendable {
+    public let actionTitle: String
+    public let scope: String
+    private static let sectionTitle = "Temporary Launcher Denial"
+
+    public init(actionTitle: String, scope: String) {
+        self.actionTitle = actionTitle
+        self.scope = scope
+    }
+
+    public var detailSection: ApprovalDetailSection {
+        .init(title: Self.sectionTitle, rows: [
+            .init(label: "Action", value: actionTitle),
+            .init(label: "Scope", value: scope),
+        ])
+    }
+
+    fileprivate static func read(from details: [ApprovalDetailSection]) -> Self? {
+        let sections = details.filter { $0.title == sectionTitle }
+        guard sections.count == 1, let section = sections.first,
+              section.rows.count == 2,
+              section.rows[0].label == "Action", !section.rows[0].value.isEmpty,
+              section.rows[1].label == "Scope", !section.rows[1].value.isEmpty else { return nil }
+        return .init(actionTitle: section.rows[0].value, scope: section.rows[1].value)
+    }
+}
+
 public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     public static let maximumEncodedBytes = 256 * 1024
 
@@ -193,6 +222,7 @@ public struct PhoneApprovalRequest: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var requiresFullReview: Bool { risks.contains(where: \.requiresFullReview) }
+    public var temporaryDenial: PhoneTemporaryDenial? { .read(from: details) }
 
     public func canonicalData() throws -> Data {
         let encoder = JSONEncoder()
@@ -209,12 +239,16 @@ public enum PhoneApprovalOutcome: String, Codable, Equatable, Sendable {
     case approved
     case denied
     case temporaryWriteAccess
+    case temporaryDenial
+
+    public var isDenial: Bool { self == .denied || self == .temporaryDenial }
 }
 
 public enum PhoneApprovalActivityOutcome: String, Codable, Equatable, Sendable {
     case approved
     case denied
     case temporaryWriteAccess
+    case temporaryDenial
     case canceled
 
     fileprivate init(_ outcome: PhoneApprovalOutcome) {
@@ -222,6 +256,7 @@ public enum PhoneApprovalActivityOutcome: String, Codable, Equatable, Sendable {
         case .approved: self = .approved
         case .denied: self = .denied
         case .temporaryWriteAccess: self = .temporaryWriteAccess
+        case .temporaryDenial: self = .temporaryDenial
         }
     }
 }
@@ -325,7 +360,7 @@ public enum PhoneApprovalSubscriptionAccess: Sendable {
     case unavailable
 
     public func permits(_ outcome: PhoneApprovalOutcome) -> Bool {
-        self == .active || outcome == .denied
+        self == .active || outcome.isDenial
     }
 }
 
@@ -344,7 +379,8 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
         decidedAtMilliseconds: UInt64 = UInt64(Date().timeIntervalSince1970 * 1_000)
     ) throws {
         guard !deviceID.isEmpty,
-              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil else {
+              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil,
+              outcome != .temporaryDenial || request.temporaryDenial != nil else {
             throw ApprovalProtocolError.invalidRequest
         }
         version = 1
@@ -364,7 +400,7 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
     ) throws {
         guard requestDigest.count == SHA256.byteCount,
               !deviceID.isEmpty,
-              outcome != .temporaryWriteAccess else {
+              outcome != .temporaryWriteAccess, outcome != .temporaryDenial else {
             throw ApprovalProtocolError.invalidRequest
         }
         version = 1
@@ -379,7 +415,8 @@ public struct PhoneApprovalResponse: Codable, Equatable, Sendable {
         guard version == 1,
               requestID == request.id,
               requestDigest == (try request.digest()),
-              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil else {
+              outcome != .temporaryWriteAccess || request.temporaryAccessGrantScope != nil,
+              outcome != .temporaryDenial || request.temporaryDenial != nil else {
             throw ApprovalProtocolError.mismatchedResponse
         }
     }

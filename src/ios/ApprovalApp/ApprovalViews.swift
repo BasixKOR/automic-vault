@@ -254,6 +254,20 @@ struct ApprovalDetailView: View {
                         .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
                 }
 
+                if let denial = request.temporaryDenial {
+                    Button(denial.actionTitle, role: .destructive) {
+                        Task { await model.denyTemporarily(request) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(isResponding)
+                    .accessibilityLabel("\(denial.actionTitle) for \(denial.scope)")
+                    Text("Only \(denial.scope). You can end this early from the Mac’s menu bar.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
                 if subscription.state == .active, let scope = request.temporaryAccessGrantScope {
                     Button {
                         Task { await model.allowTemporaryWriteAccess(request) }
@@ -487,6 +501,7 @@ private extension PhoneApprovalActivity {
         switch outcome {
         case .approved: "Approve Once sent"
         case .denied: "Deny sent"
+        case .temporaryDenial: "2-minute denial sent"
         case .temporaryWriteAccess: "10-minute Write Access sent"
         case .canceled: "Request canceled"
         }
@@ -495,7 +510,7 @@ private extension PhoneApprovalActivity {
     var responseSystemImage: String {
         switch outcome {
         case .approved: "checkmark.shield"
-        case .denied: "xmark.shield"
+        case .denied, .temporaryDenial: "xmark.shield"
         case .temporaryWriteAccess: "clock.badge.checkmark"
         case .canceled: "xmark.circle"
         }
@@ -504,7 +519,7 @@ private extension PhoneApprovalActivity {
     var responseColor: Color {
         switch outcome {
         case .approved, .temporaryWriteAccess: .green
-        case .denied: .red
+        case .denied, .temporaryDenial: .red
         case .canceled: .secondary
         }
     }

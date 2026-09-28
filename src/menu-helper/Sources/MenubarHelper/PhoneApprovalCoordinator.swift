@@ -17,6 +17,7 @@ enum PhoneApprovalResult: Sendable {
     case approved
     case denied
     case temporaryWriteAccess
+    case temporaryDenial
     case canceled
 }
 
@@ -330,6 +331,7 @@ private actor PhoneApprovalRelayWorker {
             case .approved: .approved
             case .denied: .denied
             case .temporaryWriteAccess: .temporaryWriteAccess
+            case .temporaryDenial: .temporaryDenial
             }
             resultHandler(response.requestID, result)
         case .sync:

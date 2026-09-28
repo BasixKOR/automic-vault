@@ -175,7 +175,8 @@ import Testing
 private func sampleRequest(
     id: UUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
     command: String,
-    temporaryAccessGrantScope: String? = nil
+    temporaryAccessGrantScope: String? = nil,
+    details: [ApprovalDetailSection] = []
 ) throws -> PhoneApprovalRequest {
     try PhoneApprovalRequest(
         id: id,
@@ -188,7 +189,82 @@ private func sampleRequest(
         secretNames: ["AWS_ACCESS_KEY_ID"],
         reason: "Unknown operation requires Approval",
         risks: [.unknown],
-        details: [],
+        details: details,
         temporaryAccessGrantScope: temporaryAccessGrantScope
     )
+}
+
+@Test func temporaryDenialRequiresAuthenticatedCapability() throws {
+    let denial = PhoneTemporaryDenial(actionTitle: "Deny writes and above for 2 minutes", scope: "Terminal at GH")
+    let request = try sampleRequest(command: "gh repo create", details: [denial.detailSection])
+    #expect(request.temporaryDenial == denial)
+    let response = try PhoneApprovalResponse(request: request, outcome: .temporaryDenial, deviceID: "phone")
+    try response.validate(for: request)
+    #expect(PhoneApprovalActivity(request: request, outcome: .temporaryDenial).outcome == .temporaryDenial)
+    #expect(PhoneApprovalSubscriptionAccess.unavailable.permits(.temporaryDenial))
+    #expect(PhoneApprovalOutcome.temporaryDenial.isDenial)
+    #expect(!PhoneApprovalOutcome.temporaryWriteAccess.isDenial)
+
+    let ineligible = try sampleRequest(command: "gh repo create")
+    #expect(ineligible.temporaryDenial == nil)
+    #expect(throws: ApprovalProtocolError.invalidRequest) {
+        try PhoneApprovalResponse(request: ineligible, outcome: .temporaryDenial, deviceID: "phone")
+    }
+    #expect(throws: ApprovalProtocolError.invalidRequest) {
+        try PhoneApprovalResponse(requestID: request.id, requestDigest: request.digest(),
+                                  outcome: .temporaryDenial, deviceID: "phone")
+    }
+    // Even a response with the correct digest cannot invent an unoffered action.
+    let forged = try JSONDecoder().decode(PhoneApprovalResponse.self,
+        from: JSONSerialization.data(withJSONObject: [
+            "version": 1, "requestID": ineligible.id.uuidString,
+            "requestDigest": try ineligible.digest().base64EncodedString(),
+            "outcome": "temporaryDenial", "deviceID": "phone", "decidedAtMilliseconds": 1,
+        ]))
+    #expect(throws: ApprovalProtocolError.mismatchedResponse) { try forged.validate(for: ineligible) }
+    #expect(throws: ApprovalProtocolError.mismatchedResponse) { try response.validate(for: ineligible) }
+    let changed = try sampleRequest(command: "gh repo create", details: [
+        PhoneTemporaryDenial(actionTitle: denial.actionTitle, scope: "Other Launcher at GH").detailSection,
+    ])
+    #expect(throws: ApprovalProtocolError.mismatchedResponse) { try response.validate(for: changed) }
+    for details in [
+        [denial.detailSection, denial.detailSection],
+        [ApprovalDetailSection(title: denial.detailSection.title, rows: [])],
+        [PhoneTemporaryDenial(actionTitle: "", scope: denial.scope).detailSection],
+    ] {
+        #expect(try sampleRequest(command: "gh repo create", details: details).temporaryDenial == nil)
+    }
+}
+
+@Test func temporaryDenialPreservesLegacyRequestDigest() throws {
+    // Frozen pre-denial schema: new stored fields would be discarded by an older app.
+    struct LegacyRequest: Codable {
+        let version: UInt16
+        let id: UUID
+        let createdAtMilliseconds: UInt64
+        let macName: String
+        let launcher: String
+        let tool: String
+        let command: String
+        let cwd: String
+        let secretNames: [String]
+        let reason: String
+        let risks: [ApprovalRisk]
+        let details: [ApprovalDetailSection]
+        let temporaryAccessGrantScope: String?
+    }
+    let request = try sampleRequest(command: "gh repo create", details: [
+        PhoneTemporaryDenial(actionTitle: "Deny writes and above for 2 minutes", scope: "Terminal at GH").detailSection,
+    ])
+    let encoded = try request.canonicalData()
+    let legacy = try JSONDecoder().decode(LegacyRequest.self, from: encoded)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    #expect(try encoder.encode(legacy) == encoded)
+    let legacyDigest = Data(SHA256.hash(data: try encoder.encode(legacy)))
+    for outcome in [PhoneApprovalOutcome.approved, .denied] {
+        let response = try PhoneApprovalResponse(requestID: request.id, requestDigest: legacyDigest,
+                                                  outcome: outcome, deviceID: "old-phone")
+        try response.validate(for: request)
+    }
 }

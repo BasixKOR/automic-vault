@@ -680,6 +680,15 @@ encrypted before reaching the relay. Responses bind the request identifier and
 digest of the complete immutable request. The first valid response accepted by
 the Mac wins; stale, modified, replayed, or mismatched responses are rejected.
 
+Eligible requests may offer a Temporary Launcher Denial in the full iPhone app.
+The offer uses a reserved `Temporary Launcher Denial` detail section with `Action`
+and `Scope` rows, preserving the complete request digest on older phones. These
+rows describe an action, never supply enforcement identity or policy. The Mac
+accepts the response only for an offered, still-active request and applies its
+retained Verified Launcher, gate, and operation threshold for two continuous
+minutes. Denial requires neither a subscription nor biometric authentication.
+Early cancellation remains in the Mac menu bar. See [ADR 0057](adr/0057-iphone-temporary-denial.md).
+
 The relay may observe opaque routing identifiers, ciphertext size, timing,
 delivery status, and APNs device tokens required for delivery. It cannot read or
 forge Authorization Requests or responses. It stores no request history. It
