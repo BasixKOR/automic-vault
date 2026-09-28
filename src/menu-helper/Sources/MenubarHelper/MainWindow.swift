@@ -1546,7 +1546,7 @@ final class DashboardModel: ObservableObject {
         let detail = [
             existingPolicy ? nil : gate.protectionSubtitle(gate.initialProtection),
             !existingPolicy && gate.defaultDenialThreshold != nil
-                ? "This Launcher will use its own Denial Threshold instead of the Other Launchers rule." : nil,
+                ? "This Launcher will use its own Denial Threshold instead of the Default Policy." : nil,
             helperDetail,
         ].compactMap(\.self).joined(separator: "\n\n")
         approveAuthorityChange(
@@ -6655,8 +6655,9 @@ private struct GatePolicyTable: View {
                 } else {
                     Label(localizedUIString(gate.defaultPolicyLabel), systemImage: "square.stack.3d.up")
                         .font(.system(size: 13, weight: .medium))
-                    Text("Requires Hardened Runtime").font(.caption).foregroundStyle(.secondary)
-                    Text("Applies when no Launcher rule matches.").font(.caption).foregroundStyle(.secondary)
+                        .help("Applies when no Launcher rule matches.")
+                    Text("Auto-allow requires Hardened Runtime.").font(.caption).foregroundStyle(.secondary)
+                    Text("Denial applies regardless of runtime.").font(.caption).foregroundStyle(.secondary)
                 }
                 if !rowChanges.isEmpty {
                     Text("Edited").font(.caption).foregroundStyle(Color.accentColor)

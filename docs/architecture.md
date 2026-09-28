@@ -541,7 +541,10 @@ The default Denial Threshold applies only when no Launcher-specific record
 matches any attributed Launcher requirement. All matching explicit denials are
 checked first; one matching rule cannot bypass another matching denial. With no
 matching rule, missing or unverifiable attribution does not bypass the default
-denial. A denial-only row inherits the default allow level but owns its denial.
+denial. Default automic authorization requires an eligible Launcher runtime;
+default denial does not. The UI labels these settings Default Policy and scopes
+its Hardened Runtime requirement to auto-allow. A denial-only row inherits the
+default allow level but owns its denial.
 Adding a rule that weakens fallback denial requires Approval and compares the
 approved fallback threshold under the policy lock. Default allow edits preserve
 default denial. See [ADR 0056](adr/0056-default-denial-threshold.md).

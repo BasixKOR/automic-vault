@@ -14964,7 +14964,7 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
     let inherited = reloadSecretGatePolicy(for: gate, service: service, account: account)
     guard inherited.appPolicies.first?.usesGateDefault == true,
           inherited.appPolicies.first?.protection == .readOnly,
-          inherited.defaultPolicyLabel == "Other Launchers",
+          inherited.defaultPolicyLabel == "Default Policy",
           setSecretGateDenialThreshold(nil, requirement: requirement, in: gate, runtimeRequirement: .hardened,
               approvedDenialThreshold: .fullIncludingSecretDumps, service: service, account: account) == errSecSuccess,
           reloadSecretGatePolicy(for: gate, service: service, account: account).appPolicies.isEmpty,

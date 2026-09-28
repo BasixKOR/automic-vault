@@ -532,3 +532,9 @@
 "All Launchers" = "All Launchers";
 
 "Applies when no Launcher rule matches." = "Applies when no Launcher rule matches.";
+
+"Default Policy" = "Default Policy";
+
+"Auto-allow requires Hardened Runtime." = "Auto-allow requires Hardened Runtime.";
+
+"Denial applies regardless of runtime." = "Denial applies regardless of runtime.";

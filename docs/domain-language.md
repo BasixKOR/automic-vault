@@ -507,9 +507,11 @@ A durable, Keychain-protected rule at one Authorization Gate that denies
 operations at the selected Access Level and above without Approval.
 The gate's supported presets define the order: the selected level denies every
 operation not allowed by its preceding preset. Approval Required means deny all.
-A gate may also set a default Denial Threshold, shown as **Other Launchers**
-(**All Launchers** when no Launcher-specific rules exist). It applies when no
-Launcher-specific rule matches, including when no Launcher can be verified.
+A gate may also set a default Denial Threshold. The default allow and deny
+settings are shown together as **Default Policy**. Default automic authorization
+requires an eligible Verified Launcher with Hardened Runtime. Default denial
+applies regardless of runtime posture when no Launcher-specific rule matches,
+including when no Launcher can be verified.
 A matching Launcher-specific rule uses its own Denial Threshold, including None;
 a denial-only rule inherits the default allow level, but not the default denial.
 Adding a rule that weakens the fallback denial requires Approval.

@@ -139,7 +139,7 @@ func persistentDenialOverridesFullAccessAndSurvivesAllowEdits() throws {
     let inherited = reloadSecretGatePolicy(for: gate, service: service, account: account)
     #expect(inherited.appPolicies.first?.usesGateDefault == true)
     #expect(inherited.appPolicies.first?.protection == gate.defaultProtection)
-    #expect(inherited.defaultPolicyLabel == "Other Launchers")
+    #expect(inherited.defaultPolicyLabel == "Default Policy")
     #expect(setSecretGateDenialThreshold(nil, requirement: requirement, in: gate, runtimeRequirement: .hardened,
         approvedDenialThreshold: .fullIncludingSecretDumps, service: service, account: account) == errSecSuccess)
     #expect(reloadSecretGatePolicy(for: gate, service: service, account: account).appPolicies.isEmpty)
