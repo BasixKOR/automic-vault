@@ -139,7 +139,7 @@ func persistentDenialOverridesFullAccessAndSurvivesAllowEdits() throws {
     let inherited = reloadSecretGatePolicy(for: gate, service: service, account: account)
     #expect(inherited.appPolicies.first?.usesGateDefault == true)
     #expect(inherited.appPolicies.first?.protection == gate.defaultProtection)
-    #expect(inherited.defaultPolicyLabel == "All Verified Launchers")
+    #expect(inherited.defaultPolicyLabel == "Other Launchers")
     #expect(setSecretGateDenialThreshold(nil, requirement: requirement, in: gate, runtimeRequirement: .hardened,
         approvedDenialThreshold: .fullIncludingSecretDumps, service: service, account: account) == errSecSuccess)
     #expect(reloadSecretGatePolicy(for: gate, service: service, account: account).appPolicies.isEmpty)
@@ -182,4 +182,94 @@ func persistentDenialOverridesFullAccessAndSurvivesAllowEdits() throws {
     #expect(reason(.secretDump) == nil)
     #expect(saveKeychainData(Data("malformed".utf8), service: service, account: account, accessibility: .afterFirstUnlock) == errSecSuccess)
     #expect(reason(.readOnly) == "Denied because Authorization Policy is unavailable")
+}
+
+@Test func defaultDenialAppliesOnlyWithoutMatchingLauncherRules() {
+    let gate = denialGate()
+    var fallback = SecretGatePolicyRecord(gateID: gate.id, requirement: nil, protection: .readOnly)
+    fallback.denialThreshold = .fullExceptSecretDumps
+    let exception = SecretGatePolicyRecord(gateID: gate.id, requirement: "named", protection: .noAccess)
+    var denied = SecretGatePolicyRecord(gateID: gate.id, requirement: "denied", protection: .fullIncludingSecretDumps)
+    denied.denialThreshold = .readOnly
+    var records = [fallback, exception, denied]
+    func denial(_ classification: SecretGateRequestClassification, _ launchers: [String]) -> String? {
+        secretGateDenial(gate: gate, classification: classification,
+                        launcherRequirements: launchers, records: records)?.reason
+    }
+    #expect(denial(.readOnly, ["other"]) == nil)
+    #expect(denial(.mutating, ["other"])?.hasPrefix("Denied by default rule:") == true)
+    #expect(denial(.unknown, []) != nil)
+    #expect(denial(.secretDump, ["named"]) == nil)
+    #expect(denial(.unknown, ["unmatched child", "named"]) == nil)
+    #expect(denial(.readOnly, ["named", "denied"])?.hasPrefix("Denied by Launcher rule:") == true)
+    records.removeAll { $0.requirement == "named" }
+    #expect(denial(.mutating, ["named"]) != nil) // Removing the exception restores fallback denial.
+    var inherited = exception
+    inherited.usesGateDefault = true // Inherits allow only; its own denial is None.
+    records.append(inherited)
+    #expect(denial(.mutating, ["named"]) == nil)
+    #expect(secretGateDenial(gate: denialGate("aws"), classification: .unknown,
+                            launcherRequirements: [], records: records) == nil)
+}
+
+@Test func defaultDenialMutationsPreserveAllowsAndRequireCurrentApproval() throws {
+    let gate = denialGate()
+    var records: [SecretGatePolicyRecord] = []
+    func set(_ threshold: SecretGateProtection?, approved: SecretGateProtection? = nil,
+             requirement: String? = nil) -> OSStatus {
+        updateSecretGateDenialThreshold(threshold, requirement: requirement, in: gate,
+            runtimeRequirement: .hardened, approvedDenialThreshold: approved, records: &records)
+    }
+    #expect(set(.fullIncludingSecretDumps) == errSecSuccess)
+    #expect(records.first?.protection == gate.defaultProtection)
+    #expect(records.first?.usesGateDefault == nil)
+    let defaultAllow = SecretGatePolicyRecord(gateID: gate.id, requirement: nil, protection: .readOnly)
+    #expect(replaceSecretGatePolicyRecord(defaultAllow, gate: gate,
+        approvedDefaultDenialThreshold: nil, records: &records) == errSecSuccess)
+    #expect(records.first?.denialThreshold == .fullIncludingSecretDumps)
+    #expect(set(.fullExceptSecretDumps) == errSecSuccess)
+    let before = records
+    #expect(set(nil) == errSecAuthFailed)
+    #expect(set(nil, approved: .fullIncludingSecretDumps) == errSecAuthFailed)
+    #expect(records == before)
+    #expect(set(nil, approved: .fullExceptSecretDumps) == errSecSuccess)
+    #expect(records.first?.protection == .readOnly)
+    #expect(records.count == 1) // Clearing default denial must not delete its allow preset.
+    #expect(set(.noAccess) == errSecSuccess)
+    // Creating a named row, even Approval Required, removes fallback denial.
+    let exception = SecretGatePolicyRecord(gateID: gate.id, requirement: "named", protection: .noAccess)
+    #expect(replaceSecretGatePolicyRecord(exception, gate: gate,
+        approvedDefaultDenialThreshold: nil, records: &records) == errSecAuthFailed)
+    #expect(replaceSecretGatePolicyRecord(exception, gate: gate,
+        approvedDefaultDenialThreshold: .fullExceptSecretDumps, records: &records) == errSecAuthFailed)
+    #expect(replaceSecretGatePolicyRecord(exception, gate: gate,
+        approvedDefaultDenialThreshold: .noAccess, records: &records) == errSecSuccess)
+    // Denial-only creation also cannot quietly replace a stricter default.
+    #expect(set(.fullIncludingSecretDumps, requirement: "denial-only") == errSecAuthFailed)
+    #expect(set(.fullIncludingSecretDumps, approved: .noAccess, requirement: "denial-only") == errSecSuccess)
+    #expect(set(.noAccess, requirement: "equally-restricted") == errSecSuccess)
+    #expect(records.first { $0.requirement == "denial-only" }?.usesGateDefault == true)
+    #expect(set(.readOnlyAndUpdates) == errSecParam)
+    let data = try JSONEncoder().encode(records)
+    #expect(try JSONDecoder().decode([SecretGatePolicyRecord].self, from: data) == records)
+}
+
+@Test(.enabled(if: dataProtectionKeychainAvailable(), "requires an entitled Keychain test host"))
+func defaultDenialPersistsAndReloads() throws {
+    let service = "com.automicvault.tests.default-denial.\(UUID().uuidString)"
+    defer { _ = deleteStoredSecret(account: "policy", service: service) }
+    let gate = denialGate()
+    #expect(setSecretGateDenialThreshold(.fullExceptSecretDumps, requirement: nil, in: gate,
+        runtimeRequirement: .hardened, service: service, account: "policy") == errSecSuccess)
+    #expect(reloadSecretGatePolicy(for: gate, service: service, account: "policy").defaultDenialThreshold == .fullExceptSecretDumps)
+    #expect(secretGateDenialReason(gate: gate, classification: .unknown, launcherRequirements: [],
+        service: service, account: "policy") != nil)
+    #expect(setSecretGateDefaultProtection(.readOnly, for: gate, service: service, account: "policy") == errSecSuccess)
+    #expect(reloadSecretGatePolicy(for: gate, service: service, account: "policy").defaultDenialThreshold == .fullExceptSecretDumps)
+    #expect(setSecretGateAppProtection(requirement: "named", protection: .noAccess, for: gate,
+        service: service, account: "policy") == errSecAuthFailed)
+    #expect(setSecretGateAppProtection(requirement: "named", protection: .noAccess, for: gate,
+        approvedDefaultDenialThreshold: .fullExceptSecretDumps, service: service, account: "policy") == errSecSuccess)
+    #expect(secretGateDenialReason(gate: gate, classification: .unknown, launcherRequirements: ["named"],
+        service: service, account: "policy") == nil)
 }

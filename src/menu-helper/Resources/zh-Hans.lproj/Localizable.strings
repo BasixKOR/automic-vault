@@ -526,3 +526,9 @@
 "1 proposed change" = "1 项拟议更改";
 
 "Cancel Approval" = "取消批准";
+
+"Other Launchers" = "其他启动器";
+
+"All Launchers" = "所有启动器";
+
+"Applies when no Launcher rule matches." = "没有匹配的启动器规则时适用。";

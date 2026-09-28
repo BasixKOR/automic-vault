@@ -1545,6 +1545,8 @@ final class DashboardModel: ObservableObject {
         """
         let detail = [
             existingPolicy ? nil : gate.protectionSubtitle(gate.initialProtection),
+            !existingPolicy && gate.defaultDenialThreshold != nil
+                ? "This Launcher will use its own Denial Threshold instead of the Other Launchers rule." : nil,
             helperDetail,
         ].compactMap(\.self).joined(separator: "\n\n")
         approveAuthorityChange(
@@ -1561,7 +1563,8 @@ final class DashboardModel: ObservableObject {
                     requirement: signing.requirement,
                     protection: gate.initialProtection,
                     for: gate,
-                    runtimeRequirement: runtimeRequirement
+                    runtimeRequirement: runtimeRequirement,
+                    approvedDefaultDenialThreshold: gate.defaultDenialThreshold
                 )
                 guard policyStatus == errSecSuccess else {
                     self.errorMessage = String(localized: "Could not allow \(signing.identifier): \(String(policyStatus))")
@@ -1625,21 +1628,22 @@ final class DashboardModel: ObservableObject {
         )
     }
 
-    func setDenialThreshold(_ threshold: SecretGateProtection?, for app: SecretGatePolicy, in gate: SecretGate) {
-        let needsApproval = gate.weakeningDenial(from: app.denialThreshold, to: threshold)
+    func setDenialThreshold(_ threshold: SecretGateProtection?, for app: SecretGatePolicy?, in gate: SecretGate) {
+        let previous = app == nil ? gate.defaultDenialThreshold : app?.denialThreshold
+        let needsApproval = gate.weakeningDenial(from: previous, to: threshold)
         let update = { [weak self] in
             guard let self else { return }
             self.finishSecretGatePolicyUpdate(
-                setSecretGateDenialThreshold(threshold, requirement: app.requirement, in: gate,
-                                            runtimeRequirement: app.runtimeRequirement,
-                                            approvedDenialThreshold: needsApproval ? app.denialThreshold : nil),
+                setSecretGateDenialThreshold(threshold, requirement: app?.requirement, in: gate,
+                                            runtimeRequirement: app?.runtimeRequirement ?? .hardened,
+                                            approvedDenialThreshold: needsApproval ? previous : nil),
                 gate: gate, error: "Could not update the Denial Threshold"
             )
         }
         guard needsApproval else { update(); return }
         approveAuthorityChange(
-            action: "gate-denial:\(gate.id):\(app.requirement)",
-            "Reduce denial for \(app.bundleIdentifier)",
+            action: app.map { "gate-denial:\(gate.id):\($0.requirement)" } ?? "gate-default-denial:\(gate.id)",
+            "Reduce denial for \(app?.bundleIdentifier ?? gate.defaultPolicyLabel)",
             detail: "Existing allow rules may authorize requests again. The new Denial Threshold is \(threshold.map { gate.protectionTitle($0) + " and above" } ?? "None").",
             perform: update
         )
@@ -2444,7 +2448,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
     )
     if let directory = ProcessInfo.processInfo.environment["AV_GATE_RENDER_DIR"] {
         let previewGate = SecretGate(id: "aws", keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-            routes: [], defaultProtection: .noAccess, appPolicies: [
+            routes: [], defaultProtection: .noAccess, defaultDenialThreshold: .fullIncludingSecretDumps, appPolicies: [
                 SecretGatePolicy(bundleIdentifier: "codex", requirement: "identifier codex", protection: .readOnly,
                                  denialThreshold: .fullIncludingSecretDumps),
                 SecretGatePolicy(bundleIdentifier: "com.openai.codex", requirement: "identifier com.openai.codex",
@@ -6543,7 +6547,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
     func action(gate: SecretGate) -> String {
         switch value {
         case .allow: requirement.map { "gate-policy:\(gate.id):\($0)" } ?? "gate-default:\(gate.id)"
-        case .denial: "gate-denial:\(gate.id):\(requirement ?? "")"
+        case .denial: requirement.map { "gate-denial:\(gate.id):\($0)" } ?? "gate-default-denial:\(gate.id)"
         }
     }
 }
@@ -6563,7 +6567,7 @@ private struct GatePolicyTable: View {
             if change.requirement != nil && app == nil { return false }
             switch change.value {
             case .allow(let level): return level != (app?.protection ?? gate.defaultProtection)
-            case .denial(let level): return level != app?.denialThreshold
+            case .denial(let level): return level != denialThreshold(for: app)
             }
         }
     }
@@ -6640,7 +6644,7 @@ private struct GatePolicyTable: View {
         let denial: SecretGateProtection? = {
             if let change = rowChanges.first(where: { if case .denial = $0.value { return true }; return false }),
                case .denial(let value) = change.value { return value }
-            return app?.denialThreshold
+            return denialThreshold(for: app)
         }()
         return HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -6652,6 +6656,7 @@ private struct GatePolicyTable: View {
                     Label(localizedUIString(gate.defaultPolicyLabel), systemImage: "square.stack.3d.up")
                         .font(.system(size: 13, weight: .medium))
                     Text("Requires Hardened Runtime").font(.caption).foregroundStyle(.secondary)
+                    Text("Applies when no Launcher rule matches.").font(.caption).foregroundStyle(.secondary)
                 }
                 if !rowChanges.isEmpty {
                     Text("Edited").font(.caption).foregroundStyle(Color.accentColor)
@@ -6660,7 +6665,6 @@ private struct GatePolicyTable: View {
             .frame(width: 190, alignment: .leading)
             VStack(alignment: .leading, spacing: 8) {
                 GatePolicyTrack(gate: gate, protection: protection, denial: denial,
-                                allowsDenial: app != nil,
                                 setProtection: { stage(.allow($0), for: app) },
                                 setDenial: { stage(.denial($0), for: app) })
                 HStack {
@@ -6669,21 +6673,19 @@ private struct GatePolicyTable: View {
                         stage(.allow($0), for: app)
                     }
                     .frame(maxWidth: 170)
-                    if let app {
-                        Spacer(minLength: 4)
-                        Menu {
-                            Button("None") { stage(.denial(nil), for: app) }
-                            ForEach(gate.availableProtections) { level in
-                                Button(level == .noAccess ? String(localized: "All operations") : gate.protectionTitle(level)) {
-                                    stage(.denial(level), for: app)
-                                }
+                    Spacer(minLength: 4)
+                    Menu {
+                        Button("None") { stage(.denial(nil), for: app) }
+                        ForEach(gate.availableProtections) { level in
+                            Button(level == .noAccess ? String(localized: "All operations") : gate.protectionTitle(level)) {
+                                stage(.denial(level), for: app)
                             }
-                        } label: {
-                            Text("Deny from: \(denialTitle(denial))")
                         }
-                        .fixedSize()
-                        .accessibilityLabel("Denial Threshold")
+                    } label: {
+                        Text("Deny from: \(denialTitle(denial))")
                     }
+                    .fixedSize()
+                    .accessibilityLabel("Denial Threshold")
                 }
                 if app?.usesGateDefault == true && !rowChanges.contains(where: {
                     if case .allow = $0.value { return true }; return false
@@ -6711,6 +6713,10 @@ private struct GatePolicyTable: View {
         .disabled(pending)
     }
 
+    private func denialThreshold(for app: SecretGatePolicy?) -> SecretGateProtection? {
+        app == nil ? gate.defaultDenialThreshold : app?.denialThreshold
+    }
+
     private func denialTitle(_ level: SecretGateProtection?) -> String {
         guard let level else { return String(localized: "None") }
         return level == .noAccess ? String(localized: "All operations") : localizedUIString(gate.protectionTitle(level))
@@ -6732,7 +6738,7 @@ private struct GatePolicyTable: View {
                                 case .allow(let level):
                                     Text("Allow through: \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
                                 case .denial(let level):
-                                    Text("Deny from: \(denialTitle(app?.denialThreshold)) → \(denialTitle(level))")
+                                    Text("Deny from: \(denialTitle(denialThreshold(for: app))) → \(denialTitle(level))")
                                 }
                                 Spacer()
                                 Button {
@@ -6741,7 +6747,7 @@ private struct GatePolicyTable: View {
                                         if let app { model.setProtection(level, for: app, in: gate) }
                                         else { model.setDefaultProtection(level, for: gate) }
                                     case .denial(let level):
-                                        if let app { model.setDenialThreshold(level, for: app, in: gate) }
+                                        model.setDenialThreshold(level, for: app, in: gate)
                                     }
                                 } label: {
                                     AuthorityApprovalLabel(title: "Apply", approval: approval,
@@ -6774,7 +6780,7 @@ private struct GatePolicyTable: View {
         switch change.value {
         case .allow(let level):
             return level.addsAuthority(over: app.map { $0.usesGateDefault ? .noAccess : $0.protection } ?? gate.defaultProtection)
-        case .denial(let level): return gate.weakeningDenial(from: app?.denialThreshold, to: level)
+        case .denial(let level): return gate.weakeningDenial(from: denialThreshold(for: app), to: level)
         }
     }
 }
@@ -6783,7 +6789,6 @@ private struct GatePolicyTrack: View {
     let gate: SecretGate
     let protection: SecretGateProtection
     let denial: SecretGateProtection?
-    let allowsDenial: Bool
     let setProtection: (SecretGateProtection) -> Void
     let setDenial: (SecretGateProtection?) -> Void
     @GestureState private var allowDrag: Int?
@@ -6811,7 +6816,7 @@ private struct GatePolicyTrack: View {
                         .accessibilityHidden(true)
                 }
                 handle(isAllow: true, boundary: allow, width: width)
-                if allowsDenial { handle(isAllow: false, boundary: deny, width: width) }
+                handle(isAllow: false, boundary: deny, width: width)
             }
         }
         .frame(height: 40)

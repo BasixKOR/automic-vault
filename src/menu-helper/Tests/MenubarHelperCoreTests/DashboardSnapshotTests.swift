@@ -1030,8 +1030,8 @@ func protectionPolicyMatrix(
         )]
     )
 
-    #expect(gate.defaultPolicyLabel == "All Verified Launchers")
-    #expect(overriddenGate.defaultPolicyLabel == "All Other Verified Launchers")
+    #expect(gate.defaultPolicyLabel == "All Launchers")
+    #expect(overriddenGate.defaultPolicyLabel == "Other Launchers")
 }
 
 @Test(.enabled(if: dataProtectionKeychainAvailable(), "requires an entitled Keychain test host"))
@@ -1042,8 +1042,8 @@ func secretGatePoliciesPersistAndResolveOverrides() throws {
     let metadata = testGateMetadata()
     var gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     let requirement = #"identifier "com.example.app""#
-    #expect(gate.defaultPolicyLabel == "All Verified Launchers")
-    #expect(secretGateProtection(for: nil, in: gate).source == "All Verified Launchers")
+    #expect(gate.defaultPolicyLabel == "All Launchers")
+    #expect(secretGateProtection(for: nil, in: gate).source == "All Launchers")
 
     #expect(setSecretGateDefaultProtection(.fullExceptSecretDumps, for: gate, service: service, account: account) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
@@ -1062,7 +1062,7 @@ func secretGatePoliciesPersistAndResolveOverrides() throws {
     #expect(appPolicy.protection == .noAccess)
     #expect(appPolicy.requiresHardenedRuntime)
     #expect(appPolicy.runtimeRequirement == .hardenedAllowingLibraryValidationDisabled)
-    #expect(gate.defaultPolicyLabel == "All Other Verified Launchers")
+    #expect(gate.defaultPolicyLabel == "Other Launchers")
     #expect(secretGateProtection(for: requirement, in: gate).protection == .noAccess)
     #expect(secretGateProtection(for: #"identifier "com.other.app""#, in: gate).protection == .fullExceptSecretDumps)
 
@@ -1080,7 +1080,7 @@ func secretGatePoliciesPersistAndResolveOverrides() throws {
     #expect(removeSecretGateAppPolicy(appPolicy, from: gate, service: service, account: account) == errSecSuccess)
     gate = try #require(loadSecretGates(hardeners: [metadata], service: service, account: account).first)
     #expect(gate.appPolicies.isEmpty)
-    #expect(gate.defaultPolicyLabel == "All Verified Launchers")
+    #expect(gate.defaultPolicyLabel == "All Launchers")
     #expect(secretGateProtection(for: requirement, in: gate).protection == .fullExceptSecretDumps)
 }
 

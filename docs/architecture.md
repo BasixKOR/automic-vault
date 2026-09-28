@@ -530,12 +530,21 @@ recognized operations and does not apply to Tool-specific Gate Clients.
 
 ### Denial precedence
 
-Launcher-specific Denial Thresholds are stored alongside allow presets in the
+Default and Launcher-specific Denial Thresholds are stored alongside allow presets in the
 Data Protection Keychain. An absent threshold preserves existing behavior.
 An unreadable policy store denies gated requests rather than bypassing a possible
 denial through manual Approval. Thresholds use each gate's supported preset
 order, including its existing compatibility classifications; they do not create
 a universal ranking of operation characteristics.
+
+The default Denial Threshold applies only when no Launcher-specific record
+matches any attributed Launcher requirement. All matching explicit denials are
+checked first; one matching rule cannot bypass another matching denial. With no
+matching rule, missing or unverifiable attribution does not bypass the default
+denial. A denial-only row inherits the default allow level but owns its denial.
+Adding a rule that weakens fallback denial requires Approval and compares the
+approved fallback threshold under the policy lock. Default allow edits preserve
+default denial. See [ADR 0056](adr/0056-default-denial-threshold.md).
 
 Denial is checked before Blessings, policy, Temporary Access Grants, decision
 reuse, and human Approval, and checked again for queued requests and before

@@ -425,6 +425,7 @@ Names, selected Secret Value sources, relevant options, and process identity.
 The durable rules for one Authorization Gate. A policy contains:
 
 - a default Access Level for every Verified Launcher without a specific rule;
+- an optional default Denial Threshold for requests without a matching rule;
 - Launcher-specific rules chosen by the user.
 
 An unverifiable Launcher does not receive the default Access Level. An unknown operation cannot be automically authorized.
@@ -502,11 +503,17 @@ The final allow or deny result and its source. An allowed request is either **au
 
 ### Denial Threshold
 
-A durable, Keychain-protected Launcher-specific rule at one Authorization Gate
-that denies operations at the selected Access Level and above without Approval.
+A durable, Keychain-protected rule at one Authorization Gate that denies
+operations at the selected Access Level and above without Approval.
 The gate's supported presets define the order: the selected level denies every
 operation not allowed by its preceding preset. Approval Required means deny all.
-Unknown operations are denied whenever a threshold is set. A denial-only rule continues to inherit the gate default allow level.
+A gate may also set a default Denial Threshold, shown as **Other Launchers**
+(**All Launchers** when no Launcher-specific rules exist). It applies when no
+Launcher-specific rule matches, including when no Launcher can be verified.
+A matching Launcher-specific rule uses its own Denial Threshold, including None;
+a denial-only rule inherits the default allow level, but not the default denial.
+Adding a rule that weakens the fallback denial requires Approval.
+Unknown operations are denied whenever an applicable threshold is set.
 A matching denial wins over every source of allow authority, including Blessings and reused
 Authorization Decisions. Removing or weakening a threshold requires the same
 human authority as broadening an Access Level.
