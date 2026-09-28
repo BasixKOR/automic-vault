@@ -1443,9 +1443,9 @@ final class DashboardModel: ObservableObject {
         }
     }
 
-    func addApp(to gate: SecretGate) {
+    func addApp(to gate: SecretGate, recentApp: AccessRequestRecord? = nil) {
         guard !isDiscoveringLauncherHelpers, pendingLauncherHelperReview == nil else { return }
-        chooseLauncher { [weak self] signing in
+        chooseLauncher(recentApp: recentApp) { [weak self] signing in
             guard let self, let signing else { return }
             guard let runtimeRequirement = signing.runtimeProtection.secretGateAdmissionRequirement else {
                 showLauncherCannotBeAllowed(secretGateAdmissionError(
@@ -2866,6 +2866,47 @@ struct DashboardItem: Identifiable, Equatable, Sendable {
     }
 }
 
+private struct GateLauncherButton: View {
+    @ObservedObject var model: DashboardModel
+    let gate: SecretGate
+    @ObservedObject var approval: AuthorityApprovalState
+
+    var body: some View {
+        let action = "gate-launcher:\(gate.id)"
+        let apps = recentApprovedLauncherApps(
+            in: model.recentAccessRequests,
+            excluding: Set(gate.appPolicies.map(\.requirement))
+        ).filter { $0.launcherIconPath.map { FileManager.default.fileExists(atPath: $0) } == true }
+        if apps.isEmpty {
+            AuthorityApprovalButton(title: "Add Verified Launcher", approval: approval, action: action) {
+                model.addApp(to: gate)
+            }
+        } else {
+            Menu {
+                ForEach(apps) { app in
+                    Button {
+                        guard !approval.isPending(action) else { return }
+                        model.addApp(to: gate, recentApp: app)
+                    } label: {
+                        let url = URL(fileURLWithPath: app.launcherIconPath!)
+                        let bundle = Bundle(url: url)
+                        Text(bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+                            ?? app.launcher ?? url.deletingPathExtension().lastPathComponent)
+                    }
+                }
+            } label: {
+                AuthorityApprovalLabel(title: "Add Verified Launcher", approval: approval, action: action)
+            } primaryAction: {
+                guard !approval.isPending(action) else { return }
+                model.addApp(to: gate)
+            }
+            .menuIndicator(.visible)
+            .disabled(approval.isPending(action))
+        }
+    }
+}
+
 struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject private var proxySessions = ProxySessionViewModel.shared
@@ -2971,10 +3012,7 @@ struct DashboardRootView: View {
                             .help("Cancel App Inspection")
                             .accessibilityLabel("Cancel App Inspection")
                         } else {
-                            AuthorityApprovalButton(
-                                title: "Add Verified Launcher", approval: model.authorityApproval,
-                                action: "gate-launcher:\(gate.id)"
-                            ) { model.addApp(to: gate) }
+                            GateLauncherButton(model: model, gate: gate, approval: model.authorityApproval)
                             .labelStyle(.titleAndIcon)
                             .help("Add Verified Launcher")
                         }
@@ -6751,8 +6789,11 @@ private func showLauncherCannotBeAllowed(_ reason: String) {
 }
 
 @MainActor
-private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
-    pickLauncher { signing in
+private func chooseLauncher(
+    recentApp: AccessRequestRecord? = nil,
+    _ completion: @escaping (LauncherSigning?) -> Void
+) {
+    let review: (LauncherSigning?) -> Void = { signing in
         guard let signing else {
             completion(nil)
             return
@@ -6774,6 +6815,21 @@ private func chooseLauncher(_ completion: @escaping (LauncherSigning?) -> Void) 
         alert.addButton(withTitle: "Select")
         alert.addButton(withTitle: "Cancel")
         completion(alert.runModal() == .alertFirstButtonReturn ? signing : nil)
+    }
+    if let recentApp {
+        // History is a chooser shortcut, never evidence of current identity or authority.
+        guard let path = recentApp.launcherIconPath,
+              let requirement = recentApp.launcherRequirement,
+              let signing = launcherSigning(URL(fileURLWithPath: path).resolvingSymlinksInPath()),
+              signing.requirement == requirement
+        else {
+            showLauncherCannotBeAllowed("Choose a valid Developer ID-signed executable or signed app.")
+            completion(nil)
+            return
+        }
+        review(signing)
+    } else {
+        pickLauncher(review)
     }
 }
 

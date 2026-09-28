@@ -1718,3 +1718,22 @@ private final class AlteredAccessLogDefaults: UserDefaults, @unchecked Sendable 
     #expect(!appendAccessRequestRecord(record, defaults: defaults, key: key))
     #expect(defaults.data(forKey: key) == malformed)
 }
+
+@Test func recentApprovedAppsExcludeDeniedUnverifiedAndExistingLaunchers() {
+    func record(_ requirement: String?, _ time: TimeInterval,
+                decision: String = "Approved", path: String? = "/Applications/Editor.app") -> AccessRequestRecord {
+        AccessRequestRecord(date: Date(timeIntervalSince1970: time), tool: "gh", command: "",
+            decision: decision, reason: "", launcher: "Editor", launcherIconPath: path,
+            launcherRequirement: requirement, callerPath: "", target: "", cwd: "", keys: [], detail: nil)
+    }
+    let old = record("editor", 1)
+    let newest = record("editor", 5)
+    let other = record("terminal", 3)
+    let records = [old, record("denied", 9, decision: "Denied"),
+        record(nil, 8), record("", 8), record("cli", 8, path: "/usr/bin/tool"),
+        record("missing", 8, path: nil), record("relative", 8, path: "Editor.app"),
+        record("existing", 7), other, newest]
+    #expect(recentApprovedLauncherApps(in: records, excluding: ["existing"]).map(\.id)
+        == [newest.id, other.id])
+    #expect(recentApprovedLauncherApps(in: [], excluding: []).isEmpty)
+}
