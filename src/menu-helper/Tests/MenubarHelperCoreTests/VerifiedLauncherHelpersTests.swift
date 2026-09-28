@@ -204,3 +204,29 @@ func discoversInstalledPackageManagerManagerHelpers() async {
     #expect(helpers.contains { $0.helperSigningIdentifier == "dev.mxcl.pmm.menu" })
     #expect(helpers.contains { $0.helperSigningIdentifier == "pmmctl" })
 }
+
+@Test func outsideBundlePermissionDefaultsOffAndRoundTripsPerHelper() throws {
+    let helper = userApprovedHelper()
+    var configuration = VerifiedLauncherHelperConfiguration()
+    configuration.enable([helper])
+    #expect(configuration.allowedOutsideBundleHelperIDs.isEmpty)
+    configuration.allowedOutsideBundleHelperIDs.insert(helper.id)
+    let data = try JSONEncoder().encode(configuration)
+    let restored = decodeVerifiedLauncherHelperConfiguration(data)
+    #expect(restored == configuration)
+    #expect(!restored.allowedOutsideBundleHelperIDs.contains(codexVerifiedLauncherHelper.id))
+    configuration.disabledHelperIDs.insert(helper.id)
+    #expect(!configuration.isEnabled(helper))
+    configuration.allowedOutsideBundleHelperIDs.remove(helper.id)
+    #expect(configuration.allowedOutsideBundleHelperIDs.isEmpty)
+}
+
+@Test func legacyAndMalformedOutsideBundlePermissionsNeverOptIn() {
+    let legacy = decodeVerifiedLauncherHelperConfiguration(Data("{}".utf8))
+    #expect(legacy.allowedOutsideBundleHelperIDs.isEmpty)
+    let malformed = decodeVerifiedLauncherHelperConfiguration(
+        Data(#"{"allowedOutsideBundleHelperIDs":true}"#.utf8)
+    )
+    #expect(malformed.allowedOutsideBundleHelperIDs.isEmpty)
+    #expect(!malformed.isEnabled(codexVerifiedLauncherHelper))
+}

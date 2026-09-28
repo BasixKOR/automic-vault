@@ -5641,7 +5641,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Verified Launcher Helpers")
                     .font(.system(size: 24, weight: .semibold))
-                Text("Allow exact vendor-signed helpers sealed inside their vendor's app to represent that app as the Verified Launcher.")
+                Text("Allow exact vendor-signed helpers to represent their parent app as the Verified Launcher.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -5651,7 +5651,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             }
             InfoBlock(
                 title: "Exact identities only",
-                text: String(localized: "Each association verifies both signing identities, binds the live helper to its on-disk executable, and confirms that exact executable is unmodified in the app's resource seal. Other bundled executables do not inherit the app's authority.")
+                text: String(localized: "Each association verifies both signing identities and binds the live helper to its on-disk executable. By default, the helper must remain unmodified in the parent app's resource seal. Allowing a helper outside the bundle removes that containment requirement; the signed parent app must still be installed. Other executables do not inherit the app's authority.")
             )
             if !status.isEmpty {
                 Text(status)
@@ -5674,7 +5674,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         }
                         approval.request(
                             helper.id, title: "Enable \(helper.name) Launcher Helper",
-                            detail: "Allow the exact signed \(helper.name) helper sealed inside \(helper.appName) to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
+                            detail: "Allow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
                         ) { approved in
                             if approved { persist(helper, enabled: true) }
                         }
@@ -5686,6 +5686,23 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     action: helper.id, requiresApproval: !configuration.isEnabled(helper)
                 )
             }
+            .disabled(approval.isPending(helper.id))
+            Toggle("Allow outside the parent bundle", isOn: Binding(
+                get: { configuration.allowedOutsideBundleHelperIDs.contains(helper.id) },
+                set: { next in
+                    guard next else {
+                        persistOutsideBundle(helper, allowed: false)
+                        return
+                    }
+                    approval.request(
+                        helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
+                        detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
+                    ) { approved in
+                        if approved { persistOutsideBundle(helper, allowed: true) }
+                    }
+                }
+            ))
+            .toggleStyle(.checkbox)
             .disabled(approval.isPending(helper.id))
             Text("\(helper.helperSigningIdentifier) → \(helper.appBundleIdentifier)")
                 .font(.caption.monospaced())
@@ -5709,6 +5726,20 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         } else {
             next.disabledHelperIDs.insert(helper.id)
         }
+        persist(next)
+    }
+
+    private func persistOutsideBundle(_ helper: VerifiedLauncherHelper, allowed: Bool) {
+        var next = configuration
+        if allowed {
+            next.allowedOutsideBundleHelperIDs.insert(helper.id)
+        } else {
+            next.allowedOutsideBundleHelperIDs.remove(helper.id)
+        }
+        persist(next)
+    }
+
+    private func persist(_ next: VerifiedLauncherHelperConfiguration) {
         let result = saveVerifiedLauncherHelperConfiguration(next)
         guard result == errSecSuccess else {
             status = "Could not save Verified Launcher Helpers: \(result)"

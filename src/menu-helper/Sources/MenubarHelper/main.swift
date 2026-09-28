@@ -12469,6 +12469,7 @@ private struct VerifiedLauncherHelperAssociation {
     let helper: VerifiedLauncherHelper
     let appURL: URL
     let executableURL: URL
+    var isOutsideBundle = false
 }
 
 private func runtimeProtection(_ dictionary: [CFString: Any]) -> LauncherRuntimeProtection {
@@ -12781,25 +12782,35 @@ private func verifiedLauncherHelperAssociation(
     containingAppURLs: [URL]? = nil,
     helpers: [VerifiedLauncherHelper]? = nil,
     configuration: VerifiedLauncherHelperConfiguration? = nil,
-    bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
+    bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier },
+    installedAppURL: (String) -> URL? = {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+    }
 ) -> VerifiedLauncherHelperAssociation? {
-    guard signing.isDeveloperID else { return nil }
+    guard signing.isDeveloperID, !signing.isAdHoc,
+          signing.runtimeProtection.allowsSecretGateAccess else { return nil }
     let executablePath = signing.mainExecutable.isEmpty ? path : signing.mainExecutable
     let executableURL = URL(fileURLWithPath: executablePath)
         .standardizedFileURL
         .resolvingSymlinksInPath()
     let appURLs = containingAppURLs ?? appBundleURLs(containing: executableURL.path)
-    guard !appURLs.isEmpty else { return nil }
     let configuration = configuration ?? loadVerifiedLauncherHelperConfiguration()
     let helpers = helpers ?? configuration.helpers
     for helper in helpers where configuration.isEnabled(helper)
         && helper.helperSigningIdentifier == signing.identifier
         && helper.helperTeamIdentifier == signing.teamIdentifier
     {
-        guard let appURL = appURLs.first(where: {
+        let containingAppURL = appURLs.first {
             bundleIdentifier($0) == helper.appBundleIdentifier
-        }) else { continue }
-        if let relativePath = helper.relativePath {
+        }
+        let allowsOutsideBundle = configuration.allowedOutsideBundleHelperIDs.contains(helper.id)
+        guard let appURL = containingAppURL
+            ?? (allowsOutsideBundle ? installedAppURL(helper.appBundleIdentifier) : nil)
+        else { continue }
+        let canonicalAppURL = appURL.standardizedFileURL.resolvingSymlinksInPath()
+        let isOutsideBundle = !executableURL.path.hasPrefix(canonicalAppURL.path + "/")
+        guard !isOutsideBundle || allowsOutsideBundle else { continue }
+        if !isOutsideBundle, let relativePath = helper.relativePath {
             let expectedURL = appURL.appendingPathComponent(relativePath)
                 .standardizedFileURL
                 .resolvingSymlinksInPath()
@@ -12807,8 +12818,9 @@ private func verifiedLauncherHelperAssociation(
         }
         return VerifiedLauncherHelperAssociation(
             helper: helper,
-            appURL: appURL,
-            executableURL: executableURL
+            appURL: canonicalAppURL,
+            executableURL: executableURL,
+            isOutsideBundle: isOutsideBundle
         )
     }
     return nil
@@ -12839,11 +12851,14 @@ private func verifiedLauncherHelperAppSigningInfo(
         let requirement = verifiedLauncherHelperAppRequirement(association.helper)
     else { return nil }
 
-    guard validateAppBundleResource(
-        staticCode,
-        resourceURL: association.executableURL,
-        requirement: requirement
-    ) == errSecSuccess,
+    let validation = association.isOutsideBundle
+        ? validateAppBundleMainExecutable(staticCode, requirement: requirement)
+        : validateAppBundleResource(
+            staticCode,
+            resourceURL: association.executableURL,
+            requirement: requirement
+        )
+    guard validation == errSecSuccess,
           let app = staticSigningInfo(staticCode),
           app.identifier == association.helper.appBundleIdentifier,
           app.teamIdentifier == association.helper.appTeamIdentifier
@@ -17105,6 +17120,56 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         configuration: VerifiedLauncherHelperConfiguration(),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
     )
+    // Exercise relocation independently of whichever vendor apps are installed.
+    let movedHelperChecks = [
+        (allowed: false, disabled: false, parent: true, identityMatches: true, expected: false),
+        (allowed: true, disabled: false, parent: true, identityMatches: true, expected: true),
+        (allowed: true, disabled: true, parent: true, identityMatches: true, expected: false),
+        (allowed: true, disabled: false, parent: false, identityMatches: true, expected: false),
+        (allowed: true, disabled: false, parent: true, identityMatches: false, expected: false),
+    ].allSatisfy { scenario in
+        let moved = LiveSigningInfo(
+            identifier: bundledCodex.identifier,
+            teamIdentifier: scenario.identityMatches ? bundledCodex.teamIdentifier : "OTHER",
+            designatedRequirement: bundledCodex.designatedRequirement,
+            mainExecutable: "/tmp/av-moved-codex",
+            isAdHoc: false,
+            runtimeProtection: .hardened,
+            isDeveloperID: true
+        )
+        let association = verifiedLauncherHelperAssociation(
+            path: moved.mainExecutable,
+            signing: moved,
+            containingAppURLs: [],
+            configuration: VerifiedLauncherHelperConfiguration(
+                disabledHelperIDs: scenario.disabled ? [codexVerifiedLauncherHelper.id] : [],
+                allowedOutsideBundleHelperIDs: scenario.allowed ? [codexVerifiedLauncherHelper.id] : []
+            ),
+            installedAppURL: { _ in scenario.parent ? chatGPTURL : nil }
+        )
+        return scenario.expected
+            ? association?.isOutsideBundle == true && association?.appURL == chatGPTURL
+            : association == nil
+    }
+    let optedInBundledAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(
+            allowedOutsideBundleHelperIDs: [codexVerifiedLauncherHelper.id]
+        ),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let optedInWrongPathAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
+        helpers: [wrongPathCodexHelper],
+        configuration: VerifiedLauncherHelperConfiguration(
+            allowedOutsideBundleHelperIDs: [wrongPathCodexHelper.id]
+        ),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
     let xcodeGit = LiveSigningInfo(
         identifier: "com.apple.git",
         teamIdentifier: "Software Signing",
@@ -17122,10 +17187,13 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         bundleIdentifier: { _ in "com.apple.dt.Xcode" }
     )
     let installedCodexValidation: Bool = {
-        let executableURL = URL(
-            fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"
-        )
-        guard FileManager.default.fileExists(atPath: executableURL.path) else { return true }
+        let candidates = [
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+        ]
+        guard let path = candidates.first(where: { FileManager.default.fileExists(atPath: $0) })
+        else { return true }
+        let executableURL = URL(fileURLWithPath: path)
         guard let signing = executableSigningInfo(path: executableURL.path),
               let association = verifiedLauncherHelperAssociation(
                   path: executableURL.path,
@@ -17140,7 +17208,43 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
             appURL: association.appURL,
             executableURL: URL(fileURLWithPath: "/bin/ls")
         )
-        return verifiedLauncherHelperAppSigningInfo(outsideResource) == nil
+        guard verifiedLauncherHelperAppSigningInfo(outsideResource) == nil else { return false }
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("av-moved-helper-\(UUID().uuidString)", isDirectory: true)
+        let nestedApp = appBundleURLs(containing: executableURL.path).first {
+            $0 != association.appURL
+        }
+        let source = nestedApp ?? executableURL
+        let destination = temporary.appendingPathComponent(source.lastPathComponent)
+        let movedURL = nestedApp == nil ? destination
+            : destination.appendingPathComponent("Contents/MacOS/codex")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        do {
+            try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: source, to: destination)
+        } catch { return false }
+        guard let movedSigning = executableSigningInfo(path: movedURL.path),
+              let movedAssociation = verifiedLauncherHelperAssociation(
+                  path: movedURL.path,
+                  signing: movedSigning,
+                  configuration: VerifiedLauncherHelperConfiguration(
+                      allowedOutsideBundleHelperIDs: [codexVerifiedLauncherHelper.id]
+                  ),
+                  installedAppURL: { _ in association.appURL }
+              ),
+              movedAssociation.isOutsideBundle,
+              staticCodeIdentity(movedURL) == staticCodeIdentity(executableURL),
+              verifiedLauncherHelperAppSigningInfo(movedAssociation) != nil,
+              // A matching file alone cannot stand in for a different live process.
+              verifiedLauncherHelperSigningInfo(movedAssociation, pid: getpid()) == nil
+        else { return false }
+        let wrongParent = VerifiedLauncherHelperAssociation(
+            helper: codexVerifiedLauncherHelper,
+            appURL: URL(fileURLWithPath: "/Applications/Xcode.app"),
+            executableURL: movedURL,
+            isOutsideBundle: true
+        )
+        return verifiedLauncherHelperAppSigningInfo(wrongParent) == nil
     }()
     let installedMainAppValidation = [
         URL(fileURLWithPath: "/Applications/ChatGPT.app"),
@@ -17209,6 +17313,9 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           codexAssociation?.appURL == chatGPTURL,
           pathBoundCodexAssociation?.helper == pathBoundCodexHelper,
           disabledCodexAssociation == nil,
+          movedHelperChecks,
+          optedInBundledAssociation?.isOutsideBundle == false,
+          optedInWrongPathAssociation == nil,
           xcodeHelperAssociation == nil,
           installedCodexValidation,
           installedMainAppValidation,

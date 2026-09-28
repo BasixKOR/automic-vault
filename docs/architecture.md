@@ -436,8 +436,8 @@ User-approved associations and disabled catalog entries are stored in the Data
 Protection Keychain; missing or malformed stored configuration fails closed
 except that a genuinely absent record uses the built-in defaults. Runtime
 verification binds the live helper to the on-disk executable, validates the app
-executable, and validates the exact helper as a required, unaltered member of
-the app's resource seal.
+executable, and by default validates the exact helper as a required, unaltered
+member of the app's resource seal.
 Unrelated app resources are not Launcher Identity evidence and are not scanned.
 If targeted resource validation is unavailable, Automic Vault falls back to
 complete bundle validation. Other bundle-contained executables do not inherit
@@ -446,6 +446,17 @@ payload verification. See [ADR 0020](adr/0020-app-launcher-main-executable.md)
 and [ADR 0033](adr/0033-targeted-app-launcher-validation.md).
 User-approved associations are defined by
 [ADR 0034](adr/0034-user-approved-launcher-helpers.md).
+A separate per-helper, Keychain-protected option permits execution outside the
+parent bundle. It defaults off, is absent from the initial helper chooser, and
+requires human Approval to enable. Only helpers outside the resolved parent
+bundle omit relative-path and resource-seal membership checks; the live helper
+must still match its on-disk code identity and exact Developer ID signing
+association with eligible runtime protections. The installed parent app is
+located through Launch Services and its signed main executable and exact vendor
+identity are verified. Missing or invalid parent apps cannot supply authority.
+Disabling the association takes precedence over this option. See
+[ADR 0055](adr/0055-launcher-helpers-outside-parent-bundle.md).
+
 
 Eligible Launchers must enable Hardened Runtime or be Apple platform binaries
 signed as part of a macOS release, for which macOS applies the runtime

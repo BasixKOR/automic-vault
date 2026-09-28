@@ -238,7 +238,7 @@ complete enrollment and integrity checks.
 
 ### Verified Launcher Helper
 
-A vendor-signed executable that may represent one exact containing app as its
+A vendor-signed executable that may represent one exact parent app as its
 Launcher even though it is not that app's declared main executable. The
 association binds the helper and app signing identities and is enabled through
 an explicit positive catalog. The catalog contains reviewed built-in
@@ -249,7 +249,7 @@ and disabled entries are stored in the Data Protection Keychain. Discovery,
 bundle containment, a filename, a path, or a shared Team ID alone never creates
 an association.
 
-Automic Vault verifies the live helper, the app's signed executable, and that
+By default, Automic Vault verifies the live helper, the app's signed executable, and that
 the exact helper file is a required unmodified resource in the app's resource
 seal before attributing the app's Launcher Identity. If any check fails, the
 helper does not receive the app identity; an independently eligible Developer
@@ -258,6 +258,15 @@ An enabled association applies wherever policy names the containing app's
 Launcher Identity, across every current and future Authorization Gate. The user
 must be warned about that authority expansion before approving an association
 and may disable it without changing the app's Launcher-specific rules.
+
+The user may separately allow one association to remain valid outside the
+parent bundle. This option is off by default and appears only in Verified
+Launcher Helpers settings, after discovery and initial selection. Enabling it
+requires Approval and permits moved or copied executables with the helper's
+exact signing identity to represent the installed, verified parent app without
+proving membership in its resource seal. Live code identity, Developer ID,
+runtime protections, and parent signing identity remain mandatory. Helpers
+still inside the parent bundle retain the ordinary path and seal checks.
 
 ### Retained Launcher Provenance
 

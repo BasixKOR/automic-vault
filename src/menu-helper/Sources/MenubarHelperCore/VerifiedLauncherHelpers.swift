@@ -71,13 +71,16 @@ public let verifiedLauncherHelpers = [
 public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable {
     public var disabledHelperIDs: Set<String>
     public var userApprovedHelpers: [VerifiedLauncherHelper]
+    public var allowedOutsideBundleHelperIDs: Set<String>
 
     public init(
         disabledHelperIDs: Set<String> = [],
-        userApprovedHelpers: [VerifiedLauncherHelper] = []
+        userApprovedHelpers: [VerifiedLauncherHelper] = [],
+        allowedOutsideBundleHelperIDs: Set<String> = []
     ) {
         self.disabledHelperIDs = disabledHelperIDs
         self.userApprovedHelpers = userApprovedHelpers
+        self.allowedOutsideBundleHelperIDs = allowedOutsideBundleHelperIDs
     }
 
     public func isEnabled(_ helper: VerifiedLauncherHelper) -> Bool {
@@ -111,6 +114,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     private enum CodingKeys: String, CodingKey {
         case disabledHelperIDs
         case userApprovedHelpers
+        case allowedOutsideBundleHelperIDs
     }
 
     public init(from decoder: Decoder) throws {
@@ -122,6 +126,10 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
         userApprovedHelpers = try container.decodeIfPresent(
             [VerifiedLauncherHelper].self,
             forKey: .userApprovedHelpers
+        ) ?? []
+        allowedOutsideBundleHelperIDs = try container.decodeIfPresent(
+            Set<String>.self,
+            forKey: .allowedOutsideBundleHelperIDs
         ) ?? []
         guard isValidVerifiedLauncherHelperConfiguration(self) else {
             throw DecodingError.dataCorrupted(
