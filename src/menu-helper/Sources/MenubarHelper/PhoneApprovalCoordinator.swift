@@ -48,12 +48,21 @@ enum TouchIDApproval {
             && context.biometryType == .touchID
     }
 
-    static func authenticate(reason: String) async -> Bool {
-        await withCheckedContinuation { continuation in
-            authenticate(reason: reason) { approved in
+    static func authenticate(reason: String, context: LAContext = LAContext()) async -> Bool {
+        // Only main-window actions use this overload; background Approval panels
+        // use the callback API and must not activate the app when they finish.
+        weak var originatingWindow = NSApp.isActive ? NSApp.keyWindow as? AutomicVaultWindow : nil
+        let approved = await withCheckedContinuation { continuation in
+            authenticate(reason: reason, context: context) { approved in
                 continuation.resume(returning: approved)
             }
         }
+        if approved, let window = originatingWindow,
+           window.isVisible, !window.isMiniaturized, !NSApp.isHidden {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        return approved
     }
 
     static func authenticate(
@@ -525,3 +534,75 @@ func requestAuthorityChangeApproval(
         completion: completion
     )
 }
+
+#if DEBUG
+private final class FocusCheckContext: LAContext {
+    let approved: Bool
+    let beforeReply: @MainActor @Sendable () -> Void
+
+    init(approved: Bool = true, beforeReply: @escaping @MainActor @Sendable () -> Void = {}) {
+        self.approved = approved
+        self.beforeReply = beforeReply
+        super.init()
+    }
+
+    override var biometryType: LABiometryType { .touchID }
+    override func canEvaluatePolicy(_ policy: LAPolicy, error: NSErrorPointer) -> Bool { true }
+    override func evaluatePolicy(
+        _ policy: LAPolicy, localizedReason: String,
+        reply: @escaping @Sendable (Bool, (any Error)?) -> Void
+    ) {
+        let approved = approved
+        let beforeReply = beforeReply
+        Task { @MainActor in
+            // Simulate the system prompt handing key focus to another window.
+            NSApp.windows.first { $0.title == "Focus check cover" }?.makeKeyAndOrderFront(nil)
+            beforeReply()
+            reply(approved, nil)
+        }
+    }
+}
+
+@MainActor
+func touchIDWindowFocusSelfCheck() async -> Bool {
+    NSApp.setActivationPolicy(.accessory)
+    let window = AutomicVaultWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+        styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    let cover = NSWindow(contentRect: window.frame, styleMask: .titled, backing: .buffered, defer: false)
+    cover.title = "Focus check cover"
+    window.isReleasedWhenClosed = false
+    cover.isReleasedWhenClosed = false
+    defer { window.close(); cover.close() }
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+    let deadline = Date().addingTimeInterval(3)
+    while !NSApp.isActive && Date() < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+    window.makeKeyAndOrderFront(nil)
+    guard NSApp.keyWindow === window else {
+        fputs("Focus check could not establish the originating window\n", stderr)
+        return false
+    }
+    let approved = await TouchIDApproval.authenticate(reason: "Focus self-check", context: FocusCheckContext())
+    guard approved, NSApp.keyWindow === window else {
+        fputs("Touch ID completion did not restore the originating main window\n", stderr)
+        return false
+    }
+    // The callback API used by Approval panels must never restore the main window.
+    let panelApproved = await withCheckedContinuation { continuation in
+        TouchIDApproval.authenticate(reason: "Panel focus self-check", context: FocusCheckContext()) {
+            continuation.resume(returning: $0)
+        }
+    }
+    guard panelApproved, NSApp.keyWindow === cover else { return false }
+    let noOrigin = await TouchIDApproval.authenticate(reason: "No main-window origin", context: FocusCheckContext())
+    guard noOrigin, NSApp.keyWindow === cover else { return false }
+    window.makeKeyAndOrderFront(nil)
+    let canceled = await TouchIDApproval.authenticate(reason: "Canceled", context: FocusCheckContext(approved: false))
+    guard !canceled, NSApp.keyWindow === cover else { return false }
+    window.makeKeyAndOrderFront(nil)
+    let closed = await TouchIDApproval.authenticate(reason: "Closed origin", context: FocusCheckContext {
+        window.close()
+    })
+    return closed && !window.isVisible && NSApp.keyWindow === cover
+}
+#endif

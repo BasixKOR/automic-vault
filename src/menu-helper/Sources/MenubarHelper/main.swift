@@ -19185,6 +19185,15 @@ if CommandLine.arguments.contains("--self-check-approvals") {
     exit(MainActor.assumeIsolated { runApprovalSelfCheck() })
 }
 
+#if DEBUG
+if CommandLine.arguments.contains("--self-check-touch-id-focus") {
+    Task { @MainActor in
+        exit(await touchIDWindowFocusSelfCheck() ? 0 : 1)
+    }
+    NSApplication.shared.run()
+}
+#endif
+
 if CommandLine.arguments.contains("--self-check-approval-callsite") {
     Task { @MainActor in
         exit(await runApprovalCallsiteSelfCheck())
