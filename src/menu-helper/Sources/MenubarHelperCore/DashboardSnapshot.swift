@@ -702,6 +702,9 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         if id == "gpg-signing" {
             return protection == .readOnlyAndLocalWrites ? "Allow Signing" : "Approval Required"
         }
+        if protection == .fullIncludingSecretDumps {
+            return id == "aws" ? "Elevated Secret Application" : "Secret Disclosure"
+        }
         return keyPatterns.isEmpty && protection == .fullExceptSecretDumps ? "Full Access" : protection.title
     }
 

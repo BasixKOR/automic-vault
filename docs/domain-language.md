@@ -601,6 +601,8 @@ An **Access Level** is a named policy preset for one Launcher at one Authorizati
 | **Full Access** | Recognized operations, including Elevated Secret Application and Secret Disclosure. Unknown operations still require Approval. |
 | **Direct Access** | Unconstrained Secret Application for exact Secret Names named by Direct Access Rules. Available only at the Direct Secret Gate. |
 
+In Authorization Gate controls, the top Secret Gate preset is labeled **Secret Disclosure**, including Write Access. AWS labels it **Elevated Secret Application** because it additionally permits reusable credentials. Execution Gates retain **Full Access**, and signing/authentication gates retain their specialized labels. These gate-specific labels apply to both allow ceilings and Denial Thresholds; they do not change the preset's authority or ordering. Generic capability descriptions and Blessed Script syntax retain their existing Full Access terminology.
+
 Every requested characteristic must fit the selected preset. Gates may omit presets that do not describe their operation set.
 
 The Homebrew Execution Gate does not expose Read Only. Homebrew may update itself and its package metadata while running inspection commands, so Automic Vault treats Read Only and Homebrew Update as one indivisible level: Read & Update.

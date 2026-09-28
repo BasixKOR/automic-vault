@@ -1737,3 +1737,17 @@ private final class AlteredAccessLogDefaults: UserDefaults, @unchecked Sendable 
         == [newest.id, other.id])
     #expect(recentApprovedLauncherApps(in: [], excluding: []).isEmpty)
 }
+
+@Test func topAccessLevelLabelsDescribeTheGateCapability() {
+    for (id, keys, expected) in [
+        ("gh", ["GH_TOKEN"], "Secret Disclosure"),
+        ("aws", ["AWS_ACCESS_KEY_ID"], "Elevated Secret Application"),
+        ("brew", [], "Full Access"),
+        ("gpg-signing", ["GPG_KEY"], "Allow Signing"),
+        ("ssh-agent", ["SSH_KEY"], "Allow Authentication"),
+    ] {
+        let gate = SecretGate(id: id, keyPatterns: keys, routes: [],
+                              defaultProtection: .noAccess, appPolicies: [])
+        #expect(gate.protectionTitle(.fullIncludingSecretDumps) == expected)
+    }
+}

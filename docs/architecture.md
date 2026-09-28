@@ -570,7 +570,7 @@ The shipped policy store encodes one legacy classification per request and persi
 - Homebrew's `readOnlyAndUpdates` becomes Read & Update.
 - `readOnlyAndLocalWrites` becomes Local Write.
 - `fullExceptSecretDumps` becomes Write Access.
-- `fullIncludingSecretDumps` remains Full Access.
+- `fullIncludingSecretDumps` remains the stored Full Access preset. Authorization Gate controls display Secret Disclosure, or Elevated Secret Application for AWS. Execution Gates retain Full Access; signing and authentication gates retain their specialized labels. These display names do not change grants, classification, Denial Threshold ordering, or Blessed Script syntax.
 
 At the GPG Signing Gate, persisted values that permit Local Write normalize to
 Allow Signing; all others normalize to Approval Required. This preserves each
