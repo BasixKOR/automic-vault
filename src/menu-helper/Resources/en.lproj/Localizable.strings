@@ -540,3 +540,5 @@
 "Denial applies regardless of runtime." = "Denial applies regardless of runtime.";
 
 "Deny from:" = "Deny from:";
+
+"Denial wins over allow rules." = "Denial wins over allow rules.";

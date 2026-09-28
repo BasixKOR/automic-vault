@@ -540,3 +540,5 @@
 "Denial applies regardless of runtime." = "无论运行时状态如何，拒绝规则均适用。";
 
 "Deny from:" = "拒绝起点：";
+
+"Denial wins over allow rules." = "拒绝优先于允许规则。";

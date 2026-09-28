@@ -6585,6 +6585,8 @@ private struct GatePolicyTable: View {
     @State private var availableWidth: CGFloat = 720
 
     private var levels: [SecretGateProtection] { Array(gate.availableProtections.dropFirst()) }
+    // These gates admit only signing requests; unsupported requests fail validation.
+    private var showsUnknownOperations: Bool { gate.id != "gpg-signing" && gate.id != "ssh-agent" }
     private var changes: [GatePolicyChange] {
         drafts.filter { change in
             let app = gate.appPolicies.first { $0.requirement == change.requirement }
@@ -6614,7 +6616,9 @@ private struct GatePolicyTable: View {
                                     .help(localizedUIString(gate.protectionSubtitle(level)))
                             }
                         }
-                        Text("Unknown").frame(width: 90)
+                        if showsUnknownOperations {
+                            Text("Unknown").frame(width: 90)
+                        }
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
                     Divider()
@@ -6630,7 +6634,9 @@ private struct GatePolicyTable: View {
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width - 20 } action: { availableWidth = $0 }
 
-            Label("Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.", systemImage: "info.circle")
+            Label(showsUnknownOperations
+                ? String(localized: "Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.")
+                : String(localized: "Denial wins over allow rules."), systemImage: "info.circle")
                 .font(.caption).foregroundStyle(.secondary)
             Text("Expanding allow or reducing deny requires Approval.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -6715,15 +6721,17 @@ private struct GatePolicyTable: View {
                     Text("Denial overrides overlapping allow levels.").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            VStack {
-                Label(denial == nil ? String(localized: "Approval") : String(localized: "Deny"),
-                      systemImage: denial == nil ? "hand.raised" : "nosign")
-                    .foregroundStyle(.primary)
-                    .font(.caption)
-                    .frame(height: 40)
+            if showsUnknownOperations {
+                VStack {
+                    Label(denial == nil ? String(localized: "Approval") : String(localized: "Deny"),
+                          systemImage: denial == nil ? "hand.raised" : "nosign")
+                        .foregroundStyle(.primary)
+                        .font(.caption)
+                        .frame(height: 40)
+                }
+                .frame(width: 90)
+                .accessibilityLabel("Unknown operations: \(denial == nil ? String(localized: "Approval Required") : String(localized: "Deny"))")
             }
-            .frame(width: 90)
-            .accessibilityLabel("Unknown operations: \(denial == nil ? String(localized: "Approval Required") : String(localized: "Deny"))")
         }
         .padding(.vertical, 14)
         .accessibilityElement(children: .contain)
