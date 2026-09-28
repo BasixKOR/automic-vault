@@ -737,7 +737,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controller.updateDetectorFindings(latestDetectorFindings)
         controller.setAvailableUpdateVersion(readyUpdate?.version, checkedAt: lastUpdateCheck)
-        let defaultWindowSize = NSSize(width: 860, height: 598)
+        let defaultWindowSize = NSSize(width: 1269, height: 855)
         let window = AutomicVaultWindow(
             contentRect: NSRect(origin: .zero, size: defaultWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
