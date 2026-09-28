@@ -2442,6 +2442,36 @@ func runDashboardSearchSelfCheck() -> Int32 {
             protection: .readOnly
         )]
     )
+    if let directory = ProcessInfo.processInfo.environment["AV_GATE_RENDER_DIR"] {
+        let previewGate = SecretGate(id: "aws", keyPatterns: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+            routes: [], defaultProtection: .noAccess, appPolicies: [
+                SecretGatePolicy(bundleIdentifier: "codex", requirement: "identifier codex", protection: .readOnly,
+                                 denialThreshold: .fullIncludingSecretDumps),
+                SecretGatePolicy(bundleIdentifier: "com.openai.codex", requirement: "identifier com.openai.codex",
+                                 protection: .fullExceptSecretDumps, denialThreshold: .fullIncludingSecretDumps),
+                SecretGatePolicy(bundleIdentifier: "herdr", requirement: "identifier herdr", protection: .readOnly),
+            ])
+        for dark in [false, true] {
+            for width in [560, 1000] {
+                let host = NSHostingView(rootView: SecretGateDetailView(model: model, gate: previewGate)
+                    .padding(24).frame(width: CGFloat(width), height: 820, alignment: .topLeading)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, dark ? .dark : .light))
+                host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 820)
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+                host.layoutSubtreeIfNeeded()
+                guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return 1 }
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                guard let png = bitmap.representation(using: .png, properties: [:]) else { return 1 }
+                do {
+                    try png.write(to: URL(fileURLWithPath: directory)
+                        .appendingPathComponent("gate-\(dark ? "dark" : "light")-\(width).png"))
+                } catch { return 1 }
+            }
+        }
+    }
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
     let appPolicy = gate.appPolicies[0]
     let launcherBundleRequirement = #"cdhash H"0123456789abcdef0123456789abcdef01234567""#
@@ -2476,7 +2506,6 @@ func runDashboardSearchSelfCheck() -> Int32 {
         launcherBundle: nil,
         gate: gate,
         approval: model.authorityApproval,
-        setProtection: { _ in },
         remove: {}
     ).frame(width: 500)).fittingSize.height
     let secretDetailHeight = model.selectedStoredSecret.map {
@@ -6424,28 +6453,8 @@ private struct SecretGateDetailView: View {
                         .accessibilityIdentifier("verified-launcher-helper-inspection-progress")
                 }
 
-                VStack(spacing: 0) {
-                    DefaultAppPolicyRow(gate: gate, protection: gate.defaultProtection, approval: model.authorityApproval) {
-                        model.setDefaultProtection($0, for: gate)
-                    }
-                    if !gate.appPolicies.isEmpty { hairline }
-                    ForEach(gate.appPolicies, id: \.requirement) { app in
-                        ApprovedAppRow(
-                            app: app,
-                            launcherBundle: model.launcherBundles.first {
-                                $0.launcherRequirement == app.requirement
-                            },
-                            gate: gate,
-                            approval: model.authorityApproval,
-                            setProtection: { model.setProtection($0, for: app, in: gate) },
-                            setDenialThreshold: { model.setDenialThreshold($0, for: app, in: gate) },
-                            remove: { model.removeAppPolicy(app, from: gate) }
-                        )
-                        if app.requirement != gate.appPolicies.last?.requirement {
-                            hairline
-                        }
-                    }
-                }
+                GatePolicyTable(model: model, gate: gate, approval: model.authorityApproval)
+                    .id(gate.id)
             }
 
             if let error = model.errorMessage {
@@ -6483,13 +6492,350 @@ private struct SecretGateField: View {
     }
 }
 
+/// Drafts contain only the field the user edited. In particular, editing denial
+/// must not turn an inherited gate default into a Launcher-specific allow rule.
+private struct GatePolicyChange: Identifiable, Equatable {
+    enum Value: Equatable {
+        case allow(SecretGateProtection)
+        case denial(SecretGateProtection?)
+    }
+    let requirement: String?
+    let value: Value
+
+    var id: String {
+        switch value {
+        case .allow: requirement.map { "gate-policy:\($0)" } ?? "gate-default"
+        case .denial: "gate-denial:\(requirement ?? "")"
+        }
+    }
+
+    func action(gate: SecretGate) -> String {
+        switch value {
+        case .allow: requirement.map { "gate-policy:\(gate.id):\($0)" } ?? "gate-default:\(gate.id)"
+        case .denial: "gate-denial:\(gate.id):\(requirement ?? "")"
+        }
+    }
+}
+
+private struct GatePolicyTable: View {
+    @ObservedObject var model: DashboardModel
+    let gate: SecretGate
+    @ObservedObject var approval: AuthorityApprovalState
+    @State private var drafts: [GatePolicyChange] = []
+    @State private var reviewing = false
+    @State private var availableWidth: CGFloat = 720
+
+    private var levels: [SecretGateProtection] { Array(gate.availableProtections.dropFirst()) }
+    private var changes: [GatePolicyChange] {
+        drafts.filter { change in
+            let app = gate.appPolicies.first { $0.requirement == change.requirement }
+            if change.requirement != nil && app == nil { return false }
+            switch change.value {
+            case .allow(let level): return level != (app?.protection ?? gate.defaultProtection)
+            case .denial(let level): return level != app?.denialThreshold
+            }
+        }
+    }
+    private var pending: Bool {
+        drafts.contains { approval.isPending($0.action(gate: gate)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Drag the boundaries or choose an exact level. Changes stay pending until reviewed.")
+                .font(.caption).foregroundStyle(.secondary)
+            ScrollView(.horizontal) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 16) {
+                        Text("Verified Launcher").frame(width: 190, alignment: .leading)
+                        HStack(spacing: 0) {
+                            ForEach(levels) { level in
+                                Text(localizedUIString(gate.protectionTitle(level)))
+                                    .frame(maxWidth: .infinity)
+                                    .help(localizedUIString(gate.protectionSubtitle(level)))
+                            }
+                        }
+                        Text("Unknown").frame(width: 90)
+                    }
+                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
+                    Divider()
+                    policyRow(app: nil)
+                    ForEach(gate.appPolicies, id: \.requirement) { app in
+                        Divider()
+                        policyRow(app: app)
+                    }
+                    Divider()
+                }
+                .frame(width: max(720, availableWidth))
+                .padding(.horizontal, 10)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width - 20 } action: { availableWidth = $0 }
+
+            Label("Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.", systemImage: "info.circle")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Expanding allow or reducing deny requires Approval.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !changes.isEmpty {
+                HStack {
+                    Group {
+                        if changes.count == 1 { Text("1 proposed change") }
+                        else { Text("\(changes.count) proposed changes") }
+                    }.font(.caption)
+                    Spacer()
+                    Button("Revert") { drafts.removeAll() }
+                    Button("Review Changes") { reviewing = true }
+                        .buttonStyle(.borderedProminent)
+                }
+                .disabled(pending)
+            }
+        }
+        .onChange(of: gate) { _, _ in drafts = changes }
+        .sheet(isPresented: $reviewing) { review }
+    }
+
+    private func stage(_ value: GatePolicyChange.Value, for app: SecretGatePolicy?) {
+        let change = GatePolicyChange(requirement: app?.requirement, value: value)
+        drafts.removeAll { $0.id == change.id }
+        drafts.append(change)
+        drafts = changes
+    }
+
+    private func policyRow(app: SecretGatePolicy?) -> some View {
+        let rowChanges = changes.filter { $0.requirement == app?.requirement }
+        let protection = rowChanges.compactMap { change -> SecretGateProtection? in
+            if case .allow(let value) = change.value { return value }
+            return nil
+        }.first ?? app?.protection ?? gate.defaultProtection
+        let denial: SecretGateProtection? = {
+            if let change = rowChanges.first(where: { if case .denial = $0.value { return true }; return false }),
+               case .denial(let value) = change.value { return value }
+            return app?.denialThreshold
+        }()
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let app {
+                    ApprovedAppRow(app: app, launcherBundle: model.launcherBundles.first {
+                        $0.launcherRequirement == app.requirement
+                    }, gate: gate, approval: approval, remove: { model.removeAppPolicy(app, from: gate) })
+                } else {
+                    Label(localizedUIString(gate.defaultPolicyLabel), systemImage: "square.stack.3d.up")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Requires Hardened Runtime").font(.caption).foregroundStyle(.secondary)
+                }
+                if !rowChanges.isEmpty {
+                    Text("Edited").font(.caption).foregroundStyle(Color.accentColor)
+                }
+            }
+            .frame(width: 190, alignment: .leading)
+            VStack(alignment: .leading, spacing: 8) {
+                GatePolicyTrack(gate: gate, protection: protection, denial: denial,
+                                allowsDenial: app != nil,
+                                setProtection: { stage(.allow($0), for: app) },
+                                setDenial: { stage(.denial($0), for: app) })
+                HStack {
+                    Text("Allow through:").font(.caption).foregroundStyle(.secondary)
+                    NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) {
+                        stage(.allow($0), for: app)
+                    }
+                    .frame(maxWidth: 170)
+                    if let app {
+                        Spacer(minLength: 4)
+                        Menu {
+                            Button("None") { stage(.denial(nil), for: app) }
+                            ForEach(gate.availableProtections) { level in
+                                Button(level == .noAccess ? String(localized: "All operations") : gate.protectionTitle(level)) {
+                                    stage(.denial(level), for: app)
+                                }
+                            }
+                        } label: {
+                            Text("Deny from: \(denialTitle(denial))")
+                        }
+                        .fixedSize()
+                        .accessibilityLabel("Denial Threshold")
+                    }
+                }
+                if app?.usesGateDefault == true && !rowChanges.contains(where: {
+                    if case .allow = $0.value { return true }; return false
+                }) {
+                    Text("Auto-allow uses gate default").font(.caption).foregroundStyle(.secondary)
+                }
+                if GatePolicyRegions(gate: gate, protection: protection, denial: denial).allowEnd
+                    > GatePolicyRegions(gate: gate, protection: protection, denial: denial).denyStart {
+                    Text("Denial overrides overlapping allow levels.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            VStack {
+                Label(denial == nil ? String(localized: "Approval") : String(localized: "Deny"),
+                      systemImage: denial == nil ? "hand.raised" : "nosign")
+                    .foregroundStyle(.primary)
+                    .font(.caption)
+                    .frame(height: 40)
+            }
+            .frame(width: 90)
+            .accessibilityLabel("Unknown operations: \(denial == nil ? String(localized: "Approval Required") : String(localized: "Deny"))")
+        }
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(app?.bundleIdentifier ?? localizedUIString(gate.defaultPolicyLabel))
+        .disabled(pending)
+    }
+
+    private func denialTitle(_ level: SecretGateProtection?) -> String {
+        guard let level else { return String(localized: "None") }
+        return level == .noAccess ? String(localized: "All operations") : localizedUIString(gate.protectionTitle(level))
+    }
+
+    private var review: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Review Changes").font(.title2.bold())
+            Text("Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending.")
+                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(changes) { change in
+                        let app = gate.appPolicies.first { $0.requirement == change.requirement }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(app?.bundleIdentifier ?? localizedUIString(gate.defaultPolicyLabel)).font(.headline)
+                            HStack {
+                                switch change.value {
+                                case .allow(let level):
+                                    Text("Allow through: \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
+                                case .denial(let level):
+                                    Text("Deny from: \(denialTitle(app?.denialThreshold)) → \(denialTitle(level))")
+                                }
+                                Spacer()
+                                Button {
+                                    switch change.value {
+                                    case .allow(let level):
+                                        if let app { model.setProtection(level, for: app, in: gate) }
+                                        else { model.setDefaultProtection(level, for: gate) }
+                                    case .denial(let level):
+                                        if let app { model.setDenialThreshold(level, for: app, in: gate) }
+                                    }
+                                } label: {
+                                    AuthorityApprovalLabel(title: "Apply", approval: approval,
+                                                           action: change.action(gate: gate), requiresApproval: requiresApproval(change, app: app))
+                                }
+                                .disabled(pending)
+                            }
+                        }
+                        Divider()
+                    }
+                    if changes.isEmpty { Label("Changes applied", systemImage: "checkmark.circle") }
+                }
+            }
+            if let error = model.errorMessage { Text(error).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                if pending {
+                    Button("Cancel Approval") {
+                        for change in drafts { approval.cancel(change.action(gate: gate)) }
+                    }
+                }
+                Button("Done") { reviewing = false }.keyboardShortcut(.cancelAction).disabled(pending)
+            }
+        }
+        .padding(24).frame(width: 640, height: 420)
+        .interactiveDismissDisabled(pending)
+    }
+
+    private func requiresApproval(_ change: GatePolicyChange, app: SecretGatePolicy?) -> Bool {
+        switch change.value {
+        case .allow(let level):
+            return level.addsAuthority(over: app.map { $0.usesGateDefault ? .noAccess : $0.protection } ?? gate.defaultProtection)
+        case .denial(let level): return gate.weakeningDenial(from: app?.denialThreshold, to: level)
+        }
+    }
+}
+
+private struct GatePolicyTrack: View {
+    let gate: SecretGate
+    let protection: SecretGateProtection
+    let denial: SecretGateProtection?
+    let allowsDenial: Bool
+    let setProtection: (SecretGateProtection) -> Void
+    let setDenial: (SecretGateProtection?) -> Void
+    @GestureState private var allowDrag: Int?
+    @GestureState private var denyDrag: Int?
+
+    private var regions: GatePolicyRegions { GatePolicyRegions(gate: gate, protection: protection, denial: denial) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let count = regions.levels.count
+            let allow = allowDrag ?? regions.allowEnd
+            let deny = denyDrag ?? regions.denyStart
+            let effectiveAllow = min(allow, deny)
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    region("Allow", symbol: "checkmark", color: .green, columns: effectiveAllow, width: width)
+                    region("Approval Required", symbol: "hand.raised", color: .secondary, columns: deny - effectiveAllow, width: width)
+                    region("Deny", symbol: "nosign", color: .red, columns: count - deny, width: width)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                ForEach(1..<max(1, count), id: \.self) { boundary in
+                    Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
+                        .offset(x: width * CGFloat(boundary) / CGFloat(count))
+                        .accessibilityHidden(true)
+                }
+                handle(isAllow: true, boundary: allow, width: width)
+                if allowsDenial { handle(isAllow: false, boundary: deny, width: width) }
+            }
+        }
+        .frame(height: 40)
+        .coordinateSpace(name: "gate-policy-track")
+    }
+
+    private func region(_ title: String, symbol: String, color: Color, columns: Int, width: CGFloat) -> some View {
+        Group {
+            if columns > 0 {
+                Label(localizedUIString(title), systemImage: symbol)
+                    .font(.caption).lineLimit(1).minimumScaleFactor(0.85)
+                    .frame(width: width * CGFloat(columns) / CGFloat(regions.levels.count), height: 40)
+                    .foregroundStyle(.primary)
+                    .background(color.opacity(0.16))
+            }
+        }
+    }
+
+    private func handle(isAllow: Bool, boundary: Int, width: CGFloat) -> some View {
+        let value = isAllow ? gate.protectionTitle(regions.protection(at: boundary))
+            : regions.denial(at: boundary).map { $0 == .noAccess ? String(localized: "All operations") : gate.protectionTitle($0) } ?? String(localized: "None")
+        return RoundedRectangle(cornerRadius: 3)
+            .fill(isAllow ? Color.green : Color.red)
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.7), lineWidth: 1))
+            .frame(width: 6, height: 20)
+            // Separate the handles vertically so both remain reachable when they meet.
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .offset(x: width * CGFloat(boundary) / CGFloat(regions.levels.count) - 11, y: isAllow ? -10 : 10)
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("gate-policy-track"))
+                .updating(isAllow ? $allowDrag : $denyDrag) { event, state, _ in
+                    state = regions.snappedBoundary(fraction: event.location.x / max(1, width))
+                }
+                .onEnded { event in
+                    let snapped = regions.snappedBoundary(fraction: event.location.x / max(1, width))
+                    if isAllow { setProtection(regions.protection(at: snapped)) }
+                    else { setDenial(regions.denial(at: snapped)) }
+                })
+            .accessibilityElement()
+            .accessibilityLabel(isAllow ? "Allow through" : "Deny from")
+            .accessibilityValue(value)
+            .accessibilityAdjustableAction { direction in
+                let next = min(regions.levels.count, max(0, boundary + (direction == .increment ? 1 : -1)))
+                if isAllow { setProtection(regions.protection(at: next)) }
+                else { setDenial(regions.denial(at: next)) }
+            }
+            .help(isAllow ? "Drag to extend or contract allow." : "Drag to extend or contract deny.")
+    }
+}
+
 private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
     let launcherBundle: LauncherBundleEnrollment?
     let gate: SecretGate
-    let approval: AuthorityApprovalState
-    let setProtection: (SecretGateProtection) -> Void
-    var setDenialThreshold: (SecretGateProtection?) -> Void = { _ in }
+    @ObservedObject var approval: AuthorityApprovalState
     let remove: () -> Void
     @State private var isConfirmingDelete = false
 
@@ -6520,27 +6866,7 @@ private struct ApprovedAppRow: View {
                     .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 6) {
-                ProtectionMenu(gate: gate, protection: app.protection, approval: approval, action: "gate-policy:\(gate.id):\(app.requirement)", setProtection: setProtection)
-                if app.usesGateDefault {
-                    Text("Auto-allow uses gate default").font(.caption).foregroundStyle(.secondary)
-                }
-                Menu {
-                    Button("None") { setDenialThreshold(nil) }
-                    ForEach(gate.availableProtections, id: \.self) { threshold in
-                        Button("\(gate.protectionTitle(threshold)) and above") { setDenialThreshold(threshold) }
-                    }
-                } label: {
-                    AuthorityApprovalLabel(
-                        title: "Auto-deny: \(app.denialThreshold.map { gate.protectionTitle($0) + " and above" } ?? "None")",
-                        approval: approval, action: "gate-denial:\(gate.id):\(app.requirement)",
-                        requiresApproval: false
-                    )
-                }
-                .disabled(approval.isPending("gate-denial:\(gate.id):\(app.requirement)"))
-                .help("Denial wins over allow rules. Reducing denial requires Approval.")
-            }
-            .frame(minWidth: 132, alignment: .trailing)
+
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -6548,61 +6874,14 @@ private struct ApprovedAppRow: View {
             Button("Delete", role: .destructive) {
                 isConfirmingDelete = true
             }
+            .disabled(approval.isPending("gate-policy:\(gate.id):\(app.requirement)")
+                      || approval.isPending("gate-denial:\(gate.id):\(app.requirement)"))
         }
         .alert("Delete \(display.name)?", isPresented: $isConfirmingDelete) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive, action: remove)
         } message: {
             Text("This deletes the Launcher-specific rule. Future requests from this Verified Launcher at the \(gate.displayName) Authorization Gate will use the default \(gate.protectionTitle(gate.defaultProtection)) Access Level.")
-        }
-    }
-}
-
-private struct DefaultAppPolicyRow: View {
-    let gate: SecretGate
-    let protection: SecretGateProtection
-    let approval: AuthorityApprovalState
-    let setProtection: (SecretGateProtection) -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "square.stack.3d.up")
-                .font(.system(size: 18))
-                .frame(width: 34, height: 34)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(localizedUIString(gate.defaultPolicyLabel))
-                    .font(.system(size: 13, weight: .medium))
-                Text("Requires Hardened Runtime")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            ProtectionMenu(gate: gate, protection: protection, approval: approval, action: "gate-default:\(gate.id)", setProtection: setProtection)
-                .frame(minWidth: 132, alignment: .trailing)
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-private struct ProtectionMenu: View {
-    let gate: SecretGate
-    let protection: SecretGateProtection
-    @ObservedObject var approval: AuthorityApprovalState
-    let action: String
-    let setProtection: (SecretGateProtection) -> Void
-    @AppStorage(phoneApprovalEnabledDefaultsKey) private var phoneEnabled = false
-
-    var body: some View {
-        if approval.isPending(action) {
-            AuthorityApprovalLabel(title: "Change Access Level", approval: approval, action: action)
-                .font(.caption)
-        } else {
-            NativeProtectionMenu(
-                gate: gate, protection: protection,
-                usesPhone: phoneEnabled && authorityChangeUsesIPhone,
-                setProtection: setProtection
-            )
         }
     }
 }

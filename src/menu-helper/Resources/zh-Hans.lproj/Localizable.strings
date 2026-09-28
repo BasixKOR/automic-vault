@@ -480,3 +480,49 @@
 "Retained Authorization Records, including denials. Older records may have been removed by the storage limit." = "保留的授权记录，包括被拒绝的请求。较旧的记录可能已因存储限制而被删除。";
 
 "Learn about hardening tools →" = "了解工具加固 →";
+
+"Drag the boundaries or choose an exact level. Changes stay pending until reviewed." = "拖动边界或选择具体级别。更改将在审核前保持待处理状态。";
+
+"Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set." = "拒绝优先于允许规则。未知操作需要批准，除非设置了拒绝阈值。";
+
+"Expanding allow or reducing deny requires Approval." = "扩大允许范围或缩小拒绝范围需要批准。";
+
+"%lld proposed changes" = "%lld 项拟议更改";
+
+"Revert" = "还原";
+
+"Review Changes" = "审核更改";
+
+"Edited" = "已编辑";
+
+"Allow through:" = "允许至：";
+
+"All operations" = "所有操作";
+
+"Deny from: %@" = "拒绝起点：%@";
+
+"Denial Threshold" = "拒绝阈值";
+
+"Denial overrides overlapping allow levels." = "拒绝覆盖重叠的允许级别。";
+
+"Unknown operations: %@" = "未知操作：%@";
+
+"Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending." = "请分别应用每项更改。扩大允许范围或缩小拒绝范围需要批准。未应用的更改将保持待处理状态。";
+
+"Allow through: %@ → %@" = "允许至：%@ → %@";
+
+"Deny from: %@ → %@" = "拒绝起点：%@ → %@";
+
+"Changes applied" = "更改已应用";
+
+"Allow through" = "允许至";
+
+"Deny from" = "拒绝起点";
+
+"Drag to extend or contract allow." = "拖动以扩大或缩小允许范围。";
+
+"Drag to extend or contract deny." = "拖动以扩大或缩小拒绝范围。";
+
+"1 proposed change" = "1 项拟议更改";
+
+"Cancel Approval" = "取消批准";

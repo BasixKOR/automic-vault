@@ -480,3 +480,49 @@
 "Retained Authorization Records, including denials. Older records may have been removed by the storage limit." = "Retained Authorization Records, including denials. Older records may have been removed by the storage limit.";
 
 "Learn about hardening tools →" = "Learn about hardening tools →";
+
+"Drag the boundaries or choose an exact level. Changes stay pending until reviewed." = "Drag the boundaries or choose an exact level. Changes stay pending until reviewed.";
+
+"Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set." = "Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.";
+
+"Expanding allow or reducing deny requires Approval." = "Expanding allow or reducing deny requires Approval.";
+
+"%lld proposed changes" = "%lld proposed changes";
+
+"Revert" = "Revert";
+
+"Review Changes" = "Review Changes";
+
+"Edited" = "Edited";
+
+"Allow through:" = "Allow through:";
+
+"All operations" = "All operations";
+
+"Deny from: %@" = "Deny from: %@";
+
+"Denial Threshold" = "Denial Threshold";
+
+"Denial overrides overlapping allow levels." = "Denial overrides overlapping allow levels.";
+
+"Unknown operations: %@" = "Unknown operations: %@";
+
+"Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending." = "Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending.";
+
+"Allow through: %@ → %@" = "Allow through: %@ → %@";
+
+"Deny from: %@ → %@" = "Deny from: %@ → %@";
+
+"Changes applied" = "Changes applied";
+
+"Allow through" = "Allow through";
+
+"Deny from" = "Deny from";
+
+"Drag to extend or contract allow." = "Drag to extend or contract allow.";
+
+"Drag to extend or contract deny." = "Drag to extend or contract deny.";
+
+"1 proposed change" = "1 proposed change";
+
+"Cancel Approval" = "Cancel Approval";
