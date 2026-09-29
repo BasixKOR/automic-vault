@@ -235,15 +235,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         checkForUpdatesItem.target = self
         menu.addItem(checkForUpdatesItem)
+        installCLIItem.target = self
+        installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
+        menu.addItem(installCLIItem)
         menu.addItem(.separator())
         let openItem = NSMenuItem(title: String(localized: "Open Automic Vault"), action: #selector(openMainWindow), keyEquivalent: "")
         setVersionBadge(appVersion(), on: openItem)
         openItem.target = self
         setOpenAppMenuImage(on: openItem)
         menu.addItem(openItem)
-        installCLIItem.target = self
-        installCLIItem.isHidden = FileManager.default.fileExists(atPath: installedAVCLIPath)
-        menu.addItem(installCLIItem)
         temporaryDenialsItem.isHidden = true
         menu.addItem(temporaryDenialsItem)
         temporaryDenialObserver = NotificationCenter.default.addObserver(
