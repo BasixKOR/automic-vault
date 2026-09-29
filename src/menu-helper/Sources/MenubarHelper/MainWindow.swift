@@ -253,13 +253,18 @@ private struct DashboardActivityIndex {
             - boundary(now.addingTimeInterval(-86_400), in: dates)
     }
 
-    func slots(for tool: String, now: Date) -> [Int] {
+    static func slotCount(forWidth width: CGFloat) -> Int {
+        // Keep at least one point of fill plus the one-point gap per bucket.
+        [96, 144, 288, 720, 1440].last { CGFloat($0) * 2 <= width } ?? 96
+    }
+
+    func slots(for tool: String, now: Date, count: Int = 96) -> [Int] {
         let dates = datesByTool[tool] ?? []
         let start = now.addingTimeInterval(-86_400)
         var previous = boundary(start, in: dates)
-        return (0..<96).map { slot in
-            let end = start.addingTimeInterval(Double(slot + 1) * 900)
-            let next = boundary(end, in: dates, includingEqual: slot == 95)
+        return (0..<count).map { slot in
+            let end = start.addingTimeInterval(Double(slot + 1) * (86_400 / Double(count)))
+            let next = boundary(end, in: dates, includingEqual: slot == count - 1)
             defer { previous = next }
             return next - previous
         }
@@ -1776,9 +1781,9 @@ final class DashboardModel: ObservableObject {
             : String(localized: "Hardening checked: \(timestamp)")
     }
 
-    fileprivate func overviewActivitySlots(for tool: DashboardItem, now: Date) -> [Int]? {
+    fileprivate func overviewActivitySlots(for tool: DashboardItem, now: Date, count: Int = 96) -> [Int]? {
         let name = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
-        return overviewActivityIndex?.slots(for: name, now: now)
+        return overviewActivityIndex?.slots(for: name, now: now, count: count)
     }
 
     fileprivate func overviewLatestActivity(for tool: DashboardItem) -> Date? {
@@ -2207,17 +2212,23 @@ func runDashboardSearchSelfCheck() -> Int32 {
         let expected = activityRecords.filter {
             $0.date >= now.addingTimeInterval(-86_400) && $0.date <= now
         }.count
-        let slots = activityIndex.slots(for: "aws", now: now)
-        guard slots.count == 96, slots.reduce(0, +) == expected,
-              activityIndex.slots(for: "missing", now: now) == Array(repeating: 0, count: 96)
-        else { return 1 }
-        for slot in slots.indices {
-            let start = now.addingTimeInterval(-86_400 + Double(slot) * 900)
-            let end = start.addingTimeInterval(900)
-            let expectedSlot = activityRecords.filter {
-                $0.date >= start && ($0.date < end || (slot == 95 && $0.date == end))
-            }.count
-            guard slots[slot] == expectedSlot else { return 1 }
+        for width: CGFloat in [0, 240, 287, 288, 575, 576, 1000, 1439, 1440, 2879, 2880, 4000] {
+            let count = DashboardActivityIndex.slotCount(forWidth: width)
+            let expectedCount = width >= 2880 ? 1440 : width >= 1440 ? 720
+                : width >= 576 ? 288 : width >= 288 ? 144 : 96
+            guard count == expectedCount else { return 1 }
+            let slots = activityIndex.slots(for: "aws", now: now, count: count)
+            guard slots.count == count, slots.reduce(0, +) == expected,
+                  activityIndex.slots(for: "missing", now: now, count: count) == Array(repeating: 0, count: count)
+            else { return 1 }
+            for slot in slots.indices {
+                let start = now.addingTimeInterval(-86_400 + Double(slot) * (86_400 / Double(count)))
+                let end = start.addingTimeInterval(86_400 / Double(count))
+                let expectedSlot = activityRecords.filter {
+                    $0.date >= start && ($0.date < end || (slot == count - 1 && $0.date == end))
+                }.count
+                guard slots[slot] == expectedSlot else { return 1 }
+            }
         }
         guard activityIndex.count(for: "aws", now: now) == expected,
               activityIndex.count(for: "missing", now: now) == 0,
@@ -7338,7 +7349,7 @@ private struct ToolActivityStrip: View {
                                 }
                             }
                             .frame(minWidth: 0.5)
-                            .help(slotDescription(slot, count: counts[slot]))
+                            .help(slotDescription(slot, count: counts[slot], slotCount: counts.count))
                     }
                 }
                 .accessibilityElement(children: .ignore)
@@ -7360,9 +7371,10 @@ private struct ToolActivityStrip: View {
         }
     }
 
-    private func slotDescription(_ slot: Int, count: Int) -> String {
-        let start = now.addingTimeInterval(-86_400 + Double(slot) * 900)
-        let end = start.addingTimeInterval(900)
+    private func slotDescription(_ slot: Int, count: Int, slotCount: Int) -> String {
+        let duration = 86_400 / Double(slotCount)
+        let start = now.addingTimeInterval(-86_400 + Double(slot) * duration)
+        let end = start.addingTimeInterval(duration)
         let interval = start.formatted(.dateTime.hour().minute()) + "–"
             + end.formatted(.dateTime.hour().minute())
         return String(localized: "\(interval): \(String(count)) recorded requests")
@@ -7535,6 +7547,7 @@ private struct DashboardOverviewView: View {
             }
             GeometryReader { tableSpace in
                 let visibleTools = Array(allTools.prefix(max(1, Int((tableSpace.size.height - 24) / 54))))
+                let slotCount = DashboardActivityIndex.slotCount(forWidth: tableSpace.size.width - 30)
                 VStack(spacing: 0) {
                     if allTools.isEmpty {
                         Button {
@@ -7577,7 +7590,8 @@ private struct DashboardOverviewView: View {
                                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                                 }
                                 if hasGate {
-                                    ToolActivityStrip(counts: model.overviewActivitySlots(for: tool, now: now), now: now,
+                                    ToolActivityStrip(counts: model.overviewActivitySlots(for: tool, now: now,
+                                                      count: slotCount), now: now,
                                                       latestActivity: model.overviewLatestActivity(for: tool))
                                         .padding(.leading, 30)
                                 }
