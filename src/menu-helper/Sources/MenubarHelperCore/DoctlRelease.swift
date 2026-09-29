@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import Security
 
-public let doctlOfficialTarget = "/opt/av/doctl/1.175.0-av.1/doctl"
+public let doctlSignedTarget = "/opt/av/doctl/1.175.0-av.1/doctl"
 public let doctlLauncher = "/usr/local/bin/doctl"
 public let doctlLauncherStub = "#!/usr/local/bin/av __doctl\n"
 
@@ -44,9 +44,9 @@ public func doctlReleaseBinaryValid(path: String) -> Bool {
 public func doctlInstalledReleaseValid() -> Bool {
     let directories = ["/", "/opt", "/opt/av", "/opt/av/doctl", "/opt/av/doctl/1.175.0-av.1", "/usr", "/usr/local", "/usr/local/bin"]
     guard directories.allSatisfy({ doctlProtectedEntry($0, directory: true) }),
-          doctlProtectedEntry(doctlOfficialTarget, directory: false),
+          doctlProtectedEntry(doctlSignedTarget, directory: false),
           doctlProtectedEntry(doctlLauncher, directory: false),
           readProtectedAWSStub(path: doctlLauncher) == doctlLauncherStub
     else { return false }
-    return doctlReleaseBinaryValid(path: doctlOfficialTarget)
+    return doctlReleaseBinaryValid(path: doctlSignedTarget)
 }

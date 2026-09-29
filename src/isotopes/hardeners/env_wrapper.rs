@@ -8314,8 +8314,8 @@ mod tests {
         let stub_dir = dir.join("stub");
         fs::create_dir_all(&target_dir).unwrap();
         fs::create_dir_all(&stub_dir).unwrap();
-        fs::write(target_dir.join("doctl"), "").unwrap();
-        fs::set_permissions(target_dir.join("doctl"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(target_dir.join("civo"), "").unwrap();
+        fs::set_permissions(target_dir.join("civo"), fs::Permissions::from_mode(0o755)).unwrap();
         unsafe {
             std::env::set_var("HOME", &dir);
             std::env::set_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR", &target_dir);
@@ -8324,7 +8324,7 @@ mod tests {
         }
 
         let mut output = Vec::new();
-        run(wrapper("doctl").unwrap(), &mut output, true).unwrap();
+        run(wrapper("civo").unwrap(), &mut output, true).unwrap();
 
         unsafe {
             match previous_home {
@@ -8335,12 +8335,12 @@ mod tests {
             std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR");
             std::env::remove_var("AUTOMIC_VAULT_TEST_EUID");
         }
-        let script = fs::read_to_string(stub_dir.join("doctl")).unwrap();
+        let script = fs::read_to_string(stub_dir.join("civo")).unwrap();
         assert!(script.contains(MARKER));
-        assert!(script.contains("+DIGITALOCEAN_ACCESS_TOKEN"));
+        assert!(script.contains("+CIVO_TOKEN"));
         assert!(script.contains("exec \"$original\" \"$@\""));
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains(&format!("target {}", target_dir.join("doctl").display())));
+        assert!(output.contains(&format!("target {}", target_dir.join("civo").display())));
         assert!(output.contains("install launcher"));
         assert!(output.ends_with("◇ next: run `hash -r`\n"));
         fs::remove_dir_all(dir).unwrap();

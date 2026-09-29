@@ -6,22 +6,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn harden_explains_launcher_collisions_without_changing_files() {
-    for command in ["sentry-cli", "doctl"] {
+    for command in ["sentry-cli", "civo"] {
         let root = fixture(command);
         prepare(&root, command);
         let launcher = root.join("stubs").join(command);
         let target = root.join("targets").join(command);
         // An executable in the working directory is not a Target unless on PATH.
         fs::rename(&target, root.join(command)).unwrap();
-        let config = root.join("doctl.yaml");
-        let credentials = "access-token: do_secret\ncontext: default\n";
+        let config = root.join("civo.json");
+        let credentials = "{\"apikey\":\"do_secret\"}\n";
         fs::write(&config, credentials).unwrap();
 
         let mut harden = av(&root, command);
         harden
             .env_remove("AUTOMIC_VAULT_TEST_ENV_WRAPPER_TARGET_DIR")
             .env("PATH", root.join("stubs"))
-            .env("DIGITALOCEAN_CONFIG", &config)
+            .env("CIVO_CONFIG", &config)
             .current_dir(&root);
 
         let missing = harden.output().unwrap();
@@ -62,30 +62,27 @@ fn harden_explains_launcher_collisions_without_changing_files() {
 #[test]
 fn harden_installs_stub_then_migrates_direct_token() {
     let root = fixture("direct");
-    let config = root.join("doctl.yaml");
-    prepare(&root, "doctl");
-    fs::write(&config, "access-token: do_secret\ncontext: default\n").unwrap();
+    let config = root.join("civo.json");
+    prepare(&root, "civo");
+    fs::write(&config, "{\"apikey\":\"do_secret\"}\n").unwrap();
 
-    let output = av(&root, "doctl")
-        .env("DIGITALOCEAN_CONFIG", &config)
+    let output = av(&root, "civo")
+        .env("CIVO_CONFIG", &config)
         .output()
         .unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(
-        stdout(&output).contains("◇ next: run `av doctor doctl`"),
+        stdout(&output).contains("◇ next: run `av doctor civo`"),
         "{}",
         stdout(&output)
     );
-    assert!(root.join("stubs/doctl").exists());
+    assert!(root.join("stubs/civo").exists());
     assert_eq!(
-        fs::read_to_string(root.join("keychain/DIGITALOCEAN_ACCESS_TOKEN")).unwrap(),
+        fs::read_to_string(root.join("keychain/CIVO_TOKEN")).unwrap(),
         "do_secret"
     );
-    assert_eq!(
-        fs::read_to_string(config).unwrap(),
-        "access-token: \"\"\ncontext: default\n"
-    );
+    assert_eq!(fs::read_to_string(config).unwrap(), "{}\n");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -121,22 +118,22 @@ fn harden_migrates_assignment_bundle() {
 #[test]
 fn failed_secret_storage_leaves_plaintext_usable_behind_stub() {
     let root = fixture("store-failure");
-    let config = root.join("doctl.yaml");
-    prepare(&root, "doctl");
-    fs::write(&config, "access-token: do_secret\ncontext: default\n").unwrap();
+    let config = root.join("civo.json");
+    prepare(&root, "civo");
+    fs::write(&config, "{\"apikey\":\"do_secret\"}\n").unwrap();
     fs::write(root.join("keychain"), "not a directory").unwrap();
 
-    let output = av(&root, "doctl")
-        .env("DIGITALOCEAN_CONFIG", &config)
+    let output = av(&root, "civo")
+        .env("CIVO_CONFIG", &config)
         .output()
         .unwrap();
 
     assert!(!output.status.success());
     assert!(!stdout(&output).contains("av doctor"));
-    assert!(root.join("stubs/doctl").exists());
+    assert!(root.join("stubs/civo").exists());
     assert_eq!(
         fs::read_to_string(config).unwrap(),
-        "access-token: do_secret\ncontext: default\n"
+        "{\"apikey\":\"do_secret\"}\n"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -144,13 +141,13 @@ fn failed_secret_storage_leaves_plaintext_usable_behind_stub() {
 #[test]
 fn failed_stub_install_does_not_migrate_credentials() {
     let root = fixture("install-failure");
-    let config = root.join("doctl.yaml");
-    prepare(&root, "doctl");
-    fs::write(&config, "access-token: do_secret\ncontext: default\n").unwrap();
+    let config = root.join("civo.json");
+    prepare(&root, "civo");
+    fs::write(&config, "{\"apikey\":\"do_secret\"}\n").unwrap();
     fs::set_permissions(root.join("stubs"), fs::Permissions::from_mode(0o555)).unwrap();
 
-    let output = av(&root, "doctl")
-        .env("DIGITALOCEAN_CONFIG", &config)
+    let output = av(&root, "civo")
+        .env("CIVO_CONFIG", &config)
         .output()
         .unwrap();
 
@@ -158,32 +155,29 @@ fn failed_stub_install_does_not_migrate_credentials() {
     assert!(!output.status.success());
     assert_eq!(
         fs::read_to_string(config).unwrap(),
-        "access-token: do_secret\ncontext: default\n"
+        "{\"apikey\":\"do_secret\"}\n"
     );
-    assert!(!root.join("keychain/DIGITALOCEAN_ACCESS_TOKEN").exists());
+    assert!(!root.join("keychain/CIVO_TOKEN").exists());
     fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn cancelled_hardening_changes_nothing() {
     let root = fixture("cancelled");
-    let config = root.join("doctl.yaml");
-    prepare(&root, "doctl");
-    fs::write(&config, "access-token: do_secret\ncontext: default\n").unwrap();
+    let config = root.join("civo.json");
+    prepare(&root, "civo");
+    fs::write(&config, "{\"apikey\":\"do_secret\"}\n").unwrap();
 
     let mut command = base_av(&root);
-    command.args(["harden", "doctl"]);
-    let output = command
-        .env("DIGITALOCEAN_CONFIG", &config)
-        .output()
-        .unwrap();
+    command.args(["harden", "civo"]);
+    let output = command.env("CIVO_CONFIG", &config).output().unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(!stdout(&output).contains("av doctor"));
-    assert!(!root.join("stubs/doctl").exists());
+    assert!(!root.join("stubs/civo").exists());
     assert_eq!(
         fs::read_to_string(config).unwrap(),
-        "access-token: do_secret\ncontext: default\n"
+        "{\"apikey\":\"do_secret\"}\n"
     );
     fs::remove_dir_all(root).unwrap();
 }

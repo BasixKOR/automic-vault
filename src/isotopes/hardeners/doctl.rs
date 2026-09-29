@@ -38,6 +38,21 @@ fn release() -> Result<(&'static str, &'static str, &'static str, &'static str),
 
 pub(crate) fn run(stdout: &mut dyn Write, yes: bool) -> Result<(), String> {
     super::PrivilegeMode::Mixed.require_user("doctl", false)?;
+    for name in [
+        "DIGITALOCEAN_ACCESS_TOKEN",
+        "DIGITALOCEAN_CONFIG",
+        "DIGITALOCEAN_API_URL",
+        "DIGITALOCEAN_TRACE",
+    ] {
+        if std::env::var_os(name).is_some_and(|value| !value.is_empty()) {
+            return Err(format!("unset {name} before hardening doctl"));
+        }
+    }
+    if std::env::var_os("DIGITALOCEAN_CONTEXT")
+        .is_some_and(|value| !value.is_empty() && value != "default")
+    {
+        return Err("unset DIGITALOCEAN_CONTEXT or select default before hardening doctl".into());
+    }
     super::env_wrapper::validate_privileged_av(Path::new("/usr/local/bin/av"))?;
     writeln!(
         stdout,
@@ -468,7 +483,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires AV_DOCTL_RELEASE_FIXTURE with the reviewed architecture archive"]
-    fn official_release_extracts_and_verifies() {
+    fn signed_release_extracts_and_verifies() {
         let archive =
             std::path::PathBuf::from(std::env::var_os("AV_DOCTL_RELEASE_FIXTURE").unwrap());
         assert_eq!(

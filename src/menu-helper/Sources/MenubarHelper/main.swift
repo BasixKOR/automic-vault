@@ -9111,7 +9111,7 @@ private final class ApprovalServer: @unchecked Sendable {
     }
 
     private func validateDoctlTarget(_ request: ApprovalRequest) throws {
-        guard request.target == doctlOfficialTarget else { return }
+        guard request.target == doctlSignedTarget else { return }
         guard doctlInstalledReleaseValid() else {
             throw AppError("doctl Target changed before Secret Application; run av harden doctl")
         }

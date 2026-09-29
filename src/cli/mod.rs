@@ -1139,8 +1139,8 @@ mod tests {
         let (code, stdout, stderr) = run_args(&[
             "av",
             "__install-env-wrapper",
-            "doctl",
-            "/nix/store/example/bin/doctl",
+            "civo",
+            "/nix/store/example/bin/civo",
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
@@ -1159,8 +1159,8 @@ mod tests {
         let (code, stdout, stderr) = run_args(&[
             "av",
             "__install-env-wrapper",
-            "doctl",
-            "/nix/store/example/bin/doctl",
+            "civo",
+            "/nix/store/example/bin/civo",
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };
