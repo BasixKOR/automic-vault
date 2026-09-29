@@ -6821,6 +6821,7 @@ private struct GatePolicyTrack: View {
     let denial: SecretGateProtection?
     let setProtection: (SecretGateProtection) -> Void
     let setDenial: (SecretGateProtection?) -> Void
+    @Environment(\.displayScale) private var displayScale
     @GestureState private var allowDrag: Int?
     @GestureState private var denyDrag: Int?
 
@@ -6829,6 +6830,7 @@ private struct GatePolicyTrack: View {
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
+            let hairline = 1 / displayScale
             let count = regions.columnCount
             let allow = allowDrag ?? regions.allowEnd
             let deny = denyDrag ?? regions.denyStart
@@ -6849,13 +6851,13 @@ private struct GatePolicyTrack: View {
                 }
                 if allow != deny {
                     Rectangle().fill(Color.green)
-                        .frame(width: 2, height: 20)
-                        .offset(x: width * CGFloat(allow) / CGFloat(count) - 1, y: 10)
+                        .frame(width: hairline, height: 20)
+                        .offset(x: width * CGFloat(allow) / CGFloat(count) - hairline / 2, y: 10)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     Rectangle().fill(Color.red)
-                        .frame(width: 2, height: 20)
-                        .offset(x: width * CGFloat(deny) / CGFloat(count) - 1, y: -10)
+                        .frame(width: hairline, height: 20)
+                        .offset(x: width * CGFloat(deny) / CGFloat(count) - hairline / 2, y: -10)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
