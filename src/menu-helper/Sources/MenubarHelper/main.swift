@@ -3294,6 +3294,7 @@ struct LauncherIdentity: Sendable {
     let designatedRequirement: String
     let runtimeProtection: LauncherRuntimeProtection
     let isStandalone: Bool
+    let appURL: URL?
 
     init(
         pid: pid_t,
@@ -3302,7 +3303,8 @@ struct LauncherIdentity: Sendable {
         teamIdentifier: String,
         designatedRequirement: String,
         runtimeProtection: LauncherRuntimeProtection,
-        isStandalone: Bool = false
+        isStandalone: Bool = false,
+        appURL: URL? = nil
     ) {
         self.pid = pid
         self.path = path
@@ -3311,6 +3313,7 @@ struct LauncherIdentity: Sendable {
         self.designatedRequirement = designatedRequirement
         self.runtimeProtection = runtimeProtection
         self.isStandalone = isStandalone
+        self.appURL = appURL
     }
 }
 
@@ -12343,7 +12346,11 @@ private func launcherIdentities(
     signing: LiveSigningInfo,
     appSigning: (URL) -> StaticSigningInfo? = staticSigningInfo,
     bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL },
-    allowsStandaloneFallback: Bool = true
+    allowsStandaloneFallback: Bool = true,
+    helperConfiguration: VerifiedLauncherHelperConfiguration? = nil,
+    helperSigning: (VerifiedLauncherHelperAssociation, pid_t) -> StaticSigningInfo? = {
+        verifiedLauncherHelperSigningInfo($0, pid: $1)
+    }
 ) -> [LauncherIdentity] {
     // Gate plumbing is never the operation's Launcher.
     guard signing.identifier != "com.automicvault.av-gpg" else { return [] }
@@ -12366,7 +12373,8 @@ private func launcherIdentities(
     let helperAssociation = verifiedLauncherHelperAssociation(
         path: path,
         signing: signing,
-        containingAppURLs: containingAppURLs
+        containingAppURLs: containingAppURLs,
+        configuration: helperConfiguration
     )
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
         || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
@@ -12389,7 +12397,8 @@ private func launcherIdentities(
             identifier: enrollment.bundleIdentifier,
             teamIdentifier: signing.teamIdentifier,
             designatedRequirement: enrollment.launcherRequirement,
-            runtimeProtection: signing.runtimeProtection
+            runtimeProtection: signing.runtimeProtection,
+            appURL: appURL
         )]
     }
     guard !signing.isAdHoc else { return [] }
@@ -12401,20 +12410,23 @@ private func launcherIdentities(
             identifier: app.identifier,
             teamIdentifier: app.teamIdentifier,
             designatedRequirement: app.designatedRequirement,
-            runtimeProtection: signing.runtimeProtection
+            runtimeProtection: signing.runtimeProtection,
+            appURL: appURL
         )
     }
     if let helperAssociation,
        seenApps.insert(helperAssociation.appURL.path).inserted,
-       let app = verifiedLauncherHelperSigningInfo(helperAssociation, pid: pid) {
-        apps.append(LauncherIdentity(
+       let app = helperSigning(helperAssociation, pid) {
+        // Only a fully verified association may take precedence over the helper bundle.
+        apps.insert(LauncherIdentity(
             pid: pid,
             path: path,
             identifier: app.identifier,
             teamIdentifier: app.teamIdentifier,
             designatedRequirement: app.designatedRequirement,
-            runtimeProtection: signing.runtimeProtection
-        ))
+            runtimeProtection: signing.runtimeProtection,
+            appURL: helperAssociation.appURL
+        ), at: 0)
     }
     if !apps.isEmpty { return apps }
     guard allowsStandaloneFallback,
@@ -13453,7 +13465,10 @@ func approvalPromptRequester(
     if launcher.isStandalone {
         return ("\(launcher.path) — Team ID: \(launcher.teamIdentifier)", launcher.path)
     }
-    if let appURL = appBundleURL(containing: launcher.path)
+    if let appURL = launcher.appURL
+        ?? appBundleURLs(containing: launcher.path).first(where: {
+            Bundle(url: $0)?.bundleIdentifier == launcher.identifier
+        })
         ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: launcher.identifier)
     {
         return (appDisplayName(appURL), appURL.path)
@@ -13461,12 +13476,8 @@ func approvalPromptRequester(
     return (shortAppName(launcher.identifier), launcher.path)
 }
 
-private func temporaryAccessGrantLauncherName(
-    _ launcher: LauncherIdentity,
-    displayName: (URL) -> String = appDisplayName
-) -> String {
-    appBundleURLs(containing: launcher.path).last.map(displayName)
-        ?? approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
+private func temporaryAccessGrantLauncherName(_ launcher: LauncherIdentity) -> String {
+    approvalPromptRequester(launcher: launcher, fallback: launcher.path).name
 }
 
 private func appDisplayName(_ appURL: URL) -> String {
@@ -15739,7 +15750,8 @@ private func runApprovalSelfCheck() -> Int32 {
             identifier: "com.automicvault.vaultty",
             teamIdentifier: "TEAM",
             designatedRequirement: #"identifier "com.automicvault.vaultty" and anchor apple generic"#,
-            runtimeProtection: .hardened
+            runtimeProtection: .hardened,
+            appURL: URL(fileURLWithPath: "/Applications/Vaultty.app")
         ),
         fallback: "/opt/homebrew/bin/gh"
     )
@@ -17218,7 +17230,79 @@ private func runApprovalProcessExecutionSelfCheck() -> Int32 {
     return 0
 }
 
+private func runNestedLauncherHelperSelfCheck() -> Bool {
+    let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        .appendingPathComponent("av-nested-helper-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let parent = root.appendingPathComponent("ChatGPT.app")
+    let nested = parent.appendingPathComponent("Contents/Resources/codex-cli/CodexCLI.app")
+    let executable = nested.appendingPathComponent("Contents/MacOS/codex")
+    do {
+        for (url, identifier, name, binary) in [
+            (parent, "com.openai.codex", "ChatGPT", "ChatGPT"),
+            (nested, "codex", "Codex CLI", "codex"),
+        ] {
+            try FileManager.default.createDirectory(
+                at: url.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true
+            )
+            let binaryURL = url.appendingPathComponent("Contents/MacOS/" + binary)
+            try Data().write(to: binaryURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryURL.path)
+            let plist = ["CFBundleIdentifier": identifier, "CFBundleName": name,
+                         "CFBundleExecutable": binary, "CFBundlePackageType": "APPL"]
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                .write(to: url.appendingPathComponent("Contents/Info.plist"))
+        }
+    } catch { return false }
+    let signing = LiveSigningInfo(
+        identifier: "codex", teamIdentifier: "2DC432GLL2", designatedRequirement: "helper",
+        mainExecutable: executable.path, isAdHoc: false, runtimeProtection: .hardened,
+        isDeveloperID: true
+    )
+    let parentSigning = StaticSigningInfo(
+        identifier: "com.openai.codex", teamIdentifier: "2DC432GLL2", designatedRequirement: "parent"
+    )
+    func candidates(enabled: Bool = true, valid: Bool = true) -> [LauncherIdentity] {
+        launcherIdentities(
+            pid: 42, path: executable.path, signing: signing,
+            appSigning: { _ in
+                StaticSigningInfo(identifier: "codex", teamIdentifier: "2DC432GLL2",
+                                  designatedRequirement: "helper")
+            },
+            helperConfiguration: VerifiedLauncherHelperConfiguration(
+                disabledHelperIDs: enabled ? [] : [codexVerifiedLauncherHelper.id]
+            ),
+            helperSigning: { association, _ in
+                valid && association.appURL.path == parent.path ? parentSigning : nil
+            }
+        )
+    }
+    let launchers = candidates()
+    let gate = SecretGate(id: "aws", keyPatterns: [], routes: [],
+                          defaultProtection: .readOnly, appPolicies: [])
+    guard launchers.map(\.identifier) == ["com.openai.codex", "codex"],
+          let launcher = launchers.first,
+          resolveSecretGatePolicy(gate: gate, launchers: launchers)?.launcher?.identifier == "com.openai.codex",
+          executionOrigin(among: launchers, callerPID: 99, ancestorFallbackPath: nil)?.identifier == "com.openai.codex",
+          approvalPromptRequester(launcher: launcher, fallback: executable.path).name == "ChatGPT",
+          approvalPromptRequester(launcher: launcher, fallback: executable.path).iconPath == parent.path,
+          temporaryAccessGrantLauncherName(launcher) == "ChatGPT"
+    else { return false }
+    for fallback in [candidates(enabled: false), candidates(valid: false)] {
+        guard fallback.map(\.identifier) == ["codex"], let helper = fallback.first,
+              approvalPromptRequester(launcher: helper, fallback: executable.path).name == "Codex CLI",
+              approvalPromptRequester(launcher: helper, fallback: executable.path).iconPath == nested.path,
+              temporaryAccessGrantLauncherName(helper) == "Codex CLI"
+        else { return false }
+    }
+    return true
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
+    guard runNestedLauncherHelperSelfCheck() else {
+        fputs("nested Launcher helper attribution failed\n", stderr)
+        return 1
+    }
     let requirement = #"identifier "com.example.cli" and anchor apple generic"#
     let developerID = LiveSigningInfo(
         identifier: "com.example.cli",
@@ -17512,11 +17596,9 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           let liveBundleFallback,
           liveBundleFallback.isStandalone,
           liveBundleFallback.identifier == bundledDeveloperID.identifier,
-          temporaryAccessGrantLauncherName(liveBundleFallback) == "Example",
-          temporaryAccessGrantLauncherName(
-              liveBundleFallback,
-              displayName: { _ in "ChatGPT" }
-          ) == "ChatGPT",
+          temporaryAccessGrantLauncherName(liveBundleFallback) == approvalPromptRequester(
+              launcher: liveBundleFallback, fallback: liveBundleFallback.path
+          ).name,
           pathOnlyBundleFallback == nil,
           launcherIdentity(pid: 43, path: adHoc.mainExecutable, signing: adHoc) == nil,
           launcherIdentity(pid: 43, path: rejected.mainExecutable, signing: rejected) == nil,

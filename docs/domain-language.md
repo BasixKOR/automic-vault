@@ -268,6 +268,11 @@ proving membership in its resource seal. Live code identity, Developer ID,
 runtime protections, and parent signing identity remain mandatory. Helpers
 still inside the parent bundle retain the ordinary path and seal checks.
 
+When a verified helper is itself a nested app, its associated parent takes
+precedence for Launcher attribution. Both verified identities remain subject to
+explicit denials. Presentation follows the selected Launcher Identity, not
+bundle nesting. See [ADR 0058](adr/0058-verified-helper-launcher-precedence.md).
+
 ### Retained Launcher Provenance
 
 Ephemeral evidence that Automic Vault recorded one exact live process execution
