@@ -548,3 +548,5 @@
 "Unclassified operations are denied" = "拒绝未分类的操作";
 
 "Unclassified operations can require Approval or be denied, but cannot be automatically allowed." = "未分类的操作可以要求批准或被拒绝，但不能自动允许。";
+
+"Recently Approved Apps" = "最近批准的 App";

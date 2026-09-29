@@ -871,8 +871,8 @@ final class DashboardModel: ObservableObject {
         pendingBlessingLaunchers.removeAll { $0.requirement == launcher.requirement }
     }
 
-    func addApp(to script: BlessedScript) {
-        chooseLauncherApp { [weak self] launcher in
+    func addApp(to script: BlessedScript, recentApp: AccessRequestRecord? = nil) {
+        chooseLauncherApp(recentApp: recentApp) { [weak self] launcher in
             guard let self, let launcher,
                   !script.launchers.contains(where: { $0.requirement == launcher.requirement })
             else { return }
@@ -989,8 +989,11 @@ final class DashboardModel: ObservableObject {
         completion?(outcome)
     }
 
-    private func chooseLauncherApp(_ completion: @escaping (BlessedScriptLauncher?) -> Void) {
-        chooseLauncher { signing in
+    private func chooseLauncherApp(
+        recentApp: AccessRequestRecord? = nil,
+        _ completion: @escaping (BlessedScriptLauncher?) -> Void
+    ) {
+        chooseLauncher(recentApp: recentApp) { signing in
             guard let signing else {
                 completion(nil)
                 return
@@ -2958,43 +2961,44 @@ struct DashboardItem: Identifiable, Equatable, Sendable {
     }
 }
 
-private struct GateLauncherButton: View {
-    @ObservedObject var model: DashboardModel
-    let gate: SecretGate
+private struct AddLauncherButton: View {
+    let recentApps: [AccessRequestRecord]
+    let existingRequirements: Set<String>
     @ObservedObject var approval: AuthorityApprovalState
+    let action: String
+    let perform: (AccessRequestRecord?) -> Void
 
     var body: some View {
-        let action = "gate-launcher:\(gate.id)"
-        let apps = recentApprovedLauncherApps(
-            in: model.recentAccessRequests,
-            excluding: Set(gate.appPolicies.map(\.requirement))
-        ).filter { $0.launcherIconPath.map { FileManager.default.fileExists(atPath: $0) } == true }
-        if apps.isEmpty {
+        let apps = recentApprovedLauncherApps(in: recentApps, excluding: existingRequirements)
+            .filter { $0.launcherIconPath.map { FileManager.default.fileExists(atPath: $0) } == true }
+        HStack(spacing: 0) {
             AuthorityApprovalButton(title: "Add Verified Launcher", approval: approval, action: action) {
-                model.addApp(to: gate)
+                perform(nil)
             }
-        } else {
-            Menu {
-                ForEach(apps) { app in
-                    Button {
-                        guard !approval.isPending(action) else { return }
-                        model.addApp(to: gate, recentApp: app)
-                    } label: {
-                        let url = URL(fileURLWithPath: app.launcherIconPath!)
-                        let bundle = Bundle(url: url)
-                        Text(bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
-                            ?? app.launcher ?? url.deletingPathExtension().lastPathComponent)
+            if !apps.isEmpty {
+                Menu {
+                    ForEach(apps) { app in
+                        Button {
+                            guard !approval.isPending(action) else { return }
+                            perform(app)
+                        } label: {
+                            let url = URL(fileURLWithPath: app.launcherIconPath!)
+                            let bundle = Bundle(url: url)
+                            Text(bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                                ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+                                ?? app.launcher ?? url.deletingPathExtension().lastPathComponent)
+                        }
                     }
+                } label: {
+                    Image(systemName: "chevron.down")
                 }
-            } label: {
-                AuthorityApprovalLabel(title: "Add Verified Launcher", approval: approval, action: action)
-            } primaryAction: {
-                guard !approval.isPending(action) else { return }
-                model.addApp(to: gate)
+                .menuIndicator(.hidden)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Recently Approved Apps")
+                .accessibilityLabel("Recently Approved Apps")
+                .disabled(approval.isPending(action))
             }
-            .menuIndicator(.visible)
-            .disabled(approval.isPending(action))
         }
     }
 }
@@ -3037,17 +3041,22 @@ struct DashboardRootView: View {
                 .help("Cancel App Inspection")
                 .accessibilityLabel("Cancel App Inspection")
             } else {
-                GateLauncherButton(model: model, gate: gate, approval: model.authorityApproval)
+                AddLauncherButton(
+                    recentApps: model.recentAccessRequests,
+                    existingRequirements: Set(gate.appPolicies.map(\.requirement)),
+                    approval: model.authorityApproval, action: "gate-launcher:\(gate.id)"
+                ) { model.addApp(to: gate, recentApp: $0) }
                 .labelStyle(.titleAndIcon)
                 .help("Add Verified Launcher")
             }
         }
         if model.selectedSection == .blessedScripts {
             if let script = model.selectedBlessedScript {
-                AuthorityApprovalButton(
-                    title: "Add Verified Launcher", approval: model.authorityApproval,
-                    action: "script-launcher:\(script.path)"
-                ) { model.addApp(to: script) }
+                AddLauncherButton(
+                    recentApps: model.recentAccessRequests,
+                    existingRequirements: Set(script.launchers.map(\.requirement)),
+                    approval: model.authorityApproval, action: "script-launcher:\(script.path)"
+                ) { model.addApp(to: script, recentApp: $0) }
                 .labelStyle(.titleAndIcon)
                 .help("Add Verified Launcher")
             }
