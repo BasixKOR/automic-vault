@@ -55,8 +55,9 @@ they scroll into view. While searching, the user loads older pages explicitly
 to extend the search. The cursor uses the store's sequence rather than an
 offset, so a new record does not skip an older page. `av history` returns the
 newest 50 by default; `--since <duration>` may request a narrower time window up
-to 30 days. A single reply exceeding 1 MiB fails rather than truncating the
-result; a narrower `--since` window can be requested. Filtering occurs inside
+to 30 days. The original single-reply protocol rejected results over 1 MiB;
+[ADR 0058](0058-complete-cli-history-windows.md) supersedes that CLI limitation
+with a complete snapshot transferred in bounded chunks. Filtering occurs inside
 the menu bar app before disclosure. CLI
 formats receive only display-safe commands as defined by ADR 0046.
 An explicit window uses the dedicated `history-window` XPC operation with the

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAXIMUM_HISTORY_AGE_SECONDS: u64 = 30 * 24 * 60 * 60;
@@ -28,23 +29,73 @@ struct HistoryRecord {
     secret_value_sources: Option<BTreeMap<String, String>>,
 }
 
-pub(super) fn run(args: Vec<OsString>, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+pub(super) fn run(
+    args: Vec<OsString>,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    terminal: bool,
+) -> i32 {
     let options = match Options::parse(args) {
         Ok(options) => options,
         Err(error) => {
             let _ = writeln!(stderr, "av history: {error}");
-            let _ = writeln!(stderr, "usage: av history [--json] [--since <duration>]");
+            let _ = writeln!(
+                stderr,
+                "usage: av history [--json] [--since <duration>] [--no-pager]"
+            );
             return 2;
         }
     };
-    match crate::secrets::authorization_history(options.since)
-        .and_then(|value| write_response(stdout, &value, options.json))
-    {
+    match crate::secrets::authorization_history(options.since).and_then(|value| {
+        if options.use_pager(terminal) {
+            let mut output = Vec::new();
+            write_response(&mut output, &value, false)?;
+            page_output(stdout, &output)
+        } else {
+            write_response(stdout, &value, options.json)
+        }
+    }) {
         Ok(()) => 0,
         Err(error) => {
             let _ = writeln!(stderr, "av history: {error}");
             1
         }
+    }
+}
+
+fn pager_command() -> Command {
+    // History contains protected metadata. Never execute a shell or user pager hooks.
+    let mut command = Command::new("/usr/bin/less");
+    command
+        .args(["-F", "-X", "-S"])
+        .env_clear()
+        .env(
+            "TERM",
+            std::env::var_os("TERM").unwrap_or_else(|| "dumb".into()),
+        )
+        .env("LESSSECURE", "1")
+        .env("LESSHISTFILE", "-")
+        .env("LESSCHARSET", "utf-8")
+        .stdin(Stdio::piped());
+    command
+}
+
+fn page_output(stdout: &mut dyn Write, output: &[u8]) -> Result<(), String> {
+    let mut pager = match pager_command().spawn() {
+        Ok(pager) => pager,
+        Err(_) => return stdout.write_all(output).map_err(|error| error.to_string()),
+    };
+    let written = pager.stdin.take().unwrap().write_all(output);
+    let status = pager
+        .wait()
+        .map_err(|error| format!("pager failed: {error}"))?;
+    if !status.success() {
+        return Err(format!("pager exited with {status}"));
+    }
+    match written {
+        // Quitting the pager early is intentional, not a failed history read.
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result.map_err(|error| error.to_string()),
     }
 }
 
@@ -61,17 +112,24 @@ fn write_response(output: &mut dyn Write, value: &str, json: bool) -> Result<(),
 
 struct Options {
     json: bool,
+    no_pager: bool,
     since: Option<u64>,
 }
 
 impl Options {
+    fn use_pager(&self, terminal: bool) -> bool {
+        terminal && !self.json && !self.no_pager
+    }
+
     fn parse(args: Vec<OsString>) -> Result<Self, String> {
         let mut json = false;
+        let mut no_pager = false;
         let mut since = None;
         let mut args = args.into_iter();
         while let Some(argument) = args.next() {
             match argument.to_str() {
                 Some("--json") if !json => json = true,
+                Some("--no-pager") if !no_pager => no_pager = true,
                 Some("--since") if since.is_none() => {
                     let duration = args
                         .next()
@@ -87,7 +145,11 @@ impl Options {
                 _ => return Err("invalid arguments".into()),
             }
         }
-        Ok(Self { json, since })
+        Ok(Self {
+            json,
+            no_pager,
+            since,
+        })
     }
 }
 
@@ -225,6 +287,38 @@ mod tests {
             "av history --token <redacted>"
         );
         assert!(document[0].get("display_command").is_none());
+    }
+
+    #[test]
+    fn pager_is_only_for_human_terminal_output_and_has_no_hooks() {
+        for (args, terminal, expected) in [
+            (vec![], true, true),
+            (vec![], false, false),
+            (vec!["--json"], true, false),
+            (vec!["--no-pager"], true, false),
+            (vec!["--json", "--no-pager"], true, false),
+        ] {
+            let options = Options::parse(args.into_iter().map(OsString::from).collect()).unwrap();
+            assert_eq!(options.use_pager(terminal), expected);
+        }
+        let command = pager_command();
+        assert_eq!(command.get_program(), "/usr/bin/less");
+        let env: BTreeMap<_, _> = command.get_envs().collect();
+        assert_eq!(
+            env.get(std::ffi::OsStr::new("LESSSECURE")),
+            Some(&Some(std::ffi::OsStr::new("1")))
+        );
+        assert_eq!(env.len(), 4);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "requires a terminal; quit less with q to check early-close handling"]
+    fn history_pager_terminal_smoke() {
+        let output = "Synthetic Authorization History row — 界\n".repeat(50_000);
+        let mut fallback = Vec::new();
+        page_output(&mut fallback, output.as_bytes()).unwrap();
+        assert!(fallback.is_empty(), "the system pager did not start");
     }
 
     #[test]

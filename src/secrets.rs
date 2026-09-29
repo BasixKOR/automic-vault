@@ -163,14 +163,14 @@ pub(crate) fn list_global_secret_names() -> Result<Vec<String>, String> {
 
 pub(crate) fn authorization_history(since: Option<u64>) -> Result<String, String> {
     let reply = xpc_request(
-        history_operation(since),
+        "history-read",
         None,
         None,
         None,
         since.map(|value| (b"since\0" as &'static [u8], value)),
     ).map_err(|error| {
-        if since.is_some() && error == "invalid XPC operation" {
-            format!("Authorization History window requires an updated running Automic Vault app: {error}")
+        if error == "invalid XPC operation" {
+            format!("Complete Authorization History requires an updated running Automic Vault app: {error}")
         } else {
             error
         }
@@ -178,14 +178,6 @@ pub(crate) fn authorization_history(since: Option<u64>) -> Result<String, String
     reply
         .value
         .ok_or_else(|| "the approval service returned no Authorization History".into())
-}
-
-fn history_operation(since: Option<u64>) -> &'static str {
-    if since.is_some() {
-        "history-window"
-    } else {
-        "history"
-    }
 }
 
 fn list_secret_names_filtered(global_only: bool) -> Result<Vec<String>, String> {
@@ -912,6 +904,8 @@ fn xpc_request_with_project_directory(
     unsafe extern "C" {
         static _xpc_type_error: u8;
         static _xpc_type_array: u8;
+        static _xpc_type_data: u8;
+        static _xpc_type_uint64: u8;
         static _xpc_error_key_description: *const c_char;
 
         fn xpc_connection_create_mach_service(
@@ -928,6 +922,12 @@ fn xpc_request_with_project_directory(
         fn xpc_dictionary_create_empty() -> XpcObject;
         fn xpc_dictionary_set_bool(xdict: XpcObject, key: *const c_char, value: bool);
         fn xpc_dictionary_set_uint64(xdict: XpcObject, key: *const c_char, value: u64);
+        fn xpc_dictionary_get_uint64(xdict: XpcObject, key: *const c_char) -> u64;
+        fn xpc_dictionary_get_data(
+            xdict: XpcObject,
+            key: *const c_char,
+            length: *mut usize,
+        ) -> *const c_void;
         fn xpc_dictionary_get_bool(xdict: XpcObject, key: *const c_char) -> bool;
         fn xpc_dictionary_set_string(xdict: XpcObject, key: *const c_char, value: *const c_char);
         fn xpc_dictionary_get_string(xdict: XpcObject, key: *const c_char) -> *const c_char;
@@ -1003,84 +1003,170 @@ fn xpc_request_with_project_directory(
         xpc_dictionary_set_bool(message, b"interactive\0".as_ptr().cast(), true);
     }
 
-    let reply = unsafe { xpc_connection_send_message_with_reply_sync(connection, message) };
+    let result = (|| {
+        let mut history = HistoryChunks::default();
+        loop {
+            let reply = unsafe { xpc_connection_send_message_with_reply_sync(connection, message) };
+            if reply.is_null() {
+                return Err("Automic Vault approval did not reply".into());
+            }
+
+            let reply_is_error =
+                unsafe { xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() };
+            if !reply_is_error {
+                let human_approval_decision = unsafe {
+                    xpc_dictionary_get_string(reply, b"human_approval_decision\0".as_ptr().cast())
+                };
+                if !human_approval_decision.is_null() {
+                    if let Some(decision) = unsafe {
+                        human_approval_message(
+                            std::ffi::CStr::from_ptr(human_approval_decision).to_bytes(),
+                        )
+                    } {
+                        eprintln!("automic vault: {decision}");
+                    }
+                }
+            }
+
+            let result = unsafe {
+                if reply_is_error {
+                    if crate::approval_service_connection_invalid(reply) {
+                        Err(crate::approval_service_unavailable_message(&service).into())
+                    } else {
+                        let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
+                        let error = if error.is_null() {
+                            "approval XPC connection failed".into()
+                        } else {
+                            std::ffi::CStr::from_ptr(error)
+                                .to_string_lossy()
+                                .into_owned()
+                        };
+                        Err(error)
+                    }
+                } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
+                    if operation == "history-read" {
+                        let chunk_result = (|| {
+                            for (key, expected_type) in [
+                                (
+                                    b"history_chunk\0".as_slice(),
+                                    std::ptr::addr_of!(_xpc_type_data),
+                                ),
+                                (b"offset\0".as_slice(), std::ptr::addr_of!(_xpc_type_uint64)),
+                                (b"total\0".as_slice(), std::ptr::addr_of!(_xpc_type_uint64)),
+                            ] {
+                                let field = xpc_dictionary_get_value(reply, key.as_ptr().cast());
+                                if field.is_null() || xpc_get_type(field) != expected_type.cast() {
+                                    return Err(
+                                        "invalid Authorization History chunk fields".to_string()
+                                    );
+                                }
+                            }
+                            let mut length = 0;
+                            let bytes = xpc_dictionary_get_data(
+                                reply,
+                                b"history_chunk\0".as_ptr().cast(),
+                                &mut length,
+                            );
+                            if bytes.is_null() || length == 0 || length > 256 * 1024 {
+                                return Err("invalid Authorization History chunk size".to_string());
+                            }
+                            history.append(
+                                xpc_dictionary_get_uint64(reply, b"offset\0".as_ptr().cast()),
+                                xpc_dictionary_get_uint64(reply, b"total\0".as_ptr().cast()),
+                                std::slice::from_raw_parts(bytes.cast::<u8>(), length),
+                            )
+                        })();
+                        xpc_release(reply);
+                        if chunk_result? {
+                            let value = String::from_utf8(history.bytes).map_err(|_| {
+                                "Authorization History is not valid UTF-8".to_string()
+                            })?;
+                            return Ok(XpcReply {
+                                value: Some(value),
+                                names: Vec::new(),
+                            });
+                        }
+                        set_string(message, b"op\0", "history-next")?;
+                        xpc_dictionary_set_uint64(
+                            message,
+                            b"offset\0".as_ptr().cast(),
+                            history.bytes.len() as u64,
+                        );
+                        continue;
+                    }
+                    let value = xpc_dictionary_get_string(reply, b"value\0".as_ptr().cast());
+                    let value = (!value.is_null()).then(|| {
+                        std::ffi::CStr::from_ptr(value)
+                            .to_string_lossy()
+                            .into_owned()
+                    });
+                    let names = xpc_dictionary_get_value(reply, b"names\0".as_ptr().cast());
+                    let names = if names.is_null()
+                        || xpc_get_type(names) != std::ptr::addr_of!(_xpc_type_array).cast()
+                    {
+                        Vec::new()
+                    } else {
+                        (0..xpc_array_get_count(names))
+                            .filter_map(|index| {
+                                let name = xpc_array_get_string(names, index);
+                                (!name.is_null()).then(|| {
+                                    std::ffi::CStr::from_ptr(name)
+                                        .to_string_lossy()
+                                        .into_owned()
+                                })
+                            })
+                            .collect()
+                    };
+                    Ok(XpcReply { value, names })
+                } else {
+                    let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
+                    Err(if error.is_null() {
+                        format!("secret {operation} failed")
+                    } else {
+                        std::ffi::CStr::from_ptr(error)
+                            .to_string_lossy()
+                            .into_owned()
+                    })
+                }
+            };
+            unsafe { xpc_release(reply) };
+            return result;
+        }
+    })();
     unsafe {
         xpc_release(message);
         xpc_connection_cancel(connection);
         xpc_release(connection);
     }
-    if reply.is_null() {
-        return Err("Automic Vault approval did not reply".into());
-    }
-
-    let reply_is_error =
-        unsafe { xpc_get_type(reply) == std::ptr::addr_of!(_xpc_type_error).cast() };
-    if !reply_is_error {
-        let human_approval_decision = unsafe {
-            xpc_dictionary_get_string(reply, b"human_approval_decision\0".as_ptr().cast())
-        };
-        if !human_approval_decision.is_null() {
-            if let Some(decision) = unsafe {
-                human_approval_message(std::ffi::CStr::from_ptr(human_approval_decision).to_bytes())
-            } {
-                eprintln!("automic vault: {decision}");
-            }
-        }
-    }
-
-    let result = unsafe {
-        if reply_is_error {
-            if crate::approval_service_connection_invalid(reply) {
-                Err(crate::approval_service_unavailable_message(&service).into())
-            } else {
-                let error = xpc_dictionary_get_string(reply, _xpc_error_key_description);
-                let error = if error.is_null() {
-                    "approval XPC connection failed".into()
-                } else {
-                    std::ffi::CStr::from_ptr(error)
-                        .to_string_lossy()
-                        .into_owned()
-                };
-                Err(error)
-            }
-        } else if xpc_dictionary_get_bool(reply, b"ok\0".as_ptr().cast()) {
-            let value = xpc_dictionary_get_string(reply, b"value\0".as_ptr().cast());
-            let value = (!value.is_null()).then(|| {
-                std::ffi::CStr::from_ptr(value)
-                    .to_string_lossy()
-                    .into_owned()
-            });
-            let names = xpc_dictionary_get_value(reply, b"names\0".as_ptr().cast());
-            let names = if names.is_null()
-                || xpc_get_type(names) != std::ptr::addr_of!(_xpc_type_array).cast()
-            {
-                Vec::new()
-            } else {
-                (0..xpc_array_get_count(names))
-                    .filter_map(|index| {
-                        let name = xpc_array_get_string(names, index);
-                        (!name.is_null()).then(|| {
-                            std::ffi::CStr::from_ptr(name)
-                                .to_string_lossy()
-                                .into_owned()
-                        })
-                    })
-                    .collect()
-            };
-            Ok(XpcReply { value, names })
-        } else {
-            let error = xpc_dictionary_get_string(reply, b"error\0".as_ptr().cast());
-            Err(if error.is_null() {
-                format!("secret {operation} failed")
-            } else {
-                std::ffi::CStr::from_ptr(error)
-                    .to_string_lossy()
-                    .into_owned()
-            })
-        }
-    };
-    unsafe { xpc_release(reply) };
     result
+}
+
+#[cfg(any(target_os = "macos", test))]
+#[derive(Default)]
+struct HistoryChunks {
+    bytes: Vec<u8>,
+    total: Option<u64>,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl HistoryChunks {
+    fn append(&mut self, offset: u64, total: u64, bytes: &[u8]) -> Result<bool, String> {
+        let end = offset.checked_add(bytes.len() as u64);
+        if bytes.is_empty()
+            || bytes.len() > 256 * 1024
+            || offset != self.bytes.len() as u64
+            || self.total.is_some_and(|expected| expected != total)
+            || end.is_none_or(|end| end > total)
+        {
+            return Err("incomplete or invalid Authorization History transfer".into());
+        }
+        self.total = Some(total);
+        self.bytes
+            .try_reserve(bytes.len())
+            .map_err(|_| "not enough memory for Authorization History".to_string())?;
+        self.bytes.extend_from_slice(bytes);
+        Ok(end == Some(total))
+    }
 }
 
 fn human_approval_message(decision: &[u8]) -> Option<&'static str> {
@@ -1135,9 +1221,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn explicit_history_window_uses_an_atomic_wire_operation() {
-        assert_eq!(history_operation(None), "history");
-        assert_eq!(history_operation(Some(1)), "history-window");
+    fn history_chunks_require_a_complete_contiguous_snapshot() {
+        let original = "界".repeat(400_000).into_bytes();
+        let mut history = HistoryChunks::default();
+        for chunk in original.chunks(256 * 1024) {
+            let offset = history.bytes.len() as u64;
+            let done = history
+                .append(offset, original.len() as u64, chunk)
+                .unwrap();
+            assert_eq!(done, history.bytes.len() == original.len());
+        }
+        assert_eq!(history.bytes, original);
+        let mut history = HistoryChunks::default();
+        assert!(history.append(1, 3, b"a").is_err());
+        assert!(!history.append(0, 3, b"a").unwrap());
+        assert!(history.append(1, 4, b"b").is_err());
+        assert!(history.append(0, 3, b"a").is_err());
+        assert!(history.append(1, 3, b"").is_err());
+        assert!(history.append(1, 3, b"bcd").is_err());
+        assert!(history.append(1, 3, b"bc").unwrap());
     }
 
     #[test]

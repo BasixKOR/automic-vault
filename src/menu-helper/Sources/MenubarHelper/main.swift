@@ -3122,6 +3122,7 @@ private func approvalDecision(
 final class ApprovalCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var canceled = false
+    let historyTransfer = AuthorizationHistoryTransfer()
     private var observers: [UUID: @MainActor @Sendable () -> Void] = [:]
 
     var isCanceled: Bool {
@@ -3132,6 +3133,7 @@ final class ApprovalCancellation: @unchecked Sendable {
         let list: [@MainActor @Sendable () -> Void] = lock.withLock {
             guard !canceled else { return [] }
             canceled = true
+            historyTransfer.cancel()
             let items = Array(self.observers.values)
             self.observers.removeAll()
             return items
@@ -3788,7 +3790,8 @@ private func validatedAuthorizationHistorySince(
 ) -> (valid: Bool, since: Date?) {
     let value = xpc_dictionary_get_value(message, "since")
     if operation == .history { return (value == nil, nil) }
-    guard operation == .historyWindow, let value,
+    if operation == .historyRead, value == nil { return (true, nil) }
+    guard operation == .historyWindow || operation == .historyRead, let value,
           xpc_get_type(value) == XPC_TYPE_UINT64 else { return (false, nil) }
     let seconds = xpc_dictionary_get_uint64(message, "since")
     guard seconds > 0 else { return (false, nil) }
@@ -3814,12 +3817,12 @@ private func metadataDisclosureHasAutomaticAccess(
 private func authorizationHistoryDisclosureValue(
     record: AccessRequestRecord,
     since: Date?,
+    maximumReplyBytes: Int? = 1_048_576,
     records: (Date?, Int?, Int?) -> [AccessRequestRecord]? = loadAccessRequestRecordsForDisclosure,
     isCanceled: () -> Bool = { false },
     onAccessRequest: (AccessRequestRecord) -> Bool
 ) -> String? {
-    // Keep a single XPC reply bounded; a narrower --since can retrieve a smaller window.
-    let maximumReplyBytes = 1_048_576
+    // Legacy clients receive one bounded reply; history-read transfers the complete snapshot.
     let limit = since == nil ? 49 : nil
     guard !isCanceled(),
           let previousRecords = records(since, limit, maximumReplyBytes),
@@ -3829,13 +3832,29 @@ private func authorizationHistoryDisclosureValue(
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys]
     guard let data = try? encoder.encode(([record] + previousRecords).map(\.redactedForDisclosure)),
-          data.count <= maximumReplyBytes,
+          maximumReplyBytes.map({ data.count <= $0 }) ?? true,
           let value = String(data: data, encoding: .utf8),
           !isCanceled(),
           onAccessRequest(record)
     else { return nil }
     return value
 }
+
+private func replyHistoryChunk(
+    _ chunk: AuthorizationHistoryTransfer.Chunk,
+    to message: xpc_object_t,
+    on peer: xpc_connection_t
+) {
+    let response = xpc_dictionary_create_reply(message) ?? xpc_dictionary_create_empty()
+    xpc_dictionary_set_bool(response, "ok", true)
+    xpc_dictionary_set_uint64(response, "offset", UInt64(chunk.offset))
+    xpc_dictionary_set_uint64(response, "total", UInt64(chunk.total))
+    chunk.bytes.withUnsafeBytes { bytes in
+        xpc_dictionary_set_data(response, "history_chunk", bytes.baseAddress!, bytes.count)
+    }
+    xpc_connection_send_message(peer, response)
+}
+
 
 private final class ApprovalServer: @unchecked Sendable {
     private let serviceName: String
@@ -4273,10 +4292,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 kind: .secretNames(globalOnly: xpc_dictionary_get_bool(message, "global_only"))
             )
         case .history where isTrustedAvCaller(path: callerPath, signing: signing),
-             .historyWindow where isTrustedAvCaller(path: callerPath, signing: signing):
+             .historyWindow where isTrustedAvCaller(path: callerPath, signing: signing),
+             .historyRead where isTrustedAvCaller(path: callerPath, signing: signing):
             let window = validatedAuthorizationHistorySince(operation: op, message: message)
             guard window.valid else {
                 reply(peer, to: message, ok: false, error: "invalid Authorization History time range")
+                return
+            }
+            if op == .historyRead, !cancellation.historyTransfer.begin() {
+                reply(peer, to: message, ok: false, error: "Authorization History read already started")
                 return
             }
             handleMetadataDisclosure(
@@ -4289,6 +4313,15 @@ private final class ApprovalServer: @unchecked Sendable {
                 signing: signing,
                 kind: .authorizationHistory(since: window.since)
             )
+        case .historyNext where isTrustedAvCaller(path: callerPath, signing: signing):
+            guard let offset = xpc_dictionary_get_value(message, "offset"),
+                  xpc_get_type(offset) == XPC_TYPE_UINT64,
+                  let offset = Int(exactly: xpc_dictionary_get_uint64(message, "offset")),
+                  let chunk = cancellation.historyTransfer.next(offset: offset) else {
+                reply(peer, to: message, ok: false, error: "Authorization History continuation is unavailable")
+                return
+            }
+            replyHistoryChunk(chunk, to: message, on: peer)
         case .save where isTrustedAvCaller(path: callerPath, signing: signing):
             handleSave(message, on: peer, cancellation: cancellation, caller: mutationCaller)
         case .saveIfAbsentOrEqual where isTrustedAvCaller(path: callerPath, signing: signing):
@@ -4543,12 +4576,14 @@ private final class ApprovalServer: @unchecked Sendable {
             return
         }
         if case .authorizationHistory(let since) = kind {
+            let chunked = xpc_dictionary_get_string(message, "op").map(String.init(cString:)) == "history-read"
             let audit = onAccessRequest
             let value = await Task.detached(priority: .userInitiated, operation: { () -> String? in
                 guard !cancellation.isCanceled else { return nil }
                 return authorizationHistoryDisclosureValue(
                     record: record,
                     since: since,
+                    maximumReplyBytes: chunked ? nil : 1_048_576,
                     isCanceled: { cancellation.isCanceled },
                     onAccessRequest: audit
                 )
@@ -4560,13 +4595,23 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
             guard let value else {
-                reply(peer, to: message, ok: false, error: "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
+                reply(peer, to: message, ok: false, error: chunked ? "Authorization History could not be read, encoded, or recorded"
+                      : "Authorization History is unavailable or exceeds the 1 MiB reply limit; try a narrower --since window")
                 return
             }
             if denyRequestIfNeeded(request, signing: signing,
                                    launchers: launchers,
                                    callerPath: callerPath, peer: peer, message: message) { return }
-            reply(peer, to: message, ok: true, error: nil, value: value)
+            if chunked {
+                guard cancellation.historyTransfer.prepare(Data(value.utf8)),
+                      let chunk = cancellation.historyTransfer.next(offset: 0) else {
+                    reply(peer, to: message, ok: false, error: "Authorization History transfer was canceled")
+                    return
+                }
+                replyHistoryChunk(chunk, to: message, on: peer)
+            } else {
+                reply(peer, to: message, ok: true, error: nil, value: value)
+            }
             return
         }
         guard onAccessRequest(record) else {
@@ -15043,7 +15088,59 @@ private func runKeychainPersistenceSelfCheck() -> Int32 {
     return 0
 }
 
+// Exercise real XPC replies, including reuse of the request dictionary between chunks.
+private func historyTransferWireSelfCheck() -> Bool {
+    let data = Data(String(repeating: "history 界\n", count: 120_000).utf8)
+    let listener = xpc_connection_create(nil, DispatchQueue.global(qos: .userInitiated))
+    xpc_connection_set_event_handler(listener) { event in
+        guard xpc_get_type(event) == XPC_TYPE_CONNECTION else { return }
+        let peer = event
+        let transfer = AuthorizationHistoryTransfer()
+        guard transfer.begin(), transfer.prepare(data) else { return }
+        xpc_connection_set_event_handler(peer) { message in
+            guard xpc_get_type(message) == XPC_TYPE_DICTIONARY else {
+                transfer.cancel()
+                return
+            }
+            let offset = Int(xpc_dictionary_get_uint64(message, "offset"))
+            if let chunk = transfer.next(offset: offset) {
+                replyHistoryChunk(chunk, to: message, on: peer)
+            } else {
+                let response = xpc_dictionary_create_reply(message)!
+                xpc_dictionary_set_bool(response, "ok", false)
+                xpc_connection_send_message(peer, response)
+            }
+        }
+        xpc_connection_activate(peer)
+    }
+    xpc_connection_activate(listener)
+    defer { xpc_connection_cancel(listener) }
+    let client = xpc_connection_create_from_endpoint(xpc_endpoint_create(listener))
+    xpc_connection_set_event_handler(client) { _ in }
+    xpc_connection_activate(client)
+    defer { xpc_connection_cancel(client) }
+    let request = xpc_dictionary_create_empty()
+    var received = Data()
+    while received.count < data.count {
+        xpc_dictionary_set_uint64(request, "offset", UInt64(received.count))
+        let response = xpc_connection_send_message_with_reply_sync(client, request)
+        guard xpc_get_type(response) == XPC_TYPE_DICTIONARY,
+              xpc_dictionary_get_bool(response, "ok"),
+              xpc_dictionary_get_uint64(response, "offset") == UInt64(received.count),
+              xpc_dictionary_get_uint64(response, "total") == UInt64(data.count) else { return false }
+        var count = 0
+        guard let bytes = xpc_dictionary_get_data(response, "history_chunk", &count),
+              count > 0, count <= AuthorizationHistoryTransfer.chunkBytes else { return false }
+        received.append(bytes.assumingMemoryBound(to: UInt8.self), count: count)
+    }
+    xpc_dictionary_set_uint64(request, "offset", UInt64(received.count))
+    let exhausted = xpc_connection_send_message_with_reply_sync(client, request)
+    return received == data && xpc_get_type(exhausted) == XPC_TYPE_DICTIONARY
+        && !xpc_dictionary_get_bool(exhausted, "ok")
+}
+
 private func runMetadataDisclosureSelfCheck() -> Int32 {
+    guard historyTransferWireSelfCheck() else { return 1 }
     let wire = xpc_dictionary_create_empty()
     let wireNow = Date(timeIntervalSince1970: 1_000_000)
     guard validatedAuthorizationHistorySince(
@@ -15071,6 +15168,19 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         validatedAuthorizationHistorySince(
             operation: .historyWindow, message: wire, now: wireNow
         ).since == Date(timeIntervalSince1970: 999_999) else { return 1 }
+
+    let chunkedWire = xpc_dictionary_create_empty()
+    guard validatedAuthorizationHistorySince(operation: .historyRead, message: chunkedWire, now: wireNow).valid
+    else { return 1 }
+    xpc_dictionary_set_string(chunkedWire, "since", "7d")
+    guard !validatedAuthorizationHistorySince(operation: .historyRead, message: chunkedWire, now: wireNow).valid
+    else { return 1 }
+    xpc_dictionary_set_uint64(chunkedWire, "since", 999_999)
+    guard validatedAuthorizationHistorySince(operation: .historyRead, message: chunkedWire, now: wireNow).since
+        == Date(timeIntervalSince1970: 999_999) else { return 1 }
+    xpc_dictionary_set_uint64(chunkedWire, "since", 1_000_001)
+    guard !validatedAuthorizationHistorySince(operation: .historyRead, message: chunkedWire, now: wireNow).valid
+    else { return 1 }
 
     let requirement = #"identifier "com.apple.Terminal" and anchor apple"#
     let launcher = LauncherIdentity(
@@ -15183,6 +15293,26 @@ private func runMetadataDisclosureSelfCheck() -> Int32 {
         let windowRecords = try? decoder.decode([AccessRequestRecord].self, from: windowData),
         windowRecords.count == 51
     else { return 1 }
+    var largeReadRecorded = false
+    guard let largeWindow = authorizationHistoryDisclosureValue(
+        record: record,
+        since: since,
+        maximumReplyBytes: nil,
+        records: { forwardedSince, limit, maximumBytes in
+            guard forwardedSince == since, limit == nil, maximumBytes == nil else { return nil }
+            return Array(repeating: record, count: 4_000)
+        },
+        onAccessRequest: { _ in largeReadRecorded = true; return true }
+    ), largeReadRecorded, largeWindow.utf8.count > 1_048_576,
+        let largeData = largeWindow.data(using: .utf8),
+        let largeRecords = try? decoder.decode([AccessRequestRecord].self, from: largeData),
+        largeRecords.count == 4_001,
+        largeRecords.allSatisfy({ $0.command == record.commandForDisplay })
+    else { return 1 }
+    guard authorizationHistoryDisclosureValue(
+        record: record, since: since, maximumReplyBytes: nil,
+        records: { _, _, _ in [] }, onAccessRequest: { _ in false }
+    ) == nil else { return 1 }
     guard authorizationHistoryDisclosureValue(
         record: record,
         since: since,
