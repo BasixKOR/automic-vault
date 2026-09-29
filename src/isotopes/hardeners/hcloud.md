@@ -21,8 +21,8 @@ this migration; run `av scan` after hardening.
 and therefore requests Secret Disclosure. Sensitive config inspection also
 requests Secret Disclosure. `server ssh` inherits the token into an external
 SSH child and is Unknown, requiring Approval at every Access Level.
-Unknown/future commands, help, local commands, and endpoint overrides run
-without the protected token. Direct Secret Gate requests remain available.
+Unknown/future commands, help, ordinary local commands, and API commands with
+endpoint overrides run without the protected token. Direct Secret Gate requests remain available.
 
 Code signing verifies the installed Tool, not intent, destination configuration,
 or confidentiality after Secret Application. The native Target is verified

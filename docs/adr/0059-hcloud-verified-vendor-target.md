@@ -52,8 +52,10 @@ Review the upstream `internal/cli/root.go`, `internal/cmd`,
 `internal/state/config` and `internal/state/state.go` at the pinned commit.
 Existing API command paths remain positively enumerated. New `api` commands
 remain tokenless pending a separate operation review. Help, completion, local
-configuration, unknown commands, malformed/non-UTF-8 routing and explicit
-endpoint overrides cannot obtain the protected token through the launcher.
+configuration, unknown commands and malformed/non-UTF-8 routing cannot obtain
+the protected token through the launcher. API commands with explicit endpoint
+overrides also run without it. Explicit Secret Disclosure commands retain
+their separate authorization requirements.
 
 `context create --token-from-env` persists the token in plaintext and is Secret
 Disclosure, as is sensitive configuration inspection. `server ssh` and its
