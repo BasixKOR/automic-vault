@@ -135,7 +135,7 @@ fn release_builds_are_actions_only_and_fail_closed() {
 # capabilities:\n\
 #   gh: trusted\n\
 #   aws: trusted\n\
-#   gpg-signing: local-write\n\
+#   gpg-signing: trusted\n\
 #   ssh-agent: trusted\n\
 # ---\n"
     ));
