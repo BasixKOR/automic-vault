@@ -22,7 +22,11 @@ pub(crate) fn arguments_bound(args: &[std::ffi::OsString]) -> bool {
     args.starts_with(&REQUIRED_ARGUMENTS.map(std::ffi::OsString::from))
         && !args[2..].iter().take_while(|arg| *arg != "--").any(|arg| {
             let arg = arg.to_string_lossy();
-            arg == "--api-url"
+            arg.starts_with('-')
+                && !arg.starts_with("--")
+                && arg.len() > 2
+                && !arg.starts_with("-o")
+                || arg == "--api-url"
                 || arg.starts_with("--api-url=")
                 || arg.starts_with("-u")
                 || arg == "--trace"
@@ -478,6 +482,7 @@ mod tests {
         for flag in [
             "--api-url=https://example.invalid",
             "-uhttps://example.invalid",
+            "-vuhttps://example.invalid",
             "--trace",
             "--trace=true",
         ] {

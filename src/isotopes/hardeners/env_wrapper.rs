@@ -2950,7 +2950,11 @@ pub(crate) fn doctl_invocation_is_secretless(args: &[OsString]) -> bool {
         .iter()
         .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
         || options.iter().any(|arg| {
-            matches!(*arg, "--api-url" | "-u" | "--config" | "-c")
+            arg.starts_with('-')
+                && !arg.starts_with("--")
+                && arg.len() > 2
+                && !arg.starts_with("-o")
+                || matches!(*arg, "--api-url" | "-u" | "--config" | "-c")
                 || arg.starts_with("--api-url=")
                 || arg.starts_with("--config=")
                 || arg.starts_with("-u") && arg.len() > 2
@@ -8701,6 +8705,7 @@ mod tests {
             vec!["--api-url=https://example.invalid", "account", "get"],
             vec!["--config", "other.yaml", "account", "get"],
             vec!["--trace", "account", "get"],
+            vec!["account", "get", "-vuhttps://example.invalid"],
             vec!["--output"],
             vec!["--", "account", "get"],
             vec!["future-command"],

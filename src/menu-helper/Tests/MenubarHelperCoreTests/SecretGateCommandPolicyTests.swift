@@ -1092,7 +1092,7 @@ import Testing
 }
 
 @Test func doctlPolicySeparatesLocalAndCredentialedCommands() {
-    for words in [["auth", "init"], ["auth", "t"]] {
+    for words in [["auth", "init"], ["auth", "t"], ["--output", "json", "auth", "init"], ["auth", "--context", "default", "token"], ["auth", "--context=default", "t"]] {
         #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: words) == .secretDump)
     }
     for words in [["compute", "droplet", "ssh", "123"], ["registry", "login"], ["compute", "plugin", "run", "example"], ["serverless", "deploy"]] {

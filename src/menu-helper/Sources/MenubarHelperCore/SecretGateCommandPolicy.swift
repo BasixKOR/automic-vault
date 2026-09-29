@@ -65,6 +65,7 @@ public func genericSecretGateRequestClassification(
     if words == ["help"] || words == ["--help"] || words == ["version"] || words == ["--version"] {
         return .readOnly
     }
+    if gateID == "doctl", doctlAuthDisclosure(words) { return .secretDump }
     if gateID == "hcloud" {
         let commandArguments = Array(words.prefix { $0 != "--" })
         guard let normalized = hcloudArgumentsWithoutPersistentFlags(commandArguments) else { return .unknown }
@@ -85,6 +86,32 @@ public func genericSecretGateRequestClassification(
     }
     guard let policy = secretGateCommandPolicies[gateID] else { return .unknown }
     return commandPolicyClassification(policy, words)
+}
+
+private func doctlAuthDisclosure(_ arguments: [String]) -> Bool {
+    let valueOptions = ["--access-token", "-t", "--api-url", "-u", "--config", "-c", "--context", "--output", "-o", "--http-retry-max", "--http-retry-wait-max", "--http-retry-wait-min"]
+    let booleanOptions = ["--interactive", "--trace", "--verbose", "-v"]
+    var words: [String] = []
+    var index = 0
+    while index < arguments.count {
+        let argument = arguments[index]
+        if valueOptions.contains(argument) {
+            guard index + 1 < arguments.count, !arguments[index + 1].hasPrefix("-") else { return false }
+            index += 2
+            continue
+        }
+        if (valueOptions + booleanOptions).contains(where: { argument.hasPrefix($0 + "=") })
+            || booleanOptions.contains(argument)
+            || ["-t", "-u", "-c", "-o"].contains(where: { argument.hasPrefix($0) && argument.count > 2 }) {
+            index += 1
+            continue
+        }
+        guard !argument.hasPrefix("-") else { return false }
+        words.append(argument)
+        if words.count == 2 { return words[0] == "auth" && ["init", "token", "t"].contains(words[1]) }
+        index += 1
+    }
+    return false
 }
 
 private func commandPolicyClassification(
