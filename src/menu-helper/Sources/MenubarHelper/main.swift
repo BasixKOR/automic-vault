@@ -4889,6 +4889,10 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             descriptors: secretGateDescriptors
         )
+        if configuredGate?.id == "hcloud", !hcloudInstalledReleaseValid() {
+            reply(peer, to: message, ok: false, error: "hcloud installation changed; run av harden hcloud")
+            return
+        }
         if preparedRequest.sshPeer != nil, configuredGate?.id != "ssh-agent" {
             reply(peer, to: message, ok: false, error: "SSH Agent Gate is unavailable")
             return
@@ -9106,10 +9110,18 @@ private final class ApprovalServer: @unchecked Sendable {
         } == true
     }
 
+    private func validateHcloudTarget(_ request: ApprovalRequest) throws {
+        guard request.target == hcloudOfficialTarget else { return }
+        guard hcloudInstalledReleaseValid() else {
+            throw AppError("hcloud Target changed before Secret Application; run av harden hcloud")
+        }
+    }
+
     private func prepareApprovedFulfillment(
         for request: ApprovalRequest,
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
+        try validateHcloudTarget(request)
         let credentialParent: CredentialHelperParent?
         if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "fastly-get", "sqlcmd-get", "terraform-get", "aliyun-get", "wakatime-get", "rclone-get", "kubectl-get", "uv-get"]
             .contains(request.op)
@@ -9390,6 +9402,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 )
             },
             release: { material in
+                try validateHcloudTarget(request)
                 try validateDenial()
                 try releaseAfterSSHAuthorizationCheck(
                     material.payload,

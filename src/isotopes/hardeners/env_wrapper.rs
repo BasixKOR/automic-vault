@@ -26,10 +26,16 @@ pub(crate) fn run_target(
     stdout: &mut dyn Write,
     yes: bool,
 ) -> Option<Result<(), String>> {
+    if target == "hcloud" {
+        return Some(super::hcloud::run(stdout, yes));
+    }
     Some(run(wrapper(target)?, stdout, yes))
 }
 
 pub(crate) fn install_target(name: &str, targets: &[PathBuf]) -> Result<(), String> {
+    if name == "hcloud" {
+        return Err("hcloud requires the verified vendor-release installer".into());
+    }
     let wrapper = wrapper(name).ok_or_else(|| format!("unknown hardener `{name}`"))?;
     if test_stub_dir().is_some() || test_target_dir().is_some() {
         return Err("test path overrides are forbidden during privileged installation".into());
@@ -46,10 +52,17 @@ pub(crate) fn install_target(name: &str, targets: &[PathBuf]) -> Result<(), Stri
 }
 
 pub(crate) fn metadata() -> Vec<HardenerMetadata> {
-    WRAPPERS.iter().map(metadata_for_wrapper).collect()
+    WRAPPERS
+        .iter()
+        .filter(|w| w.name != "hcloud")
+        .map(metadata_for_wrapper)
+        .collect()
 }
 
 pub(crate) fn metadata_for(selector: &str) -> Option<HardenerMetadata> {
+    if selector == "hcloud" {
+        return None;
+    }
     WRAPPERS
         .iter()
         .find(|wrapper| {
@@ -76,7 +89,11 @@ fn metadata_for_wrapper(wrapper: &EnvWrapper) -> HardenerMetadata {
 }
 
 pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
-    WRAPPERS.iter().map(secret_gate).collect()
+    WRAPPERS
+        .iter()
+        .filter(|w| w.name != "hcloud")
+        .map(secret_gate)
+        .collect()
 }
 
 pub(crate) fn invocation_is_secretless(
@@ -1555,12 +1572,12 @@ fn heroku_uses_another_credential_or_authority() -> bool {
         .any(|key| std::env::var_os(key).is_some_and(|value| !value.is_empty()))
 }
 
-// Reviewed against hetznercloud/cli v1.67.0. Keep the Secret boundary to
+// Reviewed against hetznercloud/cli v1.69.0 (88350084112192df1317e3cc101419ddcb85c689). Keep the Secret boundary to
 // exact API command paths; local configuration, future commands, and unknown
 // forms must not receive the protected token.
 const HCLOUD_AUTHENTICATED_COMMANDS: &str = "all list,certificate add-label,certificate create,certificate delete,certificate describe,certificate list,certificate remove-label,certificate retry,certificate update,datacenter describe,datacenter list,firewall add-label,firewall add-rule,firewall apply-to-resource,firewall create,firewall delete,firewall delete-rule,firewall describe,firewall list,firewall remove-from-resource,firewall remove-label,firewall replace-rules,firewall update,floating-ip add-label,floating-ip assign,floating-ip create,floating-ip delete,floating-ip describe,floating-ip disable-protection,floating-ip enable-protection,floating-ip list,floating-ip remove-label,floating-ip set-rdns,floating-ip unassign,floating-ip update,image add-label,image delete,image describe,image disable-protection,image enable-protection,image list,image remove-label,image update,iso describe,iso list,load-balancer add-label,load-balancer add-service,load-balancer add-target,load-balancer attach-to-network,load-balancer change-algorithm,load-balancer change-type,load-balancer create,load-balancer delete,load-balancer delete-service,load-balancer describe,load-balancer detach-from-network,load-balancer disable-protection,load-balancer disable-public-interface,load-balancer enable-protection,load-balancer enable-public-interface,load-balancer list,load-balancer metrics,load-balancer remove-label,load-balancer remove-target,load-balancer set-rdns,load-balancer update,load-balancer update-service,load-balancer-type describe,load-balancer-type list,location describe,location list,network add-label,network add-route,network add-subnet,network change-ip-range,network create,network delete,network describe,network disable-protection,network enable-protection,network expose-routes-to-vswitch,network list,network remove-label,network remove-route,network remove-subnet,network update,placement-group add-label,placement-group create,placement-group delete,placement-group describe,placement-group list,placement-group remove-label,placement-group update,primary-ip add-label,primary-ip assign,primary-ip create,primary-ip delete,primary-ip describe,primary-ip disable-protection,primary-ip enable-protection,primary-ip list,primary-ip remove-label,primary-ip set-rdns,primary-ip unassign,primary-ip update,server add-label,server add-to-placement-group,server attach-iso,server attach-to-network,server change-alias-ips,server change-type,server create,server create-image,server delete,server describe,server detach-from-network,server detach-iso,server disable-backup,server disable-protection,server disable-rescue,server enable-backup,server enable-protection,server enable-rescue,server ip,server list,server metrics,server poweroff,server poweron,server reboot,server rebuild,server remove-from-placement-group,server remove-label,server request-console,server reset,server reset-password,server set-rdns,server shutdown,server ssh,server update,server-type describe,server-type list,ssh-key add-label,ssh-key create,ssh-key delete,ssh-key describe,ssh-key list,ssh-key remove-label,ssh-key update,storage-box add-label,storage-box change-type,storage-box create,storage-box delete,storage-box describe,storage-box disable-protection,storage-box disable-snapshot-plan,storage-box enable-protection,storage-box enable-snapshot-plan,storage-box folders,storage-box list,storage-box remove-label,storage-box reset-password,storage-box rollback-snapshot,storage-box snapshot add-label,storage-box snapshot create,storage-box snapshot delete,storage-box snapshot describe,storage-box snapshot list,storage-box snapshot remove-label,storage-box snapshot update,storage-box subaccount change-home-directory,storage-box subaccount create,storage-box subaccount delete,storage-box subaccount describe,storage-box subaccount list,storage-box subaccount reset-password,storage-box subaccount update,storage-box subaccount update-access-settings,storage-box update,storage-box update-access-settings,storage-box-type describe,storage-box-type list,volume add-label,volume attach,volume create,volume delete,volume describe,volume detach,volume disable-protection,volume enable-protection,volume list,volume remove-label,volume resize,volume update,zone add-label,zone add-records,zone change-primary-nameservers,zone change-ttl,zone create,zone delete,zone describe,zone disable-protection,zone enable-protection,zone export-zonefile,zone import-zonefile,zone list,zone remove-label,zone remove-records,zone rrset add-label,zone rrset add-records,zone rrset change-ttl,zone rrset create,zone rrset delete,zone rrset describe,zone rrset disable-protection,zone rrset enable-protection,zone rrset list,zone rrset remove-label,zone rrset remove-records,zone rrset set-records,zone set-records";
 
-fn hcloud_invocation_is_secretless(args: &[OsString]) -> bool {
+pub(crate) fn hcloud_invocation_is_secretless(args: &[OsString]) -> bool {
     let Some(args) = args
         .iter()
         .map(|arg| arg.to_str())
@@ -7974,6 +7991,16 @@ fn is_current_stub(path: &Path, stub: &StubSpec, target: &Path) -> bool {
     fs::read_to_string(path).is_ok_and(|contents| contents == stub_script(stub, target))
 }
 
+pub(crate) fn is_legacy_hcloud_stub(bytes: &[u8]) -> bool {
+    let Ok(contents) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let Some(target) = embedded_target_from_contents(contents) else {
+        return false;
+    };
+    contents == stub_script(&wrapper("hcloud").unwrap().primary, &target)
+}
+
 fn stub_script(stub: &StubSpec, target: &Path) -> String {
     let keys = stub
         .keys
@@ -9480,6 +9507,7 @@ mod tests {
             vec!["--help"],
             vec!["version"],
             vec!["--context", "prod", "version"],
+            vec!["api", "get", "/servers"],
             vec!["completion", "zsh"],
             vec!["context"],
             vec!["context", "list"],
@@ -9503,6 +9531,9 @@ mod tests {
                 invocation_is_secretless(&script_path, script.as_bytes(), &args(&command)),
                 "hcloud {command:?}",
             );
+            assert!(hcloud_invocation_is_secretless(
+                &command.iter().map(OsString::from).collect::<Vec<_>>()
+            ));
         }
         for command in [
             vec!["server", "list"],
@@ -9521,6 +9552,9 @@ mod tests {
                 !invocation_is_secretless(&script_path, script.as_bytes(), &args(&command)),
                 "hcloud {command:?}",
             );
+            assert!(!hcloud_invocation_is_secretless(
+                &command.iter().map(OsString::from).collect::<Vec<_>>()
+            ));
         }
 
         unsafe { std::env::set_var("HCLOUD_TOKEN", "already-provided") };

@@ -81,6 +81,13 @@ registered uv execution. Each credential lookup then passes through the uv
 Secret Gate and releases only the selected HTTP credential. Registration itself
 grants no Secret Use. See [ADR 0046](adr/0046-uv-registered-keyring-helper.md).
 
+The hcloud Hardener preserves Hetzner's pinned signed native executable in a
+protected versioned installation. Its native AV launcher routes reviewed
+commands and injects directly into that Target. The approval service and client
+revalidate the installed artifact before Secret Application and execution; this
+is pre-execution verification, not a live credential-provider handshake. See
+[ADR 0059](adr/0059-hcloud-verified-vendor-target.md).
+
 Hardener detection is point-in-time diagnostic state, not runtime authorization
 evidence. Runtime Authorization consumes static Gate definitions and performs
 the required live identity, integrity, request, policy, and recording checks at

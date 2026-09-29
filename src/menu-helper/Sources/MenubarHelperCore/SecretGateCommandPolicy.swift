@@ -78,7 +78,12 @@ public func genericSecretGateRequestClassification(
         if hcloudFlagEnabled(words, "--token-from-env")
             && positionals.starts(with: ["context", "create"])
         {
-            return .mutating
+            // Upstream writes the protected token into plaintext cli.toml.
+            return .secretDump
+        }
+        if positionals.starts(with: ["server", "ssh"]) || positionals.starts(with: ["servers", "ssh"]) {
+            // The SSH child inherits HCLOUD_TOKEN; command execution requires Approval.
+            return .unknown
         }
     }
     guard let policy = secretGateCommandPolicies[gateID] else { return .unknown }
