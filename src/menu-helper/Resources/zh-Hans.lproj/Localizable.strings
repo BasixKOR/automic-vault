@@ -495,11 +495,11 @@
 
 "Edited" = "已编辑";
 
-"Allow through:" = "允许至：";
+"Allow ≤" = "允许 ≤";
 
 "All operations" = "所有操作";
 
-"Deny from: %@" = "拒绝起点：%@";
+"Deny ≥ %@" = "拒绝 ≥ %@";
 
 "Denial Threshold" = "拒绝阈值";
 
@@ -509,9 +509,9 @@
 
 "Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending." = "请分别应用每项更改。扩大允许范围或缩小拒绝范围需要批准。未应用的更改将保持待处理状态。";
 
-"Allow through: %@ → %@" = "允许至：%@ → %@";
+"Allow ≤ %@ → %@" = "允许 ≤ %@ → %@";
 
-"Deny from: %@ → %@" = "拒绝起点：%@ → %@";
+"Deny ≥ %@ → %@" = "拒绝 ≥ %@ → %@";
 
 "Changes applied" = "更改已应用";
 
@@ -539,7 +539,7 @@
 
 "Denial applies regardless of runtime." = "无论运行时状态如何，拒绝规则均适用。";
 
-"Deny from:" = "拒绝起点：";
+"Deny ≥" = "拒绝 ≥";
 
 "Denial wins over allow rules." = "拒绝优先于允许规则。";
 

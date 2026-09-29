@@ -6714,13 +6714,13 @@ private struct GatePolicyTable: View {
                                 setProtection: { stage(.allow($0), for: app) },
                                 setDenial: { stage(.denial($0), for: app) })
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Allow through:").font(.caption).foregroundStyle(.secondary)
+                    Text("Allow ≤").font(.caption).foregroundStyle(.secondary)
                     NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
                         if let level { stage(.allow(level), for: app) }
                     }
                     .frame(maxWidth: 170)
                     Spacer(minLength: 4)
-                    Text("Deny from:").font(.caption).foregroundStyle(.secondary)
+                    Text("Deny ≥").font(.caption).foregroundStyle(.secondary)
                     NativeProtectionMenu(gate: gate, protection: denial, usesPhone: false, isDenial: true) {
                         stage(.denial($0), for: app)
                     }
@@ -6766,9 +6766,9 @@ private struct GatePolicyTable: View {
                             HStack {
                                 switch change.value {
                                 case .allow(let level):
-                                    Text("Allow through: \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
+                                    Text("Allow ≤ \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
                                 case .denial(let level):
-                                    Text("Deny from: \(denialTitle(denialThreshold(for: app))) → \(denialTitle(level))")
+                                    Text("Deny ≥ \(denialTitle(denialThreshold(for: app))) → \(denialTitle(level))")
                                 }
                                 Spacer()
                                 Button {

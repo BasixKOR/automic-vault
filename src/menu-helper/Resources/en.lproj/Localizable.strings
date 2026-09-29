@@ -495,11 +495,11 @@
 
 "Edited" = "Edited";
 
-"Allow through:" = "Allow through:";
+"Allow ≤" = "Allow ≤";
 
 "All operations" = "All operations";
 
-"Deny from: %@" = "Deny from: %@";
+"Deny ≥ %@" = "Deny ≥ %@";
 
 "Denial Threshold" = "Denial Threshold";
 
@@ -509,9 +509,9 @@
 
 "Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending." = "Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending.";
 
-"Allow through: %@ → %@" = "Allow through: %@ → %@";
+"Allow ≤ %@ → %@" = "Allow ≤ %@ → %@";
 
-"Deny from: %@ → %@" = "Deny from: %@ → %@";
+"Deny ≥ %@ → %@" = "Deny ≥ %@ → %@";
 
 "Changes applied" = "Changes applied";
 
@@ -539,7 +539,7 @@
 
 "Denial applies regardless of runtime." = "Denial applies regardless of runtime.";
 
-"Deny from:" = "Deny from:";
+"Deny ≥" = "Deny ≥";
 
 "Denial wins over allow rules." = "Denial wins over allow rules.";
 
