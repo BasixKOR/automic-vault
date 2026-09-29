@@ -3072,10 +3072,10 @@ struct DashboardRootView: View {
         }
         if model.selectedSection == .allSecrets, let secret = model.selectedStoredSecret {
             Button { model.isRenamingSecret = true } label: {
-                Label("Rename Secret", systemImage: "pencil")
+                Label("Rename", systemImage: "pencil")
             }
             .labelStyle(.titleAndIcon)
-            .help("Rename Secret")
+            .help("Rename")
             Button(role: .destructive) { secretToDelete = secret } label: {
                 Label("Delete Secret", systemImage: "trash")
             }
