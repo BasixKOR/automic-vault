@@ -4889,6 +4889,10 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             descriptors: secretGateDescriptors
         )
+        if configuredGate?.id == "hcloud", !hcloudInstalledReleaseValid() {
+            reply(peer, to: message, ok: false, error: "hcloud installation changed; run av harden hcloud")
+            return
+        }
         if configuredGate?.id == "doctl", !doctlInstalledReleaseValid() || !doctlArgumentsBound(preparedRequest.args) {
             reply(peer, to: message, ok: false, error: "doctl installation changed; run av harden doctl")
             return
@@ -9110,6 +9114,13 @@ private final class ApprovalServer: @unchecked Sendable {
         } == true
     }
 
+    private func validateHcloudTarget(_ request: ApprovalRequest) throws {
+        guard request.target == hcloudOfficialTarget else { return }
+        guard hcloudInstalledReleaseValid() else {
+            throw AppError("hcloud Target changed before Secret Application; run av harden hcloud")
+        }
+    }
+
     private func validateDoctlTarget(_ request: ApprovalRequest) throws {
         guard request.target == doctlSignedTarget else { return }
         guard doctlInstalledReleaseValid(), doctlArgumentsBound(request.args) else {
@@ -9122,6 +9133,7 @@ private final class ApprovalServer: @unchecked Sendable {
         awsRegistration: AWSRegistrationCandidate?
     ) throws -> AuthorizationFulfillmentTransaction<ApprovedFulfillmentMaterial> {
         try validateDoctlTarget(request)
+        try validateHcloudTarget(request)
         let credentialParent: CredentialHelperParent?
         if ["docker-get", "goat-get", "ordercli-get", "openhue-get", "plumber-get", "uaa-get", "railway-get", "oxide-get", "fastly-get", "sqlcmd-get", "terraform-get", "aliyun-get", "wakatime-get", "rclone-get", "kubectl-get", "uv-get"]
             .contains(request.op)
@@ -9403,6 +9415,7 @@ private final class ApprovalServer: @unchecked Sendable {
             },
             release: { material in
                 try validateDoctlTarget(request)
+                try validateHcloudTarget(request)
                 try validateDenial()
                 try releaseAfterSSHAuthorizationCheck(
                     material.payload,

@@ -88,6 +88,13 @@ approval service and client verify the pinned installation before Secret
 release and execution. This is pre-execution artifact verification; it is not
 a live provider handshake. See [ADR 0060](adr/0060-doctl-signed-native-target.md).
 
+The hcloud Hardener preserves Hetzner's pinned signed native executable in a
+protected versioned installation. Its native AV launcher routes reviewed
+commands and injects directly into that Target. The approval service and client
+revalidate the installed artifact before Secret Application and execution; this
+is pre-execution verification, not a live credential-provider handshake. See
+[ADR 0059](adr/0059-hcloud-verified-vendor-target.md).
+
 Hardener detection is point-in-time diagnostic state, not runtime authorization
 evidence. Runtime Authorization consumes static Gate definitions and performs
 the required live identity, integrity, request, policy, and recording checks at

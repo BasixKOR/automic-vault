@@ -261,6 +261,11 @@ where
                 }
             }
         }
+        Some("__hcloud") => inject::run_hcloud(rest, stderr),
+        Some("__install-hcloud-release") if rest.len() == 1 => privileged_result(
+            hardeners::hcloud::install_privileged(&PathBuf::from(&rest[0])),
+            stderr,
+        ),
         Some("__install-uv-release") if rest.len() == 1 => privileged_result(
             hardeners::uv_cli::install_privileged(&PathBuf::from(&rest[0])),
             stderr,

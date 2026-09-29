@@ -85,6 +85,46 @@ pub(crate) fn run(
     }
 }
 
+pub(crate) fn run_hcloud(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
+    use crate::isotopes::hardeners::{env_wrapper, hcloud};
+    if unsafe { geteuid() } == 0 {
+        let _ = writeln!(stderr, "hcloud: must not be run as root");
+        return 1;
+    }
+    if args.first().and_then(|s| s.to_str()) != Some(hcloud::LAUNCHER) {
+        let _ = writeln!(
+            stderr,
+            "hcloud requires its installed Automic Vault launcher"
+        );
+        return 1;
+    }
+    if let Err(error) = hcloud::verify_installation() {
+        let _ = writeln!(stderr, "hcloud: {error}");
+        return 1;
+    }
+    args.remove(0);
+    if env_wrapper::hcloud_invocation_is_secretless(&args) {
+        let error = Command::new(hcloud::TARGET)
+            .args(args)
+            .env_remove("HCLOUD_TOKEN")
+            .exec();
+        let _ = writeln!(stderr, "hcloud: {error}");
+        return 1;
+    }
+    exec(
+        Options {
+            secret_fds: BTreeMap::new(),
+            replace_existing_env: false,
+            allow_missing_keys: true,
+            keys: vec!["HCLOUD_TOKEN".into()],
+            target: hcloud::TARGET.into(),
+            args,
+            shebang_script: None,
+        },
+        stderr,
+    )
+}
+
 pub(crate) fn run_doctl(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
     use crate::isotopes::hardeners::{doctl, env_wrapper};
     if unsafe { geteuid() } == 0 {
@@ -316,6 +356,16 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         }
     };
     if verified_script.as_ref().is_some_and(|script| {
+        script.path == Path::new(crate::isotopes::hardeners::hcloud::LAUNCHER)
+            && crate::isotopes::hardeners::env_wrapper::is_legacy_hcloud_stub(&script.data)
+    }) {
+        let _ = writeln!(
+            stderr,
+            "hcloud: run `av harden hcloud` to replace the legacy wrapper"
+        );
+        return 1;
+    }
+    if verified_script.as_ref().is_some_and(|script| {
         script.path == Path::new(crate::isotopes::hardeners::doctl::LAUNCHER)
             && crate::isotopes::hardeners::env_wrapper::is_legacy_doctl_stub(&script.data)
     }) {
@@ -506,7 +556,14 @@ where
             return Err("doctl requires its fixed API endpoint and disabled trace logging".into());
         }
     }
+    if target == Path::new(crate::isotopes::hardeners::hcloud::TARGET) {
+        crate::isotopes::hardeners::hcloud::verify_installation()?;
+    }
     let secrets = approve(&request)?;
+    if target == Path::new(crate::isotopes::hardeners::hcloud::TARGET) {
+        crate::isotopes::hardeners::hcloud::verify_installation()?;
+    }
+
     if target == Path::new(crate::isotopes::hardeners::doctl::TARGET) {
         crate::isotopes::hardeners::doctl::verify_installation()?;
         if !crate::isotopes::hardeners::doctl::arguments_bound(&options.args) {

@@ -619,7 +619,9 @@ import Testing
     #expect(genericSecretGateRequestClassification(
         gateID: "hcloud",
         arguments: ["context", "create", "--token-from-env", "dev"]
-    ) == .mutating)
+    ) == .secretDump)
+    #expect(genericSecretGateRequestClassification(gateID: "hcloud", arguments: ["server", "ssh", "prod", "--", "sh"]) == .unknown)
+    #expect(genericSecretGateRequestClassification(gateID: "hcloud", arguments: ["servers", "ssh", "prod"]) == .unknown)
     #expect(genericSecretGateRequestClassification(
         gateID: "hcloud",
         arguments: ["--quiet", "config", "get", "--allow-sensitive", "token"]

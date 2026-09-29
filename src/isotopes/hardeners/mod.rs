@@ -8,6 +8,7 @@ pub(crate) mod env_wrapper;
 pub(crate) mod fastly_cli;
 pub(crate) mod gh_cli;
 pub(crate) mod goat;
+pub(crate) mod hcloud;
 pub(crate) mod homebrew;
 pub(crate) mod isotope;
 pub(crate) mod kubectl;
@@ -348,6 +349,7 @@ const HARDENERS: &[HardenerSpec] = &[
     gated_hardener!(oxide_cli, "oxide-cli", &["oxide"]),
     gated_hardener!(fastly_cli, "fastly-cli", &["fastly"]),
     gated_hardener!(sqlcmd, "sqlcmd", &[]),
+    gated_hardener!(hcloud, "hcloud", &[]),
     gated_hardener!(homebrew, "brew", &["homebrew"]),
     gated_hardener!(gh_cli, "gh", &["gh-cli"]),
     gated_hardener!(wrangler, "wrangler", &[]),
@@ -410,6 +412,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         aws_cli::secret_gate(),
         uv_cli::secret_gate(),
         doctl::secret_gate(),
+        hcloud::secret_gate(),
         docker::secret_gate(),
         goat::secret_gate(),
         ordercli::secret_gate(),
