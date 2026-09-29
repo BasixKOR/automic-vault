@@ -6698,7 +6698,7 @@ private struct GatePolicyTable: View {
                 GatePolicyTrack(gate: gate, protection: protection, denial: denial,
                                 setProtection: { stage(.allow($0), for: app) },
                                 setDenial: { stage(.denial($0), for: app) })
-                HStack {
+                HStack(alignment: .firstTextBaseline) {
                     Text("Allow through:").font(.caption).foregroundStyle(.secondary)
                     NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
                         if let level { stage(.allow(level), for: app) }
