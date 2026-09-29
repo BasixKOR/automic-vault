@@ -7052,6 +7052,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
         let button = NSPopUpButton(frame: .zero, pullsDown: false)
         button.isBordered = false
         button.controlSize = .small
+        button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectProtection(_:))
         button.setAccessibilityLabel(isDenial ? String(localized: "Denial Threshold") : String(localized: "Protection level"))
