@@ -2146,26 +2146,47 @@ private enum CLIInstallerError: LocalizedError {
 
 @MainActor
 func runUpdateToolbarSelfCheck() -> Int32 {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
     let focusModel = DashboardModel(snapshot: .empty)
     let focusWindow = NSWindow(contentViewController: NSHostingController(rootView: DashboardRootView(
         model: focusModel, checkForUpdates: {}, requestScan: {})))
     focusWindow.setContentSize(NSSize(width: 1100, height: 700))
-    focusWindow.makeKeyAndOrderFront(nil)
     defer { focusWindow.orderOut(nil) }
-    for section in [DashboardSection.settings, .overview, .settings] {
-        focusModel.selectSection(section)
-        let deadline = Date().addingTimeInterval(2)
-        var focused = false
-        repeat {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-            if let table = focusWindow.firstResponder as? NSTableView {
-                focused = table.selectedRow >= 0 && (table.style == .sourceList) == (section == .overview)
+    func tables(in view: NSView) -> [NSTableView] {
+        let nested = view.subviews.flatMap(tables(in:))
+        return (view as? NSTableView).map { [$0] + nested } ?? nested
+    }
+    var focusFailure: String?
+    DispatchQueue.main.async {
+        for section in [DashboardSection.settings, .overview, .settings] {
+            focusModel.selectSection(section)
+            let deadline = Date().addingTimeInterval(2)
+            var focusTargetReady = false
+            repeat {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+                focusWindow.contentView?.layoutSubtreeIfNeeded()
+                let expectsSourceList = section == .overview
+                if let table = focusWindow.contentView.flatMap({ tables(in: $0).first {
+                    $0.selectedRow >= 0 && ($0.style == .sourceList) == expectsSourceList
+                } }) {
+                    // Directly launched self-check binaries cannot become the active application on
+                    // hosted runners. Assert the selected focus target there, and additionally assert
+                    // the responder whenever AppKit gives the modal window keyboard focus.
+                    focusTargetReady = !focusWindow.isKeyWindow || focusWindow.firstResponder === table
+                }
+            } while !focusTargetReady && Date() < deadline
+            guard focusTargetReady else {
+                focusFailure = "Dashboard selection did not prepare keyboard focus: \(section), active=\(app.isActive), key=\(focusWindow.isKeyWindow), responder=\(String(describing: focusWindow.firstResponder))"
+                break
             }
-        } while !focused && Date() < deadline
-        guard focused else {
-            print("Dashboard selection did not receive keyboard focus: \(section), \(String(describing: focusWindow.firstResponder))")
-            return 1
         }
+        app.abortModal()
+    }
+    app.runModal(for: focusWindow)
+    if let focusFailure {
+        print(focusFailure)
+        return 1
     }
     for state in [CLIInstallState.outdated, .missing, .current] {
         let model = DashboardModel(snapshot: .empty, cliInstallState: state)
