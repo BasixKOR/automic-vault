@@ -6847,6 +6847,18 @@ private struct GatePolicyTrack: View {
                         .offset(x: width * CGFloat(boundary) / CGFloat(count))
                         .accessibilityHidden(true)
                 }
+                if allow != deny {
+                    Rectangle().fill(Color.green)
+                        .frame(width: 2, height: 20)
+                        .offset(x: width * CGFloat(allow) / CGFloat(count) - 1, y: 10)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    Rectangle().fill(Color.red)
+                        .frame(width: 2, height: 20)
+                        .offset(x: width * CGFloat(deny) / CGFloat(count) - 1, y: -10)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 handle(isAllow: true, boundary: allow, width: width)
                 handle(isAllow: false, boundary: deny, width: width)
             }
