@@ -940,6 +940,10 @@ fn manual_identity_repair(hardener: &str, kind: &str, name: &str, stub: &str) ->
 }
 
 fn manual_stub_repair(hardener: &str, command: &HardenerCommand, stub: &str) -> String {
+    if hardener == "doctl" {
+        return "run `av harden doctl` to reinstall the signed release and its native launcher"
+            .into();
+    }
     if hardener == "hcloud" {
         return "run `av harden hcloud` to reinstall the verified vendor release and its native launcher".into();
     }

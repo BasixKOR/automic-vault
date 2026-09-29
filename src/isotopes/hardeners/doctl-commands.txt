@@ -1,0 +1,469 @@
+1-click list|ls
+account get|g
+account ratelimit|rl
+apps|app|a cancel-event|ce
+apps|app|a cancel-job-invocation|cji
+apps|app|a console|cs
+apps|app|a create-deployment|cd
+apps|app|a create|c
+apps|app|a delete|d|rm
+apps|app|a get-deployment|gd
+apps|app|a get-event|ge
+apps|app|a get-job-invocation|gji
+apps|app|a get|g
+apps|app|a list-alerts|la
+apps|app|a list-buildpacks
+apps|app|a list-deployments|lsd
+apps|app|a list-events|lse
+apps|app|a list-instances|i
+apps|app|a list-job-invocations|lsji
+apps|app|a list-regions
+apps|app|a list|ls
+apps|app|a logs|l
+apps|app|a propose|p
+apps|app|a restart|r
+apps|app|a spec get
+apps|app|a tier get
+apps|app|a tier instance-size get
+apps|app|a tier instance-size list|ls
+apps|app|a tier list|ls
+apps|app|a update-alert-destinations|uad
+apps|app|a update|u
+apps|app|a upgrade-buildpack
+auth init
+auth token|t
+balance get|g
+billing-history|bh list|ls
+compute action get|g
+compute action list|ls
+compute action wait|w
+compute cdn create|c
+compute cdn delete|rm
+compute cdn flush|fc
+compute cdn get|g
+compute cdn list|ls
+compute cdn update|u
+compute certificate create|c
+compute certificate delete|d|rm
+compute certificate get|g
+compute certificate list|ls
+compute domain create|c
+compute domain delete|d|rm
+compute domain get|g
+compute domain list|ls
+compute domain records create|c
+compute domain records delete|d|rm
+compute domain records list|ls
+compute domain records update|u
+compute droplet-action|da change-backup-policy
+compute droplet-action|da change-kernel
+compute droplet-action|da disable-backups
+compute droplet-action|da enable-backups
+compute droplet-action|da enable-ipv6
+compute droplet-action|da enable-private-networking
+compute droplet-action|da get|g
+compute droplet-action|da password-reset
+compute droplet-action|da power-cycle
+compute droplet-action|da power-off
+compute droplet-action|da power-on
+compute droplet-action|da reboot
+compute droplet-action|da rebuild
+compute droplet-action|da rename
+compute droplet-action|da resize
+compute droplet-action|da restore
+compute droplet-action|da shutdown
+compute droplet-action|da snapshot
+compute droplet-autoscale|das create
+compute droplet-autoscale|das delete-dangerous
+compute droplet-autoscale|das delete|d|rm
+compute droplet-autoscale|das get
+compute droplet-autoscale|das list-history
+compute droplet-autoscale|das list-members
+compute droplet-autoscale|das list|ls
+compute droplet-autoscale|das update
+compute droplet|d 1-click list|ls
+compute droplet|d actions|a
+compute droplet|d backup-policies get
+compute droplet|d backup-policies list-supported
+compute droplet|d backup-policies list|ls
+compute droplet|d backups|b
+compute droplet|d create|c
+compute droplet|d delete|d|del|rm
+compute droplet|d get|g
+compute droplet|d kernels|k
+compute droplet|d list|ls
+compute droplet|d neighbors|n
+compute droplet|d snapshots|s
+compute droplet|d tag
+compute droplet|d untag
+compute firewall add-droplets
+compute firewall add-rules
+compute firewall add-tags
+compute firewall create|c
+compute firewall delete|d|rm
+compute firewall get|g
+compute firewall list-by-droplet
+compute firewall list|ls
+compute firewall remove-droplets
+compute firewall remove-rules
+compute firewall remove-tags
+compute firewall update|u
+compute image create
+compute image delete|rm
+compute image get
+compute image list-application
+compute image list-distribution
+compute image list-user
+compute image list|ls
+compute image update
+compute image-action get
+compute image-action transfer
+compute load-balancer|lb add-droplets
+compute load-balancer|lb add-forwarding-rules
+compute load-balancer|lb create|c
+compute load-balancer|lb delete|d|rm
+compute load-balancer|lb get|g
+compute load-balancer|lb list|ls
+compute load-balancer|lb purge-cache
+compute load-balancer|lb remove-droplets
+compute load-balancer|lb remove-forwarding-rules
+compute load-balancer|lb update|u
+compute microvm checkpoint|checkpoints|cp create|c
+compute microvm checkpoint|checkpoints|cp delete|d|rm
+compute microvm checkpoint|checkpoints|cp get|g
+compute microvm checkpoint|checkpoints|cp list|ls
+compute microvm console
+compute microvm create|c
+compute microvm delete|d|rm
+compute microvm exec
+compute microvm get|g
+compute microvm list|ls
+compute microvm options
+compute microvm pause
+compute microvm resume
+compute region list|ls
+compute reserved-ip-action|fipa|floating-ip-action|floating-ip-actions|reserved-ip-actions assign
+compute reserved-ip-action|fipa|floating-ip-action|floating-ip-actions|reserved-ip-actions get
+compute reserved-ip-action|fipa|floating-ip-action|floating-ip-actions|reserved-ip-actions unassign
+compute reserved-ipv6|reserved-ipv6s assign
+compute reserved-ipv6|reserved-ipv6s create|c
+compute reserved-ipv6|reserved-ipv6s delete|d|rm
+compute reserved-ipv6|reserved-ipv6s get|g
+compute reserved-ipv6|reserved-ipv6s list|ls
+compute reserved-ipv6|reserved-ipv6s unassign
+compute reserved-ip|fip|floating-ip|floating-ips|reserved-ips create|c
+compute reserved-ip|fip|floating-ip|floating-ips|reserved-ips delete|d|rm
+compute reserved-ip|fip|floating-ip|floating-ips|reserved-ips get|g
+compute reserved-ip|fip|floating-ip|floating-ips|reserved-ips list|ls
+compute size list|ls
+compute snapshot|s delete|d|rm
+compute snapshot|s get|g
+compute snapshot|s list|ls
+compute ssh
+compute ssh-key|k create|c
+compute ssh-key|k delete|d|rm
+compute ssh-key|k get|g
+compute ssh-key|k import|i
+compute ssh-key|k list|ls
+compute ssh-key|k update|u
+compute tag apply
+compute tag create
+compute tag delete|rm
+compute tag get
+compute tag list|ls
+compute tag remove
+compute volume create|c
+compute volume delete|d|rm
+compute volume get|g
+compute volume list|ls
+compute volume snapshot|s
+compute volume-action attach|a
+compute volume-action detach-by-droplet-id
+compute volume-action detach|d
+compute volume-action get
+compute volume-action list|ls
+compute volume-action resize|r
+compute vpc-nat-gateway|vng create|c
+compute vpc-nat-gateway|vng delete|d|rm
+compute vpc-nat-gateway|vng get
+compute vpc-nat-gateway|vng list|ls
+compute vpc-nat-gateway|vng update|u
+databases|db|dbs|d|database backups|bu
+databases|db|dbs|d|database configuration|cfg|config get|g
+databases|db|dbs|d|database configuration|cfg|config update|u
+databases|db|dbs|d|database connection|conn
+databases|db|dbs|d|database create|c
+databases|db|dbs|d|database db create|c
+databases|db|dbs|d|database db delete|rm
+databases|db|dbs|d|database db get|g
+databases|db|dbs|d|database db list|ls
+databases|db|dbs|d|database delete|rm
+databases|db|dbs|d|database events list|ls
+databases|db|dbs|d|database firewalls|fw append|a
+databases|db|dbs|d|database firewalls|fw list|ls
+databases|db|dbs|d|database firewalls|fw remove|rm
+databases|db|dbs|d|database firewalls|fw replace|r
+databases|db|dbs|d|database fork|f
+databases|db|dbs|d|database get-ca|gc
+databases|db|dbs|d|database get|g
+databases|db|dbs|d|database indexes delete|rm
+databases|db|dbs|d|database indexes list|ls
+databases|db|dbs|d|database list|ls
+databases|db|dbs|d|database maintenance-window|maintenance|mw|main get|g
+databases|db|dbs|d|database maintenance-window|maintenance|mw|main install|i
+databases|db|dbs|d|database maintenance-window|maintenance|mw|main update|u
+databases|db|dbs|d|database migrate|m
+databases|db|dbs|d|database options|o engines|eng
+databases|db|dbs|d|database options|o regions|r
+databases|db|dbs|d|database options|o slugs|s
+databases|db|dbs|d|database options|o versions|v
+databases|db|dbs|d|database pool|p create|c
+databases|db|dbs|d|database pool|p delete|rm
+databases|db|dbs|d|database pool|p get|g
+databases|db|dbs|d|database pool|p list|ls
+databases|db|dbs|d|database pool|p update|u
+databases|db|dbs|d|database replica|rep|r connection|conn
+databases|db|dbs|d|database replica|rep|r create|c
+databases|db|dbs|d|database replica|rep|r delete|rm
+databases|db|dbs|d|database replica|rep|r get|g
+databases|db|dbs|d|database replica|rep|r list|ls
+databases|db|dbs|d|database replica|rep|r promote|p
+databases|db|dbs|d|database resize|rs
+databases|db|dbs|d|database sql-mode|sm get|g
+databases|db|dbs|d|database sql-mode|sm set|s
+databases|db|dbs|d|database storage-autoscale|autoscale|storage get|g
+databases|db|dbs|d|database storage-autoscale|autoscale|storage update|u
+databases|db|dbs|d|database topics create|c
+databases|db|dbs|d|database topics delete|rm
+databases|db|dbs|d|database topics get|g
+databases|db|dbs|d|database topics list|ls
+databases|db|dbs|d|database topics partitions|p
+databases|db|dbs|d|database topics update|u
+databases|db|dbs|d|database user|u create|c
+databases|db|dbs|d|database user|u delete|rm
+databases|db|dbs|d|database user|u get|g
+databases|db|dbs|d|database user|u list|ls
+databases|db|dbs|d|database user|u reset|rs
+dedicated-inference|di|dedicated-inferences create-token|ct
+dedicated-inference|di|dedicated-inferences create|c
+dedicated-inference|di|dedicated-inferences delete|d|rm
+dedicated-inference|di|dedicated-inferences get-gpu-model-config|ggmc
+dedicated-inference|di|dedicated-inferences get-sizes|gs
+dedicated-inference|di|dedicated-inferences get|g
+dedicated-inference|di|dedicated-inferences list-accelerators|la
+dedicated-inference|di|dedicated-inferences list-tokens|lt
+dedicated-inference|di|dedicated-inferences list|ls
+dedicated-inference|di|dedicated-inferences revoke-token|rt
+dedicated-inference|di|dedicated-inferences update|u
+gradient|ai|genai|gradientai list-models|lm
+gradient|ai|genai|gradientai list-regions|regions|lr
+gradient|ai|genai|gradientai openai-key|ok create|c
+gradient|ai|genai|gradientai openai-key|ok delete|rm
+gradient|ai|genai|gradientai openai-key|ok get-agents|ga
+gradient|ai|genai|gradientai openai-key|ok get|g
+gradient|ai|genai|gradientai openai-key|ok list|ls
+gradient|ai|genai|gradientai openai-key|ok update|u
+gradient|ai|genai|gradientai scenario-library|sl create-scenario-set|c-ss
+gradient|ai|genai|gradientai scenario-library|sl list-scenarios|ls-s
+gradient|ai|genai|gradientai scenario-library|sl list|ls
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets create|c
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets delete|del|rm
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets download-url|dl-url
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets generate|gen
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets get|g
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets list-scenarios|ls-s
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets list|ls
+gradient|ai|genai|gradientai scenario-set|ss|scenario-sets update|u
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs cancel
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs create|c
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs delete|del|rm
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs get-journey|g-j
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs get-trajectory-url|g-t-url
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs get-trajectory|g-t
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs get|g
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs list-journeys|ls-j
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs list|ls
+gradient|ai|genai|gradientai simulation-run|sim|simulation-runs update|u
+invoice csv|c
+invoice get|g
+invoice list|ls
+invoice pdf|p
+invoice summary|s
+kubernetes|kube|k8s|k 1-click install|in
+kubernetes|kube|k8s|k 1-click list|ls
+kubernetes|kube|k8s|k cluster|clusters|c create|c
+kubernetes|kube|k8s|k cluster|clusters|c delete-selective|ds
+kubernetes|kube|k8s|k cluster|clusters|c delete|d|rm
+kubernetes|kube|k8s|k cluster|clusters|c get-upgrades|gu
+kubernetes|kube|k8s|k cluster|clusters|c get|g
+kubernetes|kube|k8s|k cluster|clusters|c kubeconfig|kubecfg|k8scfg|config|cfg exec-credential
+kubernetes|kube|k8s|k cluster|clusters|c kubeconfig|kubecfg|k8scfg|config|cfg remove|d|rm
+kubernetes|kube|k8s|k cluster|clusters|c kubeconfig|kubecfg|k8scfg|config|cfg save|s
+kubernetes|kube|k8s|k cluster|clusters|c kubeconfig|kubecfg|k8scfg|config|cfg show|p|g
+kubernetes|kube|k8s|k cluster|clusters|c list-associated-resources|ar
+kubernetes|kube|k8s|k cluster|clusters|c list|ls
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p create|c
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p delete-node
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p delete|d|rm
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p get|g
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p list|ls
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p recycle|r
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p replace-node
+kubernetes|kube|k8s|k cluster|clusters|c node-pool|node-pools|nodepool|nodepools|pool|pools|np|p update|u
+kubernetes|kube|k8s|k cluster|clusters|c registry|reg add|a
+kubernetes|kube|k8s|k cluster|clusters|c registry|reg remove|rm
+kubernetes|kube|k8s|k cluster|clusters|c update|u
+kubernetes|kube|k8s|k cluster|clusters|c upgrade
+kubernetes|kube|k8s|k options|opts|o regions|r
+kubernetes|kube|k8s|k options|opts|o sizes|s
+kubernetes|kube|k8s|k options|opts|o versions|v
+monitoring alert|alerts|a create
+monitoring alert|alerts|a delete|rm
+monitoring alert|alerts|a get
+monitoring alert|alerts|a list|ls
+monitoring alert|alerts|a update
+monitoring uptime alert|alerts create|c
+monitoring uptime alert|alerts delete|d|del|rm
+monitoring uptime alert|alerts get|g
+monitoring uptime alert|alerts list|ls
+monitoring uptime alert|alerts update|u
+monitoring uptime create|c
+monitoring uptime delete|d|del|rm
+monitoring uptime get|g
+monitoring uptime list|ls
+monitoring uptime update|u
+network attachment create|c
+network attachment delete|rm
+network attachment get-bgp-auth-key|g-bgp-auth-key
+network attachment get-service-key|g-service-key
+network attachment get|g
+network attachment list-routes|ls-routes
+network attachment list|ls
+network attachment regenerate-service-key|regen-service-key
+network attachment update|u
+network byoip-prefix|byoip-prefixes create|c
+network byoip-prefix|byoip-prefixes delete|d|rm
+network byoip-prefix|byoip-prefixes get|g
+network byoip-prefix|byoip-prefixes list|ls
+network byoip-prefix|byoip-prefixes resource|resources
+network byoip-prefix|byoip-prefixes update|u
+nfs access-point create
+nfs access-point delete|rm
+nfs access-point get
+nfs access-point list|ls
+nfs attach
+nfs create
+nfs delete|rm
+nfs detach
+nfs get
+nfs list|ls
+nfs reassign
+nfs resize
+nfs snapshot create
+nfs snapshot delete|rm
+nfs snapshot get
+nfs snapshot list|ls
+nfs switch-performance-tier
+projects create|c
+projects delete|d|rm
+projects get|g
+projects list|ls
+projects resources assign|a
+projects resources get|g
+projects resources list|ls
+projects update|u
+registries|regs|rs create|c
+registries|regs|rs delete|d|del|rm
+registries|regs|rs docker-config|config
+registries|regs|rs garbage-collection|gc|g cancel|c
+registries|regs|rs garbage-collection|gc|g get-active|ga|g
+registries|regs|rs garbage-collection|gc|g list|ls|l
+registries|regs|rs garbage-collection|gc|g start|s
+registries|regs|rs get|g
+registries|regs|rs kubernetes-manifest|k8s
+registries|regs|rs list|ls
+registries|regs|rs login
+registries|regs|rs logout
+registries|regs|rs options|opts|o available-regions|regions
+registries|regs|rs options|opts|o subscription-tiers|tiers
+registries|regs|rs repository|repo|r delete-manifest|dm
+registries|regs|rs repository|repo|r delete-tag|dt
+registries|regs|rs repository|repo|r list-manifests|lm
+registries|regs|rs repository|repo|r list-tags|lt
+registries|regs|rs repository|repo|r list-v2|ls2
+registries|regs|rs repository|repo|r list|ls
+registry|reg|r create
+registry|reg|r delete|d|del|rm
+registry|reg|r docker-config|config
+registry|reg|r garbage-collection|gc|g cancel|c
+registry|reg|r garbage-collection|gc|g get-active|ga|g
+registry|reg|r garbage-collection|gc|g list|ls|l
+registry|reg|r garbage-collection|gc|g start|s
+registry|reg|r get|g
+registry|reg|r kubernetes-manifest|k8s
+registry|reg|r login
+registry|reg|r logout
+registry|reg|r options|opts|o available-regions|regions
+registry|reg|r options|opts|o subscription-tiers|tiers
+registry|reg|r repository|repo|r delete-manifest|dm
+registry|reg|r repository|repo|r delete-tag|dt
+registry|reg|r repository|repo|r list-manifests|lm
+registry|reg|r repository|repo|r list-tags|lt
+registry|reg|r repository|repo|r list-v2|ls2
+registry|reg|r repository|repo|r list|ls
+secrets create|c
+secrets delete|d|rm
+secrets get|g
+secrets list-versions
+secrets list|ls
+secrets restore
+secrets set
+secrets unset
+secrets update
+security scans|scan affected-resources
+security scans|scan create|c
+security scans|scan get|g
+security scans|scan latest
+security scans|scan list|ls
+serverless-inference|inference|si async-invoke|async create
+serverless-inference|inference|si async-invoke|async get
+serverless-inference|inference|si chat-completions|chat|chatcompletion create
+serverless-inference|inference|si embeddings create
+serverless-inference|inference|si images create
+serverless-inference|inference|si list-models|lm
+serverless-inference|inference|si list-regions|regions|lr
+serverless-inference|inference|si messages create
+serverless-inference|inference|si models list|ls
+serverless-inference|inference|si openai-key|ok create|c
+serverless-inference|inference|si openai-key|ok delete|rm
+serverless-inference|inference|si openai-key|ok get-agents|ga
+serverless-inference|inference|si openai-key|ok get|g
+serverless-inference|inference|si openai-key|ok list|ls
+serverless-inference|inference|si openai-key|ok update|u
+serverless-inference|inference|si responses create
+spaces|sp keys|k create
+spaces|sp keys|k delete|rm
+spaces|sp keys|k get|ls
+spaces|sp keys|k list|ls
+spaces|sp keys|k update
+vector-databases|vdb|vdbs backups|bu
+vector-databases|vdb|vdbs create|c
+vector-databases|vdb|vdbs credentials|creds
+vector-databases|vdb|vdbs delete|rm
+vector-databases|vdb|vdbs get|g
+vector-databases|vdb|vdbs list|ls
+vector-databases|vdb|vdbs resize|rs
+vector-databases|vdb|vdbs restore
+vector-databases|vdb|vdbs restore-status|rs-status
+vector-databases|vdb|vdbs tags
+vector-databases|vdb|vdbs update|u
+vpcs create|c
+vpcs delete|d|rm
+vpcs get|g
+vpcs list|ls
+vpcs peerings create|c
+vpcs peerings delete|d|rm
+vpcs peerings get|g
+vpcs peerings list|ls
+vpcs peerings update|u
+vpcs update|u

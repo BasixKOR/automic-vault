@@ -125,6 +125,47 @@ pub(crate) fn run_hcloud(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32
     )
 }
 
+pub(crate) fn run_doctl(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 {
+    use crate::isotopes::hardeners::{doctl, env_wrapper};
+    if unsafe { geteuid() } == 0 {
+        let _ = writeln!(stderr, "doctl: must not be run as root");
+        return 1;
+    }
+    if args.first().and_then(|s| s.to_str()) != Some(doctl::LAUNCHER) {
+        let _ = writeln!(
+            stderr,
+            "doctl requires its installed Automic Vault launcher"
+        );
+        return 1;
+    }
+    if let Err(error) = doctl::verify_installation() {
+        let _ = writeln!(stderr, "doctl: {error}");
+        return 1;
+    }
+    args.remove(0);
+    if env_wrapper::doctl_invocation_is_secretless(&args) {
+        let error = Command::new(doctl::TARGET)
+            .args(args)
+            .env_remove("DIGITALOCEAN_ACCESS_TOKEN")
+            .exec();
+        let _ = writeln!(stderr, "doctl: {error}");
+        return 1;
+    }
+    args.splice(0..0, doctl::REQUIRED_ARGUMENTS.map(OsString::from));
+    exec(
+        Options {
+            secret_fds: BTreeMap::new(),
+            replace_existing_env: false,
+            allow_missing_keys: true,
+            keys: vec!["DIGITALOCEAN_ACCESS_TOKEN".into()],
+            target: doctl::TARGET.into(),
+            args,
+            shebang_script: None,
+        },
+        stderr,
+    )
+}
+
 fn dispatch(
     args: Vec<OsString>,
     stdout: &mut dyn Write,
@@ -324,6 +365,16 @@ fn exec(mut options: Options, stderr: &mut dyn Write) -> i32 {
         );
         return 1;
     }
+    if verified_script.as_ref().is_some_and(|script| {
+        script.path == Path::new(crate::isotopes::hardeners::doctl::LAUNCHER)
+            && crate::isotopes::hardeners::env_wrapper::is_legacy_doctl_stub(&script.data)
+    }) {
+        let _ = writeln!(
+            stderr,
+            "doctl: run `av harden doctl` to replace the legacy wrapper"
+        );
+        return 1;
+    }
     let original_script = options.shebang_script.clone();
     let mut path_interpreter = None;
     if let Some(script) = &verified_script {
@@ -499,12 +550,25 @@ where
         script_data,
         snapshot_incompatible_interpreter,
     )?;
+    if target == Path::new(crate::isotopes::hardeners::doctl::TARGET) {
+        crate::isotopes::hardeners::doctl::verify_installation()?;
+        if !crate::isotopes::hardeners::doctl::arguments_bound(&options.args) {
+            return Err("doctl requires its fixed API endpoint and disabled trace logging".into());
+        }
+    }
     if target == Path::new(crate::isotopes::hardeners::hcloud::TARGET) {
         crate::isotopes::hardeners::hcloud::verify_installation()?;
     }
     let secrets = approve(&request)?;
     if target == Path::new(crate::isotopes::hardeners::hcloud::TARGET) {
         crate::isotopes::hardeners::hcloud::verify_installation()?;
+    }
+
+    if target == Path::new(crate::isotopes::hardeners::doctl::TARGET) {
+        crate::isotopes::hardeners::doctl::verify_installation()?;
+        if !crate::isotopes::hardeners::doctl::arguments_bound(&options.args) {
+            return Err("doctl requires its fixed API endpoint and disabled trace logging".into());
+        }
     }
     let env = build(options, stderr, secrets)?;
     Ok((target, env))

@@ -81,6 +81,13 @@ registered uv execution. Each credential lookup then passes through the uv
 Secret Gate and releases only the selected HTTP credential. Registration itself
 grants no Secret Use. See [ADR 0046](adr/0046-uv-registered-keyring-helper.md).
 
+The doctl Hardener repacks unpatched upstream executables with Automic Vault's
+signature and pins the signed artifacts. It owns a protected Target and native
+routing launcher rather than injecting into a mutable Homebrew binary. The
+approval service and client verify the pinned installation before Secret
+release and execution. This is pre-execution artifact verification; it is not
+a live provider handshake. See [ADR 0060](adr/0060-doctl-signed-native-target.md).
+
 The hcloud Hardener preserves Hetzner's pinned signed native executable in a
 protected versioned installation. Its native AV launcher routes reviewed
 commands and injects directly into that Target. The approval service and client

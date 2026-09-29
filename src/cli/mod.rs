@@ -71,7 +71,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 62;
+pub(crate) const INSTALL_REVISION: u32 = 63;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -330,6 +330,11 @@ where
                 }
             }
         }
+        Some("__doctl") => inject::run_doctl(rest, stderr),
+        Some("__install-doctl-release") if rest.len() == 1 => privileged_result(
+            hardeners::doctl::install_privileged(&PathBuf::from(&rest[0])),
+            stderr,
+        ),
         Some("__install-isotope") if rest.len() == 3 => {
             let Some(hardener) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid isotope hardener name");
@@ -1139,8 +1144,8 @@ mod tests {
         let (code, stdout, stderr) = run_args(&[
             "av",
             "__install-env-wrapper",
-            "doctl",
-            "/nix/store/example/bin/doctl",
+            "civo",
+            "/nix/store/example/bin/civo",
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_EUID") };
@@ -1159,8 +1164,8 @@ mod tests {
         let (code, stdout, stderr) = run_args(&[
             "av",
             "__install-env-wrapper",
-            "doctl",
-            "/nix/store/example/bin/doctl",
+            "civo",
+            "/nix/store/example/bin/civo",
         ]);
 
         unsafe { std::env::remove_var("AUTOMIC_VAULT_TEST_ENV_WRAPPER_STUB_DIR") };

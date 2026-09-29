@@ -3,6 +3,7 @@ pub(crate) mod aws_cli;
 pub(crate) mod aws_release;
 pub(crate) mod codex;
 pub(crate) mod docker;
+pub(crate) mod doctl;
 pub(crate) mod env_wrapper;
 pub(crate) mod fastly_cli;
 pub(crate) mod gh_cli;
@@ -332,6 +333,7 @@ macro_rules! ungated_hardener {
 const HARDENERS: &[HardenerSpec] = &[
     gated_hardener!(aliyun_cli, "aliyun-cli", &["aliyun"]),
     gated_hardener!(aws_cli, "aws", &[]),
+    gated_hardener!(doctl, "doctl", &[]),
     gated_hardener!(uv_cli, "uv", &["uvx"]),
     ungated_hardener!(codex, "codex", &[]),
     gated_hardener!(docker, "docker", &["docker-compose", "docker-buildx"]),
@@ -409,6 +411,7 @@ pub(crate) fn secret_gates() -> Vec<SecretGateDescriptor> {
         aliyun_cli::secret_gate(),
         aws_cli::secret_gate(),
         uv_cli::secret_gate(),
+        doctl::secret_gate(),
         hcloud::secret_gate(),
         docker::secret_gate(),
         goat::secret_gate(),
