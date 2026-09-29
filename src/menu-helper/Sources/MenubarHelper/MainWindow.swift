@@ -1696,6 +1696,29 @@ final class DashboardModel: ObservableObject {
         )
     }
 
+    func setSigningAccess(_ access: SigningGateAccess, for app: SecretGatePolicy?, in gate: SecretGate) {
+        let previous = app == nil ? gate.defaultDenialThreshold : app?.denialThreshold
+        let needsApproval = access.requiresApproval(in: gate,
+            protection: app?.protection ?? gate.defaultProtection, denial: previous,
+            usesGateDefault: app?.usesGateDefault == true)
+        let update = { [weak self] in
+            self?.finishSecretGatePolicyUpdate(
+                setSecretGateDenialThreshold(access.denial, requirement: app?.requirement, in: gate,
+                    runtimeRequirement: app?.runtimeRequirement ?? .hardened,
+                    approvedDenialThreshold: needsApproval ? previous : nil, signingAccess: access),
+                gate: gate, error: "Could not update the Access Level"
+            )
+        }
+        guard needsApproval else { update(); return }
+        approveAuthorityChange(
+            action: "gate-signing:\(gate.id):\(app?.requirement ?? "")",
+            "Change \(app?.bundleIdentifier ?? gate.defaultPolicyLabel) to \(access.title(for: gate))",
+            detail: access == .allow ? gate.protectionSubtitle(access.protection(for: gate))
+                : "Remove this denial. Future requests under this rule require Approval.",
+            perform: { update() }
+        )
+    }
+
     func removeAppPolicy(_ app: SecretGatePolicy, from gate: SecretGate) {
         let update = { [weak self] in
             self?.finishSecretGatePolicyUpdate(
@@ -2651,28 +2674,62 @@ func runDashboardSearchSelfCheck() -> Int32 {
     func policyPopup(in view: NSView) -> NSPopUpButton? {
         (view as? NSPopUpButton) ?? view.subviews.lazy.compactMap { policyPopup(in: $0) }.first
     }
-    for isDenial in [false, true] {
+    for (isDenial, usesPhone) in [(false, false), (false, true), (true, false)] {
         var selections: [SecretGateProtection?] = []
         let host = NSHostingView(rootView: NativeProtectionMenu(gate: gate,
-            protection: isDenial ? nil : .readOnly, usesPhone: false, isDenial: isDenial) {
+            protection: isDenial ? nil : .readOnly, usesPhone: usesPhone, isDenial: isDenial) {
                 selections.append($0)
             })
         host.frame = NSRect(x: 0, y: 0, width: 170, height: 30)
         host.layoutSubtreeIfNeeded()
         guard let popup = policyPopup(in: host), !popup.isBordered,
               popup.numberOfItems == (isDenial ? gate.availableDenialThresholds.count + 1 : gate.availableProtections.count),
-              popup.indexOfSelectedItem == (isDenial ? 0 : 1), let action = popup.action else { return 1 }
+              popup.indexOfSelectedItem == (isDenial ? 0 : 1), let action = popup.action,
+              popup.itemArray.allSatisfy({ $0.image == nil }) else { print("Protection menu self-check failed at line \(#line)"); return 1 }
+        if !isDenial {
+            for (index, candidate) in gate.availableProtections.enumerated() {
+                let warningCount = candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps ? 1 : 0
+                let phoneCount = usesPhone && candidate.addsAuthority(over: .readOnly) ? 1 : 0
+                guard let title = popup.item(at: index)?.attributedTitle,
+                      title.string.hasPrefix(localizedUIString(gate.protectionTitle(candidate))),
+                      title.string.filter({ $0 == "\u{fffc}" }).count == warningCount + phoneCount else { print("Protection menu self-check failed at line \(#line)"); return 1 }
+            }
+        }
         popup.selectItem(at: isDenial ? 1 : 0)
         NSApp.sendAction(action, to: popup.target, from: popup)
-        guard selections == [.noAccess] else { return 1 }
+        guard selections == [.noAccess] else { print("Protection menu self-check failed at line \(#line)"); return 1 }
         if isDenial {
             popup.selectItem(at: 0)
             NSApp.sendAction(action, to: popup.target, from: popup)
-            guard selections == [.noAccess, nil] else { return 1 }
+            guard selections == [.noAccess, nil] else { print("Protection menu self-check failed at line \(#line)"); return 1 }
             popup.selectItem(at: popup.numberOfItems - 1)
             NSApp.sendAction(action, to: popup.target, from: popup)
-            guard selections.last == .some(.unknownOnly) else { return 1 }
+            guard selections.last == .some(.unknownOnly) else { print("Protection menu self-check failed at line \(#line)"); return 1 }
         }
+    }
+    for id in ["ssh-agent", "gpg-signing"] {
+        let signingGate = SecretGate(id: id, keyPatterns: ["SECRET"], routes: [],
+                                     defaultProtection: .noAccess, appPolicies: [])
+        var selections: [SecretGateProtection?] = []
+        let host = NSHostingView(rootView: NativeProtectionMenu(gate: signingGate,
+            protection: nil, usesPhone: false, includesDeny: true) { selections.append($0) })
+        host.frame = NSRect(x: 0, y: 0, width: 240, height: 30)
+        host.layoutSubtreeIfNeeded()
+        guard let popup = policyPopup(in: host), popup.numberOfItems == 3,
+              Array(popup.itemTitles.prefix(2)) == [String(localized: "Deny"), String(localized: "Approval Required")],
+              popup.itemTitles[2].hasPrefix(localizedUIString(signingGate.protectionTitle(signingGate.availableProtections[1]))),
+              popup.indexOfSelectedItem == 0, let action = popup.action,
+              popup.itemArray.allSatisfy({ $0.image == nil }) else { print("Protection menu self-check failed at line \(#line)"); return 1 }
+        let allowTitle = popup.item(at: 2)?.attributedTitle?.string ?? ""
+        guard allowTitle.filter({ $0 == "\u{fffc}" }).count == (id == "ssh-agent" ? 1 : 0) else { print("Protection menu self-check failed at line \(#line)"); return 1 }
+        if #available(macOS 14.4, *) {
+            guard popup.item(at: 0)?.subtitle == String(localized: "Requests are denied without asking for Approval.") else { print("Protection menu self-check failed at line \(#line)"); return 1 }
+        }
+        for index in 0..<3 {
+            popup.selectItem(at: index)
+            NSApp.sendAction(action, to: popup.target, from: popup)
+        }
+        guard selections == [nil, .noAccess, signingGate.availableProtections[1]] else { print("Protection menu self-check failed at line \(#line)"); return 1 }
     }
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
     let appPolicy = gate.appPolicies[0]
@@ -6809,6 +6866,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
     enum Value: Equatable {
         case allow(SecretGateProtection)
         case denial(SecretGateProtection?)
+        case signing(SigningGateAccess)
     }
     let requirement: String?
     let value: Value
@@ -6817,6 +6875,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
         switch value {
         case .allow: requirement.map { "gate-policy:\($0)" } ?? "gate-default"
         case .denial: "gate-denial:\(requirement ?? "")"
+        case .signing: "gate-signing:\(requirement ?? "")"
         }
     }
 
@@ -6824,6 +6883,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
         switch value {
         case .allow: requirement.map { "gate-policy:\(gate.id):\($0)" } ?? "gate-default:\(gate.id)"
         case .denial: requirement.map { "gate-denial:\(gate.id):\($0)" } ?? "gate-default-denial:\(gate.id)"
+        case .signing: "gate-signing:\(gate.id):\(requirement ?? "")"
         }
     }
 }
@@ -6846,6 +6906,8 @@ private struct GatePolicyTable: View {
             switch change.value {
             case .allow(let level): return level != (app?.protection ?? gate.defaultProtection)
             case .denial(let level): return level != denialThreshold(for: app)
+            case .signing(let access):
+                return access != signingAccess(for: app)
             }
         }
     }
@@ -6888,9 +6950,8 @@ private struct GatePolicyTable: View {
                     Divider()
                 }
                 .frame(width: max(720, availableWidth))
-                .padding(.horizontal, 10)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width - 20 } action: { availableWidth = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
 
             Label(showsUnknownOperations
                 ? String(localized: "Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.")
@@ -6953,28 +7014,47 @@ private struct GatePolicyTable: View {
             }
             .frame(width: 190, alignment: .leading)
             VStack(alignment: .leading, spacing: 8) {
-                GatePolicyTrack(gate: gate, protection: protection, denial: denial,
-                                setProtection: { stage(.allow($0), for: app) },
-                                setDenial: { stage(.denial($0), for: app) })
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Allow ≤").font(.caption).foregroundStyle(.secondary)
-                    NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
-                        if let level { stage(.allow(level), for: app) }
+                if !gate.supportsUnknownDenial {
+                    let access = rowChanges.compactMap { change -> SigningGateAccess? in
+                        if case .signing(let value) = change.value { return value }
+                        return nil
+                    }.first ?? signingAccess(for: app)
+                    GatePolicyTrack(gate: gate, protection: access.protection(for: gate), denial: access.denial,
+                        setProtection: { stage(.signing(SigningGateAccess(protection: $0, denial: nil)), for: app) },
+                        setDenial: { stage(.signing(SigningGateAccess(protection: access.protection(for: gate), denial: $0)), for: app) })
+                    NativeProtectionMenu(gate: gate,
+                        protection: access == .deny ? nil : access.protection(for: gate),
+                        usesPhone: false, includesDeny: true) { level in
+                        stage(.signing(level.map { SigningGateAccess(protection: $0, denial: nil) } ?? .deny), for: app)
                     }
-                    .frame(maxWidth: 170)
-                    Spacer(minLength: 4)
-                    Text("Deny ≥").font(.caption).foregroundStyle(.secondary)
-                    NativeProtectionMenu(gate: gate, protection: denial, usesPhone: false, isDenial: true) {
-                        stage(.denial($0), for: app)
+                    .frame(maxWidth: 240, alignment: .leading)
+                } else {
+                    GatePolicyTrack(gate: gate, protection: protection, denial: denial,
+                                    setProtection: { stage(.allow($0), for: app) },
+                                    setDenial: { stage(.denial($0), for: app) })
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Allow ≤").font(.caption).foregroundStyle(.secondary)
+                        NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
+                            if let level { stage(.allow(level), for: app) }
+                        }
+                        .frame(maxWidth: 170)
+                        Spacer(minLength: 4)
+                        Text("Deny ≥").font(.caption).foregroundStyle(.secondary)
+                        NativeProtectionMenu(gate: gate, protection: denial, usesPhone: false, isDenial: true) {
+                            stage(.denial($0), for: app)
+                        }
+                        .frame(maxWidth: 170)
                     }
-                    .frame(maxWidth: 170)
                 }
                 if app?.usesGateDefault == true && !rowChanges.contains(where: {
-                    if case .allow = $0.value { return true }; return false
+                    switch $0.value {
+                    case .allow, .signing: return true
+                    case .denial: return false
+                    }
                 }) {
                     Text("Auto-allow uses gate default").font(.caption).foregroundStyle(.secondary)
                 }
-                if GatePolicyRegions(gate: gate, protection: protection, denial: denial).allowEnd
+                if gate.supportsUnknownDenial && GatePolicyRegions(gate: gate, protection: protection, denial: denial).allowEnd
                     > GatePolicyRegions(gate: gate, protection: protection, denial: denial).denyStart {
                     Text("Denial overrides overlapping allow levels.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -6984,6 +7064,11 @@ private struct GatePolicyTable: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(app?.bundleIdentifier ?? localizedUIString(gate.defaultPolicyLabel))
         .disabled(pending)
+    }
+
+    private func signingAccess(for app: SecretGatePolicy?) -> SigningGateAccess {
+        SigningGateAccess(protection: gate.normalizedProtection(app?.protection ?? gate.defaultProtection),
+                          denial: denialThreshold(for: app))
     }
 
     private func denialThreshold(for app: SecretGatePolicy?) -> SecretGateProtection? {
@@ -7010,6 +7095,8 @@ private struct GatePolicyTable: View {
                                 switch change.value {
                                 case .allow(let level):
                                     Text("Allow ≤ \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
+                                case .signing(let access):
+                                    Text("\(signingAccess(for: app).title(for: gate)) → \(access.title(for: gate))")
                                 case .denial(let level):
                                     Text("Deny ≥ \(denialTitle(denialThreshold(for: app))) → \(denialTitle(level))")
                                 }
@@ -7021,6 +7108,8 @@ private struct GatePolicyTable: View {
                                         else { model.setDefaultProtection(level, for: gate) }
                                     case .denial(let level):
                                         model.setDenialThreshold(level, for: app, in: gate)
+                                    case .signing(let access):
+                                        model.setSigningAccess(access, for: app, in: gate)
                                     }
                                 } label: {
                                     AuthorityApprovalLabel(title: "Apply", approval: approval,
@@ -7054,6 +7143,9 @@ private struct GatePolicyTable: View {
         case .allow(let level):
             return level.addsAuthority(over: app.map { $0.usesGateDefault ? .noAccess : $0.protection } ?? gate.defaultProtection)
         case .denial(let level): return gate.weakeningDenial(from: denialThreshold(for: app), to: level)
+        case .signing(let access):
+            return access.requiresApproval(in: gate, protection: app?.protection ?? gate.defaultProtection,
+                denial: denialThreshold(for: app), usesGateDefault: app?.usesGateDefault == true)
         }
     }
 }
@@ -7233,10 +7325,11 @@ private struct NativeProtectionMenu: NSViewRepresentable {
     let protection: SecretGateProtection?
     let usesPhone: Bool
     var isDenial = false
+    var includesDeny = false
     let setProtection: (SecretGateProtection?) -> Void
 
     private var candidates: [SecretGateProtection?] {
-        (isDenial ? [nil] : []) + (isDenial ? gate.availableDenialThresholds : gate.availableProtections).map(Optional.some)
+        ((isDenial || includesDeny) ? [nil] : []) + (isDenial ? gate.availableDenialThresholds : gate.availableProtections).map(Optional.some)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -7250,7 +7343,8 @@ private struct NativeProtectionMenu: NSViewRepresentable {
         button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         button.target = context.coordinator
         button.action = #selector(Coordinator.selectProtection(_:))
-        button.setAccessibilityLabel(isDenial ? String(localized: "Denial Threshold") : String(localized: "Protection level"))
+        button.setAccessibilityLabel(includesDeny ? String(localized: "Access Level")
+            : isDenial ? String(localized: "Denial Threshold") : String(localized: "Protection level"))
         configureItems(in: button)
         updateSelection(in: button)
         return button
@@ -7264,32 +7358,41 @@ private struct NativeProtectionMenu: NSViewRepresentable {
 
     private func configureItems(in button: NSPopUpButton) {
         button.removeAllItems()
+        let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: String(localized: "Warning"))
         for value in candidates {
             guard let candidate = value else {
-                button.addItem(withTitle: String(localized: "None"))
+                button.addItem(withTitle: includesDeny ? String(localized: "Deny") : String(localized: "None"))
+                if includesDeny {
+                    let subtitle = String(localized: "Requests are denied without asking for Approval.")
+                    button.lastItem?.toolTip = subtitle
+                    if #available(macOS 14.4, *) { button.lastItem?.subtitle = subtitle }
+                }
                 continue
             }
             button.addItem(withTitle: isDenial && candidate == .noAccess
                 ? String(localized: "All operations") : localizedUIString(gate.protectionTitle(candidate)))
             // Allow explanations and warnings would misdescribe a denial choice.
             if isDenial { continue }
+            let title = NSMutableAttributedString(string: localizedUIString(gate.protectionTitle(candidate)))
+            if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
+                let attachment = NSTextAttachment()
+                let icon = warning?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+                attachment.image = candidate == .fullIncludingSecretDumps
+                    ? icon?.withSymbolConfiguration(.init(paletteColors: [.white, .systemRed])) : icon
+                title.append(NSAttributedString(string: "  "))
+                title.append(NSAttributedString(attachment: attachment))
+            }
             if usesPhone && candidate.addsAuthority(over: protection ?? .noAccess) {
-                let title = NSMutableAttributedString(string: localizedUIString(gate.protectionTitle(candidate)) + "  ")
+                title.append(NSAttributedString(string: "  "))
                 let attachment = NSTextAttachment()
                 attachment.image = NSImage(systemSymbolName: "iphone", accessibilityDescription: String(localized: "Approval on iPhone"))?
                     .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
                 title.append(NSAttributedString(attachment: attachment))
-                button.lastItem?.attributedTitle = title
                 button.lastItem?.toolTip = String(localized: "Requires Approval on iPhone.")
             }
+            button.lastItem?.attributedTitle = title
             if #available(macOS 14.4, *) {
                 button.lastItem?.subtitle = localizedUIString(gate.protectionSubtitle(candidate))
-            }
-            if candidate == .fullExceptSecretDumps || candidate == .fullIncludingSecretDumps {
-                let warning = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: String(localized: "Warning"))
-                button.lastItem?.image = candidate == .fullIncludingSecretDumps
-                    ? warning?.withSymbolConfiguration(.init(paletteColors: [.systemRed]))
-                    : warning
             }
         }
     }

@@ -1402,12 +1402,14 @@ public func setSecretGateAppProtection(
 
 /// Only the attended UI may weaken this rule, after authority-change Approval.
 /// The approved threshold must still match under the lock; a newer rule needs fresh Approval.
+/// A signingAccess selection replaces both fields atomically; its allow expansion also requires Approval.
 public func setSecretGateDenialThreshold(
     _ threshold: SecretGateProtection?,
     requirement: String?,
     in gate: SecretGate,
     runtimeRequirement: LauncherRuntimeRequirement,
     approvedDenialThreshold: SecretGateProtection? = nil,
+    signingAccess: SigningGateAccess? = nil,
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
@@ -1423,7 +1425,7 @@ public func setSecretGateDenialThreshold(
     case .failure(let status): return status
     }
     let updateStatus = updateSecretGateDenialThreshold(threshold, requirement: requirement, in: gate,
-        runtimeRequirement: runtimeRequirement, approvedDenialThreshold: approvedDenialThreshold, records: &records)
+        runtimeRequirement: runtimeRequirement, approvedDenialThreshold: approvedDenialThreshold, signingAccess: signingAccess, records: &records)
     guard updateStatus == errSecSuccess else { return updateStatus }
     let status = saveSecretGatePolicyRecords(records, service: service, account: account)
     didChange = status == errSecSuccess
@@ -1433,11 +1435,14 @@ public func setSecretGateDenialThreshold(
 func updateSecretGateDenialThreshold(
     _ threshold: SecretGateProtection?, requirement: String?, in gate: SecretGate,
     runtimeRequirement: LauncherRuntimeRequirement,
-    approvedDenialThreshold: SecretGateProtection?, records: inout [SecretGatePolicyRecord]
+    approvedDenialThreshold: SecretGateProtection?, signingAccess: SigningGateAccess? = nil, records: inout [SecretGatePolicyRecord]
 ) -> OSStatus {
     guard requirement?.isEmpty != true,
           threshold.map({ gate.availableDenialThresholds.contains($0) }) ?? true
     else { return errSecParam }
+    if let signingAccess {
+        guard !gate.supportsUnknownDenial, threshold == signingAccess.denial else { return errSecParam }
+    }
     let index = records.firstIndex { $0.gateID == gate.id && $0.requirement == requirement }
     let fallback = records.first { $0.gateID == gate.id && $0.requirement == nil }
     let oldThreshold: SecretGateProtection? = if let index { records[index].denialThreshold }
@@ -1450,6 +1455,11 @@ func updateSecretGateDenialThreshold(
         runtimeRequirement: requirement == nil ? nil : runtimeRequirement
     )
     if index == nil && requirement != nil { record.usesGateDefault = true }
+    if let signingAccess {
+        // Commit both fields together: clearing denial must never revive a hidden allow rule.
+        record.protection = signingAccess.protection(for: gate)
+        record.usesGateDefault = nil
+    }
     record.denialThreshold = threshold
     if threshold == nil, record.usesGateDefault == true {
         if let index { records.remove(at: index) }
@@ -1584,7 +1594,7 @@ public func secretGateProtection(
 struct SecretGatePolicyRecord: Codable, Equatable {
     let gateID: String
     let requirement: String?
-    let protection: SecretGateProtection
+    var protection: SecretGateProtection
     var usesGateDefault: Bool?
     var denialThreshold: SecretGateProtection?
     let requiresHardenedRuntime: Bool?

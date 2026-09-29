@@ -74,9 +74,9 @@ recorded. Git and `av-gpg` receive the detached signature, never the private key
 or passphrase.
 
 GPG signing is a Local Write operation. Because every recognized operation at
-this gate is signing, it exposes only **Approval Required** and **Allow
-Signing**. Allow Signing is the GPG-specific presentation of Local Write. The
-gate defaults to Approval Required.
+this gate is signing, its policy editor offers three exclusive choices:
+**Approval Required**, **Allow Signing**, and **Deny**. Allow Signing is the
+GPG-specific presentation of Local Write. The gate defaults to Approval Required.
 
 ### SSH Agent Gate
 
@@ -92,7 +92,9 @@ The Verified Launcher must be a live original ancestor: the socket peer cannot
 represent itself as a Launcher. Every parent execution must match the kernel's
 original-parent evidence; unavailable or changed ancestry denies use.
 The gate defaults to **Approval Required** and offers **Allow Authentication**
-for recognized SSH authentication signatures. This delegates authentication,
+for recognized SSH authentication signatures. Its policy editor offers three
+exclusive choices: **Approval Required**, **Allow Authentication**, and **Deny**.
+Allow Authentication delegates authentication,
 including access that may permit remote writes; it is not Read Only authority.
 Script-derived authority may authorize authentication only through an explicit
 `ssh-agent: trusted` Capability when the SSH socket peer's verified original
