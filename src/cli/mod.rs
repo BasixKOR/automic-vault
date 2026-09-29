@@ -71,7 +71,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 61;
+pub(crate) const INSTALL_REVISION: u32 = 62;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -261,6 +261,11 @@ where
                 }
             }
         }
+        Some("__hcloud") => inject::run_hcloud(rest, stderr),
+        Some("__install-hcloud-release") if rest.len() == 1 => privileged_result(
+            hardeners::hcloud::install_privileged(&PathBuf::from(&rest[0])),
+            stderr,
+        ),
         Some("__install-uv-release") if rest.len() == 1 => privileged_result(
             hardeners::uv_cli::install_privileged(&PathBuf::from(&rest[0])),
             stderr,
