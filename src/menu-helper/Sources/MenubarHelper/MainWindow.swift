@@ -6850,6 +6850,7 @@ private struct GatePolicyTrack: View {
     let denial: SecretGateProtection?
     let setProtection: (SecretGateProtection) -> Void
     let setDenial: (SecretGateProtection?) -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
     @GestureState private var allowDrag: Int?
     @GestureState private var denyDrag: Int?
@@ -6905,7 +6906,7 @@ private struct GatePolicyTrack: View {
                     .font(.caption).lineLimit(1).minimumScaleFactor(0.85)
                     .frame(width: width * CGFloat(columns) / CGFloat(regions.columnCount), height: 40)
                     .foregroundStyle(.primary)
-                    .background(color.opacity(0.16))
+                    .background(color.opacity(color == .secondary ? 0.16 : (colorScheme == .dark ? 0.30 : 0.25)))
             }
         }
     }
