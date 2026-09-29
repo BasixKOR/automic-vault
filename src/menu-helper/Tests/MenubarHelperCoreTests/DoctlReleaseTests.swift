@@ -30,3 +30,13 @@ import Testing
     try data.write(to: copy)
     #expect(!doctlReleaseBinaryValid(path: copy.path))
 }
+
+@Test func doctlBindsApiAuthorityAndTraceLogging() {
+    #expect(doctlArgumentsBound(doctlRequiredArguments + ["account", "get"]))
+    #expect(!doctlArgumentsBound(["account", "get"]))
+    for override in ["--api-url=https://example.invalid", "-uhttps://example.invalid", "--trace", "--trace=true"] {
+        #expect(!doctlArgumentsBound(doctlRequiredArguments + ["account", "get", override]))
+    }
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: doctlRequiredArguments + ["account", "get"]) == .readOnly)
+    #expect(genericSecretGateRequestClassification(gateID: "doctl", arguments: doctlRequiredArguments + ["auth", "init"]) == .secretDump)
+}

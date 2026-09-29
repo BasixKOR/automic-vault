@@ -4889,7 +4889,7 @@ private final class ApprovalServer: @unchecked Sendable {
             signing: signing,
             descriptors: secretGateDescriptors
         )
-        if configuredGate?.id == "doctl", !doctlInstalledReleaseValid() {
+        if configuredGate?.id == "doctl", !doctlInstalledReleaseValid() || !doctlArgumentsBound(preparedRequest.args) {
             reply(peer, to: message, ok: false, error: "doctl installation changed; run av harden doctl")
             return
         }
@@ -9112,7 +9112,7 @@ private final class ApprovalServer: @unchecked Sendable {
 
     private func validateDoctlTarget(_ request: ApprovalRequest) throws {
         guard request.target == doctlSignedTarget else { return }
-        guard doctlInstalledReleaseValid() else {
+        guard doctlInstalledReleaseValid(), doctlArgumentsBound(request.args) else {
             throw AppError("doctl Target changed before Secret Application; run av harden doctl")
         }
     }

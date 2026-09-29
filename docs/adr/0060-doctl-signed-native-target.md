@@ -75,3 +75,9 @@ Updates require an explicitly reviewed AV release; no latest-version lookup or
 runtime fallback to a system doctl is permitted. Draft assets and the tap PR
 must be published/merged before this Hardener ships. Signed end-to-end delivery
 and privileged installation remain release-validation requirements.
+
+Credential-bearing execution prepends a fixed DigitalOcean API URL and disables
+trace logging. Both client and approval service require these exact options
+and reject later overrides before Secret release. This prevents a mutable
+config file from redirecting the normal API client; other destination, proxy
+and post-application behavior remains controlled by doctl.

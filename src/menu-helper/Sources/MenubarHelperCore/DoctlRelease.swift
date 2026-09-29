@@ -50,3 +50,12 @@ public func doctlInstalledReleaseValid() -> Bool {
     else { return false }
     return doctlReleaseBinaryValid(path: doctlSignedTarget)
 }
+
+public let doctlRequiredArguments = ["--api-url=https://api.digitalocean.com/", "--trace=false"]
+
+public func doctlArgumentsBound(_ args: [String]) -> Bool {
+    args.starts(with: doctlRequiredArguments) && !args.dropFirst(2).prefix(while: { $0 != "--" }).contains {
+        $0 == "--api-url" || $0.hasPrefix("--api-url=") || $0.hasPrefix("-u")
+            || $0 == "--trace" || $0.hasPrefix("--trace=")
+    }
+}

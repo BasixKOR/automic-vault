@@ -111,6 +111,7 @@ pub(crate) fn run_doctl(mut args: Vec<OsString>, stderr: &mut dyn Write) -> i32 
         let _ = writeln!(stderr, "doctl: {error}");
         return 1;
     }
+    args.splice(0..0, doctl::REQUIRED_ARGUMENTS.map(OsString::from));
     exec(
         Options {
             secret_fds: BTreeMap::new(),
@@ -501,10 +502,16 @@ where
     )?;
     if target == Path::new(crate::isotopes::hardeners::doctl::TARGET) {
         crate::isotopes::hardeners::doctl::verify_installation()?;
+        if !crate::isotopes::hardeners::doctl::arguments_bound(&options.args) {
+            return Err("doctl requires its fixed API endpoint and disabled trace logging".into());
+        }
     }
     let secrets = approve(&request)?;
     if target == Path::new(crate::isotopes::hardeners::doctl::TARGET) {
         crate::isotopes::hardeners::doctl::verify_installation()?;
+        if !crate::isotopes::hardeners::doctl::arguments_bound(&options.args) {
+            return Err("doctl requires its fixed API endpoint and disabled trace logging".into());
+        }
     }
     let env = build(options, stderr, secrets)?;
     Ok((target, env))

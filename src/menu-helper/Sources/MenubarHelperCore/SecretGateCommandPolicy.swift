@@ -25,6 +25,8 @@ public func genericSecretGateRequestClassification(
     if gateID == "vault" { return vaultRequestClassification(arguments) }
     if gateID == "argocd" { return argocdRequestClassification(arguments) }
     if gateID == "ast-cli" { return astCLIRequestClassification(arguments) }
+    let arguments = gateID == "doctl" && arguments.starts(with: doctlRequiredArguments)
+        ? Array(arguments.dropFirst(doctlRequiredArguments.count)) : arguments
     var words = arguments.map { $0.lowercased() }
     guard !words.isEmpty else { return .unknown }
     if gateID == "civo" { return civoRequestClassification(words) }

@@ -15,6 +15,21 @@ pub(crate) const ROOT: &str = "/opt/av/doctl";
 pub(crate) const TARGET: &str = "/opt/av/doctl/1.175.0-av.1/doctl";
 pub(crate) const LAUNCHER: &str = "/usr/local/bin/doctl";
 pub(crate) const STUB: &str = "#!/usr/local/bin/av __doctl\n";
+pub(crate) const REQUIRED_ARGUMENTS: [&str; 2] =
+    ["--api-url=https://api.digitalocean.com/", "--trace=false"];
+
+pub(crate) fn arguments_bound(args: &[std::ffi::OsString]) -> bool {
+    args.starts_with(&REQUIRED_ARGUMENTS.map(std::ffi::OsString::from))
+        && !args[2..].iter().take_while(|arg| *arg != "--").any(|arg| {
+            let arg = arg.to_string_lossy();
+            arg == "--api-url"
+                || arg.starts_with("--api-url=")
+                || arg.starts_with("-u")
+                || arg == "--trace"
+                || arg.starts_with("--trace=")
+        })
+}
+
 const MAX_ARCHIVE: u64 = 32 * 1024 * 1024;
 const MAX_BINARY: u64 = 64 * 1024 * 1024;
 
@@ -451,6 +466,27 @@ pub(crate) fn secret_gate() -> SecretGateDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn binds_api_authority_and_trace_logging() {
+        let args = REQUIRED_ARGUMENTS
+            .into_iter()
+            .chain(["account", "get"])
+            .map(std::ffi::OsString::from)
+            .collect::<Vec<_>>();
+        assert!(arguments_bound(&args));
+        assert!(!arguments_bound(&args[2..]));
+        for flag in [
+            "--api-url=https://example.invalid",
+            "-uhttps://example.invalid",
+            "--trace",
+            "--trace=true",
+        ] {
+            let mut changed = args.clone();
+            changed.push(flag.into());
+            assert!(!arguments_bound(&changed));
+        }
+    }
+
     #[test]
     fn catalog_has_only_the_native_doctl_route() {
         let gates = super::super::secret_gates();

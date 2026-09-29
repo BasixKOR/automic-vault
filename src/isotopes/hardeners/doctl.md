@@ -30,3 +30,9 @@ tap formula records the same artifacts; AV owns the protected runtime and launch
 Code signing establishes identity and integrity, not destination safety or
 confidentiality after Secret Application. This integration verifies the Target
 before execution; it does not add a live credential-provider handshake.
+
+Credential-bearing execution prepends a fixed DigitalOcean API URL and disables
+trace logging. Both client and approval service require these exact options
+and reject later overrides before Secret release. This prevents a mutable
+config file from redirecting the normal API client; other destination, proxy
+and post-application behavior remains controlled by doctl.
