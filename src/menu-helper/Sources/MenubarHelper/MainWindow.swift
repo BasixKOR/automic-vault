@@ -2143,6 +2143,27 @@ private enum CLIInstallerError: LocalizedError {
 
 @MainActor
 func runUpdateToolbarSelfCheck() -> Int32 {
+    let focusModel = DashboardModel(snapshot: .empty)
+    let focusWindow = NSWindow(contentViewController: NSHostingController(rootView: DashboardRootView(
+        model: focusModel, checkForUpdates: {}, requestScan: {})))
+    focusWindow.setContentSize(NSSize(width: 1100, height: 700))
+    focusWindow.makeKeyAndOrderFront(nil)
+    defer { focusWindow.orderOut(nil) }
+    for section in [DashboardSection.settings, .overview, .settings] {
+        focusModel.selectSection(section)
+        let deadline = Date().addingTimeInterval(2)
+        var focused = false
+        repeat {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            if let table = focusWindow.firstResponder as? NSTableView {
+                focused = table.selectedRow >= 0 && (table.style == .sourceList) == (section == .overview)
+            }
+        } while !focused && Date() < deadline
+        guard focused else {
+            print("Dashboard selection did not receive keyboard focus: \(section), \(String(describing: focusWindow.firstResponder))")
+            return 1
+        }
+    }
     for state in [CLIInstallState.outdated, .missing, .current] {
         let model = DashboardModel(snapshot: .empty, cliInstallState: state)
         let host = NSHostingController(rootView: DashboardRootView(
@@ -3159,6 +3180,7 @@ struct DashboardRootView: View {
 
 private struct DashboardSidebarView: View {
     @ObservedObject var model: DashboardModel
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         List(selection: sectionSelection) {
@@ -3180,6 +3202,10 @@ private struct DashboardSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .focused($isFocused)
+        .onAppear {
+            if model.selectedSection == .overview { isFocused = true }
+        }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 8) {
                 Circle()
@@ -3252,6 +3278,7 @@ private struct DashboardSidebarView: View {
 
 private struct DashboardListView: View {
     @ObservedObject var model: DashboardModel
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         let items = model.items
@@ -3302,6 +3329,9 @@ private struct DashboardListView: View {
         .sheet(isPresented: $model.isAddingSecret) {
             AddSecretView(model: model)
         }
+        .onChange(of: model.selectedSection, initial: true) { _, _ in
+            isFocused = true
+        }
     }
 
     private var itemSelection: Binding<String?> {
@@ -3338,6 +3368,7 @@ private struct DashboardListView: View {
             }
         }
         .listStyle(.inset)
+        .focused($isFocused)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(.bar)
