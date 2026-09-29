@@ -940,6 +940,10 @@ fn manual_identity_repair(hardener: &str, kind: &str, name: &str, stub: &str) ->
 }
 
 fn manual_stub_repair(hardener: &str, command: &HardenerCommand, stub: &str) -> String {
+    if hardener == "doctl" {
+        return "run `av harden doctl` to reinstall the signed release and its native launcher"
+            .into();
+    }
     if hardener == "brew" {
         return format!(
             "copy the matching `av-brew-stub` binary from `/Applications/Automic Vault.app/Contents/MacOS/av-brew-stub` to {stub} with `sudo install -o automic -g vault -m 6755`, after creating the `automic` user and `vault` group"

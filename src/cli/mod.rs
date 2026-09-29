@@ -71,7 +71,7 @@ modes:
 more:
   $ open https://www.automicvault.com/docs/";
 
-pub(crate) const INSTALL_REVISION: u32 = 61;
+pub(crate) const INSTALL_REVISION: u32 = 62;
 
 pub(crate) fn bash_shell_secret_insecurity_reasons() -> Result<Vec<String>, String> {
     shell_secrets::bash_reasons()
@@ -325,6 +325,11 @@ where
                 }
             }
         }
+        Some("__doctl") => inject::run_doctl(rest, stderr),
+        Some("__install-doctl-release") if rest.len() == 1 => privileged_result(
+            hardeners::doctl::install_privileged(&PathBuf::from(&rest[0])),
+            stderr,
+        ),
         Some("__install-isotope") if rest.len() == 3 => {
             let Some(hardener) = rest[0].to_str() else {
                 let _ = writeln!(stderr, "av: invalid isotope hardener name");

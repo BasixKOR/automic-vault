@@ -2177,7 +2177,7 @@ private let secretGateCommandPolicies: [String: SecretGateCommandPolicy] = [
     "civo": .init("", ""),
     "cloudsmith-cli": .init("", ""),
     "composer": .init("", ""),
-    "doctl": .init("account get,compute droplet list,compute droplet get,kubernetes cluster list,kubernetes cluster get", "compute droplet create,compute droplet delete,kubernetes cluster create,kubernetes cluster delete", secretDump: "auth token"),
+    "doctl": .init("account get,compute droplet list,compute droplet get,kubernetes cluster list,kubernetes cluster get", "compute droplet create,compute droplet delete,kubernetes cluster create,kubernetes cluster delete", secretDump: "auth token,auth t,auth init"),
     "flyctl": .init("status,apps list,machine list,machine status,secrets list,auth whoami", "deploy,scale,apps create,apps destroy,machine run,machine destroy,secrets set,secrets unset,secrets import,auth logout", secretDump: "auth token"),
     "glab": .init(
         "repo view,repo list,issue list,issue view,mr list,mr view,ci list,ci view,pipeline list,pipeline view,auth status",
