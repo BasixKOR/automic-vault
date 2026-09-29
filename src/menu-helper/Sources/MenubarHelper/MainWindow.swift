@@ -3002,6 +3002,7 @@ private struct GateLauncherButton: View {
 struct DashboardRootView: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject private var proxySessions = ProxySessionViewModel.shared
+    @State private var secretToDelete: StoredSecret?
     let checkForUpdates: () -> Void
     let requestScan: () -> Void
 
@@ -3017,6 +3018,69 @@ struct DashboardRootView: View {
                 .labelStyle(.titleAndIcon)
                 .help("\(cliActionTitle) at /usr/local/bin/av")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sectionToolbarButtons: some View {
+        if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
+            if model.isDiscoveringLauncherHelpers {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("Inspecting the selected app for Verified Launcher Helpers")
+                    .accessibilityLabel("Inspecting the selected app for Verified Launcher Helpers")
+                Button {
+                    model.cancelLauncherHelperDiscovery()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .help("Cancel App Inspection")
+                .accessibilityLabel("Cancel App Inspection")
+            } else {
+                GateLauncherButton(model: model, gate: gate, approval: model.authorityApproval)
+                .labelStyle(.titleAndIcon)
+                .help("Add Verified Launcher")
+            }
+        }
+        if model.selectedSection == .blessedScripts {
+            if let script = model.selectedBlessedScript {
+                AuthorityApprovalButton(
+                    title: "Add Verified Launcher", approval: model.authorityApproval,
+                    action: "script-launcher:\(script.path)"
+                ) { model.addApp(to: script) }
+                .labelStyle(.titleAndIcon)
+                .help("Add Verified Launcher")
+            }
+        }
+        if model.selectedSection == .settings,
+           model.selectedItem?.id == "secret-name-access" {
+            AuthorityApprovalButton(
+                title: "Add Verified Launcher",
+                approval: model.authorityApproval, action: "secret-name-access"
+            ) { model.addSecretNameAccessApp() }
+            .labelStyle(.titleAndIcon)
+            .help("Allow Verified Launcher to List Secret Names")
+        }
+        if model.selectedSection == .settings,
+           model.selectedItem?.id == "authorization-history-access" {
+            AuthorityApprovalButton(
+                title: "Add Verified Launcher",
+                approval: model.authorityApproval, action: "authorization-history-access"
+            ) { model.addAuthorizationHistoryAccessApp() }
+            .labelStyle(.titleAndIcon)
+            .help("Allow Verified Launcher to Read Authorization History")
+        }
+        if model.selectedSection == .allSecrets, let secret = model.selectedStoredSecret {
+            Button { model.isRenamingSecret = true } label: {
+                Label("Rename Secret", systemImage: "pencil")
+            }
+            .labelStyle(.titleAndIcon)
+            .help("Rename Secret")
+            Button(role: .destructive) { secretToDelete = secret } label: {
+                Label("Delete Secret", systemImage: "trash")
+            }
+            .labelStyle(.iconOnly)
+            .help("Delete Secret")
         }
     }
 
@@ -3081,71 +3145,37 @@ struct DashboardRootView: View {
                 .toolbar { cliInstallToolbar }
                 .navigationSplitViewColumnWidth(min: 320, ideal: 320)
                 .toolbar {
-                    Spacer()
-                    if let version = model.availableUpdateVersion {
-                        Button(action: checkForUpdates) {
-                            Label("Update to v\(version)…", systemImage: "arrow.down.circle")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .labelStyle(.titleAndIcon)
-                        .help("Install Automic Vault v\(version)")
-                    }
-                    if model.selectedSection == .secretGates, let gate = model.selectedSecretGate {
-                        if model.isDiscoveringLauncherHelpers {
-                            ProgressView()
-                                .controlSize(.small)
-                                .help("Inspecting the selected app for Verified Launcher Helpers")
-                                .accessibilityLabel("Inspecting the selected app for Verified Launcher Helpers")
-                            Button {
-                                model.cancelLauncherHelperDiscovery()
-                            } label: {
-                                Image(systemName: "xmark")
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        Spacer()
+                        if let version = model.availableUpdateVersion {
+                            Button(action: checkForUpdates) {
+                                Label("Update to v\(version)…", systemImage: "arrow.down.circle")
                             }
-                            .help("Cancel App Inspection")
-                            .accessibilityLabel("Cancel App Inspection")
-                        } else {
-                            GateLauncherButton(model: model, gate: gate, approval: model.authorityApproval)
+                            .buttonStyle(.borderedProminent)
                             .labelStyle(.titleAndIcon)
-                            .help("Add Verified Launcher")
+                            .help("Install Automic Vault v\(version)")
                         }
                     }
-                    if model.selectedSection == .blessedScripts {
-                        if let script = model.selectedBlessedScript {
-                            AuthorityApprovalButton(
-                                title: "Add Verified Launcher", approval: model.authorityApproval,
-                                action: "script-launcher:\(script.path)"
-                            ) { model.addApp(to: script) }
-                            .labelStyle(.titleAndIcon)
-                            .help("Add Verified Launcher")
+                    if #available(macOS 26, *) {
+                        ToolbarSpacer(.fixed, placement: .primaryAction)
+                    }
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        sectionToolbarButtons
+                    }
+                    if #available(macOS 26, *) {
+                        ToolbarSpacer(.fixed, placement: .primaryAction)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            requestScan()
+                            model.reload()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
                         }
+                        .disabled(model.isReloading)
+                        .help(model.isReloading ? "Refresh in Progress" : "Refresh")
+                        .accessibilityLabel("Refresh")
                     }
-                    if model.selectedSection == .settings,
-                       model.selectedItem?.id == "secret-name-access" {
-                        AuthorityApprovalButton(
-                            title: "Add Verified Launcher",
-                            approval: model.authorityApproval, action: "secret-name-access"
-                        ) { model.addSecretNameAccessApp() }
-                        .labelStyle(.titleAndIcon)
-                        .help("Allow Verified Launcher to List Secret Names")
-                    }
-                    if model.selectedSection == .settings,
-                       model.selectedItem?.id == "authorization-history-access" {
-                        AuthorityApprovalButton(
-                            title: "Add Verified Launcher",
-                            approval: model.authorityApproval, action: "authorization-history-access"
-                        ) { model.addAuthorizationHistoryAccessApp() }
-                        .labelStyle(.titleAndIcon)
-                        .help("Allow Verified Launcher to Read Authorization History")
-                    }
-                    Button {
-                        requestScan()
-                        model.reload()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(model.isReloading)
-                    .help(model.isReloading ? "Refresh in Progress" : "Refresh")
-                    .accessibilityLabel("Refresh")
                 }
         }
             }
@@ -3157,6 +3187,18 @@ struct DashboardRootView: View {
         }
         .onChange(of: proxySessions.historyRevision) { _, _ in
             model.reloadAccessRequests()
+        }
+        .alert("Delete \(secretToDelete?.account ?? "")?", isPresented: Binding(
+            get: { secretToDelete != nil },
+            set: { if !$0 { secretToDelete = nil } }
+        ), presenting: secretToDelete) { secret in
+            Button("Cancel", role: .cancel) { secretToDelete = nil }
+            Button("Delete", role: .destructive) {
+                model.deleteSecret(account: secret.account)
+                secretToDelete = nil
+            }
+        } message: { _ in
+            Text("This secret will be permanently deleted.")
         }
         .sheet(isPresented: $model.isCreatingLauncherBundle) {
             CreateLauncherBundleView(model: model)
@@ -4106,7 +4148,6 @@ private struct StoredSecretDetailView: View {
     @ObservedObject var model: DashboardModel
     let secret: StoredSecret
     @State private var isAvailableWhileLocked: Bool
-    @State private var isConfirmingDelete = false
     @State private var pendingDirectAccessLauncher: DirectAccessLauncherSelection?
     @State private var replacingValue: StoredSecretValue?
     @State private var deletingValue: StoredSecretValue?
@@ -4223,30 +4264,8 @@ private struct StoredSecretDetailView: View {
                 InfoBlock(title: "Error", text: error)
             }
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button { model.isRenamingSecret = true } label: {
-                    Label("Rename Secret", systemImage: "pencil")
-                }
-                .labelStyle(.titleAndIcon)
-                .help("Rename Secret")
-                Button(role: .destructive) { isConfirmingDelete = true } label: {
-                    Label("Delete Secret", systemImage: "trash")
-                }
-                .labelStyle(.iconOnly)
-                .help("Delete Secret")
-            }
-        }
         .onChange(of: secret.accessibility) { _, accessibility in
             isAvailableWhileLocked = accessibility.isAvailableWhileLocked
-        }
-        .alert("Delete \(secret.account)?", isPresented: $isConfirmingDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                model.deleteSecret(account: secret.account)
-            }
-        } message: {
-            Text("This secret will be permanently deleted.")
         }
         .alert("Change availability for all Values?", isPresented: Binding(
             get: { pendingAccessibility != nil },
