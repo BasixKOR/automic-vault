@@ -6870,10 +6870,25 @@ private struct GatePolicyTrack: View {
     private func handle(isAllow: Bool, boundary: Int, width: CGFloat) -> some View {
         let value = isAllow ? gate.protectionTitle(regions.protection(at: boundary))
             : regions.denial(at: boundary).map { $0 == .noAccess ? String(localized: "All operations") : gate.protectionTitle($0) } ?? String(localized: "None")
-        return RoundedRectangle(cornerRadius: 3)
-            .fill(isAllow ? Color.green : Color.red)
-            .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.7), lineWidth: 1))
-            .frame(width: 6, height: 20)
+        let tint: Color = isAllow ? .green : .red
+        let isDragging = isAllow ? allowDrag != nil : denyDrag != nil
+        return RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(tint.opacity(isDragging ? 0.9 : 0.45), lineWidth: 1)
+            }
+            .overlay {
+                HStack(spacing: 3) {
+                    Capsule().frame(width: 1.5, height: 9)
+                    Capsule().frame(width: 1.5, height: 9)
+                }
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            }
+            .frame(width: 14, height: 22)
+            .shadow(color: .black.opacity(isDragging ? 0.25 : 0.15), radius: 2, y: 1)
+            .scaleEffect(isDragging ? 1.08 : 1)
             // Separate the handles vertically so both remain reachable when they meet.
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
