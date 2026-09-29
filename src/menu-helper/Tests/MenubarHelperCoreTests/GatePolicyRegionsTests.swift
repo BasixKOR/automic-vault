@@ -7,7 +7,7 @@ import Testing
                               routes: [], defaultProtection: .noAccess, appPolicies: [])
         let levels = Array(gate.availableProtections.dropFirst())
         for protection in gate.availableProtections {
-            for denial in [nil] + gate.availableProtections.map(Optional.some) {
+            for denial in [nil] + gate.availableDenialThresholds.map(Optional.some) {
                 let regions = GatePolicyRegions(gate: gate, protection: protection, denial: denial)
                 #expect(regions.levels == levels)
                 #expect(regions.protection(at: regions.allowEnd) == protection)
@@ -18,14 +18,14 @@ import Testing
                     #expect((column >= regions.denyStart) == denied)
                     #expect((column < regions.effectiveAllowEnd) == (protection.allows(classification) && !denied))
                 }
-                for boundary in 0...levels.count {
-                    #expect(regions.snappedBoundary(fraction: Double(boundary) / Double(levels.count)) == boundary)
+                for boundary in 0...regions.columnCount {
+                    #expect(regions.snappedBoundary(fraction: Double(boundary) / Double(regions.columnCount)) == boundary)
                     let threshold = regions.denial(at: boundary)
                     let roundtrip = GatePolicyRegions(gate: gate, protection: protection, denial: threshold)
                     #expect(roundtrip.denyStart == boundary)
                 }
                 #expect(regions.snappedBoundary(fraction: -1) == 0)
-                #expect(regions.snappedBoundary(fraction: 2) == levels.count)
+                #expect(regions.snappedBoundary(fraction: 2) == regions.columnCount)
                 #expect(regions.snappedBoundary(fraction: .nan) == 0)
             }
         }
@@ -37,6 +37,10 @@ import Testing
                           defaultProtection: .readOnly, appPolicies: [])
     let regions = GatePolicyRegions(gate: gate, protection: .fullIncludingSecretDumps, denial: nil)
     #expect(regions.levels == [.readOnly, .fullExceptSecretDumps, .fullIncludingSecretDumps])
+    #expect(regions.columnCount == 4)
+    #expect(regions.protection(at: regions.columnCount) == .fullIncludingSecretDumps)
+    #expect(regions.denial(at: 3) == .unknownOnly)
+    #expect(regions.denial(at: 4) == nil)
     #expect(!regions.deniesUnknown)
     #expect(!SecretGateProtection.fullIncludingSecretDumps.allows(.unknown))
     let overlap = GatePolicyRegions(gate: gate, protection: .fullIncludingSecretDumps, denial: .fullExceptSecretDumps)

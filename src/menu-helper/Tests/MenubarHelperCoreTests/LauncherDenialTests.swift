@@ -273,3 +273,26 @@ func defaultDenialPersistsAndReloads() throws {
     #expect(secretGateDenialReason(gate: gate, classification: .unknown, launcherRequirements: ["named"],
         service: service, account: "policy") == nil)
 }
+
+@Test func unknownOnlyDenialPersistsAndRequiresApprovalToWeaken() throws {
+    let gate = denialGate()
+    var records: [SecretGatePolicyRecord] = []
+    func set(_ threshold: SecretGateProtection?, approved: SecretGateProtection? = nil) -> OSStatus {
+        updateSecretGateDenialThreshold(threshold, requirement: nil, in: gate,
+            runtimeRequirement: .hardened, approvedDenialThreshold: approved, records: &records)
+    }
+    #expect(!gate.availableProtections.contains(.unknownOnly))
+    for classification in SecretGateRequestClassification.allCases {
+        #expect(!SecretGateProtection.unknownOnly.allows(classification))
+        #expect(gate.denies(classification, at: .unknownOnly) == (classification == .unknown))
+    }
+    #expect(set(.fullIncludingSecretDumps) == errSecSuccess)
+    #expect(set(.unknownOnly) == errSecAuthFailed)
+    #expect(set(.unknownOnly, approved: .fullIncludingSecretDumps) == errSecSuccess)
+    let decoded = try JSONDecoder().decode([SecretGatePolicyRecord].self, from: JSONEncoder().encode(records))
+    #expect(decoded == records)
+    #expect(secretGateDenial(gate: gate, classification: .unknown, launcherRequirements: [], records: decoded) != nil)
+    #expect(secretGateDenial(gate: gate, classification: .secretDump, launcherRequirements: [], records: decoded) == nil)
+    #expect(set(nil) == errSecAuthFailed)
+    #expect(set(nil, approved: .unknownOnly) == errSecSuccess)
+}

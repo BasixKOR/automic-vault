@@ -542,3 +542,9 @@
 "Deny from:" = "拒绝起点：";
 
 "Denial wins over allow rules." = "拒绝优先于允许规则。";
+
+"Unknown only" = "仅未知操作";
+
+"Unclassified operations are denied" = "拒绝未分类的操作";
+
+"Unclassified operations can require Approval or be denied, but cannot be automatically allowed." = "未分类的操作可以要求批准或被拒绝，但不能自动允许。";

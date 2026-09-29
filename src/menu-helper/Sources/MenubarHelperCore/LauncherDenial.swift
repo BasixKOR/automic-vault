@@ -5,6 +5,7 @@ public let launcherDenialDidChange = Notification.Name("AutomicVaultLauncherDeni
 public extension SecretGate {
     /// Complement of the preceding supported allow preset. Invalid thresholds fail closed.
     func denies(_ classification: SecretGateRequestClassification, at threshold: SecretGateProtection) -> Bool {
+        if threshold == .unknownOnly { return !supportsUnknownDenial || classification == .unknown }
         guard let index = availableProtections.firstIndex(of: threshold), index > 0 else { return true }
         return !availableProtections[index - 1].allows(classification)
     }
@@ -36,6 +37,7 @@ public struct TemporaryLauncherDenialScope: Codable, Equatable, Sendable {
         case "gpg-signing": return "GPG signing"
         default:
             switch threshold {
+            case .unknownOnly: return "unknown operations"
             case .noAccess, .readOnly, .readOnlyAndUpdates: return "all requests"
             case .readOnlyAndLocalWrites: return "local writes and above"
             case .fullExceptSecretDumps: return "writes and above"

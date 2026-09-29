@@ -40,6 +40,24 @@ Recheck denial before queued Approval and Secret release. Record automatic
 Denials with their source, without further approval notifications. Never infer
 a rule from a cancellation or reuse a historical display name as identity.
 
+## Unknown-only denial (2026-09-29)
+
+Gates that classify Unknown operations additionally support an **Unknown only**
+Denial Threshold. It denies only unclassified operations, leaving recognized
+operations subject to their existing allow policy and Approval. Existing
+thresholds retain their meaning and continue to deny Unknown. Signing and
+SSH authentication gates do not expose this option.
+
+The track includes Unknown as its final column. The deny boundary can cover
+Unknown alone or extend left over recognized operations; the allow boundary
+cannot enter Unknown. The dropdown provides the same choices.
+
+Persist `unknownOnly` in the existing threshold field. It is a denial-only
+value and grants no authority in an allow field. Existing approval and locked
+comparison checks apply when narrowing any broader denial to Unknown only or
+removing it. Older versions cannot decode the new value and fail closed on the
+policy store, rather than silently dropping denial. No existing record is migrated.
+
 ## Consequences
 
 An allow ceiling and a deny threshold can overlap; denial wins. Operations

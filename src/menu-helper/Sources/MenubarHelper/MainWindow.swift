@@ -2463,7 +2463,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
                 SecretGatePolicy(bundleIdentifier: "codex", requirement: "identifier codex", protection: .readOnly,
                                  denialThreshold: .fullIncludingSecretDumps),
                 SecretGatePolicy(bundleIdentifier: "com.openai.codex", requirement: "identifier com.openai.codex",
-                                 protection: .fullExceptSecretDumps, denialThreshold: .fullIncludingSecretDumps),
+                                 protection: .fullExceptSecretDumps, denialThreshold: .unknownOnly),
                 SecretGatePolicy(bundleIdentifier: "herdr", requirement: "identifier herdr", protection: .readOnly),
             ])
         for dark in [false, true] {
@@ -2500,7 +2500,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         host.frame = NSRect(x: 0, y: 0, width: 170, height: 30)
         host.layoutSubtreeIfNeeded()
         guard let popup = policyPopup(in: host), !popup.isBordered,
-              popup.numberOfItems == gate.availableProtections.count + (isDenial ? 1 : 0),
+              popup.numberOfItems == (isDenial ? gate.availableDenialThresholds.count + 1 : gate.availableProtections.count),
               popup.indexOfSelectedItem == (isDenial ? 0 : 1), let action = popup.action else { return 1 }
         popup.selectItem(at: isDenial ? 1 : 0)
         NSApp.sendAction(action, to: popup.target, from: popup)
@@ -2509,6 +2509,9 @@ func runDashboardSearchSelfCheck() -> Int32 {
             popup.selectItem(at: 0)
             NSApp.sendAction(action, to: popup.target, from: popup)
             guard selections == [.noAccess, nil] else { return 1 }
+            popup.selectItem(at: popup.numberOfItems - 1)
+            NSApp.sendAction(action, to: popup.target, from: popup)
+            guard selections.last == .some(.unknownOnly) else { return 1 }
         }
     }
     let gateHeight = NSHostingView(rootView: SecretGateDetailView(model: model, gate: gate)).fittingSize.height
@@ -6597,7 +6600,7 @@ private struct GatePolicyTable: View {
 
     private var levels: [SecretGateProtection] { Array(gate.availableProtections.dropFirst()) }
     // These gates admit only signing requests; unsupported requests fail validation.
-    private var showsUnknownOperations: Bool { gate.id != "gpg-signing" && gate.id != "ssh-agent" }
+    private var showsUnknownOperations: Bool { gate.supportsUnknownDenial }
     private var changes: [GatePolicyChange] {
         drafts.filter { change in
             let app = gate.appPolicies.first { $0.requirement == change.requirement }
@@ -6626,9 +6629,10 @@ private struct GatePolicyTable: View {
                                     .frame(maxWidth: .infinity)
                                     .help(localizedUIString(gate.protectionSubtitle(level)))
                             }
-                        }
-                        if showsUnknownOperations {
-                            Text("Unknown").frame(width: 90)
+                            if showsUnknownOperations {
+                                Text("Unknown").frame(maxWidth: .infinity)
+                                    .help("Unclassified operations can require Approval or be denied, but cannot be automatically allowed.")
+                            }
                         }
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
@@ -6732,17 +6736,6 @@ private struct GatePolicyTable: View {
                     Text("Denial overrides overlapping allow levels.").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if showsUnknownOperations {
-                VStack {
-                    Label(denial == nil ? String(localized: "Approval") : String(localized: "Deny"),
-                          systemImage: denial == nil ? "hand.raised" : "nosign")
-                        .foregroundStyle(.primary)
-                        .font(.caption)
-                        .frame(height: 40)
-                }
-                .frame(width: 90)
-                .accessibilityLabel("Unknown operations: \(denial == nil ? String(localized: "Approval Required") : String(localized: "Deny"))")
-            }
         }
         .padding(.vertical, 14)
         .accessibilityElement(children: .contain)
@@ -6836,7 +6829,7 @@ private struct GatePolicyTrack: View {
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let count = regions.levels.count
+            let count = regions.columnCount
             let allow = allowDrag ?? regions.allowEnd
             let deny = denyDrag ?? regions.denyStart
             let effectiveAllow = min(allow, deny)
@@ -6848,7 +6841,9 @@ private struct GatePolicyTrack: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 ForEach(1..<max(1, count), id: \.self) { boundary in
-                    Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
+                    Rectangle().fill(Color.primary.opacity(boundary == regions.levels.count ? 0.4 : 0.12))
+                        .frame(width: boundary == regions.levels.count ? 2 : 1, height: 8)
+                        .frame(height: 40, alignment: .top)
                         .offset(x: width * CGFloat(boundary) / CGFloat(count))
                         .accessibilityHidden(true)
                 }
@@ -6865,7 +6860,7 @@ private struct GatePolicyTrack: View {
             if columns > 0 {
                 Label(localizedUIString(title), systemImage: symbol)
                     .font(.caption).lineLimit(1).minimumScaleFactor(0.85)
-                    .frame(width: width * CGFloat(columns) / CGFloat(regions.levels.count), height: 40)
+                    .frame(width: width * CGFloat(columns) / CGFloat(regions.columnCount), height: 40)
                     .foregroundStyle(.primary)
                     .background(color.opacity(0.16))
             }
@@ -6882,10 +6877,11 @@ private struct GatePolicyTrack: View {
             // Separate the handles vertically so both remain reachable when they meet.
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
-            .offset(x: width * CGFloat(boundary) / CGFloat(regions.levels.count) - 11, y: isAllow ? -10 : 10)
+            .offset(x: width * CGFloat(boundary) / CGFloat(regions.columnCount) - 11, y: isAllow ? -10 : 10)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("gate-policy-track"))
                 .updating(isAllow ? $allowDrag : $denyDrag) { event, state, _ in
-                    state = regions.snappedBoundary(fraction: event.location.x / max(1, width))
+                    state = min(isAllow ? regions.levels.count : regions.columnCount,
+                                regions.snappedBoundary(fraction: event.location.x / max(1, width)))
                 }
                 .onEnded { event in
                     let snapped = regions.snappedBoundary(fraction: event.location.x / max(1, width))
@@ -6896,7 +6892,7 @@ private struct GatePolicyTrack: View {
             .accessibilityLabel(isAllow ? "Allow through" : "Deny from")
             .accessibilityValue(value)
             .accessibilityAdjustableAction { direction in
-                let next = min(regions.levels.count, max(0, boundary + (direction == .increment ? 1 : -1)))
+                let next = min(isAllow ? regions.levels.count : regions.columnCount, max(0, boundary + (direction == .increment ? 1 : -1)))
                 if isAllow { setProtection(regions.protection(at: next)) }
                 else { setDenial(regions.denial(at: next)) }
             }
@@ -6967,7 +6963,7 @@ private struct NativeProtectionMenu: NSViewRepresentable {
     let setProtection: (SecretGateProtection?) -> Void
 
     private var candidates: [SecretGateProtection?] {
-        (isDenial ? [nil] : []) + gate.availableProtections.map(Optional.some)
+        (isDenial ? [nil] : []) + (isDenial ? gate.availableDenialThresholds : gate.availableProtections).map(Optional.some)
     }
 
     func makeCoordinator() -> Coordinator {

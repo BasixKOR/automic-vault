@@ -537,7 +537,7 @@ Data Protection Keychain. An absent threshold preserves existing behavior.
 An unreadable policy store denies gated requests rather than bypassing a possible
 denial through manual Approval. Thresholds use each gate's supported preset
 order, including its existing compatibility classifications; they do not create
-a universal ranking of operation characteristics.
+a universal ranking of operation characteristics. Unknown only is a denial-only threshold (`unknownOnly`) for unclassified operations. Existing thresholds still include Unknown. Narrowing a broader denial to Unknown only requires Approval; the allow boundary cannot include Unknown.
 
 The default Denial Threshold applies only when no Launcher-specific record
 matches any attributed Launcher requirement. All matching explicit denials are

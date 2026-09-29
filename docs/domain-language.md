@@ -520,7 +520,7 @@ including when no Launcher can be verified.
 A matching Launcher-specific rule uses its own Denial Threshold, including None;
 a denial-only rule inherits the default allow level, but not the default denial.
 Adding a rule that weakens the fallback denial requires Approval.
-Unknown operations are denied whenever an applicable threshold is set.
+Unknown operations are denied whenever an applicable threshold is set. **Unknown only** denies just unclassified operations and is available only on gates that classify them. It is not an Access Level and can never grant automatic allow authority.
 A matching denial wins over every source of allow authority, including Blessings and reused
 Authorization Decisions. Removing or weakening a threshold requires the same
 human authority as broadening an Access Level.

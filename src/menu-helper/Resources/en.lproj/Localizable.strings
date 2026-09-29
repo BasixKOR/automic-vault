@@ -542,3 +542,9 @@
 "Deny from:" = "Deny from:";
 
 "Denial wins over allow rules." = "Denial wins over allow rules.";
+
+"Unknown only" = "Unknown only";
+
+"Unclassified operations are denied" = "Unclassified operations are denied";
+
+"Unclassified operations can require Approval or be denied, but cannot be automatically allowed." = "Unclassified operations can require Approval or be denied, but cannot be automatically allowed.";

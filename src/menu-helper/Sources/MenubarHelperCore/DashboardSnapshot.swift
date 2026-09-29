@@ -404,6 +404,8 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Hashable, Ident
     case readOnlyAndUpdates
     case fullExceptSecretDumps
     case fullIncludingSecretDumps
+    // Denial-only value; never grants authority.
+    case unknownOnly
 
     public var id: String { rawValue }
 
@@ -413,6 +415,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Hashable, Ident
 
     public var title: String {
         switch self {
+        case .unknownOnly: "Unknown only"
         case .noAccess: "Approval Required"
         case .readOnly: "Read Only"
         case .readOnlyAndLocalWrites: "Local Write"
@@ -424,6 +427,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Hashable, Ident
 
     public var subtitle: String {
         switch self {
+        case .unknownOnly: "Unclassified operations are denied"
         case .noAccess: "Every operation requires approval"
         case .readOnly: "Recognized read-only operations are automically authorized"
         case .readOnlyAndLocalWrites:
@@ -439,7 +443,7 @@ public enum SecretGateProtection: String, Codable, CaseIterable, Hashable, Ident
 
     public func allows(_ classification: SecretGateRequestClassification) -> Bool {
         switch self {
-        case .noAccess:
+        case .noAccess, .unknownOnly:
             false
         case .readOnly:
             classification == .readOnly
@@ -644,6 +648,12 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
         return id == "node" ? "npm Authorization Gate" : "\(id.uppercased()) Authorization Gate"
     }
 
+    public var supportsUnknownDenial: Bool { id != "gpg-signing" && id != "ssh-agent" }
+
+    public var availableDenialThresholds: [SecretGateProtection] {
+        availableProtections + (supportsUnknownDenial ? [.unknownOnly] : [])
+    }
+
     public var availableProtections: [SecretGateProtection] {
         if id == "ssh-agent" { return [.noAccess, .fullExceptSecretDumps] }
         if id == "gpg-signing" {
@@ -695,6 +705,7 @@ public struct SecretGate: Equatable, Identifiable, Sendable {
     }
 
     public func protectionTitle(_ protection: SecretGateProtection) -> String {
+        if protection == .unknownOnly { return protection.title }
         let protection = normalizedProtection(protection)
         if id == "ssh-agent" {
             return protection == .fullExceptSecretDumps ? "Allow Authentication" : "Approval Required"
@@ -1403,7 +1414,7 @@ func updateSecretGateDenialThreshold(
     approvedDenialThreshold: SecretGateProtection?, records: inout [SecretGatePolicyRecord]
 ) -> OSStatus {
     guard requirement?.isEmpty != true,
-          threshold.map({ gate.availableProtections.contains($0) }) ?? true
+          threshold.map({ gate.availableDenialThresholds.contains($0) }) ?? true
     else { return errSecParam }
     let index = records.firstIndex { $0.gateID == gate.id && $0.requirement == requirement }
     let fallback = records.first { $0.gateID == gate.id && $0.requirement == nil }
