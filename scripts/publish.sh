@@ -3,7 +3,7 @@
 # capabilities:
 #   gh: trusted
 #   aws: trusted
-#   gpg-signing: local-write
+#   gpg-signing: trusted
 #   ssh-agent: trusted
 # ---
 # shellcheck shell=bash disable=SC1008,SC2096
