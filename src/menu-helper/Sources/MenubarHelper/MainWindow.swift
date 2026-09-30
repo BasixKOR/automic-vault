@@ -7624,21 +7624,25 @@ private struct InitialLoadingView: View {
                         }
                         .opacity(reduceTransparency ? 1 : 0.17)
 
-                    // Match the eye in the original 1024 × 1024 icon artwork.
                     Capsule()
                         .fill(.primary)
-                        .frame(width: 3, height: 36)
+                        .frame(width: 3, height: 28.98)
                         // Animate intensity only; eye dimensions and glow radius stay fixed.
                         .keyframeAnimator(initialValue: 1.0, repeating: !reduceMotion) { eye, intensity in
                             eye
-                                .shadow(color: .primary.opacity(0.89 * intensity), radius: 7.5)
-                                .opacity(0.15 + 0.85 * intensity)
+                                .opacity(0.15 + 0.394 * intensity)
+                                .background {
+                                    // Preserve the original glow independently of the dimmer eye.
+                                    eye
+                                        .blur(radius: 7.5)
+                                        .opacity(0.89 * intensity * (0.15 + 0.85 * intensity))
+                                }
                         } keyframes: { _ in
                             LinearKeyframe(1, duration: 1.0)
                             CubicKeyframe(0, duration: 1.15, startVelocity: 0, endVelocity: 0)
                             CubicKeyframe(1, duration: 0.4, startVelocity: 0, endVelocity: 0)
                         }
-                        .offset(x: 0.25, y: 1.75)
+                        .offset(y: 1.75)
                 }
             } else {
                 ProgressView()
