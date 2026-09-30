@@ -1753,7 +1753,7 @@ final class DashboardModel: ObservableObject {
     }
 
     var overviewTools: [DashboardItem] {
-        // Several detectors can describe one Tool; hardening records are the inventory.
+        // Several detectors can describe one Tool; built-in Tools have no hardening record.
         let findings = Dictionary(grouping: detectorItems.filter(\.isTriggered)) { item in
             hardenerNameReferencedByDocumentation(item.documentation) ?? item.title
         }
@@ -1764,6 +1764,7 @@ final class DashboardModel: ObservableObject {
         }
         let hardenedNames = Set(snapshot.hardenedTools.map(\.name))
         rows += findings.filter { !hardenedNames.contains($0.key) }.compactMap { $0.value.first }
+        rows += items(for: .settings).filter(\.isBuiltInTool)
         for issue in snapshot.doctorIssues where issue.hardener != "Doctor" && !rows.contains(where: { overviewDoctorIssue(for: $0)?.hardener == issue.hardener }) {
             rows.append(DashboardItem(id: "doctor:" + issue.hardener, title: issue.hardener,
                                       subtitle: issue.message, detail: ""))
@@ -1783,12 +1784,12 @@ final class DashboardModel: ObservableObject {
     }
 
     func overviewDoctorIssue(for tool: DashboardItem) -> DoctorIssue? {
-        let hardener = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
+        let hardener = tool.overviewToolName
         return snapshot.doctorIssues.first { $0.hardener == hardener || $0.command == tool.title }
     }
 
     func overviewHasGate(_ tool: DashboardItem) -> Bool {
-        let name = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
+        let name = tool.overviewToolName
         let gateID = snapshot.hardeners.first { $0.name == name }?.secretGate?.id ?? name
         return snapshot.secretGates.contains { $0.id == gateID }
     }
@@ -1824,23 +1825,25 @@ final class DashboardModel: ObservableObject {
     }
 
     fileprivate func overviewActivitySlots(for tool: DashboardItem, now: Date, count: Int = 96) -> [Int]? {
-        let name = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
+        let name = tool.overviewToolName
         return overviewActivityIndex?.slots(for: name, now: now, count: count)
     }
 
     fileprivate func overviewLatestActivity(for tool: DashboardItem) -> Date? {
-        let name = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
+        let name = tool.overviewToolName
         return overviewActivityIndex?.latestActivity(for: name)
     }
 
     private func overviewRequestCount(for tool: DashboardItem, now: Date) -> Int? {
-        let name = hardenerNameReferencedByDocumentation(tool.documentation) ?? tool.title
+        let name = tool.overviewToolName
         return overviewActivityIndex?.count(for: name, now: now)
     }
 
     func openOverviewTool(_ tool: DashboardItem) {
         if let issue = overviewDoctorIssue(for: tool) {
             navigateFromOverview(to: .doctor, itemID: issue.id)
+        } else if tool.isBuiltInTool {
+            navigateFromOverview(to: .settings, itemID: tool.id)
         } else {
             navigateFromOverview(to: tool.isTriggered ? .detectors : .hardenedTools, itemID: tool.id)
         }
@@ -2362,6 +2365,35 @@ func runDashboardSearchSelfCheck() -> Int32 {
               activityIndex.count(for: "missing", now: now) == 0,
               DashboardActivityIndex([]).count(for: "aws", now: now) == 0 else { return 1 }
     }
+    // Built-in Tools must remain discoverable before credentials are configured.
+    for (id, title) in [("gpg-signing", "GPG Signing"), ("ssh-agent", "SSH Agent")] {
+        let unconfigured = DashboardModel(snapshot: .empty)
+        guard let tool = unconfigured.overviewTools.first(where: { $0.id == id }),
+              tool.title == title, !tool.isHardened, !unconfigured.overviewHasGate(tool)
+        else {
+            print("Overview is missing the built-in Tool: \(id)")
+            return 1
+        }
+        unconfigured.openOverviewTool(tool)
+        guard unconfigured.selectedSection == .settings, unconfigured.selectedItemID == id else { return 1 }
+        unconfigured.searchText = title
+        guard unconfigured.overviewTools.map(\.id) == [id] else { return 1 }
+        var configured = DashboardSnapshot.empty
+        configured.secretGates = [SecretGate(id: id, keyPatterns: [], routes: [],
+            defaultProtection: .noAccess, appPolicies: [])]
+        let now = Date()
+        configured.accessRequests = [AccessRequestRecord(date: now, tool: id, command: "fixture",
+            decision: "Approved", reason: "Test", launcher: nil, callerPath: "/fixture/av",
+            target: "/fixture/av", cwd: "/tmp", keys: [], detail: nil)]
+        let configuredModel = DashboardModel(snapshot: configured)
+        guard configuredModel.overviewTools.filter({ $0.id == id }).count == 1,
+              configuredModel.overviewHasGate(tool),
+              configuredModel.overviewTools.first?.id == id,
+              configuredModel.overviewActivitySlots(for: tool, now: now)?.reduce(0, +) == 1,
+              configuredModel.overviewLatestActivity(for: tool) == now,
+              configuredModel.overviewVerification(for: tool) == tool.subtitle
+        else { return 1 }
+    }
     let model = DashboardModel(snapshot: DashboardSnapshot(
         detectors: [
             DetectorMetadata(name: "aws", homepage: "", docsURL: "", documentation: "Run `av harden aws`."),
@@ -2408,13 +2440,13 @@ func runDashboardSearchSelfCheck() -> Int32 {
         )]
     ))
     guard model.selectedSection == .overview,
-          model.overviewTools.map(\.title) == ["aws", "gh"] else { return 1 }
+          model.overviewTools.map(\.title) == ["aws", "gh", "GPG Signing", "SSH Agent"] else { return 1 }
     var duplicateDetectorSnapshot = model.snapshot
     duplicateDetectorSnapshot.detectors.append(DetectorMetadata(
         name: "aws-extra", homepage: "", docsURL: "", documentation: "Run `av harden aws`."
     ))
     let groupedModel = DashboardModel(snapshot: duplicateDetectorSnapshot)
-    guard groupedModel.overviewTools.map(\.title) == ["aws", "gh"],
+    guard groupedModel.overviewTools.map(\.title) == ["aws", "gh", "GPG Signing", "SSH Agent"],
           groupedModel.overviewTools.filter(\.isHardened).count == groupedModel.count(for: .hardenedTools)
     else { return 1 }
     guard let awsOverview = model.overviewTools.first(where: { $0.title == "aws" }),
@@ -2484,10 +2516,10 @@ func runDashboardSearchSelfCheck() -> Int32 {
         decision: "Approved", reason: "Test", launcher: nil, callerPath: "/usr/bin/gh",
         target: "/usr/bin/gh", cwd: "/tmp", keys: [], detail: nil)]
     // History alone must not imply a Gate; attention always precedes activity.
-    guard DashboardModel(snapshot: activitySnapshot).overviewTools.map(\.title) == ["wrangler", "aws", "gh"] else { return 1 }
+    guard DashboardModel(snapshot: activitySnapshot).overviewTools.map(\.title) == ["wrangler", "aws", "gh", "GPG Signing", "SSH Agent"] else { return 1 }
     activitySnapshot.secretGates.append(SecretGate(id: "gh", keyPatterns: [], routes: [],
         defaultProtection: .noAccess, appPolicies: []))
-    guard DashboardModel(snapshot: activitySnapshot).overviewTools.map(\.title) == ["wrangler", "gh", "aws"] else { return 1 }
+    guard DashboardModel(snapshot: activitySnapshot).overviewTools.map(\.title) == ["wrangler", "gh", "aws", "GPG Signing", "SSH Agent"] else { return 1 }
     if ProcessInfo.processInfo.environment["AV_BENCHMARK_DASHBOARD"] == "1" {
         var benchmarkSnapshot = activitySnapshot
         benchmarkSnapshot.hardenedTools = (0..<12).map {
@@ -3048,6 +3080,12 @@ struct DashboardItem: Identifiable, Equatable, Sendable {
     let isTriggered: Bool
     let isHardened: Bool
     let date: Date?
+
+    var isBuiltInTool: Bool { id == "gpg-signing" || id == "ssh-agent" }
+
+    var overviewToolName: String {
+        isBuiltInTool ? id : hardenerNameReferencedByDocumentation(documentation) ?? title
+    }
 
     init(id: String, title: String, kind: String? = nil, subtitle: String, detail: String, documentation: String = "", hardenerDocumentation: String? = nil, severity: String? = nil, blessingStatus: String? = nil, isTriggered: Bool = false, isHardened: Bool = false, date: Date? = nil) {
         self.id = id
@@ -7809,13 +7847,13 @@ private struct DashboardOverviewView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack(spacing: 4) {
-                                    Image(systemName: needsAttention ? "exclamationmark.triangle.fill" : "hammer")
+                                    Image(systemName: needsAttention ? "exclamationmark.triangle.fill" : (tool.isBuiltInTool ? "key" : "hammer"))
                                         .foregroundStyle(needsAttention ? attentionColor : Color.secondary)
                                         .frame(width: 20)
                                         .padding(.trailing, 6)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(tool.title).fontWeight(.medium).lineLimit(1)
-                                        if !hasGate || !tool.isHardened {
+                                        if !tool.isBuiltInTool && (!hasGate || !tool.isHardened) {
                                             Text(model.overviewVerification(for: tool))
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary).lineLimit(1)
@@ -7823,12 +7861,14 @@ private struct DashboardOverviewView: View {
                                         }
                                     }
                                     Spacer(minLength: 0)
-                                    HStack(spacing: 4) {
-                                            if !needsAttention { Image(systemName: "checkmark.seal") }
+                                    if !tool.isBuiltInTool || needsAttention {
+                                        HStack(spacing: 4) {
+                                            if !needsAttention && tool.isHardened { Image(systemName: "checkmark.seal") }
                                             Text(localizedUIString(issue != nil ? (tool.isTriggered ? "Finding · Doctor report" : "Doctor report") : (tool.isTriggered ? "Finding" : "Hardened")))
                                         }
                                         .font(.caption)
                                         .foregroundStyle(needsAttention ? attentionColor : Color.secondary)
+                                    }
                                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                                 }
                                 if hasGate {
