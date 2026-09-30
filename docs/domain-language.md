@@ -739,6 +739,13 @@ and explicit gate/threshold scope so History can offer a Temporary Launcher
 Denial after the caller exits. Older records without a scope do not offer it. This
 recorded identity may narrow access only; History never grants authority.
 
+New records also retain an explicit Authorization Gate ID for **Configure
+Launcher…**. The action opens the exact Launcher-specific rule after reverifying
+the installed Launcher against the recorded designated requirement. If no rule
+exists, it offers the ordinary reviewed rule-creation flow. Missing or changed
+Launchers cannot be substituted by display name or path. Records without this
+metadata do not offer configuration; opening a rule grants no authority.
+
 Automic Vault persists and verifies a record of allowed Secret Use before releasing a Secret. Failure to persist that required record denies the request. Records of denials and failures are best effort. Authorization History is bounded and local; it is not an append-only, tamper-proof, or complete forensic log.
 
 The Mac makes Authorization History available for up to 30 days and a configurable

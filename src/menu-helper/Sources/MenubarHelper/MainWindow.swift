@@ -297,6 +297,7 @@ final class DashboardModel: ObservableObject {
     @Published var isCreatingLauncherBundle = false
     @Published private(set) var isBuildingLauncherBundle = false
     @Published var errorMessage: String?
+    @Published var selectedLauncherRequirement: String?
     @Published var selectedItemID: String?
     @Published var searchText = "" {
         didSet {
@@ -718,6 +719,7 @@ final class DashboardModel: ObservableObject {
     }
 
     func selectSection(_ section: DashboardSection) {
+        selectedLauncherRequirement = nil
         selectScriptNeedingReblessing = false
         pendingAccessRequestID = nil
         selectedSection = section
@@ -727,6 +729,7 @@ final class DashboardModel: ObservableObject {
     }
 
     func select(_ item: DashboardItem) {
+        selectedLauncherRequirement = nil
         pendingAccessRequestID = nil
         selectScriptNeedingReblessing = false
         selectedItemID = item.id
@@ -756,6 +759,9 @@ final class DashboardModel: ObservableObject {
     }
 
     func showSecretGate(id: String) {
+        selectedLauncherRequirement = nil
+        searchText = ""
+        pendingAccessRequestID = nil
         selectedSection = .secretGates
         selectedItemID = id
     }
@@ -1397,6 +1403,39 @@ final class DashboardModel: ObservableObject {
         errorMessage = nil
         reloadAfterSecretMutation()
         return true
+    }
+
+    func historyRecord(id: String) -> AccessRequestRecord? {
+        UUID(uuidString: id).flatMap { historyRecordsByID[$0] }
+    }
+
+    func configureLauncher(from record: AccessRequestRecord) {
+        guard record.canConfigureLauncher else { return }
+        guard let gate = snapshot.secretGates.first(where: { $0.id == record.gateID }) else {
+            showLauncherCannotBeAllowed(String(localized: "This Authorization Gate is no longer available."),
+                                        title: String(localized: "Launcher cannot be configured"))
+            return
+        }
+        // History supplies a destination, never current identity or authority.
+        guard recentLauncherSigning(record) != nil else {
+            showLauncherCannotBeAllowed(String(localized: "This Launcher no longer exists or its verified identity has changed."),
+                                        title: String(localized: "Launcher cannot be configured"))
+            return
+        }
+        if !gate.appPolicies.contains(where: { $0.requirement == record.launcherRequirement }) {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Create a Launcher rule?")
+            alert.informativeText = String(localized: "This Launcher has no rule at the \(gate.displayName) Authorization Gate. Review its identity and approve a new rule to configure its Access Level.")
+            alert.addButton(withTitle: String(localized: "Create Rule…"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            showSecretGate(id: gate.id)
+            selectedLauncherRequirement = record.launcherRequirement
+            addApp(to: gate, recentApp: record)
+        } else {
+            showSecretGate(id: gate.id)
+            selectedLauncherRequirement = record.launcherRequirement
+        }
     }
 
     func deleteSecretValue(_ value: StoredSecretValue, from secret: StoredSecret) {
@@ -2220,6 +2259,38 @@ func runUpdateToolbarSelfCheck() -> Int32 {
 func runDashboardSearchSelfCheck() -> Int32 {
     guard !DashboardModel().hasLoadedInitialSnapshot,
           DashboardModel(snapshot: .empty).hasLoadedInitialSnapshot else { return 1 }
+    // History navigation must bind the exact Gate and current Launcher identity,
+    // even when display names collide. This exercises no policy writes.
+    let terminalURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+    guard let terminal = launcherSigning(terminalURL) else { return 1 }
+    func historyLauncherRecord(requirement: String, path: String = terminalURL.path) -> AccessRequestRecord {
+        AccessRequestRecord(date: .now, tool: "display-name-is-not-the-gate", command: "",
+            decision: "Approved", reason: "", launcher: "Same name", launcherIconPath: path,
+            launcherRequirement: requirement, gateID: "gh", callerPath: "", target: "", cwd: "", keys: [], detail: nil)
+    }
+    let launcherRecord = historyLauncherRecord(requirement: terminal.requirement)
+    guard recentLauncherSigning(launcherRecord)?.requirement == terminal.requirement,
+          recentLauncherSigning(historyLauncherRecord(requirement: "other signer")) == nil,
+          recentLauncherSigning(historyLauncherRecord(requirement: terminal.requirement, path: "/missing-launcher.app")) == nil
+    else { return 1 }
+    var navigationSnapshot = DashboardSnapshot.empty
+    let rules = [terminal.requirement, "other signer"].map {
+        SecretGatePolicy(bundleIdentifier: "Same name", requirement: $0, protection: .noAccess)
+    }
+    navigationSnapshot.secretGates = ["aws", "gh"].map {
+        SecretGate(id: $0, keyPatterns: [], routes: [], defaultProtection: .noAccess, appPolicies: rules)
+    }
+    let navigationModel = DashboardModel(snapshot: navigationSnapshot)
+    navigationModel.searchText = "no match"
+    navigationModel.configureLauncher(from: launcherRecord)
+    guard navigationModel.selectedSection == .secretGates,
+          navigationModel.selectedItemID == "gh",
+          navigationModel.selectedLauncherRequirement == terminal.requirement,
+          navigationModel.searchText.isEmpty,
+          navigationModel.snapshot == navigationSnapshot
+    else { return 1 }
+    navigationModel.showSecretGate(id: "aws")
+    guard navigationModel.selectedLauncherRequirement == nil else { return 1 }
     let controller = AutomicVaultMainWindowController(checkForUpdates: {}, requestScan: {})
     for section in [DashboardSection.detectors, .doctor, .blessedScripts, .secretUsage] {
         controller.rootView.model.searchText = "previous filter"
@@ -3410,6 +3481,7 @@ private struct DashboardListView: View {
         Binding {
             model.selectedItemID
         } set: { id in
+            if id != model.selectedItemID { model.selectedLauncherRequirement = nil }
             model.selectedItemID = id
         }
     }
@@ -3460,6 +3532,11 @@ private struct DashboardListView: View {
                     ForEach(group.items) { item in
                         DashboardRow(item: item)
                             .tag(item.id)
+                            .contextMenu {
+                                if let record = model.historyRecord(id: item.id), record.canConfigureLauncher {
+                                    Button("Configure Launcher…") { model.configureLauncher(from: record) }
+                                }
+                            }
                     }
                 } header: {
                     Text(group.day, format: .dateTime.weekday(.wide).month(.wide).day().year())
@@ -3564,7 +3641,7 @@ private struct DashboardDetailView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.selectedSection == .secretUsage, let record = model.selectedAccessRequest {
-                AuthorizationHistoryDetailView(record: record)
+                AuthorizationHistoryDetailView(model: model, record: record)
                     .padding(.horizontal, 22)
                     .padding(.top, 32)
                     .padding(.bottom, 28)
@@ -4865,6 +4942,7 @@ private struct AccessHistoryView: View {
 }
 
 private struct AuthorizationHistoryDetailView: View {
+    @ObservedObject var model: DashboardModel
     let record: AccessRequestRecord
 
     var body: some View {
@@ -4872,7 +4950,8 @@ private struct AuthorizationHistoryDetailView: View {
             Text("Authorization History")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.primary)
-            AccessRequestRow(record: record)
+            AccessRequestRow(record: record, configureLauncher: record.canConfigureLauncher
+                ? { model.configureLauncher(from: record) } : nil)
                 .padding(.horizontal, 16)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -4921,6 +5000,7 @@ private struct TemporaryLauncherDenialButton: View {
 
 private struct AccessRequestRow: View {
     let record: AccessRequestRecord
+    var configureLauncher: (() -> Void)? = nil
 
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -4964,7 +5044,18 @@ private struct AccessRequestRow: View {
                         .id(requirement)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    AccessMetaLine("Launcher", record.launcher ?? "unknown")
+                    HStack(spacing: 8) {
+                        if let path = record.launcherIconPath {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                                .resizable().frame(width: 20, height: 20)
+                                .accessibilityHidden(true)
+                        }
+                        AccessMetaLine("Launcher", record.launcher ?? "unknown")
+                        if let configureLauncher {
+                            Button("Configure Launcher…", action: configureLauncher)
+                                .controlSize(.small)
+                        }
+                    }
                     AccessMetaLine("Decision source", record.approvalSourceLabel)
                     AccessMetaLine("Secret names", record.keys.isEmpty ? "(none)" : record.keys.joined(separator: ", "))
                     if let sources = record.secretValueSources, !sources.isEmpty {
@@ -6676,6 +6767,9 @@ private struct GatePolicyTable: View {
     @State private var reviewing = false
     @State private var availableWidth: CGFloat = 720
 
+    private var focusedPolicy: SecretGatePolicy? {
+        gate.appPolicies.first { $0.requirement == model.selectedLauncherRequirement }
+    }
     private var levels: [SecretGateProtection] { Array(gate.availableProtections.dropFirst()) }
     // These gates admit only signing requests; unsupported requests fail validation.
     private var showsUnknownOperations: Bool { gate.supportsUnknownDenial }
@@ -6695,6 +6789,9 @@ private struct GatePolicyTable: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if focusedPolicy != nil {
+                Button("Show All Launcher Rules") { model.selectedLauncherRequirement = nil }
+            }
             Text("Drag the boundaries or choose an exact level. Changes stay pending until reviewed.")
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
@@ -6715,8 +6812,8 @@ private struct GatePolicyTable: View {
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
                     Divider()
-                    policyRow(app: nil)
-                    ForEach(gate.appPolicies, id: \.requirement) { app in
+                    if focusedPolicy == nil { policyRow(app: nil) }
+                    ForEach(focusedPolicy.map { [$0] } ?? gate.appPolicies, id: \.requirement) { app in
                         Divider()
                         policyRow(app: app)
                     }
@@ -7250,9 +7347,9 @@ private func secretGateAdmissionError(
 }
 
 @MainActor
-private func showLauncherCannotBeAllowed(_ reason: String) {
+private func showLauncherCannotBeAllowed(_ reason: String, title: String = "Launcher cannot be allowed") {
     let alert = NSAlert()
-    alert.messageText = "Launcher cannot be allowed"
+    alert.messageText = title
     alert.informativeText = reason
     alert.runModal()
 }
@@ -7287,10 +7384,7 @@ private func chooseLauncher(
     }
     if let recentApp {
         // History is a chooser shortcut, never evidence of current identity or authority.
-        guard let path = recentApp.launcherIconPath,
-              let requirement = recentApp.launcherRequirement,
-              let signing = launcherSigning(URL(fileURLWithPath: path).resolvingSymlinksInPath()),
-              signing.requirement == requirement
+        guard let signing = recentLauncherSigning(recentApp)
         else {
             showLauncherCannotBeAllowed("Choose a valid Developer ID-signed executable or signed app.")
             completion(nil)
@@ -7330,6 +7424,15 @@ private func pickLauncher(_ completion: @escaping (LauncherSigning?) -> Void) {
         }
         completion(signing)
     }
+}
+
+private func recentLauncherSigning(_ record: AccessRequestRecord) -> LauncherSigning? {
+    guard let path = record.launcherIconPath,
+          let requirement = record.launcherRequirement,
+          let signing = launcherSigning(URL(fileURLWithPath: path).resolvingSymlinksInPath()),
+          signing.requirement == requirement
+    else { return nil }
+    return signing
 }
 
 private func launcherSigning(_ url: URL) -> LauncherSigning? {

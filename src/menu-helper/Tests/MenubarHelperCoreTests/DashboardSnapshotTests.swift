@@ -1642,6 +1642,8 @@ func productionAccessRequestLogIgnoresUserDefaultsTampering() {
     """.utf8)
 
     let records = try JSONDecoder().decode([AccessRequestRecord].self, from: data)
+    #expect(records.first?.gateID == nil)
+    #expect(records.first?.canConfigureLauncher == false)
     #expect(records.first?.approvalSource == nil)
     #expect(records.first?.approvalSourceLabel == "Policy")
 }
@@ -1750,5 +1752,25 @@ private final class AlteredAccessLogDefaults: UserDefaults, @unchecked Sendable 
         let gate = SecretGate(id: id, keyPatterns: keys, routes: [],
                               defaultProtection: .noAccess, appPolicies: [])
         #expect(gate.protectionTitle(.fullIncludingSecretDumps) == expected)
+    }
+}
+
+@Test func historyLauncherConfigurationRequiresExplicitIdentityAndGate() throws {
+    func record(gate: String? = "gh", requirement: String? = "exact requirement",
+                path: String? = "/Applications/Editor.app") -> AccessRequestRecord {
+        AccessRequestRecord(date: .now, tool: "not-the-gate", command: "gh api user",
+            decision: "Approved", reason: "Gate default", launcher: "Editor",
+            launcherIconPath: path, launcherRequirement: requirement, gateID: gate,
+            callerPath: "/usr/local/bin/av", target: "/opt/av/gh", cwd: "/tmp", keys: [], detail: nil)
+    }
+    let original = record()
+    let restored = try JSONDecoder().decode(AccessRequestRecord.self, from: JSONEncoder().encode(original))
+    #expect(restored == original)
+    #expect(restored.canConfigureLauncher)
+    #expect(restored.redactedForDisclosure.gateID == "gh")
+    #expect(restored.redactedForDisclosure.launcherRequirement == "exact requirement")
+    for invalid in [record(gate: nil), record(gate: ""), record(requirement: nil),
+                    record(requirement: ""), record(path: nil), record(path: "")] {
+        #expect(!invalid.canConfigureLauncher)
     }
 }

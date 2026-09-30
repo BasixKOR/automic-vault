@@ -1979,6 +1979,7 @@ private func accessRequestRecord(
         launcherRequirement: launcher.flatMap {
             $0.runtimeProtection.allowsSecretGateAccess ? $0.designatedRequirement : nil
         },
+        gateID: request.gateID,
         temporaryDenialScope: request.temporaryDenialScope,
         callerPath: callerPath,
         target: request.target,
@@ -2337,6 +2338,7 @@ private struct ApprovalRequest {
     let sshPeer: SSHAgentPeer?
     // History metadata only; enforcement resolves the gate and classification independently.
     var temporaryDenialScope: TemporaryLauncherDenialScope?
+    var gateID: String?
 
     init(
         op: String,
@@ -2357,7 +2359,8 @@ private struct ApprovalRequest {
         credentialParent: CredentialHelperParent? = nil,
         selectedSecretValues: SelectedSecretValues = SelectedSecretValues(values: [:]),
         sshPeer: SSHAgentPeer? = nil,
-        temporaryDenialScope: TemporaryLauncherDenialScope? = nil
+        temporaryDenialScope: TemporaryLauncherDenialScope? = nil,
+        gateID: String? = nil
     ) {
         self.op = op
         self.keys = keys
@@ -2378,6 +2381,7 @@ private struct ApprovalRequest {
         self.selectedSecretValues = selectedSecretValues
         self.sshPeer = sshPeer
         self.temporaryDenialScope = temporaryDenialScope
+        self.gateID = gateID
     }
 
     func selecting(_ values: SelectedSecretValues) -> ApprovalRequest {
@@ -2400,7 +2404,8 @@ private struct ApprovalRequest {
             credentialParent: credentialParent,
             selectedSecretValues: values,
             sshPeer: sshPeer,
-            temporaryDenialScope: temporaryDenialScope
+            temporaryDenialScope: temporaryDenialScope,
+            gateID: gateID
         )
     }
 
@@ -2424,7 +2429,8 @@ private struct ApprovalRequest {
             credentialParent: credentialParent,
             selectedSecretValues: selectedSecretValues,
             sshPeer: sshPeer,
-            temporaryDenialScope: temporaryDenialScope
+            temporaryDenialScope: temporaryDenialScope,
+            gateID: gateID
         )
     }
 
@@ -4938,6 +4944,7 @@ private final class ApprovalServer: @unchecked Sendable {
         }
         let request: ApprovalRequest = {
             var scoped = preparedRequest
+            scoped.gateID = configuredGate?.id
             scoped.temporaryDenialScope = configuredGate.flatMap {
                 TemporaryLauncherDenialScope(gate: $0, classification: classification ?? .unknown)
             }
@@ -9571,6 +9578,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     launcherRequirement: denial.launcher.flatMap {
                         $0.runtimeProtection.allowsSecretGateAccess ? $0.designatedRequirement : nil
                     },
+                    gateID: original.gateID,
                     temporaryDenialScope: original.temporaryDenialScope,
                     callerPath: pathString(identity), target: original.target, cwd: original.cwd,
                     keys: original.keys, detail: original.detail, secretValueSources: original.secretValueSources
@@ -16802,7 +16810,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
     TemporaryLauncherDenials.shared.deny(deniedLauncher.designatedRequirement, launcherName: "Self check", scope: denialScope)
     let deniedRequest = ApprovalRequest(op: "inject", keys: [], target: "/self-check", args: [], cwd: "/",
         replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [], shebangScript: nil,
-        scriptData: nil, tool: "self-check", title: nil, detail: nil)
+        scriptData: nil, tool: "self-check", title: nil, detail: nil, gateID: "gh")
     let deniedDecision = await showApprovalAlert(
         request: deniedRequest, callerPath: "/self-check", pid: getpid(),
         signing: SigningInfo(identifier: "self-check", teamIdentifier: "TEST"), scriptApproval: nil,
@@ -16813,7 +16821,11 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
     let deniedRecord = accessRequestRecord(request: deniedRequest, callerPath: "/self-check", decision: "Denied",
         approvalSource: "Auto", reason: "Denied by two-minute Temporary Launcher Denial", launcher: deniedLauncher)
     guard !shouldShowAutomaticAccessToast(deniedRecord),
-          deniedRecord.launcherRequirement == deniedLauncher.designatedRequirement else { return 19 }
+          deniedRecord.launcherRequirement == deniedLauncher.designatedRequirement,
+          deniedRecord.gateID == "gh", deniedRecord.canConfigureLauncher,
+          deniedRequest.selecting(SelectedSecretValues(values: [:])).gateID == "gh",
+          deniedRequest.requesting(keys: [], title: "", detail: "").gateID == "gh"
+    else { return 19 }
     let unverifiedChild = LauncherIdentity(
         pid: getpid(), path: "/unverified-child", identifier: "child", teamIdentifier: "TEST",
         designatedRequirement: "child", runtimeProtection: .hardenedRuntimeMissing
@@ -16838,6 +16850,7 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
         launcher: unverifiedChild, launchers: [unverifiedChild, deniedLauncher])
     guard [canceledRecord, interruptedRecord].allSatisfy({
         $0.launcherRequirement == deniedLauncher.designatedRequirement && $0.launcher == deniedRecord.launcher
+            && $0.gateID == "gh"
     }) else { return 19 }
     let proxyLaunch = ProxySessionLaunch(
         keys: [], target: "/different-target", arguments: [], cwd: "/", selectedSecretValues: SelectedSecretValues(values: [:]),
