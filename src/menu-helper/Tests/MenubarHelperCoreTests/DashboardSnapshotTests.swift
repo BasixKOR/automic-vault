@@ -4,6 +4,23 @@ import Security
 import Testing
 @testable import MenubarHelperCore
 
+@Test func historyAccessLevelOmitsPolicySourceWithoutRelabelingOtherReasons() {
+    func level(_ reason: String, decision: String = "Approved") -> String? {
+        AccessRequestRecord(date: Date(), tool: "gh", command: "gh", decision: decision,
+            reason: reason, launcher: "ChatGPT", callerPath: "/gh", target: "/gh",
+            cwd: "/", keys: [], detail: nil).accessLevelForDisplay
+    }
+    #expect(level("Write Access from Codex") == "Write Access")
+    #expect(level("Read & Update from default policy") == "Read & Update")
+    #expect(level("Allow Authentication from Terminal") == "Allow Authentication")
+    #expect(level("Secret Disclosure from Codex") == "Secret Disclosure")
+    #expect(level("Direct Access from Terminal") == "Direct Access")
+    #expect(level("Approved in prompt") == nil)
+    #expect(level("Denied by Launcher rule: Write Access and above at gh", decision: "Denied") == nil)
+    #expect(level("Write Access from Codex", decision: "Failed") == nil)
+    #expect(level("Unrecognized access from Codex") == nil)
+}
+
 @Test func securityPathsEscapeDisplayControls() {
     #expect(
         escapedSecurityPath("/tmp/line\nname\t\\\u{202E}txt")

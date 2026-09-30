@@ -4959,7 +4959,7 @@ private struct AuthorizationHistoryDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Authorization History")
+            Text("\(record.launcher ?? "Launcher unavailable") used \(record.tool)")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundStyle(.primary)
             AccessRequestRow(record: record, configureLauncher: record.canConfigureLauncher
@@ -4984,14 +4984,17 @@ private struct TemporaryLauncherDenialButton: View {
     @State private var deadline: TimeInterval?
 
     var body: some View {
-        Button(deadline != nil
-            ? "Two-minute Launcher denial active"
-            : scope.actionTitle) {
-            TemporaryLauncherDenials.shared.deny(requirement, launcherName: launcherName ?? "Verified Launcher", scope: scope)
-            refresh()
+        VStack(alignment: .leading, spacing: 6) {
+            Button(deadline != nil ? "Denial Active" : "Deny For 2 Minutes") {
+                TemporaryLauncherDenials.shared.deny(requirement, launcherName: launcherName ?? "Verified Launcher", scope: scope)
+                refresh()
+            }
+            .disabled(deadline != nil)
+            Text("Denies \(scope.operationTitle == "all requests" ? "all use" : scope.operationTitle) of \(Text(scope.gateName).monospaced()) by \(launcherName ?? "this Verified Launcher"). Ordinary policy resumes after two minutes; end early from the menu bar.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .disabled(deadline != nil)
-        .help("Only \(launcherName ?? "this Verified Launcher") at \(scope.gateName). Ordinary policy resumes after two minutes; end early from the menu bar.")
         .onAppear { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: launcherDenialDidChange).receive(on: RunLoop.main)) { _ in
             refresh()
@@ -5048,24 +5051,26 @@ private struct AccessRequestRow: View {
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
-                Text(record.reason)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                if let requirement = record.launcherRequirement, !requirement.isEmpty, let scope = record.temporaryDenialScope {
-                    TemporaryLauncherDenialButton(requirement: requirement, launcherName: record.launcher, scope: scope)
-                        .id(requirement)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        if let path = record.launcherIconPath {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
-                                .resizable().frame(width: 20, height: 20)
-                                .accessibilityHidden(true)
-                        }
-                        AccessMetaLine("Launcher", record.launcher ?? "unknown")
-                        if let configureLauncher {
-                            Button("Configure Launcher…", action: configureLauncher)
-                                .controlSize(.small)
+                Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    if let accessLevel = record.accessLevelForDisplay {
+                        AccessMetaLine("Access Level", accessLevel)
+                    } else {
+                        AccessMetaLine("Reason", record.reason)
+                    }
+                    GridRow(alignment: .firstTextBaseline) {
+                        Text("Launcher")
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            if let path = record.launcherIconPath {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                                    .resizable().frame(width: 20, height: 20)
+                                    .accessibilityHidden(true)
+                            }
+                            Text(record.launcher ?? "unknown")
+                            if let configureLauncher {
+                                Button("Configure Launcher…", action: configureLauncher)
+                                    .controlSize(.small)
+                            }
                         }
                     }
                     AccessMetaLine("Decision source", record.approvalSourceLabel)
@@ -5087,6 +5092,15 @@ private struct AccessRequestRow: View {
                     if let detail = record.detail, !detail.isEmpty {
                         AccessMetaLine("Detail", detail)
                     }
+                }
+                .font(.system(size: 11))
+                .textSelection(.enabled)
+                .padding(.top, 12)
+                if let requirement = record.launcherRequirement, !requirement.isEmpty, let scope = record.temporaryDenialScope {
+                    Divider()
+                        .padding(.vertical, 5)
+                    TemporaryLauncherDenialButton(requirement: requirement, launcherName: record.launcher, scope: scope)
+                        .id(requirement)
                 }
             }
         }
@@ -5130,10 +5144,15 @@ private struct AccessMetaLine: View {
     }
 
     var body: some View {
-        Text("\(label): \(value)")
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
+        GridRow(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Text(value)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -899,6 +899,17 @@ public struct AccessRequestRecord: Codable, Equatable, Identifiable, Sendable {
         displayCommand ?? "\(tool.isEmpty ? "tool" : tool) <arguments hidden>"
     }
 
+    /// Presentation of recorded policy text only; never infer historical authority from current policy.
+    public var accessLevelForDisplay: String? {
+        guard decision == "Approved" || decision == "Always Allowed" else { return nil }
+        let levels = [
+            "Read Only", "Read & Update", "Local Write", "Write Access", "Full Access",
+            "Direct Access", "Allow Signing", "Allow Authentication",
+            "Secret Disclosure", "Elevated Secret Application",
+        ]
+        return levels.first { reason == $0 || reason.hasPrefix("\($0) from ") }
+    }
+
     public var redactedForDisclosure: AccessRequestRecord {
         AccessRequestRecord(
             id: id,
