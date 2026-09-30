@@ -2289,6 +2289,18 @@ func runDashboardSearchSelfCheck() -> Int32 {
           navigationModel.searchText.isEmpty,
           navigationModel.snapshot == navigationSnapshot
     else { return 1 }
+    // A selected/new rule must leave every existing rule and Default Policy visible.
+    func policyControlCount(in view: NSView) -> Int {
+        (view is NSPopUpButton ? 1 : 0) + view.subviews.reduce(0) { $0 + policyControlCount(in: $1) }
+    }
+    let policyHost = NSHostingView(rootView: SecretGateDetailView(
+        model: navigationModel, gate: navigationSnapshot.secretGates[1]))
+    policyHost.frame = NSRect(x: 0, y: 0, width: 1000, height: 1000)
+    policyHost.layoutSubtreeIfNeeded()
+    guard policyControlCount(in: policyHost) == 2 * (rules.count + 1) else {
+        print("History-selected Launcher hid existing rules or Default Policy")
+        return 1
+    }
     navigationModel.showSecretGate(id: "aws")
     guard navigationModel.selectedLauncherRequirement == nil else { return 1 }
     let controller = AutomicVaultMainWindowController(checkForUpdates: {}, requestScan: {})
@@ -6767,9 +6779,6 @@ private struct GatePolicyTable: View {
     @State private var reviewing = false
     @State private var availableWidth: CGFloat = 720
 
-    private var focusedPolicy: SecretGatePolicy? {
-        gate.appPolicies.first { $0.requirement == model.selectedLauncherRequirement }
-    }
     private var levels: [SecretGateProtection] { Array(gate.availableProtections.dropFirst()) }
     // These gates admit only signing requests; unsupported requests fail validation.
     private var showsUnknownOperations: Bool { gate.supportsUnknownDenial }
@@ -6789,9 +6798,6 @@ private struct GatePolicyTable: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if focusedPolicy != nil {
-                Button("Show All Launcher Rules") { model.selectedLauncherRequirement = nil }
-            }
             Text("Drag the boundaries or choose an exact level. Changes stay pending until reviewed.")
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
@@ -6812,10 +6818,15 @@ private struct GatePolicyTable: View {
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
                     Divider()
-                    if focusedPolicy == nil { policyRow(app: nil) }
-                    ForEach(focusedPolicy.map { [$0] } ?? gate.appPolicies, id: \.requirement) { app in
+                    policyRow(app: nil)
+                    ForEach(gate.appPolicies.sorted {
+                        $0.requirement == model.selectedLauncherRequirement
+                            && $1.requirement != model.selectedLauncherRequirement
+                    }, id: \.requirement) { app in
                         Divider()
                         policyRow(app: app)
+                            .background(app.requirement == model.selectedLauncherRequirement
+                                ? Color.accentColor.opacity(0.08) : .clear)
                     }
                     Divider()
                 }
