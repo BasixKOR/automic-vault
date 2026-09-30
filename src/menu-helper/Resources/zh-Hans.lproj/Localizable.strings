@@ -550,3 +550,17 @@
 "Unclassified operations can require Approval or be denied, but cannot be automatically allowed." = "未分类的操作可以要求批准或被拒绝，但不能自动允许。";
 
 "Recently Approved Apps" = "最近批准的 App";
+
+"Configure Launcher…" = "配置启动程序…";
+
+"Create a Launcher rule?" = "创建启动程序规则？";
+
+"Create Rule…" = "创建规则…";
+
+"Launcher cannot be configured" = "无法配置启动程序";
+
+"This Authorization Gate is no longer available." = "此授权关卡已不可用。";
+
+"This Launcher no longer exists or its verified identity has changed." = "此启动程序已不存在，或其经过验证的身份已更改。";
+
+"This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "此启动程序在 %@ 授权关卡没有规则。请审查其身份并批准新规则，以配置其访问级别。";

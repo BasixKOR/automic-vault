@@ -550,3 +550,17 @@
 "Unclassified operations can require Approval or be denied, but cannot be automatically allowed." = "Unclassified operations can require Approval or be denied, but cannot be automatically allowed.";
 
 "Recently Approved Apps" = "Recently Approved Apps";
+
+"Configure Launcher…" = "Configure Launcher…";
+
+"Create a Launcher rule?" = "Create a Launcher rule?";
+
+"Create Rule…" = "Create Rule…";
+
+"Launcher cannot be configured" = "Launcher cannot be configured";
+
+"This Authorization Gate is no longer available." = "This Authorization Gate is no longer available.";
+
+"This Launcher no longer exists or its verified identity has changed." = "This Launcher no longer exists or its verified identity has changed.";
+
+"This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level.";
