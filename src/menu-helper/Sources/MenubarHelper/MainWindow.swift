@@ -6016,7 +6016,13 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             }
             ForEach(parents) { parent in
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(parent.appName).font(.headline)
+                    HStack {
+                        Text(parent.appName).font(.headline)
+                        Spacer()
+                        Button("Choose Helpers…") { discoverHelpers(for: parent) }
+                            .disabled(discoveryTask != nil)
+                            .accessibilityLabel("Choose helpers for \(parent.appName)")
+                    }
                     Text("\(parent.appBundleIdentifier) · Team \(parent.appTeamIdentifier)")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
@@ -6118,6 +6124,16 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         }
     }
 
+    private func discoverHelpers(for parent: VerifiedLauncherHelper) {
+        guard let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: parent.appBundleIdentifier
+        ) else {
+            status = "Could not find the installed \(parent.appName) app. Use Discover Helpers in App to locate it."
+            return
+        }
+        discoverHelpers(in: url, parent: parent)
+    }
+
     private func discoverHelpers() {
         let panel = NSOpenPanel()
         panel.title = "Discover Verified Launcher Helpers"
@@ -6126,14 +6142,32 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         panel.allowsMultipleSelection = false
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            discoveryTask = Task {
-                let discovered = await discoverVerifiedLauncherHelpers(in: url)
-                guard !Task.isCancelled else { return }
-                configuration = loadVerifiedLauncherHelperConfiguration()
-                discoveredHelpers = discovered
-                status = discovered.isEmpty ? "No eligible signed helpers were found in this app." : ""
-                discoveryTask = nil
+            discoverHelpers(in: url)
+        }
+    }
+
+    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelper? = nil) {
+        guard discoveryTask == nil else { return }
+        status = ""
+        discoveryTask = Task {
+            let discovered = await discoverVerifiedLauncherHelpers(in: url)
+            guard !Task.isCancelled else { return }
+            let matching = discovered.filter { helper in
+                guard let parent else { return true }
+                return helper.appBundleIdentifier == parent.appBundleIdentifier
+                    && helper.appTeamIdentifier == parent.appTeamIdentifier
             }
+            configuration = loadVerifiedLauncherHelperConfiguration()
+            // Keep other apps' discovered choices visible while reviewing this app.
+            discoveredHelpers.removeAll { helper in
+                matching.contains {
+                    $0.appBundleIdentifier == helper.appBundleIdentifier
+                        && $0.appTeamIdentifier == helper.appTeamIdentifier
+                }
+            }
+            discoveredHelpers.append(contentsOf: matching)
+            status = matching.isEmpty ? "No eligible signed helpers matching this app’s identity were found." : ""
+            discoveryTask = nil
         }
     }
 
