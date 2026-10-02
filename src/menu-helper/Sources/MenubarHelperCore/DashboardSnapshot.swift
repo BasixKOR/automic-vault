@@ -3333,10 +3333,17 @@ func appIdentifier(from requirement: String) -> String? {
 }
 
 public func codeSigningTeamIdentifier(from requirement: String) -> String? {
-    guard let range = requirement.range(of: #"certificate leaf[subject.OU] = ""#) else { return nil }
-    let rest = requirement[range.upperBound...]
-    guard let end = rest.firstIndex(of: "\"") else { return nil }
-    return String(rest[..<end])
+    guard let range = requirement.range(of: "certificate leaf[subject.OU] = ") else { return nil }
+    let rest = requirement[range.upperBound...].drop(while: { $0.isWhitespace })
+    if rest.first == "\"" {
+        let quoted = rest.dropFirst()
+        guard let end = quoted.firstIndex(of: "\"") else { return nil }
+        return quoted[..<end].isEmpty ? nil : String(quoted[..<end])
+    }
+    let team = rest.prefix { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    guard !team.isEmpty else { return nil }
+    if let next = rest.dropFirst(team.count).first, !next.isWhitespace && next != ")" { return nil }
+    return String(team)
 }
 
 private extension Array where Element == HardenedTool {

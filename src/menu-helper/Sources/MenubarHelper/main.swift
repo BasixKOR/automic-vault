@@ -17284,7 +17284,25 @@ private func runApprovalProcessExecutionSelfCheck() -> Int32 {
     return 0
 }
 
+private func selfCheckCodexHelper(relativePath: String = "Contents/Resources/codex") -> VerifiedLauncherHelper {
+    let helper = VerifiedLauncherHelper(
+        id: "", name: "Codex CLI", appName: "ChatGPT",
+        appBundleIdentifier: "com.openai.codex", appTeamIdentifier: "2DC432GLL2",
+        helperSigningIdentifier: "codex", helperTeamIdentifier: "2DC432GLL2",
+        relativePath: relativePath
+    )
+    return VerifiedLauncherHelper(
+        id: userApprovedVerifiedLauncherHelperID(helper), name: helper.name, appName: helper.appName,
+        appBundleIdentifier: helper.appBundleIdentifier, appTeamIdentifier: helper.appTeamIdentifier,
+        helperSigningIdentifier: helper.helperSigningIdentifier, helperTeamIdentifier: helper.helperTeamIdentifier,
+        relativePath: relativePath
+    )
+}
+
 private func runNestedLauncherHelperSelfCheck() -> Bool {
+    let codexVerifiedLauncherHelper = selfCheckCodexHelper(
+        relativePath: "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+    )
     let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
         .appendingPathComponent("av-nested-helper-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -17324,7 +17342,8 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
                                   designatedRequirement: "helper")
             },
             helperConfiguration: VerifiedLauncherHelperConfiguration(
-                disabledHelperIDs: enabled ? [] : [codexVerifiedLauncherHelper.id]
+                disabledHelperIDs: enabled ? [] : [codexVerifiedLauncherHelper.id],
+                userApprovedHelpers: [codexVerifiedLauncherHelper]
             ),
             helperSigning: { association, _ in
                 valid && association.appURL.path == parent.path ? parentSigning : nil
@@ -17353,6 +17372,7 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
 }
 
 private func runStandaloneLauncherSelfCheck() -> Int32 {
+    let codexVerifiedLauncherHelper = selfCheckCodexHelper()
     guard runNestedLauncherHelperSelfCheck() else {
         fputs("nested Launcher helper attribution failed\n", stderr)
         return 1
@@ -17408,6 +17428,13 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         path: bundledCodex.mainExecutable,
         signing: bundledCodex,
         containingAppURLs: [chatGPTURL],
+        configuration: VerifiedLauncherHelperConfiguration(userApprovedHelpers: [codexVerifiedLauncherHelper]),
+        bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
+    )
+    let unapprovedCodexAssociation = verifiedLauncherHelperAssociation(
+        path: bundledCodex.mainExecutable,
+        signing: bundledCodex,
+        containingAppURLs: [chatGPTURL],
         configuration: VerifiedLauncherHelperConfiguration(),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
     )
@@ -17416,36 +17443,19 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         signing: bundledCodex,
         containingAppURLs: [chatGPTURL],
         configuration: VerifiedLauncherHelperConfiguration(
-            disabledHelperIDs: [codexVerifiedLauncherHelper.id]
+            disabledHelperIDs: [codexVerifiedLauncherHelper.id],
+            userApprovedHelpers: [codexVerifiedLauncherHelper]
         ),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
     )
-    let wrongPathCodexHelper = VerifiedLauncherHelper(
-        id: "wrong-path-codex",
-        name: "Wrong Codex",
-        appName: "ChatGPT",
-        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
-        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
-        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
-        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
-        relativePath: "Contents/Resources/not-codex"
-    )
-    let pathBoundCodexHelper = VerifiedLauncherHelper(
-        id: "path-bound-codex",
-        name: "Codex CLI",
-        appName: "ChatGPT",
-        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
-        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
-        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
-        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
-        relativePath: "Contents/Resources/codex"
-    )
+    let wrongPathCodexHelper = selfCheckCodexHelper(relativePath: "Contents/Resources/not-codex")
+    let pathBoundCodexHelper = selfCheckCodexHelper()
     let pathBoundCodexAssociation = verifiedLauncherHelperAssociation(
         path: bundledCodex.mainExecutable,
         signing: bundledCodex,
         containingAppURLs: [chatGPTURL],
         helpers: [wrongPathCodexHelper, pathBoundCodexHelper],
-        configuration: VerifiedLauncherHelperConfiguration(),
+        configuration: VerifiedLauncherHelperConfiguration(userApprovedHelpers: [pathBoundCodexHelper]),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
     )
     // Exercise relocation independently of whichever vendor apps are installed.
@@ -17471,6 +17481,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
             containingAppURLs: [],
             configuration: VerifiedLauncherHelperConfiguration(
                 disabledHelperIDs: scenario.disabled ? [codexVerifiedLauncherHelper.id] : [],
+                userApprovedHelpers: [codexVerifiedLauncherHelper],
                 allowedOutsideBundleHelperIDs: scenario.allowed ? [codexVerifiedLauncherHelper.id] : []
             ),
             installedAppURL: { _ in scenario.parent ? chatGPTURL : nil }
@@ -17484,6 +17495,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         signing: bundledCodex,
         containingAppURLs: [chatGPTURL],
         configuration: VerifiedLauncherHelperConfiguration(
+            userApprovedHelpers: [codexVerifiedLauncherHelper],
             allowedOutsideBundleHelperIDs: [codexVerifiedLauncherHelper.id]
         ),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
@@ -17494,6 +17506,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         containingAppURLs: [chatGPTURL],
         helpers: [wrongPathCodexHelper],
         configuration: VerifiedLauncherHelperConfiguration(
+            userApprovedHelpers: [wrongPathCodexHelper],
             allowedOutsideBundleHelperIDs: [wrongPathCodexHelper.id]
         ),
         bundleIdentifier: { _ in codexVerifiedLauncherHelper.appBundleIdentifier }
@@ -17511,7 +17524,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         path: xcodeGit.mainExecutable,
         signing: xcodeGit,
         containingAppURLs: [URL(fileURLWithPath: "/Applications/Xcode.app")],
-        configuration: VerifiedLauncherHelperConfiguration(),
+        configuration: VerifiedLauncherHelperConfiguration(userApprovedHelpers: [codexVerifiedLauncherHelper]),
         bundleIdentifier: { _ in "com.apple.dt.Xcode" }
     )
     let installedCodexValidation: Bool = {
@@ -17522,12 +17535,15 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
         guard let path = candidates.first(where: { FileManager.default.fileExists(atPath: $0) })
         else { return true }
         let executableURL = URL(fileURLWithPath: path)
+        let codexVerifiedLauncherHelper = selfCheckCodexHelper(
+            relativePath: String(path.dropFirst("/Applications/ChatGPT.app/".count))
+        )
         guard let signing = executableSigningInfo(path: executableURL.path),
               let association = verifiedLauncherHelperAssociation(
                   path: executableURL.path,
                   signing: signing,
                   helpers: [codexVerifiedLauncherHelper],
-                  configuration: VerifiedLauncherHelperConfiguration()
+                  configuration: VerifiedLauncherHelperConfiguration(userApprovedHelpers: [codexVerifiedLauncherHelper])
               ),
               verifiedLauncherHelperAppSigningInfo(association) != nil
         else { return false }
@@ -17556,6 +17572,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
                   path: movedURL.path,
                   signing: movedSigning,
                   configuration: VerifiedLauncherHelperConfiguration(
+                      userApprovedHelpers: [codexVerifiedLauncherHelper],
                       allowedOutsideBundleHelperIDs: [codexVerifiedLauncherHelper.id]
                   ),
                   installedAppURL: { _ in association.appURL }
@@ -17641,6 +17658,7 @@ private func runStandaloneLauncherSelfCheck() -> Int32 {
           codexAssociation?.appURL == chatGPTURL,
           pathBoundCodexAssociation?.helper == pathBoundCodexHelper,
           disabledCodexAssociation == nil,
+          unapprovedCodexAssociation == nil,
           movedHelperChecks,
           optedInBundledAssociation?.isOutsideBundle == false,
           optedInWrongPathAssociation == nil,

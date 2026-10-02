@@ -1,4 +1,5 @@
 import Foundation
+import MachO
 import Security
 
 private let verifiedLauncherHelpersKeychainService = "com.automicvault.verified-launcher-helpers"
@@ -39,34 +40,81 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
             && appTeamIdentifier == other.appTeamIdentifier
             && helperSigningIdentifier == other.helperSigningIdentifier
             && helperTeamIdentifier == other.helperTeamIdentifier
-            && (relativePath == nil || other.relativePath == nil || relativePath == other.relativePath)
+            && relativePath == other.relativePath
     }
 }
 
-public let codexVerifiedLauncherHelper = VerifiedLauncherHelper(
-    id: "codex",
-    name: "Codex CLI",
-    appName: "ChatGPT",
-    appBundleIdentifier: "com.openai.codex",
-    appTeamIdentifier: "2DC432GLL2",
-    helperSigningIdentifier: "codex",
-    helperTeamIdentifier: "2DC432GLL2"
-)
+public struct VerifiedLauncherHelperParent: Identifiable {
+    public let appName: String
+    public let appBundleIdentifier: String
+    public let appTeamIdentifier: String
+    public var id: String { "\(appTeamIdentifier.utf8.count):\(appTeamIdentifier)\(appBundleIdentifier)" }
+}
 
-public let claudeCodeVerifiedLauncherHelper = VerifiedLauncherHelper(
-    id: "claude-code",
-    name: "Claude Code",
-    appName: "Claude",
-    appBundleIdentifier: "com.anthropic.claudefordesktop",
-    appTeamIdentifier: "Q6L2SF6YDW",
-    helperSigningIdentifier: "com.anthropic.claude-code",
-    helperTeamIdentifier: "Q6L2SF6YDW"
-)
+public func verifiedLauncherHelperParents(
+    helpers: [VerifiedLauncherHelper], appPolicies: [SecretGatePolicy]
+) -> [VerifiedLauncherHelperParent] {
+    var parents = helpers.map {
+        VerifiedLauncherHelperParent(appName: $0.appName,
+            appBundleIdentifier: $0.appBundleIdentifier, appTeamIdentifier: $0.appTeamIdentifier)
+    }
+    parents += appPolicies.compactMap {
+        guard let team = codeSigningTeamIdentifier(from: $0.requirement) else { return nil }
+        return VerifiedLauncherHelperParent(appName: $0.bundleIdentifier,
+            appBundleIdentifier: $0.bundleIdentifier, appTeamIdentifier: team)
+    }
+    var seen = Set<String>()
+    return parents.filter { seen.insert($0.id).inserted }
+}
 
-public let verifiedLauncherHelpers = [
-    codexVerifiedLauncherHelper,
-    claudeCodeVerifiedLauncherHelper,
-]
+public struct VerifiedLauncherHelperOutlineItem: Identifiable {
+    public let id: String
+    public let title: String
+    public let depth: Int
+    public let helper: VerifiedLauncherHelper?
+}
+
+/// Bundle paths organize presentation only; they do not confer Launcher Identity.
+public func verifiedLauncherHelperOutline(_ helpers: [VerifiedLauncherHelper]) -> [VerifiedLauncherHelperOutlineItem] {
+    func containers(_ helper: VerifiedLauncherHelper) -> [String] {
+        let parts = (helper.relativePath ?? "").split(separator: "/").dropLast()
+        return parts.enumerated().compactMap { index, part in
+            ["app", "framework", "xpc", "bundle"].contains((String(part) as NSString).pathExtension.lowercased())
+                ? parts.prefix(index + 1).joined(separator: "/") : nil
+        }
+    }
+    let groups = Dictionary(grouping: helpers) { containers($0).last ?? "" }
+    var result: [VerifiedLauncherHelperOutlineItem] = []
+    var headings = Set<String>()
+    for (_, group) in groups.sorted(by: { $0.key < $1.key }) {
+        let members = group.sorted {
+            let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        }
+        let parents = containers(members[0])
+        for (depth, parent) in parents.enumerated() where headings.insert(parent).inserted {
+            result.append(.init(id: "bundle:" + parent,
+                title: (parent as NSString).lastPathComponent, depth: depth, helper: nil))
+        }
+        for helper in members {
+            result.append(.init(id: helper.id, title: helper.name, depth: parents.count, helper: helper))
+        }
+    }
+    return result
+}
+
+/// A review default only: this never adds a helper to the enabled catalog.
+public func shouldPreselectVerifiedLauncherHelper(_ helper: VerifiedLauncherHelper) -> Bool {
+    guard isValidUserApprovedHelper(helper),
+          helper.appTeamIdentifier == helper.helperTeamIdentifier else { return false }
+    switch (helper.appBundleIdentifier, helper.appTeamIdentifier, helper.helperSigningIdentifier) {
+    case ("com.openai.codex", "2DC432GLL2", "codex"),
+         ("com.anthropic.claudefordesktop", "Q6L2SF6YDW", "com.anthropic.claude-code"):
+        return true
+    default:
+        return false
+    }
+}
 
 public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable {
     public var disabledHelperIDs: Set<String>
@@ -88,8 +136,16 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
         return !disabledHelperIDs.contains(helper.id)
     }
 
+    public func shouldSelectInReview(_ helper: VerifiedLauncherHelper) -> Bool {
+        if isEnabled(helper) { return true }
+        guard shouldPreselectVerifiedLauncherHelper(helper),
+              !disabledHelperIDs.contains(helper.id) else { return false }
+        let legacyID = helper.appBundleIdentifier == "com.openai.codex" ? "codex" : "claude-code"
+        return !disabledHelperIDs.contains(legacyID)
+    }
+
     public var helpers: [VerifiedLauncherHelper] {
-        verifiedLauncherHelpers + userApprovedHelpers
+        userApprovedHelpers
     }
 
     public func catalogHelper(matching discovered: VerifiedLauncherHelper) -> VerifiedLauncherHelper? {
@@ -98,9 +154,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
 
     public mutating func enable(_ helpers: [VerifiedLauncherHelper]) {
         for discovered in helpers {
-            let isValid = verifiedLauncherHelpers.contains(discovered)
-                || isValidUserApprovedHelper(discovered)
-            guard isValid else { continue }
+            guard isValidUserApprovedHelper(discovered) else { continue }
             if let helper = catalogHelper(matching: discovered) {
                 disabledHelperIDs.remove(helper.id)
             } else {
@@ -109,6 +163,13 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
             }
         }
         userApprovedHelpers.sort { $0.id < $1.id }
+    }
+
+    public mutating func remove(_ helper: VerifiedLauncherHelper) {
+        guard userApprovedHelpers.contains(where: { $0.id == helper.id }) else { return }
+        userApprovedHelpers.removeAll { $0.id == helper.id }
+        disabledHelperIDs.remove(helper.id)
+        allowedOutsideBundleHelperIDs.remove(helper.id)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -182,6 +243,7 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
 
         let executableURL = candidate.standardizedFileURL.resolvingSymlinksInPath()
         guard executableURL != appExecutableURL,
+              isLauncherHelperExecutable(at: executableURL),
               let helperCode = staticCode(at: executableURL),
               SecStaticCodeCheckValidity(
                   helperCode,
@@ -229,6 +291,47 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
     }
 }
 
+// Execute permission also appears on dylibs and loadable bundles. Only MH_EXECUTE
+// images can independently launch and represent a Launcher.
+func isLauncherHelperExecutable(at url: URL) -> Bool {
+    guard let file = try? FileHandle(forReadingFrom: url) else { return false }
+    defer { try? file.close() }
+    func read(at offset: UInt64, count: Int) -> [UInt8] {
+        guard (try? file.seek(toOffset: offset)) != nil,
+              let data = try? file.read(upToCount: count), data.count == count else { return [] }
+        return Array(data)
+    }
+    func integer(_ bytes: ArraySlice<UInt8>, littleEndian: Bool) -> UInt64 {
+        (littleEndian ? Array(bytes.reversed()) : Array(bytes)).reduce(0) { ($0 << 8) | UInt64($1) }
+    }
+    func isExecutableHeader(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count == 16 else { return false }
+        let magic = integer(bytes[0..<4], littleEndian: false)
+        guard [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe].contains(magic) else { return false }
+        return integer(bytes[12..<16], littleEndian: magic == 0xcefaedfe || magic == 0xcffaedfe) == UInt64(MH_EXECUTE)
+    }
+    let header = read(at: 0, count: 16)
+    if isExecutableHeader(header) { return true }
+    guard header.count == 16 else { return false }
+    let magic = integer(header[0..<4], littleEndian: false)
+    guard [0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].contains(magic) else { return false }
+    let littleEndian = magic == 0xbebafeca || magic == 0xbfbafeca
+    let is64 = magic == 0xcafebabf || magic == 0xbfbafeca
+    let count = integer(header[4..<8], littleEndian: littleEndian)
+    // Bound work on untrusted universal headers; signatures are verified separately.
+    guard count > 0, count <= 64 else { return false }
+    let stride = is64 ? 32 : 20
+    let table = read(at: 8, count: Int(count) * stride)
+    guard table.count == Int(count) * stride else { return false }
+    for index in 0..<Int(count) {
+        let start = index * stride + 8
+        let offset = integer(table[start..<(start + (is64 ? 8 : 4))], littleEndian: littleEndian)
+        guard offset >= UInt64(8 + table.count),
+              isExecutableHeader(read(at: offset, count: 16)) else { return false }
+    }
+    return true
+}
+
 func verifiedLauncherHelperRelativePath(for executableURL: URL, inside appURL: URL) -> String? {
     let appURL = appURL.standardizedFileURL.resolvingSymlinksInPath()
     let executableURL = executableURL.standardizedFileURL.resolvingSymlinksInPath()
@@ -260,9 +363,6 @@ private func isValidVerifiedLauncherHelperConfiguration(
     Set(configuration.userApprovedHelpers.map(\.id)).count
         == configuration.userApprovedHelpers.count
         && configuration.userApprovedHelpers.allSatisfy(isValidUserApprovedHelper)
-        && configuration.userApprovedHelpers.allSatisfy { helper in
-            !verifiedLauncherHelpers.contains { $0.hasSameSigningAssociation(as: helper) }
-        }
 }
 
 private struct HelperSigningIdentity {
@@ -353,6 +453,43 @@ func decodeVerifiedLauncherHelperConfiguration(
     )) ?? failClosedVerifiedLauncherHelperConfiguration
 }
 
+// Mutations must preserve read/decode failures instead of saving the fail-closed fallback.
+@discardableResult
+public func updateVerifiedLauncherHelperConfiguration(
+    _ update: (inout VerifiedLauncherHelperConfiguration) -> Void
+) throws -> VerifiedLauncherHelperConfiguration {
+    try updateVerifiedLauncherHelperConfiguration(
+        loadKeychainDataResult(
+            service: verifiedLauncherHelpersKeychainService,
+            account: verifiedLauncherHelpersKeychainAccount
+        ),
+        update: update,
+        save: { saveVerifiedLauncherHelperConfiguration($0) }
+    )
+}
+
+func updateVerifiedLauncherHelperConfiguration(
+    _ result: KeychainDataLoad,
+    update: (inout VerifiedLauncherHelperConfiguration) -> Void,
+    save: (VerifiedLauncherHelperConfiguration) -> OSStatus
+) throws -> VerifiedLauncherHelperConfiguration {
+    var configuration: VerifiedLauncherHelperConfiguration
+    switch result {
+    case .notFound:
+        configuration = VerifiedLauncherHelperConfiguration()
+    case .failure(let status):
+        throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+    case .success(let data):
+        configuration = try JSONDecoder().decode(VerifiedLauncherHelperConfiguration.self, from: data)
+    }
+    update(&configuration)
+    let status = save(configuration)
+    guard status == errSecSuccess else {
+        throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+    }
+    return configuration
+}
+
 @discardableResult
 public func saveVerifiedLauncherHelperConfiguration(
     _ configuration: VerifiedLauncherHelperConfiguration
@@ -381,6 +518,4 @@ func saveVerifiedLauncherHelperConfiguration(
     )
 }
 
-private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration(
-    disabledHelperIDs: Set(verifiedLauncherHelpers.map(\.id))
-)
+private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration()

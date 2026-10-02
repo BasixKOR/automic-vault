@@ -442,15 +442,21 @@ An app's declared main executable may represent the app after its code signature
 and exact membership in the app's resource seal are validated. A non-main
 executable may represent the app only as an enabled Verified Launcher Helper
 whose exact app and helper signing identities appear in the positive catalog.
-The catalog combines reviewed built-in associations with associations the user
-explicitly approves after signed, sealed helpers are discovered while adding an
-app as a Verified Launcher. Discovery grants no authority. The approval UI lists
+The catalog contains only associations the user explicitly approves after
+signed, sealed helpers are discovered while adding an app as a Verified
+Launcher. Discovery grants no authority. The helper review preselects Codex's
+`codex` CLI and Claude's `com.anthropic.claude-code` CLI only when both exact
+vendor signing identities match; all other helpers start unselected. Review
+defaults never enroll an association. Removing the former built-in catalog
+revokes its implicit associations rather than migrating them into user-approved
+records. Existing exact user-approved records remain valid. See
+[ADR 0061](adr/0061-user-approved-cli-helper-defaults.md). The approval UI lists
 each exact helper identity and relative path. User-approved associations bind
 both, and the UI warns that enabling one makes it represent the app at every
 Authorization Gate where that app has a current or future rule.
 User-approved associations and disabled catalog entries are stored in the Data
-Protection Keychain; missing or malformed stored configuration fails closed
-except that a genuinely absent record uses the built-in defaults. Runtime
+Protection Keychain; absent, unreadable, or malformed stored configuration
+enables no helper associations. Runtime
 verification binds the live helper to the on-disk executable, validates the app
 executable, and by default validates the exact helper as a required, unaltered
 member of the app's resource seal.

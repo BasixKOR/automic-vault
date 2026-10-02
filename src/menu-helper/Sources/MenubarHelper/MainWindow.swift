@@ -1492,78 +1492,68 @@ final class DashboardModel: ObservableObject {
 
     func addApp(to gate: SecretGate, recentApp: AccessRequestRecord? = nil) {
         guard !isDiscoveringLauncherHelpers, pendingLauncherHelperReview == nil else { return }
-        chooseLauncher(recentApp: recentApp) { [weak self] signing in
+        chooseLauncher(recentApp: recentApp, reviewsIdentity: false) { [weak self] signing in
             guard let self, let signing else { return }
-            guard let runtimeRequirement = signing.runtimeProtection.secretGateAdmissionRequirement else {
-                showLauncherCannotBeAllowed(secretGateAdmissionError(
-                    appName: signing.identifier,
-                    protection: signing.runtimeProtection
-                ))
-                return
+            self.reviewLauncher(signing, for: gate)
+        }
+    }
+
+    func reviewLauncher(_ signing: LauncherSigning, for gate: SecretGate) {
+        guard pendingLauncherHelperReview == nil else { return }
+        guard let runtimeRequirement = signing.runtimeProtection.secretGateAdmissionRequirement else {
+            showLauncherCannotBeAllowed(secretGateAdmissionError(
+                appName: signing.identifier,
+                protection: signing.runtimeProtection
+            ))
+            return
+        }
+        let review = LauncherHelperReview(
+            signing: signing, gate: gate, runtimeRequirement: runtimeRequirement, helpers: []
+        )
+        let isApp = URL(fileURLWithPath: signing.path).pathExtension
+            .caseInsensitiveCompare("app") == .orderedSame
+        self.isDiscoveringLauncherHelpers = isApp
+        self.pendingLauncherHelperReview = review
+        guard isApp else { return }
+        self.launcherHelperDiscoveryTask = Task { [weak self] in
+            let discovered = await discoverVerifiedLauncherHelpers(
+                in: URL(fileURLWithPath: signing.path, isDirectory: true)
+            )
+            guard !Task.isCancelled, let self,
+                  self.pendingLauncherHelperReview?.id == review.id else { return }
+            let configuration = loadVerifiedLauncherHelperConfiguration()
+            var seen = Set<String>()
+            let helpers = discovered.compactMap { discovered -> VerifiedLauncherHelper? in
+                let helper = configuration.catalogHelper(matching: discovered) ?? discovered
+                return seen.insert(helper.id).inserted ? helper : nil
             }
-            guard URL(fileURLWithPath: signing.path).pathExtension
-                .caseInsensitiveCompare("app") == .orderedSame
-            else {
-                self.finishAddingLauncher(
-                    signing,
-                    to: gate,
-                    runtimeRequirement: runtimeRequirement,
-                    helpers: []
-                )
-                return
-            }
-            self.isDiscoveringLauncherHelpers = true
-            self.launcherHelperDiscoveryTask = Task { [weak self] in
-                let discovered = await discoverVerifiedLauncherHelpers(
-                    in: URL(fileURLWithPath: signing.path, isDirectory: true)
-                )
-                guard let self else { return }
-                self.isDiscoveringLauncherHelpers = false
-                self.launcherHelperDiscoveryTask = nil
-                guard !Task.isCancelled else { return }
-                let configuration = loadVerifiedLauncherHelperConfiguration()
-                var seen = Set<String>()
-                let helpers = discovered.compactMap { discovered -> VerifiedLauncherHelper? in
-                    let helper = configuration.catalogHelper(matching: discovered) ?? discovered
-                    guard !configuration.isEnabled(helper), seen.insert(helper.id).inserted else {
-                        return nil
-                    }
-                    return helper
-                }
-                guard !helpers.isEmpty else {
-                    self.finishAddingLauncher(
-                        signing,
-                        to: gate,
-                        runtimeRequirement: runtimeRequirement,
-                        helpers: []
-                    )
-                    return
-                }
-                self.pendingLauncherHelperReview = LauncherHelperReview(
-                    signing: signing,
-                    gate: gate,
-                    runtimeRequirement: runtimeRequirement,
-                    helpers: helpers
-                )
-            }
+            self.pendingLauncherHelperReview?.helpers = helpers
+            self.isDiscoveringLauncherHelpers = false
+            self.launcherHelperDiscoveryTask = nil
         }
     }
 
     func cancelLauncherHelperDiscovery() {
-        launcherHelperDiscoveryTask?.cancel()
+        cancelLauncherHelperReview()
     }
 
     func confirmLauncherHelperReview(selectedHelperIDs: Set<String>) {
-        guard let review = pendingLauncherHelperReview else { return }
+        guard !isDiscoveringLauncherHelpers, let review = pendingLauncherHelperReview else { return }
+        let configuration = loadVerifiedLauncherHelperConfiguration()
         finishAddingLauncher(
             review.signing,
             to: review.gate,
             runtimeRequirement: review.runtimeRequirement,
-            helpers: review.helpers.filter { selectedHelperIDs.contains($0.id) }
+            helpers: review.helpers.filter {
+                selectedHelperIDs.contains($0.id) && !configuration.isEnabled($0)
+            }
         )
     }
 
     func cancelLauncherHelperReview() {
+        launcherHelperDiscoveryTask?.cancel()
+        launcherHelperDiscoveryTask = nil
+        isDiscoveringLauncherHelpers = false
         if let review = pendingLauncherHelperReview {
             authorityApproval.cancel("gate-launcher:\(review.gate.id)")
         }
@@ -1623,12 +1613,12 @@ final class DashboardModel: ObservableObject {
                 self.reloadAuthorizationState()
                 return
             }
-            var configuration = loadVerifiedLauncherHelperConfiguration()
-            configuration.enable(helpers)
-            let helperStatus = saveVerifiedLauncherHelperConfiguration(configuration)
-            self.errorMessage = helperStatus == errSecSuccess
-                ? nil
-                : "The Launcher was added, but its helper associations could not be saved: \(helperStatus)"
+            do {
+                try updateVerifiedLauncherHelperConfiguration { $0.enable(helpers) }
+                self.errorMessage = nil
+            } catch {
+                self.errorMessage = "The Launcher was added, but its helper associations could not be saved: \(error.localizedDescription)"
+            }
             self.reloadAuthorizationState()
         }
     }
@@ -2775,8 +2765,21 @@ func runDashboardSearchSelfCheck() -> Int32 {
         rootView: DetachedProcessAccessSettingsView()
     ).fittingSize.height
     let verifiedLauncherHelpersHeight = NSHostingView(
-        rootView: VerifiedLauncherHelpersSettingsView()
+        rootView: VerifiedLauncherHelpersSettingsView(model: model)
     ).fittingSize.height
+    model.reviewLauncher(LauncherSigning(
+        identifier: "com.example.app", teamIdentifier: "EXAMPLETEAM",
+        path: "/missing-launcher.app", requirement: "example-review",
+        runtimeProtection: .hardened
+    ), for: gate)
+    guard model.isDiscoveringLauncherHelpers,
+          model.pendingLauncherHelperReview?.signing.requirement == "example-review",
+          model.pendingLauncherHelperReview?.helpers.isEmpty == true else { return 1 }
+    model.confirmLauncherHelperReview(selectedHelperIDs: [])
+    guard model.pendingLauncherHelperReview != nil else { return 1 }
+    model.cancelLauncherHelperReview()
+    guard !model.isDiscoveringLauncherHelpers,
+          model.pendingLauncherHelperReview == nil else { return 1 }
     let launcherHelperReviewSize = NSHostingView(rootView: LauncherHelperReviewView(
         model: model,
         review: LauncherHelperReview(
@@ -2892,7 +2895,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           aboutHeight > 0,
           detachedProcessAccessHeight > 0,
           verifiedLauncherHelpersHeight > 0,
-          launcherHelperReviewSize == CGSize(width: 680, height: 520),
+          launcherHelperReviewSize == CGSize(width: 680, height: 720),
           appRowHeight < 140,
           launcherBundleDisplay.name == "herdr",
           launcherBundleDisplay.bundleIdentifier == launcherBundle.bundleIdentifier,
@@ -3798,7 +3801,7 @@ private struct DashboardDetailView: View {
                         .padding(.bottom, 28)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.selectedItem?.id == "verified-launcher-helpers" {
-                    VerifiedLauncherHelpersSettingsView()
+                    VerifiedLauncherHelpersSettingsView(model: model)
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -5336,15 +5339,46 @@ private struct BlessedScriptReviewView: View {
     }
 }
 
+private struct LauncherHelperOutlineView<Row: View>: View {
+    let helpers: [VerifiedLauncherHelper]
+    @ViewBuilder let row: (VerifiedLauncherHelper) -> Row
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(verifiedLauncherHelperOutline(helpers)) { item in
+                Group {
+                    if let helper = item.helper {
+                        row(helper)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Label(item.title, systemImage: "shippingbox")
+                            .font(.title3.weight(.semibold))
+                            .padding(.top, 16)
+                            .padding(.bottom, 6)
+                    }
+                }
+                .padding(.leading, CGFloat(item.depth) * 18)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct LauncherHelperReviewView: View {
     @ObservedObject var model: DashboardModel
-    let review: LauncherHelperReview
+    private let initialReview: LauncherHelperReview
+    private var review: LauncherHelperReview { model.pendingLauncherHelperReview ?? initialReview }
+    private let configuration = loadVerifiedLauncherHelperConfiguration()
     @ObservedObject private var approval: AuthorityApprovalState
 
     init(model: DashboardModel, review: LauncherHelperReview) {
         self.model = model
-        self.review = review
+        initialReview = review
         approval = model.authorityApproval
+        let configuration = loadVerifiedLauncherHelperConfiguration()
+        _selectedHelperIDs = State(initialValue: Set(review.helpers.filter {
+            configuration.shouldSelectInReview($0)
+        }.map(\.id)))
     }
     @State private var selectedHelperIDs: Set<String> = []
 
@@ -5353,22 +5387,30 @@ private struct LauncherHelperReviewView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("Automic Vault found signed helpers sealed inside \(appName). "
-                            + "Select only helpers that should share the app’s Launcher Identity.")
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        VStack(spacing: 0) {
-                            ForEach(review.helpers) { helper in
-                                helperRow(helper)
-                                if helper.id != review.helpers.last?.id { hairline }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: 24) {
+                                SecretGateField("Identifier", review.signing.identifier, monospaced: true)
+                                SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
+                                SecretGateField("Path", review.signing.path, monospaced: true)
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 12) {
+                                SecretGateField("Identifier", review.signing.identifier, monospaced: true)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                HStack(alignment: .top, spacing: 24) {
+                                    SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    SecretGateField("Path", review.signing.path, monospaced: true)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color(nsColor: .separatorColor))
+                        if let warning = launcherRuntimeWarning(review.signing.runtimeProtection) {
+                            InfoBlock(title: "Runtime warning", text: warning)
                         }
+                        Text("Helpers").font(.title2.weight(.semibold))
                         VStack(alignment: .leading, spacing: 8) {
                             Label("This may widen Secret access", systemImage: "exclamationmark.triangle.fill")
                                 .font(.headline)
@@ -5381,13 +5423,33 @@ private struct LauncherHelperReviewView: View {
                         }
                         .padding(14)
                         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        if model.isDiscoveringLauncherHelpers {
+                            ProgressView("Inspecting app for signed helpers…")
+                                .accessibilityIdentifier("launcher-review-discovery-progress")
+                        } else if review.helpers.isEmpty {
+                            Text("No eligible signed helpers were found.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            LauncherHelperOutlineView(helpers: review.helpers, row: helperRow)
+                            .padding(12)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor))
+                            }
+                        }
+                        Text("To change helper associations later, open Settings → Verified Launcher Helpers. Use Refresh Helper List for the app to find new helpers, then enable, disable, or remove associations.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SecretGateField("Designated requirement", review.signing.requirement, monospaced: true)
                     }
-                    .padding(22)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 10)
+                    .padding(.bottom, 22)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .disabled(approval.isPending("gate-launcher:\(review.gate.id)"))
             }
-            .navigationTitle("Include App Helpers?")
+            .navigationTitle("Add Verified Launcher")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { model.cancelLauncherHelperReview() }
@@ -5399,10 +5461,16 @@ private struct LauncherHelperReviewView: View {
                     ) {
                         model.confirmLauncherHelperReview(selectedHelperIDs: selectedHelperIDs)
                     }
+                    .disabled(model.isDiscoveringLauncherHelpers)
                 }
             }
         }
-        .frame(width: 680, height: 520)
+        .frame(width: 680, height: 720)
+        .onChange(of: review.helpers) { _, helpers in
+            selectedHelperIDs = Set(helpers.filter {
+                configuration.shouldSelectInReview($0)
+            }.map(\.id))
+        }
     }
 
     private var appName: String {
@@ -5421,7 +5489,7 @@ private struct LauncherHelperReviewView: View {
             }
         )) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(helper.name)
+                Text(configuration.isEnabled(helper) ? "\(helper.name) · Already enabled" : helper.name)
                     .font(.system(size: 13, weight: .medium))
                 Text("\(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)")
                     .font(.system(size: 11, design: .monospaced))
@@ -5436,9 +5504,12 @@ private struct LauncherHelperReviewView: View {
                         .textSelection(.enabled)
                 }
             }
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
         }
         .toggleStyle(.checkbox)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .disabled(configuration.isEnabled(helper))
     }
 }
 
@@ -5969,9 +6040,39 @@ private struct DetachedProcessAccessSettingsView: View {
 }
 
 private struct VerifiedLauncherHelpersSettingsView: View {
+    @ObservedObject var model: DashboardModel
     @StateObject private var approval = AuthorityApprovalState()
     @State private var configuration = loadVerifiedLauncherHelperConfiguration()
     @State private var status = ""
+    @State private var discoveredHelpers: [VerifiedLauncherHelper] = []
+    @State private var discoveryTask: Task<Void, Never>?
+
+    private var helpers: [VerifiedLauncherHelper] {
+        var result = configuration.helpers
+        for discovered in discoveredHelpers {
+            let helper = configuration.catalogHelper(matching: discovered) ?? discovered
+            if !result.contains(where: { $0.id == helper.id }) { result.append(helper) }
+        }
+        return result
+    }
+
+    private var parents: [VerifiedLauncherHelperParent] {
+        let policies = model.snapshot.secretGates.flatMap(\.appPolicies).filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier)?
+                .pathExtension.caseInsensitiveCompare("app") == .orderedSame
+        }
+        return verifiedLauncherHelperParents(helpers: helpers, appPolicies: policies).sorted {
+            $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending
+        }
+    }
+
+    private func appName(_ parent: VerifiedLauncherHelperParent) -> String {
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: parent.appBundleIdentifier)
+        let bundle = url.flatMap(Bundle.init(url:))
+        return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? parent.appName
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -5982,9 +6083,39 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-            ForEach(configuration.helpers) { helper in
-                helperRow(helper)
-                if helper.id != configuration.helpers.last?.id { Divider() }
+            Text("Associations apply at every current and future Authorization Gate where the parent app has a Launcher-specific rule. Enabling a helper may widen Secret access and controlled operations up to each rule’s Access Level. Enable only helpers you trust to act as the app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if discoveryTask != nil {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Inspecting app…").font(.caption)
+                }
+            }
+            ForEach(parents) { parent in
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text(appName(parent)).font(.title2.weight(.semibold))
+                        Spacer()
+                        Button("Refresh Helper List") { discoverHelpers(for: parent) }
+                            .disabled(discoveryTask != nil)
+                            .accessibilityLabel("Refresh helper list for \(appName(parent))")
+                            .help("Rescan the installed app for eligible signed helpers. New helpers remain disabled until approved.")
+                    }
+                    Text("\(parent.appBundleIdentifier) · Team \(parent.appTeamIdentifier)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    LauncherHelperOutlineView(helpers: helpers.filter {
+                        $0.appBundleIdentifier == parent.appBundleIdentifier
+                            && $0.appTeamIdentifier == parent.appTeamIdentifier
+                    }) { helper in
+                        helperRow(helper).padding(.vertical, 8)
+                    }
+                    .padding(.leading, 18)
+                }
+                Divider()
             }
             InfoBlock(
                 title: "Exact identities only",
@@ -5996,7 +6127,12 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .onDisappear { approval.cancelAll() }
+        .onAppear { configuration = loadVerifiedLauncherHelperConfiguration() }
+        .onDisappear {
+            approval.cancelAll()
+            discoveryTask?.cancel()
+            discoveryTask = nil
+        }
     }
 
     private func helperRow(_ helper: VerifiedLauncherHelper) -> some View {
@@ -6011,7 +6147,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         }
                         approval.request(
                             helper.id, title: "Enable \(helper.name) Launcher Helper",
-                            detail: "Allow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
+                            detail: "Signing ID: \(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)\nPath: \(helper.relativePath ?? "Vendor-reviewed association")\n\nAllow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
                         ) { approved in
                             if approved { persist(helper, enabled: true) }
                         }
@@ -6024,24 +6160,26 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                 )
             }
             .disabled(approval.isPending(helper.id))
-            Toggle("Allow outside the parent bundle", isOn: Binding(
-                get: { configuration.allowedOutsideBundleHelperIDs.contains(helper.id) },
-                set: { next in
-                    guard next else {
-                        persistOutsideBundle(helper, allowed: false)
-                        return
+            if configuration.catalogHelper(matching: helper) != nil {
+                Toggle("Allow outside the parent bundle", isOn: Binding(
+                    get: { configuration.allowedOutsideBundleHelperIDs.contains(helper.id) },
+                    set: { next in
+                        guard next else {
+                            persistOutsideBundle(helper, allowed: false)
+                            return
+                        }
+                        approval.request(
+                            helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
+                            detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
+                        ) { approved in
+                            if approved { persistOutsideBundle(helper, allowed: true) }
+                        }
                     }
-                    approval.request(
-                        helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
-                        detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
-                    ) { approved in
-                        if approved { persistOutsideBundle(helper, allowed: true) }
-                    }
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .disabled(approval.isPending(helper.id))
-            Text("\(helper.helperSigningIdentifier) → \(helper.appBundleIdentifier)")
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(approval.isPending(helper.id))
+            }
+            Text("\(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
@@ -6053,37 +6191,79 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
+            if configuration.userApprovedHelpers.contains(where: { $0.id == helper.id }) {
+                Button("Remove Association", role: .destructive) {
+                    approval.cancel(helper.id)
+                    persist { $0.remove(helper) }
+                }
+                .disabled(approval.isPending(helper.id))
+            } else if configuration.catalogHelper(matching: helper) == nil {
+                Text("Discovered · Not enabled").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func discoverHelpers(for parent: VerifiedLauncherHelperParent) {
+        guard let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: parent.appBundleIdentifier
+        ) else {
+            status = "Could not find the installed \(appName(parent)) app. Install or restore the app, then refresh its helper list."
+            return
+        }
+        discoverHelpers(in: url, parent: parent)
+    }
+
+    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelperParent) {
+        guard discoveryTask == nil else { return }
+        status = ""
+        discoveryTask = Task {
+            let discovered = await discoverVerifiedLauncherHelpers(in: url)
+            guard !Task.isCancelled else { return }
+            let matching = discovered.filter { helper in
+                return helper.appBundleIdentifier == parent.appBundleIdentifier
+                    && helper.appTeamIdentifier == parent.appTeamIdentifier
+            }
+            configuration = loadVerifiedLauncherHelperConfiguration()
+            // Keep other apps' discovered choices visible while reviewing this app.
+            discoveredHelpers.removeAll { helper in
+                helper.appBundleIdentifier == parent.appBundleIdentifier
+                    && helper.appTeamIdentifier == parent.appTeamIdentifier
+            }
+            discoveredHelpers.append(contentsOf: matching)
+            status = matching.isEmpty
+                ? "No eligible signed helpers matching this app’s identity were found."
+                : "Helper list refreshed for \(matching[0].appName). Newly discovered helpers require Approval to enable."
+            discoveryTask = nil
         }
     }
 
     private func persist(_ helper: VerifiedLauncherHelper, enabled: Bool) {
-        var next = configuration
-        if enabled {
-            next.disabledHelperIDs.remove(helper.id)
-        } else {
-            next.disabledHelperIDs.insert(helper.id)
+        persist { next in
+            if enabled {
+                next.enable([helper])
+            } else {
+                next.disabledHelperIDs.insert(helper.id)
+            }
         }
-        persist(next)
     }
 
     private func persistOutsideBundle(_ helper: VerifiedLauncherHelper, allowed: Bool) {
-        var next = configuration
-        if allowed {
-            next.allowedOutsideBundleHelperIDs.insert(helper.id)
-        } else {
-            next.allowedOutsideBundleHelperIDs.remove(helper.id)
+        persist { next in
+            if allowed {
+                next.allowedOutsideBundleHelperIDs.insert(helper.id)
+            } else {
+                next.allowedOutsideBundleHelperIDs.remove(helper.id)
+            }
         }
-        persist(next)
     }
 
-    private func persist(_ next: VerifiedLauncherHelperConfiguration) {
-        let result = saveVerifiedLauncherHelperConfiguration(next)
-        guard result == errSecSuccess else {
-            status = "Could not save Verified Launcher Helpers: \(result)"
-            return
+    private func persist(_ update: (inout VerifiedLauncherHelperConfiguration) -> Void) {
+        do {
+            configuration = try updateVerifiedLauncherHelperConfiguration(update)
+            status = ""
+        } catch {
+            status = "Could not update Verified Launcher Helpers: \(error.localizedDescription)"
         }
-        configuration = next
-        status = ""
     }
 }
 
@@ -7465,7 +7645,7 @@ struct LauncherHelperReview: Identifiable, Sendable {
     let signing: LauncherSigning
     let gate: SecretGate
     let runtimeRequirement: LauncherRuntimeRequirement
-    let helpers: [VerifiedLauncherHelper]
+    var helpers: [VerifiedLauncherHelper]
 }
 
 struct DirectAccessLauncherSelection: Identifiable {
@@ -7528,6 +7708,7 @@ private func showLauncherCannotBeAllowed(_ reason: String, title: String = "Laun
 @MainActor
 private func chooseLauncher(
     recentApp: AccessRequestRecord? = nil,
+    reviewsIdentity: Bool = true,
     _ completion: @escaping (LauncherSigning?) -> Void
 ) {
     let review: (LauncherSigning?) -> Void = { signing in
@@ -7535,6 +7716,7 @@ private func chooseLauncher(
             completion(nil)
             return
         }
+        guard reviewsIdentity else { completion(signing); return }
         let alert = NSAlert()
         alert.messageText = "Select \(signing.identifier) as a Verified Launcher?"
         alert.informativeText = """
