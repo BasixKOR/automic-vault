@@ -564,3 +564,4 @@
 "This Launcher no longer exists or its verified identity has changed." = "This Launcher no longer exists or its verified identity has changed.";
 
 "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level.";
+"Collapse Strip" = "Collapse Strip";

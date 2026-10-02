@@ -197,6 +197,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func temporaryAccessGrantStripPresentationChanged(_ notification: Notification) {
+        revealTemporaryAccessGrantStrip()
+    }
+
+    private func collapseTemporaryAccessGrantStrip() {
+        temporaryAccessGrantCollapseWorkItem?.cancel()
+        temporaryAccessGrantCollapseWorkItem = nil
+        isTemporaryAccessGrantStripCollapsed = true
         refreshTemporaryAccessGrantPanel()
         refreshTemporaryAccessGrantMenuItems()
     }
@@ -1505,7 +1512,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !autoCollapse {
             temporaryAccessGrantCollapseWorkItem?.cancel()
             temporaryAccessGrantCollapseWorkItem = nil
-            isTemporaryAccessGrantStripCollapsed = false
         }
         let panel = temporaryAccessGrantPanel ?? makeTemporaryAccessGrantPanel()
         temporaryAccessGrantPanel = panel
@@ -1522,6 +1528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 grants: temporaryAccessGrantSnapshots,
                 wallNow: wallNow,
                 monotonicNow: monotonicNow,
+                collapse: { [weak self] in self?.collapseTemporaryAccessGrantStrip() },
                 addTenMinutes: { [weak self] id in
                     guard let self else { return }
                     _ = self.temporaryAccessGrants.addTenMinutes(id: id)
@@ -1542,9 +1549,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             ))
         }
-        let size = hostingView.fittingSize
-        hostingView.frame.size = size
-        panel.contentView = hostingView
+        let size = installPanelContent(hostingView, in: panel)
         let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -1577,9 +1582,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     forKey: autoCollapseTemporaryAccessGrantStripDefaultsKey
                 ), !self.temporaryAccessGrantSnapshots.isEmpty
                 else { return }
-                self.isTemporaryAccessGrantStripCollapsed = true
-                self.refreshTemporaryAccessGrantPanel()
-                self.refreshTemporaryAccessGrantMenuItems()
+                self.collapseTemporaryAccessGrantStrip()
             }
             temporaryAccessGrantCollapseWorkItem = workItem
             DispatchQueue.main.asyncAfter(
@@ -14621,6 +14624,7 @@ private struct TemporaryAccessGrantStripView: View {
     let grants: [TemporaryAccessGrantSnapshot]
     let wallNow: Date
     let monotonicNow: TimeInterval
+    let collapse: () -> Void
     let addTenMinutes: (UUID) -> Void
     let end: (UUID) -> Void
     let setCountdownSuspended: (UUID, Bool) -> Void
@@ -14665,6 +14669,9 @@ private struct TemporaryAccessGrantStripView: View {
                 .stroke(.separator.opacity(0.8), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture(perform: collapse)
+        .accessibilityAction(named: Text("Collapse Strip"), collapse)
     }
 }
 
@@ -14770,6 +14777,16 @@ private struct TemporaryAccessGrantRow: View {
     }
 }
 
+@MainActor
+private func installPanelContent(_ content: NSView, in panel: NSWindow) -> NSSize {
+    // Window attachment supplies display metrics; measuring earlier can resize again on the next layout.
+    panel.contentView = content
+    content.layoutSubtreeIfNeeded()
+    let size = content.fittingSize
+    content.frame.size = size
+    return size
+}
+
 private func autoApprovalToastFrame(anchor: NSRect, visibleFrame: NSRect, size: NSSize) -> NSRect {
     let margin: CGFloat = 8
     let x = min(max(anchor.midX - size.width / 2, visibleFrame.minX + margin), visibleFrame.maxX - size.width - margin)
@@ -14829,8 +14846,7 @@ private func showAutomaticAccessToast(
             toastWindows.removeAll { $0 === window }
         }
     })
-    let size = hostingView.fittingSize
-    hostingView.frame.size = size
+    let size = installPanelContent(hostingView, in: window)
     let visibleFrame = statusWindow.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
         ?? NSRect(x: 0, y: 0, width: 800, height: 600)
     let frame = autoApprovalToastFrame(
@@ -14843,7 +14859,6 @@ private func showAutomaticAccessToast(
     window.isOpaque = false
     window.backgroundColor = .clear
     window.hasShadow = true
-    window.contentView = hostingView
     window.alphaValue = 0
     toastWindows.append(window)
     window.orderFront(nil)
@@ -18990,6 +19005,7 @@ private func runMenuStatusSelfCheck() -> Int32 {
         grants: grantSnapshots,
         wallNow: grantWallNow,
         monotonicNow: grantMonotonicNow,
+        collapse: {},
         addTenMinutes: { _ in },
         end: { _ in },
         setCountdownSuspended: { _, _ in }
@@ -18999,6 +19015,35 @@ private func runMenuStatusSelfCheck() -> Int32 {
         show: {}
     ))
     let grantPanel = makeTemporaryAccessGrantPanel()
+    if CommandLine.arguments.contains("--self-check-grant-panel-layout") {
+        _ = NSApplication.shared
+        guard let screen = NSScreen.main else { return 1 }
+        let anchor = NSRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 24, height: 24)
+        var positions: [CGFloat] = []
+        for tick in 0..<3 {
+            let host = NSHostingView(rootView: TemporaryAccessGrantStripView(
+                grants: Array(grantSnapshots.prefix(1)),
+                wallNow: grantWallNow.addingTimeInterval(Double(tick)),
+                monotonicNow: grantMonotonicNow + Double(tick),
+                collapse: {}, addTenMinutes: { _ in }, end: { _ in },
+                setCountdownSuspended: { _, _ in }
+            ))
+            let size = installPanelContent(host, in: grantPanel)
+            let frame = autoApprovalToastFrame(anchor: anchor, visibleFrame: screen.visibleFrame, size: size)
+            grantPanel.setFrame(frame, display: true)
+            grantPanel.orderFrontRegardless()
+            positions.append(grantPanel.frame.minY)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+            positions.append(grantPanel.frame.minY)
+        }
+        grantPanel.orderOut(nil)
+        guard Set(positions).count == 1 else {
+            print("FAIL: grant strip moves during countdown refresh", positions)
+            return 2
+        }
+        print("Grant panel layout self-check passed")
+        return 0
+    }
     let sampleStripFrame = NSRect(x: 200, y: 400, width: 430, height: 120)
     let stackedToastFrame = autoApprovalToastFrame(
         anchor: sampleStripFrame,
@@ -19624,7 +19669,9 @@ if CommandLine.arguments.contains("--self-check-launch-agent-handoff") {
     exit(runLaunchAgentHandoffSelfCheck())
 }
 
-if CommandLine.arguments.contains("--self-check-menu-status") {
+if CommandLine.arguments.contains("--self-check-menu-status")
+    || CommandLine.arguments.contains("--self-check-grant-panel-layout")
+{
     exit(MainActor.assumeIsolated { runMenuStatusSelfCheck() })
 }
 
