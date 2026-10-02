@@ -89,7 +89,7 @@ struct ApprovalRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.refreshNotificationSettings() } }
         }
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom) {
             if model.notificationsAreOff {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Notifications are off", systemImage: "exclamationmark.triangle.fill")
