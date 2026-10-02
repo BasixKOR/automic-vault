@@ -24,8 +24,32 @@ assert views.index("model.isStarting || subscription.state == .loading") < views
 history_visibility = views[views.index("    private var showsActivity:"):
                            views.index("    @ViewBuilder\n    private func destination")]
 history_visibility = history_visibility.replace("private var", "var")
+assert 'guard let relay, let deviceToken, await updateNotificationSettings()' in source
+assert '.onChange(of: scenePhase)' in views
+notification_methods = source[source.index('    private func updateNotificationSettings()'):source.index('    func enable() async')]
 fixture = r'''
 import Foundation
+
+enum UNAuthorizationStatus { case authorized, provisional, denied, notDetermined, ephemeral }
+enum UNNotificationSetting { case enabled, disabled }
+@MainActor final class UNUserNotificationCenter {
+    static let shared = UNUserNotificationCenter()
+    static func current() -> UNUserNotificationCenter { shared }
+    var status = UNAuthorizationStatus.authorized
+    var alerts = UNNotificationSetting.enabled
+    struct Settings {
+        let authorizationStatus: UNAuthorizationStatus
+        let alertSetting: UNNotificationSetting
+    }
+    func notificationSettings() async -> Settings {
+        Settings(authorizationStatus: status, alertSetting: alerts)
+    }
+}
+@MainActor final class UIApplication {
+    static let shared = UIApplication()
+    var registrations = 0
+    func registerForRemoteNotifications() { registrations += 1 }
+}
 
 enum PhoneApprovalOutcome {
     case approved, denied, temporaryWriteAccess, temporaryDenial
@@ -69,6 +93,8 @@ enum Message { case response(PhoneApprovalResponse), sync }
 }
 @MainActor final class Model {
 STARTUP_STATE
+    var started = true
+NOTIFICATION_METHODS
     func setConnectionState(_ value: ConnectionState) { state = value }
     var notificationReviewTicket: PhoneApprovalTicket?
     var notificationReviewRequestID: UUID?
@@ -110,6 +136,34 @@ HISTORY_VISIBILITY
 }
 @main struct Check {
     @MainActor static func main() async {
+        let permissions = Model()
+        let center = UNUserNotificationCenter.shared
+        for status in [UNAuthorizationStatus.denied, .notDetermined, .ephemeral] {
+            center.status = status
+            await permissions.refreshNotificationSettings()
+            assert(permissions.notificationsAreOff)
+            assert(permissions.notificationAuthorizationStatus == status)
+            assert(UIApplication.shared.registrations == 0)
+        }
+        var permissionConnects = 0
+        permissions.onConnect = { permissionConnects += 1 }
+        for status in [UNAuthorizationStatus.authorized, .provisional] {
+            center.status = status
+            await permissions.refreshNotificationSettings()
+            assert(!permissions.notificationsAreOff)
+        }
+        assert(permissionConnects == 2)
+        assert(UIApplication.shared.registrations == 2)
+        permissions.setConnectionState(.connected)
+        center.alerts = .disabled
+        await permissions.refreshNotificationSettings()
+        assert(permissions.notificationsAreOff) // Relay health does not hide disabled alerts.
+        assert(permissionConnects == 2)
+        center.status = .denied
+        await permissions.refreshNotificationSettings()
+        assert(permissions.notificationsAreOff)
+        assert(UIApplication.shared.registrations == 3)
+        assert(permissions.state == .connected) // Pending Approvals remain accessible.
         for resolved in [Model.ConnectionState.setup, .connected,
                          .unavailable("failure"), .reconnecting("offline")] {
             let startup = Model()
@@ -208,7 +262,7 @@ HISTORY_VISIBILITY
         print("iPhone approval progress and notification routing checks passed")
     }
 }
-'''.replace("METHODS", methods).replace("STARTUP_STATE", startup_state).replace("HISTORY_VISIBILITY", history_visibility)
+'''.replace("NOTIFICATION_METHODS", notification_methods).replace("METHODS", methods).replace("STARTUP_STATE", startup_state).replace("HISTORY_VISIBILITY", history_visibility)
 with tempfile.TemporaryDirectory(prefix="av-approval-progress-") as directory:
     path = Path(directory)
     (path / "check.swift").write_text(fixture)

@@ -509,7 +509,9 @@ impl ApnsClient {
         let mut request = self
             .client
             .post(format!("{host}/3/device/{token}"))
-            .bearer_auth(self.bearer_token().map_err(|_| ())?)
+            .bearer_auth(self.bearer_token().map_err(|_| {
+                eprintln!("APNs authentication token generation failed");
+            })?)
             .header("apns-topic", self.topic.as_ref())
             .header("apns-push-type", push_type)
             .header("apns-priority", priority)
@@ -517,10 +519,20 @@ impl ApnsClient {
         if let Some(notification_id) = notification_id {
             request = request.header("apns-collapse-id", notification_id);
         }
-        let response = request.send().await.map_err(|_| ())?;
+        let response = request.send().await.map_err(|_| {
+            // reqwest errors can contain the device token in the request URL.
+            eprintln!("APNs push transport failed: type={push_type}");
+        })?;
         if response.status().is_success() {
             Ok(())
         } else {
+            let status = response.status();
+            let body = response.json::<Value>().await.unwrap_or(Value::Null);
+            let reason = body
+                .get("reason")
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown");
+            eprintln!("APNs push rejected: type={push_type} status={status} reason={reason:?}");
             Err(())
         }
     }
