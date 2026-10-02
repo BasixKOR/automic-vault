@@ -2765,7 +2765,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
         rootView: DetachedProcessAccessSettingsView()
     ).fittingSize.height
     let verifiedLauncherHelpersHeight = NSHostingView(
-        rootView: VerifiedLauncherHelpersSettingsView()
+        rootView: VerifiedLauncherHelpersSettingsView(model: model)
     ).fittingSize.height
     model.reviewLauncher(LauncherSigning(
         identifier: "com.example.app", teamIdentifier: "EXAMPLETEAM",
@@ -3801,7 +3801,7 @@ private struct DashboardDetailView: View {
                         .padding(.bottom, 28)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if model.selectedItem?.id == "verified-launcher-helpers" {
-                    VerifiedLauncherHelpersSettingsView()
+                    VerifiedLauncherHelpersSettingsView(model: model)
                         .padding(.horizontal, 22)
                         .padding(.top, 32)
                         .padding(.bottom, 28)
@@ -5377,8 +5377,7 @@ private struct LauncherHelperReviewView: View {
         approval = model.authorityApproval
         let configuration = loadVerifiedLauncherHelperConfiguration()
         _selectedHelperIDs = State(initialValue: Set(review.helpers.filter {
-            configuration.isEnabled($0) || (shouldPreselectVerifiedLauncherHelper($0)
-                && !configuration.disabledHelperIDs.contains($0.id))
+            configuration.shouldSelectInReview($0)
         }.map(\.id)))
     }
     @State private var selectedHelperIDs: Set<String> = []
@@ -5469,8 +5468,7 @@ private struct LauncherHelperReviewView: View {
         .frame(width: 680, height: 720)
         .onChange(of: review.helpers) { _, helpers in
             selectedHelperIDs = Set(helpers.filter {
-                configuration.isEnabled($0) || (shouldPreselectVerifiedLauncherHelper($0)
-                    && !configuration.disabledHelperIDs.contains($0.id))
+                configuration.shouldSelectInReview($0)
             }.map(\.id))
         }
     }
@@ -6042,6 +6040,7 @@ private struct DetachedProcessAccessSettingsView: View {
 }
 
 private struct VerifiedLauncherHelpersSettingsView: View {
+    @ObservedObject var model: DashboardModel
     @StateObject private var approval = AuthorityApprovalState()
     @State private var configuration = loadVerifiedLauncherHelperConfiguration()
     @State private var status = ""
@@ -6057,13 +6056,22 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         return result
     }
 
-    private var parents: [VerifiedLauncherHelper] {
-        helpers.reduce(into: []) { result, helper in
-            if !result.contains(where: {
-                $0.appBundleIdentifier == helper.appBundleIdentifier
-                    && $0.appTeamIdentifier == helper.appTeamIdentifier
-            }) { result.append(helper) }
-        }.sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+    private var parents: [VerifiedLauncherHelperParent] {
+        let policies = model.snapshot.secretGates.flatMap(\.appPolicies).filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier)?
+                .pathExtension.caseInsensitiveCompare("app") == .orderedSame
+        }
+        return verifiedLauncherHelperParents(helpers: helpers, appPolicies: policies).sorted {
+            $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending
+        }
+    }
+
+    private func appName(_ parent: VerifiedLauncherHelperParent) -> String {
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: parent.appBundleIdentifier)
+        let bundle = url.flatMap(Bundle.init(url:))
+        return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? parent.appName
     }
 
     var body: some View {
@@ -6088,11 +6096,11 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             ForEach(parents) { parent in
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text(parent.appName).font(.title2.weight(.semibold))
+                        Text(appName(parent)).font(.title2.weight(.semibold))
                         Spacer()
                         Button("Refresh Helper List") { discoverHelpers(for: parent) }
                             .disabled(discoveryTask != nil)
-                            .accessibilityLabel("Refresh helper list for \(parent.appName)")
+                            .accessibilityLabel("Refresh helper list for \(appName(parent))")
                             .help("Rescan the installed app for eligible signed helpers. New helpers remain disabled until approved.")
                     }
                     Text("\(parent.appBundleIdentifier) · Team \(parent.appTeamIdentifier)")
@@ -6197,17 +6205,17 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         }
     }
 
-    private func discoverHelpers(for parent: VerifiedLauncherHelper) {
+    private func discoverHelpers(for parent: VerifiedLauncherHelperParent) {
         guard let url = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: parent.appBundleIdentifier
         ) else {
-            status = "Could not find the installed \(parent.appName) app. Install or restore the app, then refresh its helper list."
+            status = "Could not find the installed \(appName(parent)) app. Install or restore the app, then refresh its helper list."
             return
         }
         discoverHelpers(in: url, parent: parent)
     }
 
-    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelper) {
+    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelperParent) {
         guard discoveryTask == nil else { return }
         status = ""
         discoveryTask = Task {

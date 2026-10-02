@@ -342,3 +342,36 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     #expect(Set(items.map(\.id)).count == items.count)
     #expect(verifiedLauncherHelperOutline([]).isEmpty)
 }
+
+@Test func helperReviewPreservesLegacyAndExactOptOuts() {
+    for (helper, legacy) in [(codexVerifiedLauncherHelper, "codex"), (claudeCodeVerifiedLauncherHelper, "claude-code")] {
+        #expect(VerifiedLauncherHelperConfiguration().shouldSelectInReview(helper))
+        #expect(!VerifiedLauncherHelperConfiguration(disabledHelperIDs: [legacy]).shouldSelectInReview(helper))
+        #expect(!VerifiedLauncherHelperConfiguration(disabledHelperIDs: [helper.id]).shouldSelectInReview(helper))
+        var configuration = VerifiedLauncherHelperConfiguration(disabledHelperIDs: [legacy])
+        configuration.enable([helper])
+        #expect(configuration.shouldSelectInReview(helper))
+    }
+}
+
+@Test func helperSettingsKeepsParentWithoutAssociations() {
+    let helper = userApprovedHelper()
+    let policy = SecretGatePolicy(
+        bundleIdentifier: helper.appBundleIdentifier,
+        requirement: "certificate leaf[subject.OU] = \(helper.appTeamIdentifier)",
+        protection: .readOnly
+    )
+    let parents = verifiedLauncherHelperParents(helpers: [], appPolicies: [policy, policy])
+    #expect(parents.count == 1)
+    #expect(parents.first?.appBundleIdentifier == helper.appBundleIdentifier)
+    #expect(parents.first?.appTeamIdentifier == helper.appTeamIdentifier)
+    #expect(verifiedLauncherHelperParents(helpers: [helper], appPolicies: [policy]).count == 1)
+    var configuration = VerifiedLauncherHelperConfiguration()
+    configuration.enable([helper])
+    configuration.remove(helper)
+    #expect(verifiedLauncherHelperParents(helpers: configuration.helpers, appPolicies: [policy]).count == 1)
+    #expect(!configuration.isEnabled(helper))
+    #expect(codeSigningTeamIdentifier(from: #"certificate leaf[subject.OU] = "TEAM""#) == "TEAM")
+    #expect(codeSigningTeamIdentifier(from: "certificate leaf[subject.OU] = TEAM and anchor apple generic") == "TEAM")
+    #expect(codeSigningTeamIdentifier(from: "certificate leaf[subject.OU] = ") == nil)
+}

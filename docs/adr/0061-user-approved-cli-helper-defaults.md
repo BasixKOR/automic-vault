@@ -18,7 +18,8 @@ When adding an app, preselect only discovered `codex` helpers under
 `com.openai.codex`, with both Team IDs `2DC432GLL2`, and discovered
 `com.anthropic.claude-code` helpers under `com.anthropic.claudefordesktop`, with
 both Team IDs `Q6L2SF6YDW`. The ordinary signed, sealed, runtime-eligible discovery
-checks still apply. Previously disabled exact associations remain unselected.
+checks still apply. Previously disabled exact associations and legacy `codex`/`claude-code` opt-outs
+remain unselected.
 All other helpers start unselected. Selection is presentation state and grants
 no authority: the user may untick it, cancel, or approve the explicit cross-gate
 authority expansion through the configured human Approval surface.

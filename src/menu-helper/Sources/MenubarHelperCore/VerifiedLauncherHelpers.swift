@@ -44,6 +44,29 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
     }
 }
 
+public struct VerifiedLauncherHelperParent: Identifiable {
+    public let appName: String
+    public let appBundleIdentifier: String
+    public let appTeamIdentifier: String
+    public var id: String { "\(appTeamIdentifier.utf8.count):\(appTeamIdentifier)\(appBundleIdentifier)" }
+}
+
+public func verifiedLauncherHelperParents(
+    helpers: [VerifiedLauncherHelper], appPolicies: [SecretGatePolicy]
+) -> [VerifiedLauncherHelperParent] {
+    var parents = helpers.map {
+        VerifiedLauncherHelperParent(appName: $0.appName,
+            appBundleIdentifier: $0.appBundleIdentifier, appTeamIdentifier: $0.appTeamIdentifier)
+    }
+    parents += appPolicies.compactMap {
+        guard let team = codeSigningTeamIdentifier(from: $0.requirement) else { return nil }
+        return VerifiedLauncherHelperParent(appName: $0.bundleIdentifier,
+            appBundleIdentifier: $0.bundleIdentifier, appTeamIdentifier: team)
+    }
+    var seen = Set<String>()
+    return parents.filter { seen.insert($0.id).inserted }
+}
+
 public struct VerifiedLauncherHelperOutlineItem: Identifiable {
     public let id: String
     public let title: String
@@ -111,6 +134,14 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     public func isEnabled(_ helper: VerifiedLauncherHelper) -> Bool {
         guard let helper = catalogHelper(matching: helper) else { return false }
         return !disabledHelperIDs.contains(helper.id)
+    }
+
+    public func shouldSelectInReview(_ helper: VerifiedLauncherHelper) -> Bool {
+        if isEnabled(helper) { return true }
+        guard shouldPreselectVerifiedLauncherHelper(helper),
+              !disabledHelperIDs.contains(helper.id) else { return false }
+        let legacyID = helper.appBundleIdentifier == "com.openai.codex" ? "codex" : "claude-code"
+        return !disabledHelperIDs.contains(legacyID)
     }
 
     public var helpers: [VerifiedLauncherHelper] {
