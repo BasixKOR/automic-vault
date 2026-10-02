@@ -2895,7 +2895,7 @@ func runDashboardSearchSelfCheck() -> Int32 {
           aboutHeight > 0,
           detachedProcessAccessHeight > 0,
           verifiedLauncherHelpersHeight > 0,
-          launcherHelperReviewSize == CGSize(width: 680, height: 520),
+          launcherHelperReviewSize == CGSize(width: 680, height: 720),
           appRowHeight < 140,
           launcherBundleDisplay.name == "herdr",
           launcherBundleDisplay.bundleIdentifier == launcherBundle.bundleIdentifier,
@@ -5452,7 +5452,7 @@ private struct LauncherHelperReviewView: View {
                 }
             }
         }
-        .frame(width: 680, height: 520)
+        .frame(width: 680, height: 720)
         .onChange(of: review.helpers) { _, helpers in
             selectedHelperIDs = Set(helpers.filter {
                 configuration.isEnabled($0) || (shouldPreselectVerifiedLauncherHelper($0)
