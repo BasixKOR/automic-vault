@@ -5339,6 +5339,31 @@ private struct BlessedScriptReviewView: View {
     }
 }
 
+private struct LauncherHelperOutlineView<Row: View>: View {
+    let helpers: [VerifiedLauncherHelper]
+    @ViewBuilder let row: (VerifiedLauncherHelper) -> Row
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(verifiedLauncherHelperOutline(helpers)) { item in
+                Group {
+                    if let helper = item.helper {
+                        row(helper)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Label(item.title, systemImage: "shippingbox")
+                            .font(.title3.weight(.semibold))
+                            .padding(.top, 16)
+                            .padding(.bottom, 6)
+                    }
+                }
+                .padding(.leading, CGFloat(item.depth) * 18)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct LauncherHelperReviewView: View {
     @ObservedObject var model: DashboardModel
     private let initialReview: LauncherHelperReview
@@ -5379,11 +5404,10 @@ private struct LauncherHelperReviewView: View {
                         } else {
                             Text("Select only helpers that should share the app’s Launcher Identity.")
                                 .foregroundStyle(.secondary)
-                            VStack(spacing: 0) {
-                                ForEach(review.helpers) { helper in
-                                    helperRow(helper)
-                                    if helper.id != review.helpers.last?.id { hairline }
-                                }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(appName).font(.title2.weight(.semibold))
+                                LauncherHelperOutlineView(helpers: review.helpers, row: helperRow)
+                                    .padding(.leading, 18)
                             }
                             .padding(.horizontal, 12)
                             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
@@ -5468,9 +5492,11 @@ private struct LauncherHelperReviewView: View {
                         .textSelection(.enabled)
                 }
             }
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
         }
         .toggleStyle(.checkbox)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .disabled(configuration.isEnabled(helper))
     }
 }
@@ -6050,7 +6076,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             ForEach(parents) { parent in
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text(parent.appName).font(.headline)
+                        Text(parent.appName).font(.title2.weight(.semibold))
                         Spacer()
                         Button("Refresh Helper List") { discoverHelpers(for: parent) }
                             .disabled(discoveryTask != nil)
@@ -6061,12 +6087,13 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    ForEach(helpers.filter {
+                    LauncherHelperOutlineView(helpers: helpers.filter {
                         $0.appBundleIdentifier == parent.appBundleIdentifier
                             && $0.appTeamIdentifier == parent.appTeamIdentifier
                     }) { helper in
-                        helperRow(helper)
+                        helperRow(helper).padding(.vertical, 8)
                     }
+                    .padding(.leading, 18)
                 }
                 Divider()
             }

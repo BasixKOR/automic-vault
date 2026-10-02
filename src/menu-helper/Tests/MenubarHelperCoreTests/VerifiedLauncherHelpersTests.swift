@@ -327,3 +327,18 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     }
     #expect(!isLauncherHelperExecutable(at: root.appendingPathComponent("missing")))
 }
+
+@Test func helperOutlineGroupsNestedBundlesAndPreservesExactHelpers() {
+    func helper(_ path: String) -> VerifiedLauncherHelper {
+        vendorHelper(app: "example", appTeam: "TEAM", signing: "helper", helperTeam: "TEAM", path: path)
+    }
+    let root = helper("Contents/Helpers/cli")
+    let nested = helper("Contents/Frameworks/Engine.framework/Helpers/Worker.app/Contents/MacOS/worker")
+    let framework = helper("Contents/Frameworks/Engine.framework/Helpers/runner")
+    let items = verifiedLauncherHelperOutline([nested, framework, root])
+    #expect(items.map(\.title) == ["CLI", "Engine.framework", "CLI", "Worker.app", "CLI"])
+    #expect(items.map(\.depth) == [0, 0, 1, 1, 2])
+    #expect(items.compactMap(\.helper) == [root, framework, nested])
+    #expect(Set(items.map(\.id)).count == items.count)
+    #expect(verifiedLauncherHelperOutline([]).isEmpty)
+}

@@ -44,6 +44,42 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
     }
 }
 
+public struct VerifiedLauncherHelperOutlineItem: Identifiable {
+    public let id: String
+    public let title: String
+    public let depth: Int
+    public let helper: VerifiedLauncherHelper?
+}
+
+/// Bundle paths organize presentation only; they do not confer Launcher Identity.
+public func verifiedLauncherHelperOutline(_ helpers: [VerifiedLauncherHelper]) -> [VerifiedLauncherHelperOutlineItem] {
+    func containers(_ helper: VerifiedLauncherHelper) -> [String] {
+        let parts = (helper.relativePath ?? "").split(separator: "/").dropLast()
+        return parts.enumerated().compactMap { index, part in
+            ["app", "framework", "xpc", "bundle"].contains((String(part) as NSString).pathExtension.lowercased())
+                ? parts.prefix(index + 1).joined(separator: "/") : nil
+        }
+    }
+    let groups = Dictionary(grouping: helpers) { containers($0).last ?? "" }
+    var result: [VerifiedLauncherHelperOutlineItem] = []
+    var headings = Set<String>()
+    for (_, group) in groups.sorted(by: { $0.key < $1.key }) {
+        let members = group.sorted {
+            let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        }
+        let parents = containers(members[0])
+        for (depth, parent) in parents.enumerated() where headings.insert(parent).inserted {
+            result.append(.init(id: "bundle:" + parent,
+                title: (parent as NSString).lastPathComponent, depth: depth, helper: nil))
+        }
+        for helper in members {
+            result.append(.init(id: helper.id, title: helper.name, depth: parents.count, helper: helper))
+        }
+    }
+    return result
+}
+
 /// A review default only: this never adds a helper to the enabled catalog.
 public func shouldPreselectVerifiedLauncherHelper(_ helper: VerifiedLauncherHelper) -> Bool {
     guard isValidUserApprovedHelper(helper),
