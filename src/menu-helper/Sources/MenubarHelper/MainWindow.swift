@@ -5388,9 +5388,16 @@ private struct LauncherHelperReviewView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        SecretGateField("Identifier", review.signing.identifier, monospaced: true)
-                        SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
-                        SecretGateField("Path", review.signing.path, monospaced: true)
+                        VStack(alignment: .leading, spacing: 12) {
+                            SecretGateField("Identifier", review.signing.identifier, monospaced: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HStack(alignment: .top, spacing: 24) {
+                                SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                SecretGateField("Path", review.signing.path, monospaced: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                         if let warning = launcherRuntimeWarning(review.signing.runtimeProtection) {
                             InfoBlock(title: "Runtime warning", text: warning)
                         }
@@ -5426,7 +5433,9 @@ private struct LauncherHelperReviewView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         SecretGateField("Designated requirement", review.signing.requirement, monospaced: true)
                     }
-                    .padding(22)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 10)
+                    .padding(.bottom, 22)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .disabled(approval.isPending("gate-launcher:\(review.gate.id)"))
