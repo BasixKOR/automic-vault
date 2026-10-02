@@ -1,4 +1,4 @@
-# ADR 0061: Default Claude Code association outside Claude.app
+# ADR 0062: Default Claude Code association outside Claude.app
 
 Status: accepted
 
@@ -13,6 +13,9 @@ See issue #372 and [Anthropic's desktop setup](https://code.claude.com/docs/en/d
 
 ## Decision
 
+This supersedes ADR 0061's removal of the built-in association for Claude only.
+Codex and other helpers retain user-approved enrollment.
+
 Enable outside-bundle support by default only for the built-in association from
 com.anthropic.claude-code to com.anthropic.claudefordesktop, both signed by
 Q6L2SF6YDW. Reuse ADR 0055 verification without relaxing its remaining checks:
@@ -26,6 +29,14 @@ including legacy empty relocation sets. Existing disabled associations remain
 disabled. Version 2 persists an explicit relocation opt-out across reloads.
 Malformed configuration continues to fail closed. Other helpers remain opt-in;
 re-enabling an exception after opt-out retains the existing human Approval.
+
+When adding Claude as a Verified Launcher or reviewing its helpers through the
+same flow, always show Claude Code even though bundle discovery cannot find it.
+Its checkbox reflects the current association setting and explains outside-bundle
+and cross-gate scope. Clearing it disables the association globally when the
+user confirms; canceling changes nothing. Persist helper choices successfully
+before adding a new Launcher rule so a failed opt-out cannot grant unintended
+authority.
 
 ## Consequences
 

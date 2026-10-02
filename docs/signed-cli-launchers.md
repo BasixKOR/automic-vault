@@ -74,7 +74,7 @@ installed executables with the exact Claude Code signing identity; it does not
 prove Desktop installed them. Disable **Allow outside the parent bundle** in
 Verified Launcher Helpers settings to retain containment, or disable the
 association to use separate Claude Code Launcher-specific rules.
-See [ADR 0061](adr/0061-claude-code-outside-parent-default.md).
+See [ADR 0062](adr/0062-claude-code-outside-parent-default.md).
 
 ## Allow a CLI launcher
 

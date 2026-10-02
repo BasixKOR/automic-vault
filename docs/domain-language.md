@@ -243,10 +243,11 @@ complete enrollment and integrity checks.
 A vendor-signed executable that may represent one exact parent app as its
 Launcher even though it is not that app's declared main executable. The
 association binds the helper and app signing identities and is enabled through
-an explicit positive catalog. The catalog contains only associations the user
-explicitly approves after Automic Vault discovers signed helpers sealed inside
-an app. Adding Codex or Claude preselects its exact vendor-signed CLI in the
-helper review; this is a review default and grants no authority before Approval.
+an explicit positive catalog. The catalog contains the reviewed built-in Claude Code association and
+associations the user explicitly approves after Automic Vault discovers signed
+helpers sealed inside an app. Adding Claude always displays Claude Code for
+review and opt-out. Adding Codex preselects its exact sealed vendor-signed CLI;
+that review default grants no authority before Approval.
 A user-approved association also binds the helper's relative path inside that app. User-approved associations
 and disabled entries are stored in the Data Protection Keychain. Discovery,
 bundle containment, a filename, a path, or a shared Team ID alone never creates
@@ -267,7 +268,7 @@ parent bundle. This option is off by default except for the reviewed built-in
 Claude Code association, whose desktop-managed runtime is installed outside
 Claude.app. That exception also applies to other valid copies with the exact
 Claude Code signing identity and may be disabled. See
-[ADR 0061](adr/0061-claude-code-outside-parent-default.md). The option appears
+[ADR 0062](adr/0062-claude-code-outside-parent-default.md). The option appears
 only in Verified Launcher Helpers settings, after discovery and initial
 selection. Manually enabling it requires Approval and permits moved or copied
 executables with the helper's

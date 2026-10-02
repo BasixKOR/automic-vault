@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MenubarHelperCore
 
-@Test func helperCatalogStartsEmptyAndRoundTripsDisabledEntries() throws {
+@Test func helperCatalogDefaultsToClaudeAndRoundTripsDisabledEntries() throws {
     let defaults = VerifiedLauncherHelperConfiguration()
     #expect(defaults.helpers == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper])
     #expect(!defaults.isEnabled(codexVerifiedLauncherHelper))
@@ -266,7 +266,7 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     path: "Contents/Resources/claude-code"
 )
 
-@Test func legacyBuiltInSettingsDoNotEnrollHelpers() {
+@Test func legacySettingsRetainOnlyClaudeBuiltInAssociation() {
     let configuration = decodeVerifiedLauncherHelperConfiguration(
         Data(#"{"disabledHelperIDs":[],"allowedOutsideBundleHelperIDs":["codex","claude-code"]}"#.utf8)
     )
@@ -373,7 +373,7 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     var configuration = VerifiedLauncherHelperConfiguration()
     configuration.enable([helper])
     configuration.remove(helper)
-    #expect(verifiedLauncherHelperParents(helpers: configuration.helpers, appPolicies: [policy]).count == 1)
+    #expect(verifiedLauncherHelperParents(helpers: configuration.helpers, appPolicies: [policy]).contains { $0.appBundleIdentifier == helper.appBundleIdentifier })
     #expect(!configuration.isEnabled(helper))
     #expect(codeSigningTeamIdentifier(from: #"certificate leaf[subject.OU] = "TEAM""#) == "TEAM")
     #expect(codeSigningTeamIdentifier(from: "certificate leaf[subject.OU] = TEAM and anchor apple generic") == "TEAM")

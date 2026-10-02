@@ -17374,6 +17374,18 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
 private func runClaudeOutsideBundleDefaultSelfCheck() -> Bool {
     let parent = URL(fileURLWithPath: "/Applications/Claude.app")
     let path = "/Users/test/Library/Application Support/Claude/claude-code/1/claude.app/Contents/MacOS/claude"
+    let review = LauncherHelperReview(
+        signing: LauncherSigning(identifier: "com.anthropic.claudefordesktop", teamIdentifier: "Q6L2SF6YDW",
+                                 path: parent.path, requirement: "test", runtimeProtection: .hardened),
+        gate: SecretGate(id: "test", keyPatterns: [], routes: [], defaultProtection: .readOnly, appPolicies: []),
+        runtimeRequirement: .hardened, helpers: [claudeCodeVerifiedLauncherHelper]
+    )
+    let selected: Set<String> = [claudeCodeVerifiedLauncherHelper.id]
+    guard review.defaultSelectedHelperIDs(configuration: VerifiedLauncherHelperConfiguration()) == selected,
+          review.defaultSelectedHelperIDs(configuration: VerifiedLauncherHelperConfiguration(disabledHelperIDs: selected)).isEmpty,
+          review.disabledHelperIDs(selected: []).contains(claudeCodeVerifiedLauncherHelper.id),
+          review.disabledHelperIDs(selected: selected).isEmpty
+    else { return false }
     for scenario in [
         (team: "Q6L2SF6YDW", runtime: LauncherRuntimeProtection.hardened, parent: true, disabled: false, optedOut: false, expected: true),
         (team: "OTHER", runtime: .hardened, parent: true, disabled: false, optedOut: false, expected: false),

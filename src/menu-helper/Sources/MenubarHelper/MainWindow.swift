@@ -1523,9 +1523,14 @@ final class DashboardModel: ObservableObject {
                   self.pendingLauncherHelperReview?.id == review.id else { return }
             let configuration = loadVerifiedLauncherHelperConfiguration()
             var seen = Set<String>()
-            let helpers = discovered.compactMap { discovered -> VerifiedLauncherHelper? in
+            var helpers = discovered.compactMap { discovered -> VerifiedLauncherHelper? in
                 let helper = configuration.catalogHelper(matching: discovered) ?? discovered
                 return seen.insert(helper.id).inserted ? helper : nil
+            }
+            if signing.identifier == claudeCodeVerifiedLauncherHelper.appBundleIdentifier,
+               signing.teamIdentifier == claudeCodeVerifiedLauncherHelper.appTeamIdentifier {
+                helpers.removeAll { $0.id == claudeCodeVerifiedLauncherHelper.id }
+                helpers.insert(claudeCodeVerifiedLauncherHelper, at: 0)
             }
             self.pendingLauncherHelperReview?.helpers = helpers
             self.isDiscoveringLauncherHelpers = false
@@ -1539,14 +1544,12 @@ final class DashboardModel: ObservableObject {
 
     func confirmLauncherHelperReview(selectedHelperIDs: Set<String>) {
         guard !isDiscoveringLauncherHelpers, let review = pendingLauncherHelperReview else { return }
-        let configuration = loadVerifiedLauncherHelperConfiguration()
         finishAddingLauncher(
             review.signing,
             to: review.gate,
             runtimeRequirement: review.runtimeRequirement,
-            helpers: review.helpers.filter {
-                selectedHelperIDs.contains($0.id) && !configuration.isEnabled($0)
-            }
+            helpers: review.helpers.filter { selectedHelperIDs.contains($0.id) },
+            disabledHelperIDs: review.disabledHelperIDs(selected: selectedHelperIDs)
         )
     }
 
@@ -1564,10 +1567,11 @@ final class DashboardModel: ObservableObject {
         _ signing: LauncherSigning,
         to gate: SecretGate,
         runtimeRequirement: LauncherRuntimeRequirement,
-        helpers: [VerifiedLauncherHelper]
+        helpers: [VerifiedLauncherHelper],
+        disabledHelperIDs: Set<String> = []
     ) {
         let existingPolicy = gate.appPolicies.contains { $0.requirement == signing.requirement }
-        guard !existingPolicy || !helpers.isEmpty else {
+        guard !existingPolicy || !helpers.isEmpty || !disabledHelperIDs.isEmpty else {
             pendingLauncherHelperReview = nil
             return
         }
@@ -1595,6 +1599,17 @@ final class DashboardModel: ObservableObject {
         ) { [weak self] in
             guard let self else { return }
             self.pendingLauncherHelperReview = nil
+            if !helpers.isEmpty || !disabledHelperIDs.isEmpty {
+                do {
+                    try updateVerifiedLauncherHelperConfiguration {
+                        $0.enable(helpers)
+                        $0.disabledHelperIDs.formUnion(disabledHelperIDs)
+                    }
+                } catch {
+                    self.errorMessage = "Could not save helper associations: \(error.localizedDescription)"
+                    return
+                }
+            }
             if !existingPolicy {
                 let policyStatus = setSecretGateAppProtection(
                     requirement: signing.requirement,
@@ -1608,17 +1623,7 @@ final class DashboardModel: ObservableObject {
                     return
                 }
             }
-            guard !helpers.isEmpty else {
-                self.errorMessage = nil
-                self.reloadAuthorizationState()
-                return
-            }
-            do {
-                try updateVerifiedLauncherHelperConfiguration { $0.enable(helpers) }
-                self.errorMessage = nil
-            } catch {
-                self.errorMessage = "The Launcher was added, but its helper associations could not be saved: \(error.localizedDescription)"
-            }
+            self.errorMessage = nil
             self.reloadAuthorizationState()
         }
     }
@@ -5495,6 +5500,12 @@ private struct LauncherHelperReviewView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+                if helper == claudeCodeVerifiedLauncherHelper {
+                    Text("Claude Desktop installs Claude Code outside Claude.app. Selected by default; includes any eligible executable with this exact signing identity. Clearing this option disables the association at every Authorization Gate.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let relativePath = helper.relativePath {
                     Text(relativePath)
                         .font(.system(size: 11, design: .monospaced))
@@ -5509,7 +5520,7 @@ private struct LauncherHelperReviewView: View {
         }
         .toggleStyle(.checkbox)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .disabled(configuration.isEnabled(helper))
+        .disabled(configuration.isEnabled(helper) && helper != claudeCodeVerifiedLauncherHelper)
     }
 }
 
@@ -7646,6 +7657,18 @@ struct LauncherHelperReview: Identifiable, Sendable {
     let gate: SecretGate
     let runtimeRequirement: LauncherRuntimeRequirement
     var helpers: [VerifiedLauncherHelper]
+
+    func defaultSelectedHelperIDs(configuration: VerifiedLauncherHelperConfiguration) -> Set<String> {
+        Set(helpers.filter {
+            $0 == claudeCodeVerifiedLauncherHelper ? configuration.isEnabled($0) : configuration.shouldSelectInReview($0)
+        }.map(\.id))
+    }
+
+    func disabledHelperIDs(selected: Set<String>) -> Set<String> {
+        Set(helpers.filter {
+            $0 == claudeCodeVerifiedLauncherHelper && !selected.contains($0.id)
+        }.map(\.id))
+    }
 }
 
 struct DirectAccessLauncherSelection: Identifiable {

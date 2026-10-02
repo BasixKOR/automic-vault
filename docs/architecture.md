@@ -442,15 +442,14 @@ An app's declared main executable may represent the app after its code signature
 and exact membership in the app's resource seal are validated. A non-main
 executable may represent the app only as an enabled Verified Launcher Helper
 whose exact app and helper signing identities appear in the positive catalog.
-The catalog contains only associations the user explicitly approves after
-signed, sealed helpers are discovered while adding an app as a Verified
-Launcher. Discovery grants no authority. The helper review preselects Codex's
-`codex` CLI and Claude's `com.anthropic.claude-code` CLI only when both exact
-vendor signing identities match; all other helpers start unselected. Review
-defaults never enroll an association. Removing the former built-in catalog
-revokes its implicit associations rather than migrating them into user-approved
-records. Existing exact user-approved records remain valid. See
-[ADR 0061](adr/0061-user-approved-cli-helper-defaults.md). The approval UI lists
+The catalog contains the built-in Claude Code association and associations the
+user explicitly approves after signed, sealed helpers are discovered while
+adding an app as a Verified Launcher. Discovery grants no authority. The helper
+review always shows Claude Code, including outside-bundle scope and opt-out.
+Codex's exact sealed vendor-signed CLI is preselected for review; other discovered
+helpers start unselected. Existing exact user-approved records remain valid.
+The Claude exception supersedes [ADR 0061](adr/0061-user-approved-cli-helper-defaults.md)
+for Claude only; Codex retains reviewed enrollment. The approval UI lists
 each exact helper identity and relative path. User-approved associations bind
 both, and the UI warns that enabling one makes it represent the app at every
 Authorization Gate where that app has a current or future rule.
@@ -474,7 +473,7 @@ and is absent from the initial helper chooser. Manually enabling the option
 requires human Approval. Claude Code outside-bundle support defaults on for new
 and legacy settings; a versioned configuration preserves subsequent opt-outs
 and existing disabled associations. Malformed settings still disable all
-associations. See [ADR 0061](adr/0061-claude-code-outside-parent-default.md). Only helpers outside the resolved parent
+associations. See [ADR 0062](adr/0062-claude-code-outside-parent-default.md). Only helpers outside the resolved parent
 bundle omit relative-path and resource-seal membership checks; the live helper
 must still match its on-disk code identity and exact Developer ID signing
 association with eligible runtime protections. The installed parent app is
