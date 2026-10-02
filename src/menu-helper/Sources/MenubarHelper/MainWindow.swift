@@ -6019,9 +6019,10 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     HStack {
                         Text(parent.appName).font(.headline)
                         Spacer()
-                        Button("Choose Helpers…") { discoverHelpers(for: parent) }
+                        Button("Refresh Helper List") { discoverHelpers(for: parent) }
                             .disabled(discoveryTask != nil)
-                            .accessibilityLabel("Choose helpers for \(parent.appName)")
+                            .accessibilityLabel("Refresh helper list for \(parent.appName)")
+                            .help("Rescan the installed app for eligible signed helpers. New helpers remain disabled until approved.")
                     }
                     Text("\(parent.appBundleIdentifier) · Team \(parent.appTeamIdentifier)")
                         .font(.caption.monospaced())
@@ -6160,13 +6161,16 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             configuration = loadVerifiedLauncherHelperConfiguration()
             // Keep other apps' discovered choices visible while reviewing this app.
             discoveredHelpers.removeAll { helper in
-                matching.contains {
-                    $0.appBundleIdentifier == helper.appBundleIdentifier
-                        && $0.appTeamIdentifier == helper.appTeamIdentifier
+                if let parent {
+                    return helper.appBundleIdentifier == parent.appBundleIdentifier
+                        && helper.appTeamIdentifier == parent.appTeamIdentifier
                 }
+                return helper.appBundleIdentifier == Bundle(url: url)?.bundleIdentifier
             }
             discoveredHelpers.append(contentsOf: matching)
-            status = matching.isEmpty ? "No eligible signed helpers matching this app’s identity were found." : ""
+            status = matching.isEmpty
+                ? "No eligible signed helpers matching this app’s identity were found."
+                : "Helper list refreshed for \(matching[0].appName). Newly discovered helpers require Approval to enable."
             discoveryTask = nil
         }
     }
