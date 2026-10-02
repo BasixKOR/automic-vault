@@ -7186,7 +7186,7 @@ private struct GatePolicyTable: View {
                case .denial(let value) = change.value { return value }
             return denialThreshold(for: app)
         }()
-        return HStack(alignment: .top, spacing: 16) {
+        return HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 if let app {
                     ApprovedAppRow(app: app, launcherBundle: model.launcherBundles.first {
@@ -7232,6 +7232,7 @@ private struct GatePolicyTable: View {
                 }
             }
         }
+        .frame(minHeight: 52)
         .padding(.vertical, 14)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(app?.bundleIdentifier ?? localizedUIString(gate.defaultPolicyLabel))
@@ -7501,7 +7502,6 @@ private struct ApprovedAppRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
         }
-        .padding(.vertical, 10)
         .contentShape(Rectangle())
         .contextMenu {
             Button("Delete", role: .destructive) {
