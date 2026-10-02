@@ -509,7 +509,9 @@ impl ApnsClient {
         let mut request = self
             .client
             .post(format!("{host}/3/device/{token}"))
-            .bearer_auth(self.bearer_token().map_err(|_| ())?)
+            .bearer_auth(self.bearer_token().map_err(|_| {
+                eprintln!("APNs authentication token generation failed");
+            })?)
             .header("apns-topic", self.topic.as_ref())
             .header("apns-push-type", push_type)
             .header("apns-priority", priority)
@@ -517,12 +519,7 @@ impl ApnsClient {
         if let Some(notification_id) = notification_id {
             request = request.header("apns-collapse-id", notification_id);
         }
-        let response = request.send().await.map_err(|_| ())?;
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            Err(())
-        }
+        send_apns_push(request, push_type).await
     }
 
     async fn validate(&self, token: &str, environment: ApnsEnvironment) -> Result<(), ()> {
@@ -573,6 +570,25 @@ impl ApnsClient {
         let token = format!("{signed}.{}", encoder.encode(signature.as_ref()));
         *cached = Some((Instant::now(), token.clone()));
         Ok(token)
+    }
+}
+
+async fn send_apns_push(request: reqwest::RequestBuilder, push_type: &str) -> Result<(), ()> {
+    let response = request.send().await.map_err(|_| {
+        // reqwest errors can contain the device token in the request URL.
+        eprintln!("APNs push transport failed: type={push_type}");
+    })?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let status = response.status();
+        let body = response.json::<Value>().await.unwrap_or(Value::Null);
+        let reason = body
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("Unknown");
+        eprintln!("APNs push rejected: type={push_type} status={status} reason={reason:?}");
+        Err(())
     }
 }
 
@@ -688,6 +704,65 @@ mod tests {
         assert_eq!(priority, "5");
         assert_eq!(payload["aps"], json!({ "content-available": 1 }));
         assert!(payload["aps"].get("alert").is_none());
+    }
+
+    #[test]
+    fn apns_rejection_logs_status_and_reason_without_sensitive_data() {
+        const CHILD: &str = "AV_APNS_REJECTION_TEST_CHILD";
+        const TOKEN: &str = "private-device-token-must-not-be-logged";
+        const PAYLOAD: &str = "private-approval-payload-must-not-be-logged";
+        if env::var_os(CHILD).is_none() {
+            // Capture actual stderr in a separate process, without changing global
+            // file descriptors or racing the other tests' logging.
+            let output = std::process::Command::new(env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tests::apns_rejection_logs_status_and_reason_without_sensitive_data",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(
+                stderr.contains("APNs push rejected: type=alert"),
+                "{stderr}"
+            );
+            assert!(stderr.contains("status=410 Gone"), "{stderr}");
+            assert!(stderr.contains("reason=\"Unregistered\""), "{stderr}");
+            assert!(!stderr.contains(TOKEN), "{stderr}");
+            assert!(!stderr.contains(PAYLOAD), "{stderr}");
+            return;
+        }
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let app = Router::new().route(
+                &format!("/3/device/{TOKEN}"),
+                post(|axum::Json(body): axum::Json<Value>| async move {
+                    assert_eq!(body["av"]["ciphertext"], PAYLOAD);
+                    (
+                        StatusCode::GONE,
+                        axum::Json(json!({
+                            "reason": "Unregistered",
+                            "token": TOKEN,
+                            "payload": PAYLOAD,
+                        })),
+                    )
+                }),
+            );
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let (push_type, _, payload) = apns_delivery(json!({"ciphertext": PAYLOAD}), false);
+            let request = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap()
+                .post(format!("http://{address}/3/device/{TOKEN}"))
+                .json(&payload);
+            assert!(send_apns_push(request, push_type).await.is_err());
+            server.abort();
+        });
     }
 
     #[test]

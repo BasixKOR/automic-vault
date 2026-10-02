@@ -11,6 +11,8 @@ private enum ApprovalRoute: Hashable {
 struct ApprovalRootView: View {
     @Bindable var model: ApprovalModel
     @Bindable var subscription: ApprovalSubscription
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @State private var path: [ApprovalRoute] = []
     @State private var showingSubscription = false
     @State private var keepsPendingListVisible = false
@@ -82,6 +84,29 @@ struct ApprovalRootView: View {
                 path.removeAll()
                 showingSubscription = false
                 keepsPendingListVisible = false
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await model.refreshNotificationSettings() } }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if model.notificationsAreOff {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Notifications are off", systemImage: "exclamationmark.triangle.fill")
+                        .font(.headline)
+                    Text("Approval requests may only appear when you open Automic Vault.")
+                        .font(.callout)
+                    if model.notificationAuthorizationStatus == .notDetermined {
+                        Button("Enable Notifications") { Task { await model.enable() } }
+                    } else {
+                        Button("Open Notification Settings") {
+                            if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                        }
+                    }
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.bar)
             }
         }
     }

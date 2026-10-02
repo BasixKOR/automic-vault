@@ -128,6 +128,8 @@ final class ApprovalModel {
             if state != .connecting { isStarting = false }
         }
     }
+    private(set) var notificationAuthorizationStatus: UNAuthorizationStatus?
+    private(set) var notificationsAreOff = false
     private(set) var notificationPreferences = ApprovalNotificationPreferences()
     private(set) var notificationReviewTicket: PhoneApprovalTicket?
     private(set) var notificationReviewRequestID: UUID?
@@ -168,13 +170,26 @@ final class ApprovalModel {
     func start() async {
         guard !started else { return }
         started = true
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+        guard await updateNotificationSettings() else {
             state = .setup
             return
         }
         UIApplication.shared.registerForRemoteNotifications()
         await connect()
+    }
+
+    private func updateNotificationSettings() async -> Bool {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationAuthorizationStatus = settings.authorizationStatus
+        let authorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+        notificationsAreOff = !authorized || settings.alertSetting != .enabled
+        return authorized
+    }
+
+    func refreshNotificationSettings() async {
+        guard await updateNotificationSettings(), started else { return }
+        UIApplication.shared.registerForRemoteNotifications()
+        if state == .setup { await connect() }
     }
 
     func enable() async {
@@ -184,7 +199,9 @@ final class ApprovalModel {
             return
         }
         do {
-            guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) else {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+            let authorized = await updateNotificationSettings()
+            guard granted, authorized else {
                 state = .unavailable("Notifications are required so Approval requests can reach this iPhone.")
                 return
             }
@@ -315,7 +332,7 @@ final class ApprovalModel {
     }
 
     private func registerIfPossible() async {
-        guard let relay, let deviceToken else { return }
+        guard let relay, let deviceToken, await updateNotificationSettings() else { return }
         do {
             #if DEBUG
             let environment = ApprovalDeviceRegistration.Environment.sandbox
