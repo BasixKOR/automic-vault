@@ -6119,7 +6119,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             }
             InfoBlock(
                 title: "Exact identities only",
-                text: String(localized: "Each association verifies both signing identities and binds the live helper to its on-disk executable. By default, the helper must remain unmodified in the parent app's resource seal. Allowing a helper outside the bundle removes that containment requirement; the signed parent app must still be installed. Other executables do not inherit the app's authority.")
+                text: String(localized: "Each association verifies both signing identities and binds the live helper to its on-disk executable. Except for Claude Code, helpers default to requiring unmodified membership in the parent app's resource seal. Claude Desktop installs Claude Code outside its bundle, so that association defaults to allowing outside-bundle execution. Allowing a helper outside the bundle removes that containment requirement; the signed parent app must still be installed. Other executables do not inherit the app's authority.")
             )
             if !status.isEmpty {
                 Text(status)

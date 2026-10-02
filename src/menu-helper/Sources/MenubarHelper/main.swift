@@ -17371,8 +17371,42 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
     return true
 }
 
+private func runClaudeOutsideBundleDefaultSelfCheck() -> Bool {
+    let parent = URL(fileURLWithPath: "/Applications/Claude.app")
+    let path = "/Users/test/Library/Application Support/Claude/claude-code/1/claude.app/Contents/MacOS/claude"
+    for scenario in [
+        (team: "Q6L2SF6YDW", runtime: LauncherRuntimeProtection.hardened, parent: true, disabled: false, optedOut: false, expected: true),
+        (team: "OTHER", runtime: .hardened, parent: true, disabled: false, optedOut: false, expected: false),
+        (team: "Q6L2SF6YDW", runtime: .hardened, parent: false, disabled: false, optedOut: false, expected: false),
+        (team: "Q6L2SF6YDW", runtime: .hardened, parent: true, disabled: true, optedOut: false, expected: false),
+        (team: "Q6L2SF6YDW", runtime: .hardened, parent: true, disabled: false, optedOut: true, expected: false),
+    ] {
+        var configuration = VerifiedLauncherHelperConfiguration()
+        if scenario.disabled { configuration.disabledHelperIDs.insert(claudeCodeVerifiedLauncherHelper.id) }
+        if scenario.optedOut { configuration.allowedOutsideBundleHelperIDs.remove(claudeCodeVerifiedLauncherHelper.id) }
+        let signing = LiveSigningInfo(
+            identifier: claudeCodeVerifiedLauncherHelper.helperSigningIdentifier,
+            teamIdentifier: scenario.team,
+            designatedRequirement: "test", mainExecutable: path, isAdHoc: false,
+            runtimeProtection: scenario.runtime, isDeveloperID: true
+        )
+        let association = verifiedLauncherHelperAssociation(
+            path: path, signing: signing, containingAppURLs: [], configuration: configuration,
+            installedAppURL: { _ in scenario.parent ? parent : nil }
+        )
+        if scenario.expected {
+            guard association?.isOutsideBundle == true, association?.appURL == parent else { return false }
+        } else if association != nil { return false }
+    }
+    return true
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
     let codexVerifiedLauncherHelper = selfCheckCodexHelper()
+    guard runClaudeOutsideBundleDefaultSelfCheck() else {
+        fputs("Claude outside-bundle default failed\n", stderr)
+        return 1
+    }
     guard runNestedLauncherHelperSelfCheck() else {
         fputs("nested Launcher helper attribution failed\n", stderr)
         return 1

@@ -263,9 +263,14 @@ must be warned about that authority expansion before approving an association
 and may disable it without changing the app's Launcher-specific rules.
 
 The user may separately allow one association to remain valid outside the
-parent bundle. This option is off by default and appears only in Verified
-Launcher Helpers settings, after discovery and initial selection. Enabling it
-requires Approval and permits moved or copied executables with the helper's
+parent bundle. This option is off by default except for the reviewed built-in
+Claude Code association, whose desktop-managed runtime is installed outside
+Claude.app. That exception also applies to other valid copies with the exact
+Claude Code signing identity and may be disabled. See
+[ADR 0061](adr/0061-claude-code-outside-parent-default.md). The option appears
+only in Verified Launcher Helpers settings, after discovery and initial
+selection. Manually enabling it requires Approval and permits moved or copied
+executables with the helper's
 exact signing identity to represent the installed, verified parent app without
 proving membership in its resource seal. Live code identity, Developer ID,
 runtime protections, and parent signing identity remain mandatory. Helpers

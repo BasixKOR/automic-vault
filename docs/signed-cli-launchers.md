@@ -64,6 +64,18 @@ Creating the same name again makes a new generation. The old enrollment and
 Launcher-specific rules are revoked and the old bundle is moved to Trash only
 after the replacement verifies and enrolls successfully.
 
+## Claude Desktop and Claude Code
+
+Claude Desktop installs its Claude Code runtime outside Claude.app in a versioned
+Application Support directory. The built-in Verified Launcher Helper association
+allows eligible Claude Code executions to represent the installed, verified
+Claude app by default, including outside its bundle. This also covers separately
+installed executables with the exact Claude Code signing identity; it does not
+prove Desktop installed them. Disable **Allow outside the parent bundle** in
+Verified Launcher Helpers settings to retain containment, or disable the
+association to use separate Claude Code Launcher-specific rules.
+See [ADR 0061](adr/0061-claude-code-outside-parent-default.md).
+
 ## Allow a CLI launcher
 
 1. Run `av doctor claude` or `av doctor codex` to inspect the corresponding

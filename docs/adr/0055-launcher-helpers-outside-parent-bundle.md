@@ -1,6 +1,6 @@
 # ADR 0055: Explicitly allow individual Launcher helpers outside their parent bundle
 
-Status: accepted
+Status: accepted; Claude Code default amended by [ADR 0061](0061-claude-code-outside-parent-default.md).
 
 ## Context
 

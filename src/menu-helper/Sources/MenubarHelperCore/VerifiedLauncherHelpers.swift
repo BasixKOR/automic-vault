@@ -44,6 +44,12 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
     }
 }
 
+public let claudeCodeVerifiedLauncherHelper = VerifiedLauncherHelper(
+    id: "claude-code", name: "Claude Code", appName: "Claude",
+    appBundleIdentifier: "com.anthropic.claudefordesktop", appTeamIdentifier: "Q6L2SF6YDW",
+    helperSigningIdentifier: "com.anthropic.claude-code", helperTeamIdentifier: "Q6L2SF6YDW"
+)
+
 public struct VerifiedLauncherHelperParent: Identifiable {
     public let appName: String
     public let appBundleIdentifier: String
@@ -117,6 +123,7 @@ public func shouldPreselectVerifiedLauncherHelper(_ helper: VerifiedLauncherHelp
 }
 
 public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable {
+    private var defaultsVersion = 2
     public var disabledHelperIDs: Set<String>
     public var userApprovedHelpers: [VerifiedLauncherHelper]
     public var allowedOutsideBundleHelperIDs: Set<String>
@@ -124,7 +131,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     public init(
         disabledHelperIDs: Set<String> = [],
         userApprovedHelpers: [VerifiedLauncherHelper] = [],
-        allowedOutsideBundleHelperIDs: Set<String> = []
+        allowedOutsideBundleHelperIDs: Set<String> = [claudeCodeVerifiedLauncherHelper.id]
     ) {
         self.disabledHelperIDs = disabledHelperIDs
         self.userApprovedHelpers = userApprovedHelpers
@@ -145,7 +152,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     }
 
     public var helpers: [VerifiedLauncherHelper] {
-        userApprovedHelpers
+        [claudeCodeVerifiedLauncherHelper] + userApprovedHelpers
     }
 
     public func catalogHelper(matching discovered: VerifiedLauncherHelper) -> VerifiedLauncherHelper? {
@@ -154,7 +161,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
 
     public mutating func enable(_ helpers: [VerifiedLauncherHelper]) {
         for discovered in helpers {
-            guard isValidUserApprovedHelper(discovered) else { continue }
+            guard discovered == claudeCodeVerifiedLauncherHelper || isValidUserApprovedHelper(discovered) else { continue }
             if let helper = catalogHelper(matching: discovered) {
                 disabledHelperIDs.remove(helper.id)
             } else {
@@ -173,6 +180,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     }
 
     private enum CodingKeys: String, CodingKey {
+        case defaultsVersion
         case disabledHelperIDs
         case userApprovedHelpers
         case allowedOutsideBundleHelperIDs
@@ -192,6 +200,10 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
             Set<String>.self,
             forKey: .allowedOutsideBundleHelperIDs
         ) ?? []
+        let storedDefaultsVersion = try container.decodeIfPresent(Int.self, forKey: .defaultsVersion) ?? 1
+        if storedDefaultsVersion < 2 {
+            allowedOutsideBundleHelperIDs.insert(claudeCodeVerifiedLauncherHelper.id)
+        }
         guard isValidVerifiedLauncherHelperConfiguration(self) else {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: decoder.codingPath, debugDescription: "Invalid user-approved Launcher helper catalog")
@@ -518,4 +530,6 @@ func saveVerifiedLauncherHelperConfiguration(
     )
 }
 
-private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration()
+private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration(
+    disabledHelperIDs: [claudeCodeVerifiedLauncherHelper.id], allowedOutsideBundleHelperIDs: []
+)

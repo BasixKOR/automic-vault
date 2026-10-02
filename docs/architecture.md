@@ -469,8 +469,12 @@ and [ADR 0033](adr/0033-targeted-app-launcher-validation.md).
 User-approved associations are defined by
 [ADR 0034](adr/0034-user-approved-launcher-helpers.md).
 A separate per-helper, Keychain-protected option permits execution outside the
-parent bundle. It defaults off, is absent from the initial helper chooser, and
-requires human Approval to enable. Only helpers outside the resolved parent
+parent bundle. It defaults off except for the built-in Claude Code association
+and is absent from the initial helper chooser. Manually enabling the option
+requires human Approval. Claude Code outside-bundle support defaults on for new
+and legacy settings; a versioned configuration preserves subsequent opt-outs
+and existing disabled associations. Malformed settings still disable all
+associations. See [ADR 0061](adr/0061-claude-code-outside-parent-default.md). Only helpers outside the resolved parent
 bundle omit relative-path and resource-seal membership checks; the live helper
 must still match its on-disk code identity and exact Developer ID signing
 association with eligible runtime protections. The installed parent app is

@@ -4,7 +4,7 @@ import Testing
 
 @Test func helperCatalogStartsEmptyAndRoundTripsDisabledEntries() throws {
     let defaults = VerifiedLauncherHelperConfiguration()
-    #expect(defaults.helpers.isEmpty)
+    #expect(defaults.helpers == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper])
     #expect(!defaults.isEnabled(codexVerifiedLauncherHelper))
     #expect(!defaults.isEnabled(claudeCodeVerifiedLauncherHelper))
     let configured = VerifiedLauncherHelperConfiguration(disabledHelperIDs: ["codex", "future-helper"])
@@ -177,11 +177,11 @@ func discoversInstalledPackageManagerManagerHelpers() async {
     #expect(helpers.contains { $0.helperSigningIdentifier == "pmmctl" })
 }
 
-@Test func outsideBundlePermissionDefaultsOffAndRoundTripsPerHelper() throws {
+@Test func outsideBundlePermissionDefaultsToClaudeOnlyAndRoundTripsPerHelper() throws {
     let helper = userApprovedHelper()
     var configuration = VerifiedLauncherHelperConfiguration()
     configuration.enable([helper])
-    #expect(configuration.allowedOutsideBundleHelperIDs.isEmpty)
+    #expect(configuration.allowedOutsideBundleHelperIDs == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper.id])
     configuration.allowedOutsideBundleHelperIDs.insert(helper.id)
     let data = try JSONEncoder().encode(configuration)
     let restored = decodeVerifiedLauncherHelperConfiguration(data)
@@ -190,12 +190,16 @@ func discoversInstalledPackageManagerManagerHelpers() async {
     configuration.disabledHelperIDs.insert(helper.id)
     #expect(!configuration.isEnabled(helper))
     configuration.allowedOutsideBundleHelperIDs.remove(helper.id)
-    #expect(configuration.allowedOutsideBundleHelperIDs.isEmpty)
+    #expect(configuration.allowedOutsideBundleHelperIDs == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper.id])
 }
 
-@Test func legacyAndMalformedOutsideBundlePermissionsNeverOptIn() {
+@Test func legacyClaudeDefaultMigratesAndMalformedPermissionsFailClosed() {
     let legacy = decodeVerifiedLauncherHelperConfiguration(Data("{}".utf8))
-    #expect(legacy.allowedOutsideBundleHelperIDs.isEmpty)
+    #expect(legacy.allowedOutsideBundleHelperIDs == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper.id])
+    let legacyEmpty = decodeVerifiedLauncherHelperConfiguration(
+        Data(#"{"allowedOutsideBundleHelperIDs":[]}"#.utf8)
+    )
+    #expect(legacyEmpty.allowedOutsideBundleHelperIDs == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper.id])
     let malformed = decodeVerifiedLauncherHelperConfiguration(
         Data(#"{"allowedOutsideBundleHelperIDs":true}"#.utf8)
     )
@@ -266,7 +270,7 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     let configuration = decodeVerifiedLauncherHelperConfiguration(
         Data(#"{"disabledHelperIDs":[],"allowedOutsideBundleHelperIDs":["codex","claude-code"]}"#.utf8)
     )
-    #expect(configuration.helpers.isEmpty)
+    #expect(configuration.helpers == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper])
     #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
     #expect(!configuration.isEnabled(claudeCodeVerifiedLauncherHelper))
 }
@@ -418,4 +422,19 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
             #expect(updated.userApprovedHelpers.isEmpty)
         }
     }
+}
+
+@Test func claudeOutsideBundleOptOutSurvivesReload() throws {
+    var configuration = VerifiedLauncherHelperConfiguration()
+    configuration.allowedOutsideBundleHelperIDs.remove(MenubarHelperCore.claudeCodeVerifiedLauncherHelper.id)
+    let restored = decodeVerifiedLauncherHelperConfiguration(try JSONEncoder().encode(configuration))
+    #expect(restored.allowedOutsideBundleHelperIDs.isEmpty)
+}
+
+@Test func legacyClaudeMigrationPreservesDisabledAssociationsAndOtherPermissions() {
+    let configuration = decodeVerifiedLauncherHelperConfiguration(
+        Data(#"{"disabledHelperIDs":["claude-code"],"allowedOutsideBundleHelperIDs":["codex"]}"#.utf8)
+    )
+    #expect(!configuration.isEnabled(claudeCodeVerifiedLauncherHelper))
+    #expect(configuration.allowedOutsideBundleHelperIDs == ["claude-code", "codex"])
 }
