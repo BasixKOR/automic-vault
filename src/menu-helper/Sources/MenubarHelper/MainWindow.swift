@@ -5388,14 +5388,24 @@ private struct LauncherHelperReviewView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            SecretGateField("Identifier", review.signing.identifier, monospaced: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        ViewThatFits(in: .horizontal) {
                             HStack(alignment: .top, spacing: 24) {
+                                SecretGateField("Identifier", review.signing.identifier, monospaced: true)
                                 SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
-                                    .fixedSize(horizontal: true, vertical: false)
                                 SecretGateField("Path", review.signing.path, monospaced: true)
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 12) {
+                                SecretGateField("Identifier", review.signing.identifier, monospaced: true)
+                                    .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                HStack(alignment: .top, spacing: 24) {
+                                    SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    SecretGateField("Path", review.signing.path, monospaced: true)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                         }
                         if let warning = launcherRuntimeWarning(review.signing.runtimeProtection) {
