@@ -1613,12 +1613,12 @@ final class DashboardModel: ObservableObject {
                 self.reloadAuthorizationState()
                 return
             }
-            var configuration = loadVerifiedLauncherHelperConfiguration()
-            configuration.enable(helpers)
-            let helperStatus = saveVerifiedLauncherHelperConfiguration(configuration)
-            self.errorMessage = helperStatus == errSecSuccess
-                ? nil
-                : "The Launcher was added, but its helper associations could not be saved: \(helperStatus)"
+            do {
+                try updateVerifiedLauncherHelperConfiguration { $0.enable(helpers) }
+                self.errorMessage = nil
+            } catch {
+                self.errorMessage = "The Launcher was added, but its helper associations could not be saved: \(error.localizedDescription)"
+            }
             self.reloadAuthorizationState()
         }
     }
@@ -6194,9 +6194,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
             if configuration.userApprovedHelpers.contains(where: { $0.id == helper.id }) {
                 Button("Remove Association", role: .destructive) {
                     approval.cancel(helper.id)
-                    var next = loadVerifiedLauncherHelperConfiguration()
-                    next.remove(helper)
-                    persist(next)
+                    persist { $0.remove(helper) }
                 }
                 .disabled(approval.isPending(helper.id))
             } else if configuration.catalogHelper(matching: helper) == nil {
@@ -6240,33 +6238,32 @@ private struct VerifiedLauncherHelpersSettingsView: View {
     }
 
     private func persist(_ helper: VerifiedLauncherHelper, enabled: Bool) {
-        var next = loadVerifiedLauncherHelperConfiguration()
-        if enabled {
-            next.enable([helper])
-        } else {
-            next.disabledHelperIDs.insert(helper.id)
+        persist { next in
+            if enabled {
+                next.enable([helper])
+            } else {
+                next.disabledHelperIDs.insert(helper.id)
+            }
         }
-        persist(next)
     }
 
     private func persistOutsideBundle(_ helper: VerifiedLauncherHelper, allowed: Bool) {
-        var next = loadVerifiedLauncherHelperConfiguration()
-        if allowed {
-            next.allowedOutsideBundleHelperIDs.insert(helper.id)
-        } else {
-            next.allowedOutsideBundleHelperIDs.remove(helper.id)
+        persist { next in
+            if allowed {
+                next.allowedOutsideBundleHelperIDs.insert(helper.id)
+            } else {
+                next.allowedOutsideBundleHelperIDs.remove(helper.id)
+            }
         }
-        persist(next)
     }
 
-    private func persist(_ next: VerifiedLauncherHelperConfiguration) {
-        let result = saveVerifiedLauncherHelperConfiguration(next)
-        guard result == errSecSuccess else {
-            status = "Could not save Verified Launcher Helpers: \(result)"
-            return
+    private func persist(_ update: (inout VerifiedLauncherHelperConfiguration) -> Void) {
+        do {
+            configuration = try updateVerifiedLauncherHelperConfiguration(update)
+            status = ""
+        } catch {
+            status = "Could not update Verified Launcher Helpers: \(error.localizedDescription)"
         }
-        configuration = next
-        status = ""
     }
 }
 

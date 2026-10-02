@@ -375,3 +375,47 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     #expect(codeSigningTeamIdentifier(from: "certificate leaf[subject.OU] = TEAM and anchor apple generic") == "TEAM")
     #expect(codeSigningTeamIdentifier(from: "certificate leaf[subject.OU] = ") == nil)
 }
+
+@Test func helperMutationsPreserveUnreadableCatalogs() throws {
+    for result: KeychainDataLoad in [.failure(-25308), .success(Data("invalid".utf8))] {
+        var mutated = false
+        var saved = false
+        do {
+            _ = try updateVerifiedLauncherHelperConfiguration(result, update: { _ in
+                mutated = true
+            }, save: { _ in
+                saved = true
+                return 0
+            })
+            Issue.record("An unreadable catalog must abort the mutation")
+        } catch {
+            if case .failure(let status) = result {
+                #expect((error as NSError).code == Int(status))
+            }
+        }
+        #expect(!mutated)
+        #expect(!saved)
+    }
+    let helper = userApprovedHelper()
+    var existing = VerifiedLauncherHelperConfiguration(disabledHelperIDs: ["other"])
+    existing.enable([helper])
+    existing.allowedOutsideBundleHelperIDs.insert(helper.id)
+    for result: KeychainDataLoad in [.notFound, .success(try JSONEncoder().encode(existing))] {
+        var saved: VerifiedLauncherHelperConfiguration?
+        let updated = try updateVerifiedLauncherHelperConfiguration(result, update: {
+            $0.disabledHelperIDs.insert("new")
+        }, save: {
+            saved = $0
+            return 0
+        })
+        #expect(saved == updated)
+        #expect(updated.disabledHelperIDs.contains("new"))
+        if case .success = result {
+            #expect(updated.userApprovedHelpers == existing.userApprovedHelpers)
+            #expect(updated.disabledHelperIDs.contains("other"))
+            #expect(updated.allowedOutsideBundleHelperIDs == existing.allowedOutsideBundleHelperIDs)
+        } else {
+            #expect(updated.userApprovedHelpers.isEmpty)
+        }
+    }
+}

@@ -453,6 +453,43 @@ func decodeVerifiedLauncherHelperConfiguration(
     )) ?? failClosedVerifiedLauncherHelperConfiguration
 }
 
+// Mutations must preserve read/decode failures instead of saving the fail-closed fallback.
+@discardableResult
+public func updateVerifiedLauncherHelperConfiguration(
+    _ update: (inout VerifiedLauncherHelperConfiguration) -> Void
+) throws -> VerifiedLauncherHelperConfiguration {
+    try updateVerifiedLauncherHelperConfiguration(
+        loadKeychainDataResult(
+            service: verifiedLauncherHelpersKeychainService,
+            account: verifiedLauncherHelpersKeychainAccount
+        ),
+        update: update,
+        save: { saveVerifiedLauncherHelperConfiguration($0) }
+    )
+}
+
+func updateVerifiedLauncherHelperConfiguration(
+    _ result: KeychainDataLoad,
+    update: (inout VerifiedLauncherHelperConfiguration) -> Void,
+    save: (VerifiedLauncherHelperConfiguration) -> OSStatus
+) throws -> VerifiedLauncherHelperConfiguration {
+    var configuration: VerifiedLauncherHelperConfiguration
+    switch result {
+    case .notFound:
+        configuration = VerifiedLauncherHelperConfiguration()
+    case .failure(let status):
+        throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+    case .success(let data):
+        configuration = try JSONDecoder().decode(VerifiedLauncherHelperConfiguration.self, from: data)
+    }
+    update(&configuration)
+    let status = save(configuration)
+    guard status == errSecSuccess else {
+        throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+    }
+    return configuration
+}
+
 @discardableResult
 public func saveVerifiedLauncherHelperConfiguration(
     _ configuration: VerifiedLauncherHelperConfiguration
