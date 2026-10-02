@@ -2,20 +2,13 @@ import Foundation
 import Testing
 @testable import MenubarHelperCore
 
-@Test func verifiedLauncherHelpersDefaultOnAndRoundTripDisabledEntries() throws {
+@Test func helperCatalogStartsEmptyAndRoundTripsDisabledEntries() throws {
     let defaults = VerifiedLauncherHelperConfiguration()
-    #expect(defaults.isEnabled(codexVerifiedLauncherHelper))
-    #expect(defaults.isEnabled(claudeCodeVerifiedLauncherHelper))
-
-    let configured = VerifiedLauncherHelperConfiguration(
-        disabledHelperIDs: [codexVerifiedLauncherHelper.id, "future-helper"]
-    )
-    let data = try JSONEncoder().encode(configured)
-    #expect(decodeVerifiedLauncherHelperConfiguration(data) == configured)
-
-    var enabled = configured
-    enabled.enable([codexVerifiedLauncherHelper])
-    #expect(enabled.isEnabled(codexVerifiedLauncherHelper))
+    #expect(defaults.helpers.isEmpty)
+    #expect(!defaults.isEnabled(codexVerifiedLauncherHelper))
+    #expect(!defaults.isEnabled(claudeCodeVerifiedLauncherHelper))
+    let configured = VerifiedLauncherHelperConfiguration(disabledHelperIDs: ["codex", "future-helper"])
+    #expect(decodeVerifiedLauncherHelperConfiguration(try JSONEncoder().encode(configured)) == configured)
 }
 
 @Test func malformedVerifiedLauncherHelperConfigurationFailsClosed() {
@@ -61,7 +54,7 @@ import Testing
     #expect(decodeVerifiedLauncherHelperConfiguration(data) == configuration)
 }
 
-@Test func invalidHelperCannotEnableAMatchingBuiltInAssociation() {
+@Test func invalidHelperCannotEnableAMatchingAssociation() {
     let invalid = VerifiedLauncherHelper(
         id: codexVerifiedLauncherHelper.id,
         name: codexVerifiedLauncherHelper.name,
@@ -73,42 +66,21 @@ import Testing
         relativePath: "../codex"
     )
     var configuration = VerifiedLauncherHelperConfiguration(
-        disabledHelperIDs: [codexVerifiedLauncherHelper.id]
+        disabledHelperIDs: [codexVerifiedLauncherHelper.id],
+        userApprovedHelpers: [codexVerifiedLauncherHelper]
     )
     configuration.enable([invalid])
 
     #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
 }
 
-@Test func storedUserApprovedHelperCannotShadowABuiltInAssociation() throws {
-    let shadow = VerifiedLauncherHelper(
-        id: "",
-        name: codexVerifiedLauncherHelper.name,
-        appName: codexVerifiedLauncherHelper.appName,
-        appBundleIdentifier: codexVerifiedLauncherHelper.appBundleIdentifier,
-        appTeamIdentifier: codexVerifiedLauncherHelper.appTeamIdentifier,
-        helperSigningIdentifier: codexVerifiedLauncherHelper.helperSigningIdentifier,
-        helperTeamIdentifier: codexVerifiedLauncherHelper.helperTeamIdentifier,
-        relativePath: "Contents/Resources/codex"
-    )
-    let stored = VerifiedLauncherHelper(
-        id: userApprovedVerifiedLauncherHelperID(shadow),
-        name: shadow.name,
-        appName: shadow.appName,
-        appBundleIdentifier: shadow.appBundleIdentifier,
-        appTeamIdentifier: shadow.appTeamIdentifier,
-        helperSigningIdentifier: shadow.helperSigningIdentifier,
-        helperTeamIdentifier: shadow.helperTeamIdentifier,
-        relativePath: shadow.relativePath
-    )
-    let data = try JSONEncoder().encode(VerifiedLauncherHelperConfiguration(
-        userApprovedHelpers: [stored]
-    ))
-    let configuration = decodeVerifiedLauncherHelperConfiguration(data)
-
-    #expect(configuration.userApprovedHelpers.isEmpty)
+@Test func vendorCLIRequiresExactUserApprovedAssociation() throws {
+    var configuration = VerifiedLauncherHelperConfiguration()
+    #expect(shouldPreselectVerifiedLauncherHelper(codexVerifiedLauncherHelper))
     #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
-    #expect(!configuration.isEnabled(claudeCodeVerifiedLauncherHelper))
+    configuration.enable([codexVerifiedLauncherHelper])
+    #expect(configuration.isEnabled(codexVerifiedLauncherHelper))
+    #expect(decodeVerifiedLauncherHelperConfiguration(try JSONEncoder().encode(configuration)) == configuration)
 }
 
 @Test func helperRelativePathRejectsResolvedSymlinkEscape() throws {
@@ -249,8 +221,65 @@ func discoversInstalledPackageManagerManagerHelpers() async {
     #expect(decodeVerifiedLauncherHelperConfiguration(try JSONEncoder().encode(configuration)) == configuration)
 }
 
-@Test func removingBuiltInHelperDoesNotRestoreDisabledAuthority() {
-    var configuration = VerifiedLauncherHelperConfiguration(disabledHelperIDs: [codexVerifiedLauncherHelper.id])
-    configuration.remove(codexVerifiedLauncherHelper)
+@Test func preselectionChecksBothVendorIdentitiesAndExactHelper() {
+    #expect(shouldPreselectVerifiedLauncherHelper(claudeCodeVerifiedLauncherHelper))
+    #expect(!shouldPreselectVerifiedLauncherHelper(userApprovedHelper()))
+    for (app, appTeam, signing, helperTeam, path) in [
+        ("other.app", "2DC432GLL2", "codex", "2DC432GLL2", "Contents/Resources/codex"),
+        ("com.openai.codex", "OTHER", "codex", "OTHER", "Contents/Resources/codex"),
+        ("com.openai.codex", "2DC432GLL2", "other-helper", "2DC432GLL2", "Contents/Resources/codex"),
+        ("com.openai.codex", "2DC432GLL2", "codex", "OTHER", "Contents/Resources/codex"),
+        ("com.openai.codex", "2DC432GLL2", "codex", "2DC432GLL2", "../codex"),
+    ] {
+        #expect(!shouldPreselectVerifiedLauncherHelper(vendorHelper(
+            app: app, appTeam: appTeam, signing: signing, helperTeam: helperTeam, path: path
+        )))
+    }
+}
+
+private func vendorHelper(
+    app: String, appTeam: String, signing: String, helperTeam: String, path: String
+) -> VerifiedLauncherHelper {
+    let helper = VerifiedLauncherHelper(
+        id: "", name: "CLI", appName: "App", appBundleIdentifier: app,
+        appTeamIdentifier: appTeam, helperSigningIdentifier: signing,
+        helperTeamIdentifier: helperTeam, relativePath: path
+    )
+    return VerifiedLauncherHelper(
+        id: userApprovedVerifiedLauncherHelperID(helper), name: helper.name, appName: helper.appName,
+        appBundleIdentifier: app, appTeamIdentifier: appTeam, helperSigningIdentifier: signing,
+        helperTeamIdentifier: helperTeam, relativePath: path
+    )
+}
+
+private let codexVerifiedLauncherHelper = vendorHelper(
+    app: "com.openai.codex", appTeam: "2DC432GLL2", signing: "codex",
+    helperTeam: "2DC432GLL2", path: "Contents/Resources/codex"
+)
+private let claudeCodeVerifiedLauncherHelper = vendorHelper(
+    app: "com.anthropic.claudefordesktop", appTeam: "Q6L2SF6YDW",
+    signing: "com.anthropic.claude-code", helperTeam: "Q6L2SF6YDW",
+    path: "Contents/Resources/claude-code"
+)
+
+@Test func legacyBuiltInSettingsDoNotEnrollHelpers() {
+    let configuration = decodeVerifiedLauncherHelperConfiguration(
+        Data(#"{"disabledHelperIDs":[],"allowedOutsideBundleHelperIDs":["codex","claude-code"]}"#.utf8)
+    )
+    #expect(configuration.helpers.isEmpty)
     #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
+    #expect(!configuration.isEnabled(claudeCodeVerifiedLauncherHelper))
+}
+
+@Test func sameSigningIdentityAtAnotherPathNeedsSeparateApproval() {
+    let otherPath = vendorHelper(
+        app: "com.openai.codex", appTeam: "2DC432GLL2", signing: "codex",
+        helperTeam: "2DC432GLL2", path: "Contents/Other/codex"
+    )
+    var configuration = VerifiedLauncherHelperConfiguration()
+    configuration.enable([codexVerifiedLauncherHelper])
+    #expect(!configuration.isEnabled(otherPath))
+    configuration.enable([otherPath])
+    #expect(configuration.isEnabled(otherPath))
+    #expect(configuration.userApprovedHelpers.count == 2)
 }

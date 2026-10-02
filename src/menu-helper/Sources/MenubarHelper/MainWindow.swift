@@ -5345,6 +5345,11 @@ private struct LauncherHelperReviewView: View {
         self.model = model
         self.review = review
         approval = model.authorityApproval
+        let configuration = loadVerifiedLauncherHelperConfiguration()
+        _selectedHelperIDs = State(initialValue: Set(review.helpers.filter {
+            shouldPreselectVerifiedLauncherHelper($0)
+                && !configuration.disabledHelperIDs.contains($0.id)
+        }.map(\.id)))
     }
     @State private var selectedHelperIDs: Set<String> = []
 

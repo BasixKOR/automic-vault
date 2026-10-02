@@ -39,34 +39,22 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
             && appTeamIdentifier == other.appTeamIdentifier
             && helperSigningIdentifier == other.helperSigningIdentifier
             && helperTeamIdentifier == other.helperTeamIdentifier
-            && (relativePath == nil || other.relativePath == nil || relativePath == other.relativePath)
+            && relativePath == other.relativePath
     }
 }
 
-public let codexVerifiedLauncherHelper = VerifiedLauncherHelper(
-    id: "codex",
-    name: "Codex CLI",
-    appName: "ChatGPT",
-    appBundleIdentifier: "com.openai.codex",
-    appTeamIdentifier: "2DC432GLL2",
-    helperSigningIdentifier: "codex",
-    helperTeamIdentifier: "2DC432GLL2"
-)
-
-public let claudeCodeVerifiedLauncherHelper = VerifiedLauncherHelper(
-    id: "claude-code",
-    name: "Claude Code",
-    appName: "Claude",
-    appBundleIdentifier: "com.anthropic.claudefordesktop",
-    appTeamIdentifier: "Q6L2SF6YDW",
-    helperSigningIdentifier: "com.anthropic.claude-code",
-    helperTeamIdentifier: "Q6L2SF6YDW"
-)
-
-public let verifiedLauncherHelpers = [
-    codexVerifiedLauncherHelper,
-    claudeCodeVerifiedLauncherHelper,
-]
+/// A review default only: this never adds a helper to the enabled catalog.
+public func shouldPreselectVerifiedLauncherHelper(_ helper: VerifiedLauncherHelper) -> Bool {
+    guard isValidUserApprovedHelper(helper),
+          helper.appTeamIdentifier == helper.helperTeamIdentifier else { return false }
+    switch (helper.appBundleIdentifier, helper.appTeamIdentifier, helper.helperSigningIdentifier) {
+    case ("com.openai.codex", "2DC432GLL2", "codex"),
+         ("com.anthropic.claudefordesktop", "Q6L2SF6YDW", "com.anthropic.claude-code"):
+        return true
+    default:
+        return false
+    }
+}
 
 public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable {
     public var disabledHelperIDs: Set<String>
@@ -89,7 +77,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
     }
 
     public var helpers: [VerifiedLauncherHelper] {
-        verifiedLauncherHelpers + userApprovedHelpers
+        userApprovedHelpers
     }
 
     public func catalogHelper(matching discovered: VerifiedLauncherHelper) -> VerifiedLauncherHelper? {
@@ -98,9 +86,7 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
 
     public mutating func enable(_ helpers: [VerifiedLauncherHelper]) {
         for discovered in helpers {
-            let isValid = verifiedLauncherHelpers.contains(discovered)
-                || isValidUserApprovedHelper(discovered)
-            guard isValid else { continue }
+            guard isValidUserApprovedHelper(discovered) else { continue }
             if let helper = catalogHelper(matching: discovered) {
                 disabledHelperIDs.remove(helper.id)
             } else {
@@ -267,9 +253,6 @@ private func isValidVerifiedLauncherHelperConfiguration(
     Set(configuration.userApprovedHelpers.map(\.id)).count
         == configuration.userApprovedHelpers.count
         && configuration.userApprovedHelpers.allSatisfy(isValidUserApprovedHelper)
-        && configuration.userApprovedHelpers.allSatisfy { helper in
-            !verifiedLauncherHelpers.contains { $0.hasSameSigningAssociation(as: helper) }
-        }
 }
 
 private struct HelperSigningIdentity {
@@ -388,6 +371,4 @@ func saveVerifiedLauncherHelperConfiguration(
     )
 }
 
-private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration(
-    disabledHelperIDs: Set(verifiedLauncherHelpers.map(\.id))
-)
+private let failClosedVerifiedLauncherHelperConfiguration = VerifiedLauncherHelperConfiguration()

@@ -91,7 +91,8 @@ agent sandboxing is outside the product's scope.
   do not inherit the app's authority.
 - When Automic Vault discovers signed helpers while adding an app as a Verified
   Launcher, the user may explicitly associate selected helpers with that app
-  after reviewing the cross-gate authority warning.
+  after reviewing the cross-gate authority warning. Codex and Claude's exact
+  vendor-signed CLIs start selected in that review and still require Approval.
 - Git can keep its ordinary commit workflow while the GPG Signing Gate
   authorizes private-key use and may select an alternate credential for exact
   Verified Launchers.
