@@ -283,3 +283,47 @@ private let claudeCodeVerifiedLauncherHelper = vendorHelper(
     #expect(configuration.isEnabled(otherPath))
     #expect(configuration.userApprovedHelpers.count == 2)
 }
+
+@Test func helperDiscoveryAcceptsOnlyExecutableMachOImages() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    func thin(_ type: UInt8, littleEndian: Bool = true, is64: Bool = true) -> Data {
+        var bytes: [UInt8] = littleEndian
+            ? [is64 ? 0xcf : 0xce, 0xfa, 0xed, 0xfe]
+            : [0xfe, 0xed, 0xfa, is64 ? 0xcf : 0xce]
+        bytes += Array(repeating: 0, count: 8)
+        bytes += littleEndian ? [type, 0, 0, 0] : [0, 0, 0, type]
+        return Data(bytes)
+    }
+    func universal(_ slices: [Data], is64: Bool = false) -> Data {
+        var data = Data([0xca, 0xfe, 0xba, is64 ? 0xbf : 0xbe, 0, 0, 0, UInt8(slices.count)])
+        var offset = 8 + slices.count * (is64 ? 32 : 20)
+        for slice in slices {
+            data.append(Data(repeating: 0, count: 8))
+            if is64 { data.append(Data(repeating: 0, count: 4)) }
+            data.append(contentsOf: [0, 0, UInt8(offset >> 8), UInt8(offset & 255)])
+            data.append(Data(repeating: 0, count: is64 ? 16 : 8))
+            offset += slice.count
+        }
+        for slice in slices { data.append(slice) }
+        return data
+    }
+    let cases: [(Data, Bool)] = [
+        (thin(2), true), (thin(2, is64: false), true),
+        (thin(2, littleEndian: false), true), (thin(2, littleEndian: false, is64: false), true),
+        (thin(6), false), (thin(8), false), (thin(1), false),
+        (universal([thin(2), thin(2)]), true),
+        (universal([thin(2), thin(2)], is64: true), true),
+        (universal([thin(2), thin(6)]), false),
+        (Data(universal([thin(2)]).prefix(12)), false),
+        (Data([0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 0]), false),
+        (Data("#!/bin/sh\n".utf8), false), (Data(), false),
+    ]
+    for (index, entry) in cases.enumerated() {
+        let url = root.appendingPathComponent("image-\(index)")
+        try entry.0.write(to: url)
+        #expect(isLauncherHelperExecutable(at: url) == entry.1)
+    }
+    #expect(!isLauncherHelperExecutable(at: root.appendingPathComponent("missing")))
+}

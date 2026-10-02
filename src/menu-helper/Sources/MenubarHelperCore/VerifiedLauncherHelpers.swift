@@ -1,4 +1,5 @@
 import Foundation
+import MachO
 import Security
 
 private let verifiedLauncherHelpersKeychainService = "com.automicvault.verified-launcher-helpers"
@@ -175,6 +176,7 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
 
         let executableURL = candidate.standardizedFileURL.resolvingSymlinksInPath()
         guard executableURL != appExecutableURL,
+              isLauncherHelperExecutable(at: executableURL),
               let helperCode = staticCode(at: executableURL),
               SecStaticCodeCheckValidity(
                   helperCode,
@@ -220,6 +222,47 @@ public func discoverVerifiedLauncherHelpers(in appURL: URL) async -> [VerifiedLa
             ? ($0.relativePath ?? "") < ($1.relativePath ?? "")
             : order == .orderedAscending
     }
+}
+
+// Execute permission also appears on dylibs and loadable bundles. Only MH_EXECUTE
+// images can independently launch and represent a Launcher.
+func isLauncherHelperExecutable(at url: URL) -> Bool {
+    guard let file = try? FileHandle(forReadingFrom: url) else { return false }
+    defer { try? file.close() }
+    func read(at offset: UInt64, count: Int) -> [UInt8] {
+        guard (try? file.seek(toOffset: offset)) != nil,
+              let data = try? file.read(upToCount: count), data.count == count else { return [] }
+        return Array(data)
+    }
+    func integer(_ bytes: ArraySlice<UInt8>, littleEndian: Bool) -> UInt64 {
+        (littleEndian ? Array(bytes.reversed()) : Array(bytes)).reduce(0) { ($0 << 8) | UInt64($1) }
+    }
+    func isExecutableHeader(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count == 16 else { return false }
+        let magic = integer(bytes[0..<4], littleEndian: false)
+        guard [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe].contains(magic) else { return false }
+        return integer(bytes[12..<16], littleEndian: magic == 0xcefaedfe || magic == 0xcffaedfe) == UInt64(MH_EXECUTE)
+    }
+    let header = read(at: 0, count: 16)
+    if isExecutableHeader(header) { return true }
+    guard header.count == 16 else { return false }
+    let magic = integer(header[0..<4], littleEndian: false)
+    guard [0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].contains(magic) else { return false }
+    let littleEndian = magic == 0xbebafeca || magic == 0xbfbafeca
+    let is64 = magic == 0xcafebabf || magic == 0xbfbafeca
+    let count = integer(header[4..<8], littleEndian: littleEndian)
+    // Bound work on untrusted universal headers; signatures are verified separately.
+    guard count > 0, count <= 64 else { return false }
+    let stride = is64 ? 32 : 20
+    let table = read(at: 8, count: Int(count) * stride)
+    guard table.count == Int(count) * stride else { return false }
+    for index in 0..<Int(count) {
+        let start = index * stride + 8
+        let offset = integer(table[start..<(start + (is64 ? 8 : 4))], littleEndian: littleEndian)
+        guard offset >= UInt64(8 + table.count),
+              isExecutableHeader(read(at: offset, count: 16)) else { return false }
+    }
+    return true
 }
 
 func verifiedLauncherHelperRelativePath(for executableURL: URL, inside appURL: URL) -> String? {
