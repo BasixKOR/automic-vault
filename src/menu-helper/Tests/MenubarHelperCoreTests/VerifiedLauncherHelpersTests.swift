@@ -230,3 +230,27 @@ func discoversInstalledPackageManagerManagerHelpers() async {
     #expect(malformed.allowedOutsideBundleHelperIDs.isEmpty)
     #expect(!malformed.isEnabled(codexVerifiedLauncherHelper))
 }
+
+@Test func removingUserApprovedHelperRevokesAssociationAndOutsideBundlePermission() throws {
+    let helper = userApprovedHelper()
+    var configuration = VerifiedLauncherHelperConfiguration()
+    configuration.enable([helper])
+    configuration.allowedOutsideBundleHelperIDs.insert(helper.id)
+    configuration.disabledHelperIDs.insert(helper.id)
+    configuration.remove(helper)
+
+    #expect(configuration.catalogHelper(matching: helper) == nil)
+    #expect(!configuration.isEnabled(helper))
+    #expect(!configuration.disabledHelperIDs.contains(helper.id))
+    #expect(!configuration.allowedOutsideBundleHelperIDs.contains(helper.id))
+    configuration.enable([helper])
+    #expect(configuration.isEnabled(helper))
+    #expect(!configuration.allowedOutsideBundleHelperIDs.contains(helper.id))
+    #expect(decodeVerifiedLauncherHelperConfiguration(try JSONEncoder().encode(configuration)) == configuration)
+}
+
+@Test func removingBuiltInHelperDoesNotRestoreDisabledAuthority() {
+    var configuration = VerifiedLauncherHelperConfiguration(disabledHelperIDs: [codexVerifiedLauncherHelper.id])
+    configuration.remove(codexVerifiedLauncherHelper)
+    #expect(!configuration.isEnabled(codexVerifiedLauncherHelper))
+}

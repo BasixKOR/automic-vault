@@ -5972,6 +5972,26 @@ private struct VerifiedLauncherHelpersSettingsView: View {
     @StateObject private var approval = AuthorityApprovalState()
     @State private var configuration = loadVerifiedLauncherHelperConfiguration()
     @State private var status = ""
+    @State private var discoveredHelpers: [VerifiedLauncherHelper] = []
+    @State private var discoveryTask: Task<Void, Never>?
+
+    private var helpers: [VerifiedLauncherHelper] {
+        var result = configuration.helpers
+        for discovered in discoveredHelpers {
+            let helper = configuration.catalogHelper(matching: discovered) ?? discovered
+            if !result.contains(where: { $0.id == helper.id }) { result.append(helper) }
+        }
+        return result
+    }
+
+    private var parents: [VerifiedLauncherHelper] {
+        helpers.reduce(into: []) { result, helper in
+            if !result.contains(where: {
+                $0.appBundleIdentifier == helper.appBundleIdentifier
+                    && $0.appTeamIdentifier == helper.appTeamIdentifier
+            }) { result.append(helper) }
+        }.sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -5982,9 +6002,33 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-            ForEach(configuration.helpers) { helper in
-                helperRow(helper)
-                if helper.id != configuration.helpers.last?.id { Divider() }
+            Text("Associations apply at every current and future Authorization Gate where the parent app has a Launcher-specific rule. Enabling a helper may widen Secret access and controlled operations up to each rule’s Access Level. Enable only helpers you trust to act as the app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Discover Helpers in App…", action: discoverHelpers)
+                    .disabled(discoveryTask != nil)
+                if discoveryTask != nil {
+                    ProgressView().controlSize(.small)
+                    Text("Inspecting app…").font(.caption)
+                }
+            }
+            ForEach(parents) { parent in
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(parent.appName).font(.headline)
+                    Text("\(parent.appBundleIdentifier) · Team \(parent.appTeamIdentifier)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    ForEach(helpers.filter {
+                        $0.appBundleIdentifier == parent.appBundleIdentifier
+                            && $0.appTeamIdentifier == parent.appTeamIdentifier
+                    }) { helper in
+                        helperRow(helper)
+                    }
+                }
+                Divider()
             }
             InfoBlock(
                 title: "Exact identities only",
@@ -5996,7 +6040,12 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .onDisappear { approval.cancelAll() }
+        .onAppear { configuration = loadVerifiedLauncherHelperConfiguration() }
+        .onDisappear {
+            approval.cancelAll()
+            discoveryTask?.cancel()
+            discoveryTask = nil
+        }
     }
 
     private func helperRow(_ helper: VerifiedLauncherHelper) -> some View {
@@ -6011,7 +6060,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         }
                         approval.request(
                             helper.id, title: "Enable \(helper.name) Launcher Helper",
-                            detail: "Allow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
+                            detail: "Signing ID: \(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)\nPath: \(helper.relativePath ?? "Vendor-reviewed association")\n\nAllow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
                         ) { approved in
                             if approved { persist(helper, enabled: true) }
                         }
@@ -6024,24 +6073,26 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                 )
             }
             .disabled(approval.isPending(helper.id))
-            Toggle("Allow outside the parent bundle", isOn: Binding(
-                get: { configuration.allowedOutsideBundleHelperIDs.contains(helper.id) },
-                set: { next in
-                    guard next else {
-                        persistOutsideBundle(helper, allowed: false)
-                        return
+            if configuration.catalogHelper(matching: helper) != nil {
+                Toggle("Allow outside the parent bundle", isOn: Binding(
+                    get: { configuration.allowedOutsideBundleHelperIDs.contains(helper.id) },
+                    set: { next in
+                        guard next else {
+                            persistOutsideBundle(helper, allowed: false)
+                            return
+                        }
+                        approval.request(
+                            helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
+                            detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
+                        ) { approved in
+                            if approved { persistOutsideBundle(helper, allowed: true) }
+                        }
                     }
-                    approval.request(
-                        helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
-                        detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
-                    ) { approved in
-                        if approved { persistOutsideBundle(helper, allowed: true) }
-                    }
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .disabled(approval.isPending(helper.id))
-            Text("\(helper.helperSigningIdentifier) → \(helper.appBundleIdentifier)")
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(approval.isPending(helper.id))
+            }
+            Text("\(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
@@ -6053,13 +6104,43 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
+            if configuration.userApprovedHelpers.contains(where: { $0.id == helper.id }) {
+                Button("Remove Association", role: .destructive) {
+                    approval.cancel(helper.id)
+                    var next = loadVerifiedLauncherHelperConfiguration()
+                    next.remove(helper)
+                    persist(next)
+                }
+                .disabled(approval.isPending(helper.id))
+            } else if configuration.catalogHelper(matching: helper) == nil {
+                Text("Discovered · Not enabled").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func discoverHelpers() {
+        let panel = NSOpenPanel()
+        panel.title = "Discover Verified Launcher Helpers"
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            discoveryTask = Task {
+                let discovered = await discoverVerifiedLauncherHelpers(in: url)
+                guard !Task.isCancelled else { return }
+                configuration = loadVerifiedLauncherHelperConfiguration()
+                discoveredHelpers = discovered
+                status = discovered.isEmpty ? "No eligible signed helpers were found in this app." : ""
+                discoveryTask = nil
+            }
         }
     }
 
     private func persist(_ helper: VerifiedLauncherHelper, enabled: Bool) {
-        var next = configuration
+        var next = loadVerifiedLauncherHelperConfiguration()
         if enabled {
-            next.disabledHelperIDs.remove(helper.id)
+            next.enable([helper])
         } else {
             next.disabledHelperIDs.insert(helper.id)
         }
@@ -6067,7 +6148,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
     }
 
     private func persistOutsideBundle(_ helper: VerifiedLauncherHelper, allowed: Bool) {
-        var next = configuration
+        var next = loadVerifiedLauncherHelperConfiguration()
         if allowed {
             next.allowedOutsideBundleHelperIDs.insert(helper.id)
         } else {

@@ -111,6 +111,13 @@ public struct VerifiedLauncherHelperConfiguration: Codable, Equatable, Sendable 
         userApprovedHelpers.sort { $0.id < $1.id }
     }
 
+    public mutating func remove(_ helper: VerifiedLauncherHelper) {
+        guard userApprovedHelpers.contains(where: { $0.id == helper.id }) else { return }
+        userApprovedHelpers.removeAll { $0.id == helper.id }
+        disabledHelperIDs.remove(helper.id)
+        allowedOutsideBundleHelperIDs.remove(helper.id)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case disabledHelperIDs
         case userApprovedHelpers
