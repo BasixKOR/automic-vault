@@ -5391,33 +5391,10 @@ private struct LauncherHelperReviewView: View {
                         SecretGateField("Identifier", review.signing.identifier, monospaced: true)
                         SecretGateField("Team ID", review.signing.teamIdentifier, monospaced: true)
                         SecretGateField("Path", review.signing.path, monospaced: true)
-                        SecretGateField("Designated requirement", review.signing.requirement, monospaced: true)
                         if let warning = launcherRuntimeWarning(review.signing.runtimeProtection) {
                             InfoBlock(title: "Runtime warning", text: warning)
                         }
-                        if model.isDiscoveringLauncherHelpers {
-                            ProgressView("Inspecting app for signed helpers…")
-                                .accessibilityIdentifier("launcher-review-discovery-progress")
-                        } else if review.helpers.isEmpty {
-                            Text("No eligible signed helpers were found.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text("Select only helpers that should share the app’s Launcher Identity.")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(appName).font(.title2.weight(.semibold))
-                                LauncherHelperOutlineView(helpers: review.helpers, row: helperRow)
-                                    .padding(.leading, 18)
-                            }
-                            .padding(.horizontal, 12)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor))
-                            }
-                        }
-                        Text("To change helper associations later, open Settings → Verified Launcher Helpers. Use Refresh Helper List for the app to find new helpers, then enable, disable, or remove associations.")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Helpers").font(.title2.weight(.semibold))
                         VStack(alignment: .leading, spacing: 8) {
                             Label("This may widen Secret access", systemImage: "exclamationmark.triangle.fill")
                                 .font(.headline)
@@ -5430,6 +5407,24 @@ private struct LauncherHelperReviewView: View {
                         }
                         .padding(14)
                         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        if model.isDiscoveringLauncherHelpers {
+                            ProgressView("Inspecting app for signed helpers…")
+                                .accessibilityIdentifier("launcher-review-discovery-progress")
+                        } else if review.helpers.isEmpty {
+                            Text("No eligible signed helpers were found.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            LauncherHelperOutlineView(helpers: review.helpers, row: helperRow)
+                            .padding(12)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor))
+                            }
+                        }
+                        Text("To change helper associations later, open Settings → Verified Launcher Helpers. Use Refresh Helper List for the app to find new helpers, then enable, disable, or remove associations.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        SecretGateField("Designated requirement", review.signing.requirement, monospaced: true)
                     }
                     .padding(22)
                     .frame(maxWidth: .infinity, alignment: .leading)
