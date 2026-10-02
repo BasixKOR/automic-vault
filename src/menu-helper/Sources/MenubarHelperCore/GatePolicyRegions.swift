@@ -25,6 +25,10 @@ public struct GatePolicyRegions: Equatable {
         return Int((min(1, max(0, fraction)) * Double(columnCount)).rounded())
     }
 
+    public func adjustedBoundary(_ boundary: Int, isAllow: Bool, increment: Bool) -> Int {
+        min(isAllow ? levels.count : columnCount, max(0, boundary + (increment ? 1 : -1)))
+    }
+
     public func protection(at boundary: Int) -> SecretGateProtection {
         boundary <= 0 ? .noAccess : levels[min(boundary, levels.count) - 1]
     }

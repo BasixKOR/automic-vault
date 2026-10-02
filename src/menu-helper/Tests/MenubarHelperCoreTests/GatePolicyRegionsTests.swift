@@ -51,3 +51,19 @@ import Testing
     #expect(invalid.denyStart == 0)
     #expect(invalid.deniesUnknown)
 }
+
+@Test func gatePolicyKeyboardAdjustmentStaysWithinSupportedBoundaries() {
+    for id in ["aws", "gh", "brew", "gpg-signing", "ssh-agent"] {
+        let gate = SecretGate(id: id, keyPatterns: ["SECRET"], routes: [],
+                              defaultProtection: .noAccess, appPolicies: [])
+        let regions = GatePolicyRegions(gate: gate, protection: .noAccess, denial: nil)
+        for isAllow in [true, false] {
+            let maximum = isAllow ? regions.levels.count : regions.columnCount
+            for boundary in 0...maximum {
+                #expect(regions.adjustedBoundary(boundary, isAllow: isAllow, increment: true) == min(maximum, boundary + 1))
+                #expect(regions.adjustedBoundary(boundary, isAllow: isAllow, increment: false) == max(0, boundary - 1))
+            }
+        }
+        #expect(!regions.protection(at: regions.adjustedBoundary(regions.allowEnd, isAllow: true, increment: true)).allows(.unknown))
+    }
+}

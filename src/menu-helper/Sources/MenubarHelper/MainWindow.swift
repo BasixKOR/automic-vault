@@ -7108,7 +7108,7 @@ private struct GatePolicyTable: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Drag the boundaries or choose an exact level. Changes stay pending until reviewed.")
+            Text("Drag the boundaries, or focus a handle and use the arrow keys. Changes stay pending until reviewed.")
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
                 VStack(spacing: 0) {
@@ -7213,29 +7213,10 @@ private struct GatePolicyTable: View {
                     GatePolicyTrack(gate: gate, protection: access.protection(for: gate), denial: access.denial,
                         setProtection: { stage(.signing(SigningGateAccess(protection: $0, denial: nil)), for: app) },
                         setDenial: { stage(.signing(SigningGateAccess(protection: access.protection(for: gate), denial: $0)), for: app) })
-                    NativeProtectionMenu(gate: gate,
-                        protection: access == .deny ? nil : access.protection(for: gate),
-                        usesPhone: false, includesDeny: true) { level in
-                        stage(.signing(level.map { SigningGateAccess(protection: $0, denial: nil) } ?? .deny), for: app)
-                    }
-                    .frame(maxWidth: 240, alignment: .leading)
                 } else {
                     GatePolicyTrack(gate: gate, protection: protection, denial: denial,
                                     setProtection: { stage(.allow($0), for: app) },
                                     setDenial: { stage(.denial($0), for: app) })
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Allow ≤").font(.caption).foregroundStyle(.secondary)
-                        NativeProtectionMenu(gate: gate, protection: protection, usesPhone: false) { level in
-                            if let level { stage(.allow(level), for: app) }
-                        }
-                        .frame(maxWidth: 170)
-                        Spacer(minLength: 4)
-                        Text("Deny ≥").font(.caption).foregroundStyle(.secondary)
-                        NativeProtectionMenu(gate: gate, protection: denial, usesPhone: false, isDenial: true) {
-                            stage(.denial($0), for: app)
-                        }
-                        .frame(maxWidth: 170)
-                    }
                 }
                 if app?.usesGateDefault == true && !rowChanges.contains(where: {
                     switch $0.value {
@@ -7351,6 +7332,7 @@ private struct GatePolicyTrack: View {
     @Environment(\.displayScale) private var displayScale
     @GestureState private var allowDrag: Int?
     @GestureState private var denyDrag: Int?
+    @FocusState private var focusedHandle: Bool?
 
     private var regions: GatePolicyRegions { GatePolicyRegions(gate: gate, protection: protection, denial: denial) }
 
@@ -7433,7 +7415,6 @@ private struct GatePolicyTrack: View {
             // Separate the handles vertically so both remain reachable when they meet.
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
-            .offset(x: width * CGFloat(boundary) / CGFloat(regions.columnCount) - 11, y: isAllow ? -10 : 10)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("gate-policy-track"))
                 .updating(isAllow ? $allowDrag : $denyDrag) { event, state, _ in
                     state = min(isAllow ? regions.levels.count : regions.columnCount,
@@ -7444,15 +7425,42 @@ private struct GatePolicyTrack: View {
                     if isAllow { setProtection(regions.protection(at: snapped)) }
                     else { setDenial(regions.denial(at: snapped)) }
                 })
+            .focusable(interactions: .edit)
+            .focused($focusedHandle, equals: isAllow)
+            .focusEffectDisabled()
+            .overlay {
+                if focusedHandle == isAllow {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                        .padding(-3)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+                adjust(isAllow: isAllow, boundary: boundary,
+                       increment: press.key == .rightArrow || press.key == .upArrow)
+                return .handled
+            }
             .accessibilityElement()
             .accessibilityLabel(isAllow ? "Allow through" : "Deny from")
             .accessibilityValue(value)
             .accessibilityAdjustableAction { direction in
-                let next = min(isAllow ? regions.levels.count : regions.columnCount, max(0, boundary + (direction == .increment ? 1 : -1)))
-                if isAllow { setProtection(regions.protection(at: next)) }
-                else { setDenial(regions.denial(at: next)) }
+                switch direction {
+                case .increment: adjust(isAllow: isAllow, boundary: boundary, increment: true)
+                case .decrement: adjust(isAllow: isAllow, boundary: boundary, increment: false)
+                @unknown default: break
+                }
             }
-            .help(isAllow ? "Drag to extend or contract allow." : "Drag to extend or contract deny.")
+            .accessibilityHint("Use the arrow keys to adjust this boundary. Changes stay pending until reviewed.")
+            .help(isAllow ? "Drag or use arrow keys to adjust allow." : "Drag or use arrow keys to adjust deny.")
+            .offset(x: width * CGFloat(boundary) / CGFloat(regions.columnCount) - 11, y: isAllow ? -10 : 10)
+    }
+
+    private func adjust(isAllow: Bool, boundary: Int, increment: Bool) {
+        let next = regions.adjustedBoundary(boundary, isAllow: isAllow, increment: increment)
+        if isAllow { setProtection(regions.protection(at: next)) }
+        else { setDenial(regions.denial(at: next)) }
     }
 }
 
