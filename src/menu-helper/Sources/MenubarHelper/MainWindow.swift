@@ -6065,10 +6065,8 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("Discover Helpers in App…", action: discoverHelpers)
-                    .disabled(discoveryTask != nil)
-                if discoveryTask != nil {
+            if discoveryTask != nil {
+                HStack {
                     ProgressView().controlSize(.small)
                     Text("Inspecting app…").font(.caption)
                 }
@@ -6189,43 +6187,27 @@ private struct VerifiedLauncherHelpersSettingsView: View {
         guard let url = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: parent.appBundleIdentifier
         ) else {
-            status = "Could not find the installed \(parent.appName) app. Use Discover Helpers in App to locate it."
+            status = "Could not find the installed \(parent.appName) app. Install or restore the app, then refresh its helper list."
             return
         }
         discoverHelpers(in: url, parent: parent)
     }
 
-    private func discoverHelpers() {
-        let panel = NSOpenPanel()
-        panel.title = "Discover Verified Launcher Helpers"
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.allowsMultipleSelection = false
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            discoverHelpers(in: url)
-        }
-    }
-
-    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelper? = nil) {
+    private func discoverHelpers(in url: URL, parent: VerifiedLauncherHelper) {
         guard discoveryTask == nil else { return }
         status = ""
         discoveryTask = Task {
             let discovered = await discoverVerifiedLauncherHelpers(in: url)
             guard !Task.isCancelled else { return }
             let matching = discovered.filter { helper in
-                guard let parent else { return true }
                 return helper.appBundleIdentifier == parent.appBundleIdentifier
                     && helper.appTeamIdentifier == parent.appTeamIdentifier
             }
             configuration = loadVerifiedLauncherHelperConfiguration()
             // Keep other apps' discovered choices visible while reviewing this app.
             discoveredHelpers.removeAll { helper in
-                if let parent {
-                    return helper.appBundleIdentifier == parent.appBundleIdentifier
-                        && helper.appTeamIdentifier == parent.appTeamIdentifier
-                }
-                return helper.appBundleIdentifier == Bundle(url: url)?.bundleIdentifier
+                helper.appBundleIdentifier == parent.appBundleIdentifier
+                    && helper.appTeamIdentifier == parent.appTeamIdentifier
             }
             discoveredHelpers.append(contentsOf: matching)
             status = matching.isEmpty
