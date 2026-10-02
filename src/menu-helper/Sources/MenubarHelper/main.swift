@@ -12054,6 +12054,7 @@ private struct ApprovalProcessSecurityNode: Identifiable {
     let explanation: String
     let isAutomicVaultSigned: Bool
     var invocationName: String? = nil
+    var scriptOperand: String? = nil
 
     var id: String { "\(pid ?? -1):\(path)" }
     var executableName: String { URL(fileURLWithPath: path).lastPathComponent }
@@ -12073,6 +12074,20 @@ private func approvalProcessInvocationName(path: String, arguments: [String]) ->
         return "npm"
     }
     return nil
+}
+
+// Reported context only: neither argv nor a script operand authenticates source code.
+private func approvalProcessScriptOperand(path: String, arguments: [String]) -> String? {
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    let interpreter = ["sh", "bash", "zsh", "fish", "node", "nodejs", "ruby", "perl", "php", "python"]
+        .contains(name) || name.range(of: #"^python[23](\.[0-9]+)*$"#, options: .regularExpression) != nil
+    guard interpreter, arguments.count > 1,
+          !arguments[1].isEmpty, !arguments[1].hasPrefix("-"),
+          URL(fileURLWithPath: arguments[1]).lastPathComponent != "",
+          !(["node", "nodejs"].contains(name) && (arguments[1] == "inspect"
+              || arguments.first == "npm" || arguments.first?.hasPrefix("npm ") == true))
+    else { return nil }
+    return arguments[1]
 }
 
 private struct ApprovalProcessSecurity {
@@ -12250,12 +12265,12 @@ private func approvalProcessSecurity(
         if identity.pid == request.sshPeer?.identity.pid { roles.append("SSH client") }
         if roles.isEmpty { roles.append("Intermediary") }
 
-        let invocationName = identity.execution.flatMap { execution -> String? in
+        let arguments = identity.execution.flatMap { execution -> [String]? in
             guard !isLauncher, approvalProcessExecutionIsLive(execution),
                   let arguments = processArgumentVector(identity.pid),
                   approvalProcessExecutionIsLive(execution)
             else { return nil }
-            return approvalProcessInvocationName(path: identity.path, arguments: arguments)
+            return arguments
         }
         let signing = identity.execution.flatMap { execution -> LiveSigningInfo? in
             guard approvalProcessExecutionIsLive(execution) else { return nil }
@@ -12278,7 +12293,8 @@ private func approvalProcessSecurity(
                 signing,
                 teamIdentifier: automicVaultTeamIdentifier
             ),
-            invocationName: invocationName
+            invocationName: arguments.flatMap { approvalProcessInvocationName(path: identity.path, arguments: $0) },
+            scriptOperand: arguments.flatMap { approvalProcessScriptOperand(path: identity.path, arguments: $0) }
         )
     }
 
@@ -13721,6 +13737,7 @@ private extension ApprovalProcessSecurityNode {
         [
             "\(displayRoles): \(name.isEmpty ? path : name)",
             "Path: \(escapedSecurityPath(path))",
+            scriptOperand.map { "Reported script operand (unverified): \(escapedSecurityPath($0))" },
             invocationName.map { _ in
                 "Invoked via \(executableName); name reported by mutable process arguments, not verified code identity"
             },
@@ -13947,6 +13964,16 @@ private struct ApprovalPromptProcessNodeView: View {
                 Text("via \(node.executableName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if let script = node.scriptOperand {
+                Text(escapedSecurityPath(URL(fileURLWithPath: script).lastPathComponent))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: 150)
+                    .help(node.details)
+                    .accessibilityLabel("Reported script operand, unverified: \(escapedSecurityPath(script))")
             }
             ApprovalPromptPathView(path: escapedSecurityPath(node.path))
                 .frame(width: 150)
@@ -15679,6 +15706,21 @@ private func runApprovalSelfCheck() -> Int32 {
         return 1
     } catch {}
     guard !delivered else { return 1 }
+    for interpreter in ["bash", "zsh", "sh", "fish", "node", "nodejs", "python", "python3", "python3.14", "ruby", "perl", "php"] {
+        let path = "/usr/bin/" + interpreter
+        guard approvalProcessScriptOperand(path: path, arguments: [path, "scripts/publish file", "--token", "secret"]) == "scripts/publish file",
+              approvalProcessScriptOperand(path: path, arguments: [path]) == nil,
+              approvalProcessScriptOperand(path: path, arguments: [path, ""]) == nil,
+              approvalProcessScriptOperand(path: path, arguments: [path, "-"]) == nil,
+              approvalProcessScriptOperand(path: path, arguments: [path, "-c", "echo secret"]) == nil,
+              approvalProcessScriptOperand(path: path, arguments: [path, "--", "publish.sh"]) == nil
+        else { print("Script operand presentation self-check failed: \(interpreter)"); return 1 }
+    }
+    guard approvalProcessScriptOperand(path: "/usr/bin/ssh", arguments: ["ssh", "host"]) == nil,
+          approvalProcessScriptOperand(path: "/usr/bin/python3-imposter", arguments: ["python3-imposter", "script"]) == nil,
+          approvalProcessScriptOperand(path: "/usr/bin/node", arguments: ["node", "inspect", "script.js"]) == nil,
+          approvalProcessScriptOperand(path: "/usr/bin/node", arguments: ["npm", "install"]) == nil
+    else { return 1 }
     let nodePath = "/opt/homebrew/bin/node"
     let sshReuseRequest = sshRequest.decisionReuseRequest(
         clientIdentity: selfIdentity, callerPath: sshRequest.target, signing: helperSigning

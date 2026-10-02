@@ -525,7 +525,9 @@ a Secret confidential.
 
 Execution Chain labels may identify an invocation such as `npm` from mutable
 process arguments. They retain the interpreter's executable path and runtime
-posture and do not establish the invoked code's identity. SSH Approvals identify
+posture and do not establish the invoked code's identity. Known script interpreters
+may show their first argument as an unverified script operand; option-led
+invocations are omitted, and script arguments are not displayed. SSH Approvals identify
 the local SSH client separately from the `av` signing Target and describe the
 operation as authentication, which may permit remote writes.
 
