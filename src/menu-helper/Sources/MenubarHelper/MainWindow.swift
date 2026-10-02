@@ -7215,11 +7215,15 @@ private struct GatePolicyTable: View {
                     Text("Auto-allow requires Hardened Runtime.").font(.caption).foregroundStyle(.secondary)
                     Text("Denial applies regardless of runtime.").font(.caption).foregroundStyle(.secondary)
                 }
-                if !rowChanges.isEmpty {
-                    Text("Edited").font(.caption).foregroundStyle(Color.accentColor)
-                }
             }
             .frame(width: 190, alignment: .leading)
+            .overlay(alignment: .bottomLeading) {
+                if !rowChanges.isEmpty {
+                    Text("Edited").font(.caption).foregroundStyle(Color.accentColor)
+                        .offset(y: 14)
+                        .allowsHitTesting(false)
+                }
+            }
             VStack(alignment: .leading, spacing: 8) {
                 if !gate.supportsUnknownDenial {
                     let access = rowChanges.compactMap { change -> SigningGateAccess? in
@@ -7351,6 +7355,7 @@ private struct GatePolicyTrack: View {
     @GestureState private var allowDrag: Int?
     @GestureState private var denyDrag: Int?
     @FocusState private var focusedHandle: Bool?
+    @State private var showsKeyboardFocus = false
 
     private var regions: GatePolicyRegions { GatePolicyRegions(gate: gate, protection: protection, denial: denial) }
 
@@ -7446,8 +7451,14 @@ private struct GatePolicyTrack: View {
             .focusable(interactions: .edit)
             .focused($focusedHandle, equals: isAllow)
             .focusEffectDisabled()
+            .onChange(of: focusedHandle) { _, handle in
+                showsKeyboardFocus = handle != nil && NSApp.currentEvent?.type == .keyDown
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
+                showsKeyboardFocus = false
+            })
             .overlay {
-                if focusedHandle == isAllow {
+                if focusedHandle == isAllow && showsKeyboardFocus {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(Color.accentColor, lineWidth: 2)
                         .padding(-3)
@@ -7456,6 +7467,7 @@ private struct GatePolicyTrack: View {
                 }
             }
             .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+                showsKeyboardFocus = true
                 adjust(isAllow: isAllow, boundary: boundary,
                        increment: press.key == .rightArrow || press.key == .upArrow)
                 return .handled
