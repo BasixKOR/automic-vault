@@ -7,15 +7,21 @@ and [Architecture](architecture.md).
 
 ## Product promise
 
-CLI security is broken. The packaging layer is where we fix it.
+macOS protects your apps. We protect your command line.
 
-You install a CLI to do a job. Its credentials often sit in files, environment
-variables, or helpers that other code running as you can read. An agent running
-that CLI inherits access you may never have meant to give it.
+Since Max Howell created Homebrew, Apple has added layers of protection around
+Mac apps: Gatekeeper, notarization, malware checks, and permissions for sensitive
+data. Automic Vault complements that work for developer credentials and
+supported command-line operations.
 
-Automic Vault hardens supported tools where they are installed and configured.
-We move exposed credentials into protected storage and reconfigure, wrap, or
-patch the tools to request authorization when they use them. Homebrew has an
+Command-line tools still often keep credentials in files, environment variables,
+or helpers that other code running as you can read. An agent or dependency can
+inherit the authority to publish a release or change your cloud infrastructure
+without a separate decision about that operation.
+
+Automic Vault builds on macOS code signing, Hardened Runtime, and the Keychain.
+We harden supported tools where they are installed and configured, move exposed
+credentials into protected custody, and authorize their use. Homebrew has an
 Execution Gate for supported package-management operations, too.
 
 You keep using your commands. Automic Vault checks the complete operation before
@@ -23,37 +29,44 @@ applying a protected credential, and asks you when policy requires Approval.
 
 ## Short copy
 
-**Headline:** CLI security is broken. The packaging layer is where we fix it.
+**Headline:** macOS protects your apps. We protect your command line.
 
-**Founder line:** I created Homebrew. Now I’m fixing what happens when agents use it.
+**Founder line:** Since I created Homebrew, Apple has transformed Mac app
+security. I’m bringing that same care to the command line.
 
-**One sentence:** Automic Vault hardens supported CLI tools on macOS, moves
-exposed credentials into the Keychain, and gates their use while you keep your
-usual commands.
+**One sentence:** Automic Vault complements macOS security for supported CLI
+tools: protected credentials, operation-level authorization, and your usual
+commands.
 
 **Supporting line:** Your secrets manager should know what the secrets *do*.
 Follow it with GitHub's read, write, and disclosure decisions for one token.
 
 ## Voice and order
 
-Write as the developers fixing a specific problem in the command-line toolchain.
-Explain the exposed credential or uncontrolled operation, show the intervention,
-and give a command that demonstrates it. Use plain, opinionated language.
+Lead with respect for Apple's Mac app security and our complementary role in
+the command line. Connect the founder's Homebrew history to the credentials and
+authority developer tools carry today. Explain the remaining credential and
+operation gap, then show the intervention with `av harden gh` and Homebrew's
+Read & Update policy. Follow with the runtime demo, Scan or installation path,
+and relevant security boundary.
 
-Lead with packaging and tool hardening. Show what `av harden gh` changes and
-how Homebrew's Read & Update policy treats installs before the runtime demo.
-Follow with the operation comparison, a Scan or installation path, and the
-relevant security boundary. Attribute the founder line to Max Howell without
-repeating “creator of Homebrew” beside it. The About page connects tool
-installation to the authority agents inherit. Explain Secrets,
-Verified Launchers, and Authorization Gates as the reader encounters them.
-Keep the fuller model in the technical documentation.
+Attribute the first-person founder line to Max Howell without repeating
+“creator of Homebrew” beside it. Explain Secrets, Verified Launchers, and
+Authorization Gates as the reader encounters them. Keep the fuller model in
+the technical documentation.
 
-“The packaging layer is where we fix it” describes our intervention through tool
-installation and configuration. Hardeners may use an Isotope, a wrapper, an
-upstream credential helper, or a verified vendor release. Runtime Authorization
-Gates enforce protected requests after installation. Packaging itself is not an
-authority decision, and installing a package does not make its code trustworthy.
+Apple's security technologies also protect command-line software. Do not claim
+that macOS ignores the terminal or that CLI tools have no OS protections. Apple
+also documents [Terminal and script protections](https://support.apple.com/guide/security/terminal-and-script-protections-sece3b202c4b/web).
+Our gap is protected developer credential use and authorization of supported
+operations. “We protect your command line” must appear with that concrete scope;
+it does not promise general malware prevention or execution containment.
+
+Tool installation and configuration are our intervention points. Hardeners may
+use an Isotope, a wrapper, an upstream credential helper, or a verified vendor
+release. Runtime Authorization Gates enforce protected requests after
+installation. Packaging itself is not an authority decision, and installing a
+package does not make its code trustworthy.
 
 Do not turn package-catalog size into a protection claim. Coverage is per
 supported Tool and operation. Do not imply that every Homebrew package, npm
