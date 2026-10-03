@@ -7140,6 +7140,9 @@ private struct GatePolicyTable: View {
                     }
                     Divider()
                 }
+                // Endpoint handles extend beyond the track, including their focus outlines.
+                // Keep that overflow inside the horizontal scroll view's content bounds.
+                .padding(.horizontal, 16)
                 .frame(width: max(720, availableWidth))
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
