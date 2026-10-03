@@ -2311,14 +2311,19 @@ func runDashboardSearchSelfCheck() -> Int32 {
           navigationModel.snapshot == navigationSnapshot
     else { return 1 }
     // A selected/new rule must leave every existing rule and Default Policy visible.
-    func policyControlCount(in view: NSView) -> Int {
-        (view is NSPopUpButton ? 1 : 0) + view.subviews.reduce(0) { $0 + policyControlCount(in: $1) }
-    }
+    var renderedRows: [String] = []
     let policyHost = NSHostingView(rootView: SecretGateDetailView(
-        model: navigationModel, gate: navigationSnapshot.secretGates[1]))
+        model: navigationModel, gate: navigationSnapshot.secretGates[1])
+        .onPreferenceChange(GatePolicyRowPreference.self) { renderedRows = $0 })
     policyHost.frame = NSRect(x: 0, y: 0, width: 1000, height: 1000)
-    policyHost.layoutSubtreeIfNeeded()
-    guard policyControlCount(in: policyHost) == 2 * (rules.count + 1) else {
+    let expectedRows = ["default"] + rules.map { $0.requirement }
+    let deadline = Date().addingTimeInterval(2)
+    repeat {
+        policyHost.layoutSubtreeIfNeeded()
+        if renderedRows.sorted() == expectedRows.sorted() { break }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+    } while Date() < deadline
+    guard renderedRows.sorted() == expectedRows.sorted() else {
         print("History-selected Launcher hid existing rules or Default Policy")
         return 1
     }
@@ -7079,6 +7084,14 @@ private struct GatePolicyChange: Identifiable, Equatable {
     }
 }
 
+// Observe rendered row identities without depending on the native backing controls.
+private struct GatePolicyRowPreference: PreferenceKey {
+    static let defaultValue: [String] = []
+    static func reduce(value: inout [String], nextValue: () -> [String]) {
+        value += nextValue()
+    }
+}
+
 private struct GatePolicyTable: View {
     @ObservedObject var model: DashboardModel
     let gate: SecretGate
@@ -7239,6 +7252,7 @@ private struct GatePolicyTable: View {
         .padding(.vertical, 14)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(app?.bundleIdentifier ?? localizedUIString(gate.defaultPolicyLabel))
+        .preference(key: GatePolicyRowPreference.self, value: [app?.requirement ?? "default"])
         .disabled(pending)
     }
 
