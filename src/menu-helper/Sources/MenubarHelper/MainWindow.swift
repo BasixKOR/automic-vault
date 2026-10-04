@@ -8275,7 +8275,6 @@ private struct DashboardOverviewView: View {
                             .id(version)
                         Button(action: checkForUpdates) {
                             Text("Update to v\(version)…")
-                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                     }
