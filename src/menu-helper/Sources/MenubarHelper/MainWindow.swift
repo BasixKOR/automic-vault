@@ -7138,6 +7138,7 @@ private struct GatePolicyTable: View {
                                     .help("Unclassified operations can require Approval or be denied, but cannot be automatically allowed.")
                             }
                         }
+                        .padding(.trailing, 16)
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 10)
                     Divider()
@@ -7153,9 +7154,6 @@ private struct GatePolicyTable: View {
                     }
                     Divider()
                 }
-                // Endpoint handles extend beyond the track, including their focus outlines.
-                // Keep that overflow inside the horizontal scroll view's content bounds.
-                .padding(.horizontal, 16)
                 .frame(width: max(720, availableWidth))
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
@@ -7399,6 +7397,8 @@ private struct GatePolicyTrack: View {
         }
         .frame(height: 40)
         .coordinateSpace(name: "gate-policy-track")
+        // Keep the final handle and focus outline inside the scroll view.
+        .padding(.trailing, 16)
     }
 
     private func region(_ title: String, symbol: String, color: Color, columns: Int, width: CGFloat) -> some View {
@@ -7416,13 +7416,14 @@ private struct GatePolicyTrack: View {
     private func handle(isAllow: Bool, boundary: Int, width: CGFloat) -> some View {
         let value = isAllow ? gate.protectionTitle(regions.protection(at: boundary))
             : regions.denial(at: boundary).map { $0 == .noAccess ? String(localized: "All operations") : gate.protectionTitle($0) } ?? String(localized: "None")
-        let tint: Color = isAllow ? .green : .red
         let isDragging = isAllow ? allowDrag != nil : denyDrag != nil
+        let isFocused = focusedHandle == isAllow && showsKeyboardFocus
+        let tint: Color = isFocused || isDragging ? .accentColor : (isAllow ? .green : .red)
         return RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(Color(nsColor: .controlBackgroundColor))
             .overlay {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(tint.opacity(isDragging ? 0.9 : 0.45), lineWidth: 1)
+                    .strokeBorder(tint.opacity(isFocused || isDragging ? 0.9 : 0.45), lineWidth: 1)
             }
             .overlay {
                 HStack(spacing: 3) {
