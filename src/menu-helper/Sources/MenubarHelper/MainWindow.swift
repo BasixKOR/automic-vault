@@ -8296,6 +8296,7 @@ private struct DashboardOverviewView: View {
                             Text("Update to v\(version)…")
                         }
                         .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .frame(maxHeight: compact ? 220 : .infinity, alignment: .topLeading)
