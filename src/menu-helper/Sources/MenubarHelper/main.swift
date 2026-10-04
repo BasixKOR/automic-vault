@@ -12401,6 +12401,9 @@ private func launcherIdentities(
     bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL },
     allowsStandaloneFallback: Bool = true,
     helperConfiguration: VerifiedLauncherHelperConfiguration? = nil,
+    installedAppURL: (String) -> URL? = {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+    },
     helperSigning: (VerifiedLauncherHelperAssociation, pid_t) -> StaticSigningInfo? = {
         verifiedLauncherHelperSigningInfo($0, pid: $1)
     }
@@ -12427,7 +12430,8 @@ private func launcherIdentities(
         path: path,
         signing: signing,
         containingAppURLs: containingAppURLs,
-        configuration: helperConfiguration
+        configuration: helperConfiguration,
+        installedAppURL: installedAppURL
     )
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
         || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
@@ -17455,8 +17459,86 @@ private func runClaudeOutsideBundleDefaultSelfCheck() -> Bool {
     return true
 }
 
+// Exercise attribution and policy together: the helper represents a strict parent
+// rule but must retain its own runtime posture (issue #378).
+private func runClaudeHelperRuntimeSelfCheck() -> Bool {
+    let helper = claudeCodeVerifiedLauncherHelper
+    let parent = StaticSigningInfo(
+        identifier: helper.appBundleIdentifier, teamIdentifier: helper.appTeamIdentifier,
+        designatedRequirement: "claude-parent-fixture"
+    )
+    let path = "/av-self-check/claude"
+    func candidates(
+        runtime: LauncherRuntimeProtection = .hardenedWithLibraryValidationDisabled,
+        enabled: Bool = true, outsideAllowed: Bool = true, verified: Bool = true,
+        team: String = "Q6L2SF6YDW", identifier: String = "com.anthropic.claude-code",
+        parentInstalled: Bool = true
+    ) -> [LauncherIdentity] {
+        var configuration = VerifiedLauncherHelperConfiguration()
+        if !enabled { configuration.disabledHelperIDs.insert(helper.id) }
+        if !outsideAllowed { configuration.allowedOutsideBundleHelperIDs.remove(helper.id) }
+        return launcherIdentities(
+            pid: 42, path: path,
+            signing: LiveSigningInfo(
+                identifier: identifier, teamIdentifier: team,
+                designatedRequirement: "claude-helper-fixture", mainExecutable: path,
+                isAdHoc: false, runtimeProtection: runtime, isDeveloperID: true
+            ),
+            helperConfiguration: configuration,
+            installedAppURL: { _ in parentInstalled ? URL(fileURLWithPath: "/av-self-check/Claude.app") : nil },
+            helperSigning: { _, _ in verified ? parent : nil }
+        )
+    }
+    for (gateID, protection, classification) in [
+        ("gh", SecretGateProtection.readOnly, SecretGateRequestClassification.readOnly),
+        ("ssh-agent", .fullExceptSecretDumps, .mutating),
+    ] {
+        let gate = SecretGate(id: gateID, keyPatterns: [], routes: [], defaultProtection: .noAccess,
+            appPolicies: [SecretGatePolicy(bundleIdentifier: parent.identifier,
+                requirement: parent.designatedRequirement, protection: protection,
+                runtimeRequirement: .hardened)])
+        for runtime in [LauncherRuntimeProtection.hardened, .hardenedWithLibraryValidationDisabled] {
+            guard let policy = resolveSecretGatePolicy(gate: gate, launchers: candidates(runtime: runtime)),
+                  policy.launcher?.designatedRequirement == parent.designatedRequirement,
+                  policy.launcher?.runtimeProtection == runtime,
+                  policy.runtimeProtectionFailure == nil,
+                  policy.protection.allows(classification),
+                  !policy.protection.allows(.unknown)
+            else {
+                fputs("Claude helper runtime compatibility failed at \(gateID): \(runtime)\n", stderr)
+                return false
+            }
+        }
+        // No exception from identity strings, a failed verification, an opt-out,
+        // a missing parent, or a newly unsafe runtime.
+        let rejected = [
+            candidates(enabled: false), candidates(outsideAllowed: false), candidates(verified: false),
+            candidates(team: "OTHER"), candidates(identifier: "com.anthropic.other-helper"),
+            candidates(parentInstalled: false), candidates(runtime: .hardenedRuntimeMissing),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.get-task-allow"])),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.cs.allow-dyld-environment-variables"])),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.cs.disable-executable-page-protection"])),
+            [LauncherIdentity(pid: 42, path: path, identifier: parent.identifier,
+                teamIdentifier: parent.teamIdentifier, designatedRequirement: parent.designatedRequirement,
+                runtimeProtection: .hardenedWithLibraryValidationDisabled)],
+        ]
+        for launchers in rejected {
+            guard resolveSecretGatePolicy(gate: gate, launchers: launchers)?.protection.allows(classification) != true
+            else { fputs("Claude helper runtime exception escaped verification\n", stderr); return false }
+        }
+        let approvalGate = SecretGate(id: gateID, keyPatterns: [], routes: [], defaultProtection: protection,
+            appPolicies: [SecretGatePolicy(bundleIdentifier: parent.identifier,
+                requirement: parent.designatedRequirement, protection: .noAccess,
+                runtimeRequirement: .hardened)])
+        guard resolveSecretGatePolicy(gate: approvalGate, launchers: candidates())?.protection == .noAccess
+        else { fputs("Claude helper bypassed Approval Required\n", stderr); return false }
+    }
+    return true
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
     let codexVerifiedLauncherHelper = selfCheckCodexHelper()
+    guard runClaudeHelperRuntimeSelfCheck() else { return 1 }
     guard runClaudeOutsideBundleDefaultSelfCheck() else {
         fputs("Claude outside-bundle default failed\n", stderr)
         return 1
