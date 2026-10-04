@@ -5685,75 +5685,86 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
                 return
             }
-            do {
-                let record = accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Approved",
-                    approvalSource: "Manual",
-                    reason: "Approved in prompt",
-                    launcher: promptLauncher
-                )
-                guard try self.fulfillApprovedRequest(
-                    request: request,
-                    signing: signing,
-                    awsRegistration: awsRegistration,
-                    pid: pid,
-                    identity: identity,
-                    record: record,
-                    launchers: policyLaunchers,
-                    launcher: promptLauncher,
-                    activateAfterRecording: {
-                        if let scriptApproval,
-                           let script = self.matchingBlessedScriptExecution(
-                               request: request,
-                               approval: scriptApproval
-                           )
-                        {
-                            self.registerBlessedExecution(script, pid: pid, identity: identity)
+            let fulfill: @Sendable () -> Void = { [policyLaunchers] in
+                do {
+                    let record = accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Manual",
+                        reason: "Approved in prompt",
+                        launcher: promptLauncher
+                    )
+                    guard try self.fulfillApprovedRequest(
+                        request: request,
+                        signing: signing,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity,
+                        record: record,
+                        launchers: policyLaunchers,
+                        launcher: promptLauncher,
+                        cancellation: cancellation,
+                        activateAfterRecording: {
+                            // SSH has neither decision reuse nor Blessed Script registration.
+                            // Keep the main-actor reuse cache out of the SSH worker.
+                            guard request.sshPeer == nil else { return }
+                            if let scriptApproval,
+                               let script = self.matchingBlessedScriptExecution(
+                                   request: request,
+                                   approval: scriptApproval
+                               )
+                            {
+                                self.registerBlessedExecution(script, pid: pid, identity: identity)
+                            }
+                            self.transientApprovals.remember(
+                                decision.reuseOutcome,
+                                for: transientApproval
+                            )
+                        },
+                        release: { payload in
+                            self.reply(
+                                peer,
+                                to: message,
+                                ok: true,
+                                error: nil,
+                                secrets: payload.secrets,
+                                value: payload.value,
+                                humanApprovalDecision: "approved"
+                            )
                         }
-                        self.transientApprovals.remember(
-                            decision.reuseOutcome,
-                            for: transientApproval
-                        )
-                    },
-                    release: { payload in
+                    ) else {
                         self.reply(
                             peer,
                             to: message,
-                            ok: true,
-                            error: nil,
-                            secrets: payload.secrets,
-                            value: payload.value,
+                            ok: false,
+                            error: "Authorization History is unavailable",
                             humanApprovalDecision: "approved"
                         )
+                        return
                     }
-                ) else {
+                } catch {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: error is LauncherDenialError ? "Denied" : "Failed",
+                        approvalSource: error is LauncherDenialError ? "Auto" : "Manual",
+                        reason: error.localizedDescription,
+                        launcher: error is LauncherDenialError ? (error as? LauncherDenialError)?.launcher : promptLauncher
+                    ))
                     self.reply(
                         peer,
                         to: message,
                         ok: false,
-                        error: "Authorization History is unavailable",
+                        error: error.localizedDescription,
                         humanApprovalDecision: "approved"
                     )
-                    return
                 }
-            } catch {
-                _ = self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: error is LauncherDenialError ? "Denied" : "Failed",
-                    approvalSource: error is LauncherDenialError ? "Auto" : "Manual",
-                    reason: error.localizedDescription,
-                    launcher: error is LauncherDenialError ? (error as? LauncherDenialError)?.launcher : promptLauncher
-                ))
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: false,
-                    error: error.localizedDescription,
-                    humanApprovalDecision: "approved"
-                )
+            }
+            if request.sshPeer != nil {
+                await performAuthorizationWork(fulfill)
+            } else {
+                fulfill()
             }
         }
     }
@@ -9353,9 +9364,14 @@ private final class ApprovalServer: @unchecked Sendable {
         launchers: [LauncherIdentity],
         launcher: LauncherIdentity?,
         sshScriptAuthorization: SSHScriptAuthorization? = nil,
+        cancellation: ApprovalCancellation? = nil,
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
+        func validateCancellation() throws {
+            guard cancellation?.isCanceled != true else { throw CancellationError() }
+        }
+        try validateCancellation()
         func validateDenial() throws {
             let currentLaunchers = request.sshPeer?.launchers ?? launcherIdentities(for: identity)
             var attributedLaunchers = launchers + currentLaunchers
@@ -9388,7 +9404,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     try request.sshPeer?.validate()
                     try validateSSHScriptAuthority()
                     if let context = request.credentialParent?.gitContext, !gitCredentialContextValid(context) { return false }
+                    try validateCancellation()
                     guard onAccessRequest(record) else { return false }
+                    try validateCancellation()
                     try request.sshPeer?.validate()
                     try validateSSHScriptAuthority()
                     if let context = request.credentialParent?.gitContext, !gitCredentialContextValid(context) { return false }
@@ -9424,13 +9442,19 @@ private final class ApprovalServer: @unchecked Sendable {
                 )
             },
             release: { material in
+                try validateCancellation()
                 try validateDoctlTarget(request)
                 try validateHcloudTarget(request)
                 try validateDenial()
                 try releaseAfterSSHAuthorizationCheck(
                     material.payload,
                     authorization: sshScriptAuthorization,
-                    validatePeer: { try request.sshPeer?.validate() },
+                    validatePeer: {
+                        try request.sshPeer?.validate()
+                        // UI policy changes can now arrive while SSH peer validation runs.
+                        if request.sshPeer != nil { try validateDenial() }
+                        try validateCancellation()
+                    },
                     currentAuthority: {
                         request.sshPeer.map {
                             activeSSHScriptAuthority(ancestors: $0.ancestors)
@@ -13255,14 +13279,18 @@ private func showApprovalAlert(
     reevaluate: (@MainActor () -> Bool)? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
-    let sshTimer = request.sshPeer.map { peer in
-        let timer = Timer(timeInterval: 1, repeats: true) { _ in
-            do { try peer.validate() } catch { cancellation?.cancel() }
+    let sshMonitor = request.sshPeer.map { peer in
+        Task {
+            do {
+                try await monitorAuthorizationValidity { try peer.validate() }
+            } catch {
+                // A result from a dismissed prompt must not cancel its fulfillment.
+                guard !Task.isCancelled else { return }
+                cancellation?.cancel()
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        return timer
     }
-    defer { sshTimer?.invalidate() }
+    defer { sshMonitor?.cancel() }
 
     let startGeneration = ActiveApprovalPrompt.abortGeneration
     let queueToken = UUID()
