@@ -8269,13 +8269,18 @@ private struct DashboardOverviewView: View {
             Divider()
             if let version = model.availableUpdateVersion {
                 Text("Update Available").font(.headline)
-                AvailableReleaseNotesView(version: version, compact: compact)
-                    .id(version)
-                Button(action: checkForUpdates) {
-                    Text("Update to v\(version)…")
-                        .frame(maxWidth: .infinity)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: compact ? 8 : 14) {
+                        AvailableReleaseNotesView(version: version)
+                            .id(version)
+                        Button(action: checkForUpdates) {
+                            Text("Update to v\(version)…")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
+                .frame(maxHeight: compact ? 220 : .infinity, alignment: .topLeading)
             } else {
                 HStack {
                     Text("What’s new").font(.headline)
@@ -8340,24 +8345,21 @@ private struct DashboardOverviewView: View {
 
 private struct AvailableReleaseNotesView: View {
     let version: String
-    let compact: Bool
     @State private var notes: String?
 
     var body: some View {
         Group {
             if let notes, !notes.isEmpty {
-                ScrollView {
-                    RenderedMarkdown(markdown: notes)
-                        // Release metadata must not trigger arbitrary remote image requests.
-                        .markdownImageProvider(.asset)
-                        .markdownInlineImageProvider(.asset)
-                        .environment(\.openURL, OpenURLAction { url in
-                            url.scheme == "https" ? .systemAction : .discarded
-                        })
-                        .markdownTextStyle { FontSize(NSFont.smallSystemFontSize) }
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                RenderedMarkdown(markdown: notes)
+                    // Release metadata must not trigger arbitrary remote image requests.
+                    .markdownImageProvider(.asset)
+                    .markdownInlineImageProvider(.asset)
+                    .environment(\.openURL, OpenURLAction { url in
+                        url.scheme == "https" ? .systemAction : .discarded
+                    })
+                    .markdownTextStyle { FontSize(NSFont.smallSystemFontSize) }
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if notes == nil {
                 ProgressView().controlSize(.small)
             } else {
@@ -8367,7 +8369,6 @@ private struct AvailableReleaseNotesView: View {
                     .font(.caption)
             }
         }
-        .frame(minHeight: compact ? 180 : 80, maxHeight: compact ? 180 : .infinity, alignment: .topLeading)
         .task {
             let loaded = (try? await ReleaseNotes.load(version: version)) ?? ""
             guard !Task.isCancelled else { return }
