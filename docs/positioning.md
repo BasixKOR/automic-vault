@@ -106,6 +106,10 @@ agent sandboxing is outside the product's scope.
   Launcher, the user may explicitly associate selected helpers with that app
   after reviewing the cross-gate authority warning. Codex and Claude's exact
   vendor-signed CLIs start selected in that review and still require Approval.
+- Claude's helper review also warns that Claude Code disables library validation.
+  Its verified association accepts that exception for Claude's existing and new
+  Tool-specific gate rules; third-party code loaded into the helper can exercise
+  those permissions. Users can disable the association.
 - Git can keep its ordinary commit workflow while the GPG Signing Gate
   authorizes private-key use and may select an alternate credential for exact
   Verified Launchers.

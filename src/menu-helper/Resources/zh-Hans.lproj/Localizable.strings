@@ -565,3 +565,5 @@
 
 "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "此启动程序在 %@ 授权关卡没有规则。请审查其身份并批准新规则，以配置其访问级别。";
 "Collapse Strip" = "折叠授权栏";
+
+"Claude Code disables library validation, so third-party code loaded into it can use Claude’s Tool-specific gate permissions. Automic Vault accepts this exception when the verified helper represents Claude, including for existing rules. Disable this helper to opt out." = "Claude Code 禁用了库验证，因此加载到其进程中的第三方代码可以使用 Claude 的工具专用关卡权限。当经过验证的辅助程序代表 Claude 时，Automic Vault 会接受这一例外，包括应用现有规则。禁用此辅助程序即可退出此关联。";
