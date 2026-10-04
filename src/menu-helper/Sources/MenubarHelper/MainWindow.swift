@@ -7205,23 +7205,19 @@ private struct GatePolicyTable: View {
                 if let app {
                     ApprovedAppRow(app: app, launcherBundle: model.launcherBundles.first {
                         $0.launcherRequirement == app.requirement
-                    }, gate: gate, approval: approval, remove: { model.removeAppPolicy(app, from: gate) })
+                    }, gate: gate, isEdited: !rowChanges.isEmpty, approval: approval, remove: { model.removeAppPolicy(app, from: gate) })
                 } else {
-                    Label(localizedUIString(gate.defaultPolicyLabel), systemImage: "square.stack.3d.up")
-                        .font(.system(size: 13, weight: .medium))
-                        .help("Applies when no Launcher rule matches.")
+                    HStack(spacing: 8) {
+                        Label(localizedUIString(gate.defaultPolicyLabel), systemImage: "square.stack.3d.up")
+                            .font(.system(size: 13, weight: .medium))
+                            .help("Applies when no Launcher rule matches.")
+                        if !rowChanges.isEmpty { PolicyEditedLabel() }
+                    }
                     Text("Auto-allow requires Hardened Runtime.").font(.caption).foregroundStyle(.secondary)
                     Text("Denial applies regardless of runtime.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 190, alignment: .leading)
-            .overlay(alignment: .bottomLeading) {
-                if !rowChanges.isEmpty {
-                    Text("Edited").font(.caption).foregroundStyle(Color.accentColor)
-                        .offset(y: 14)
-                        .allowsHitTesting(false)
-                }
-            }
             VStack(alignment: .leading, spacing: 8) {
                 if !gate.supportsUnknownDenial {
                     let access = rowChanges.compactMap { change -> SigningGateAccess? in
@@ -7423,7 +7419,7 @@ private struct GatePolicyTrack: View {
             .fill(Color(nsColor: .controlBackgroundColor))
             .overlay {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(tint.opacity(isFocused || isDragging ? 0.9 : 0.45), lineWidth: 1)
+                    .strokeBorder(tint.opacity(isFocused || isDragging ? 0.9 : 0.45), lineWidth: isFocused ? 2 : 1)
             }
             .overlay {
                 HStack(spacing: 3) {
@@ -7458,15 +7454,6 @@ private struct GatePolicyTrack: View {
             .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
                 showsKeyboardFocus = false
             })
-            .overlay {
-                if focusedHandle == isAllow && showsKeyboardFocus {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.accentColor, lineWidth: 2)
-                        .padding(-3)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
             .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
                 showsKeyboardFocus = true
                 adjust(isAllow: isAllow, boundary: boundary,
@@ -7495,10 +7482,23 @@ private struct GatePolicyTrack: View {
     }
 }
 
+private struct PolicyEditedLabel: View {
+    var body: some View {
+        Text("Edited")
+            .textCase(.uppercase)
+            .font(.system(size: 8, weight: .semibold))
+            .tracking(0.8)
+            .foregroundStyle(Color.accentColor)
+            .fixedSize()
+            .allowsHitTesting(false)
+    }
+}
+
 private struct ApprovedAppRow: View {
     let app: SecretGatePolicy
     let launcherBundle: LauncherBundleEnrollment?
     let gate: SecretGate
+    var isEdited = false
     @ObservedObject var approval: AuthorityApprovalState
     let remove: () -> Void
     @State private var isConfirmingDelete = false
@@ -7512,6 +7512,12 @@ private struct ApprovedAppRow: View {
             Image(nsImage: display.icon)
                 .resizable()
                 .frame(width: 34, height: 34)
+                .overlay(alignment: .bottom) {
+                    if isEdited {
+                        PolicyEditedLabel()
+                            .offset(y: 16)
+                    }
+                }
             VStack(alignment: .leading, spacing: 4) {
                 Text(display.name)
                     .font(.system(size: 13, weight: .medium))
