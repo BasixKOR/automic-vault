@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-08-09
 
+The built-in Claude Code helper association has a narrow exception to strict
+parent-rule matching at Tool-specific gates; see
+[ADR 0063](0063-claude-helper-runtime-compatibility.md).
+
 ## Context
 
 ADR-backed enforcement introduced by pull request #102 requires Hardened

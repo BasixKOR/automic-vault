@@ -497,6 +497,19 @@ posture, so removing an exception is safe while adding an unacknowledged
 exception fails closed. Existing strict rules remain strict. Compatibility
 records that predate runtime requirements retain their established behavior.
 
+For Tool-specific Secret Gates and Execution Gates, the built-in Claude Code
+association accepts disabled library validation against a strict Claude.app
+rule after the complete helper association verification succeeds. Attribution
+carries the verified association separately from the helper's actual runtime
+posture; diagnostics and other runtime checks retain that actual posture.
+This applies to existing rules without rewriting them. The exception does not
+apply to Claude.app's own executable, standalone Claude Code rules, other
+helpers, Direct Access Rules, or Temporary Access Grants. Missing Hardened
+Runtime and blocked entitlements remain ineligible. Enrollment, helper settings,
+and association Approval explain the exception and its cross-gate scope.
+Disabling the association prevents new attribution through it. See
+[ADR 0063](adr/0063-claude-helper-runtime-compatibility.md).
+
 Temporary Access Grants store the live accepted Launcher Runtime Requirement
 and require an exact posture match on every use. This intentionally rejects a
 runtime posture change in either direction during the short grant instead of

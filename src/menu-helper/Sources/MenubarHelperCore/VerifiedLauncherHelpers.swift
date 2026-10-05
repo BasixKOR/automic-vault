@@ -42,6 +42,11 @@ public struct VerifiedLauncherHelper: Identifiable, Codable, Equatable, Sendable
             && helperTeamIdentifier == other.helperTeamIdentifier
             && relativePath == other.relativePath
     }
+
+    public var runtimeCompatibilityWarning: String? {
+        guard self == claudeCodeVerifiedLauncherHelper else { return nil }
+        return String(localized: "Claude Code disables library validation, so third-party code loaded into it can use Claude’s Tool-specific gate permissions. Automic Vault accepts this exception when the verified helper represents Claude, including for existing rules. Disable this helper to opt out.")
+    }
 }
 
 public let claudeCodeVerifiedLauncherHelper = VerifiedLauncherHelper(

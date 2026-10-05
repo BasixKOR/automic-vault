@@ -2315,7 +2315,8 @@ private final class SSHAgentPeer: Sendable {
               zip(ancestors, live.ancestors).allSatisfy({ sameProcessIdentity($0, $1) }),
               !launchers.isEmpty, launchers.allSatisfy({ expected in
             live.launchers.contains { $0.designatedRequirement == expected.designatedRequirement
-                && $0.runtimeProtection == expected.runtimeProtection }
+                && $0.runtimeProtection == expected.runtimeProtection
+                && $0.verifiedHelper == expected.verifiedHelper }
         }) else { throw AppError("SSH Verified Launcher changed before signing") }
     }
 }
@@ -3305,6 +3306,8 @@ struct LauncherIdentity: Sendable {
     let runtimeProtection: LauncherRuntimeProtection
     let isStandalone: Bool
     let appURL: URL?
+    // Attached only after complete helper verification; never supplied by a Gate Client.
+    let verifiedHelper: VerifiedLauncherHelper?
 
     init(
         pid: pid_t,
@@ -3314,7 +3317,8 @@ struct LauncherIdentity: Sendable {
         designatedRequirement: String,
         runtimeProtection: LauncherRuntimeProtection,
         isStandalone: Bool = false,
-        appURL: URL? = nil
+        appURL: URL? = nil,
+        verifiedHelper: VerifiedLauncherHelper? = nil
     ) {
         self.pid = pid
         self.path = path
@@ -3324,6 +3328,7 @@ struct LauncherIdentity: Sendable {
         self.runtimeProtection = runtimeProtection
         self.isStandalone = isStandalone
         self.appURL = appURL
+        self.verifiedHelper = verifiedHelper
     }
 }
 
@@ -10206,9 +10211,13 @@ private func resolveSecretGatePolicy(
         if let policy = gate.appPolicies.first(where: {
             $0.requirement == launcher.designatedRequirement && !$0.usesGateDefault
         }) {
-            let runtimeProtectionFailure = !policy.runtimeRequirement.allows(
-                launcher.runtimeProtection
-            )
+            // ADR 0063: accept the reviewed helper's known exception without
+            // weakening the stored app rule or misreporting the live posture.
+            let acceptsClaudeCodeRuntime = launcher.verifiedHelper == claudeCodeVerifiedLauncherHelper
+                && policy.runtimeRequirement == .hardened
+                && launcher.runtimeProtection == .hardenedWithLibraryValidationDisabled
+            let runtimeProtectionFailure = !policy.runtimeRequirement.allows(launcher.runtimeProtection)
+                && !acceptsClaudeCodeRuntime
                 ? launcher.runtimeProtection
                 : nil
             return ResolvedSecretGatePolicy(
@@ -12472,6 +12481,9 @@ private func launcherIdentities(
     bundleExecutableURL: (URL) -> URL? = { Bundle(url: $0)?.executableURL },
     allowsStandaloneFallback: Bool = true,
     helperConfiguration: VerifiedLauncherHelperConfiguration? = nil,
+    installedAppURL: (String) -> URL? = {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0)
+    },
     helperSigning: (VerifiedLauncherHelperAssociation, pid_t) -> StaticSigningInfo? = {
         verifiedLauncherHelperSigningInfo($0, pid: $1)
     }
@@ -12498,7 +12510,8 @@ private func launcherIdentities(
         path: path,
         signing: signing,
         containingAppURLs: containingAppURLs,
-        configuration: helperConfiguration
+        configuration: helperConfiguration,
+        installedAppURL: installedAppURL
     )
     let claimsLauncherBundleIdentity = signing.identifier.hasPrefix(launcherBundleIdentifierPrefix)
         || containingAppURLs.contains(where: launcherBundleClaimsReservedIdentity)
@@ -12549,7 +12562,8 @@ private func launcherIdentities(
             teamIdentifier: app.teamIdentifier,
             designatedRequirement: app.designatedRequirement,
             runtimeProtection: signing.runtimeProtection,
-            appURL: helperAssociation.appURL
+            appURL: helperAssociation.appURL,
+            verifiedHelper: helperAssociation.helper
         ), at: 0)
     }
     if !apps.isEmpty { return apps }
@@ -17647,17 +17661,18 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
                 .write(to: url.appendingPathComponent("Contents/Info.plist"))
         }
     } catch { return false }
-    let signing = LiveSigningInfo(
-        identifier: "codex", teamIdentifier: "2DC432GLL2", designatedRequirement: "helper",
-        mainExecutable: executable.path, isAdHoc: false, runtimeProtection: .hardened,
-        isDeveloperID: true
-    )
     let parentSigning = StaticSigningInfo(
         identifier: "com.openai.codex", teamIdentifier: "2DC432GLL2", designatedRequirement: "parent"
     )
-    func candidates(enabled: Bool = true, valid: Bool = true) -> [LauncherIdentity] {
+    func candidates(enabled: Bool = true, valid: Bool = true,
+                    runtime: LauncherRuntimeProtection = .hardened) -> [LauncherIdentity] {
         launcherIdentities(
-            pid: 42, path: executable.path, signing: signing,
+            pid: 42, path: executable.path,
+            signing: LiveSigningInfo(
+                identifier: "codex", teamIdentifier: "2DC432GLL2", designatedRequirement: "helper",
+                mainExecutable: executable.path, isAdHoc: false, runtimeProtection: runtime,
+                isDeveloperID: true
+            ),
             appSigning: { _ in
                 StaticSigningInfo(identifier: "codex", teamIdentifier: "2DC432GLL2",
                                   designatedRequirement: "helper")
@@ -17674,6 +17689,14 @@ private func runNestedLauncherHelperSelfCheck() -> Bool {
     let launchers = candidates()
     let gate = SecretGate(id: "aws", keyPatterns: [], routes: [],
                           defaultProtection: .readOnly, appPolicies: [])
+    let strictGate = SecretGate(id: "gh", keyPatterns: [], routes: [], defaultProtection: .readOnly,
+        appPolicies: [SecretGatePolicy(bundleIdentifier: parentSigning.identifier,
+            requirement: parentSigning.designatedRequirement, protection: .readOnly,
+            runtimeRequirement: .hardened)])
+    guard resolveSecretGatePolicy(gate: strictGate,
+        launchers: candidates(runtime: .hardenedWithLibraryValidationDisabled))?.runtimeProtectionFailure
+            == .hardenedWithLibraryValidationDisabled
+    else { return false }
     guard launchers.map(\.identifier) == ["com.openai.codex", "codex"],
           let launcher = launchers.first,
           resolveSecretGatePolicy(gate: gate, launchers: launchers)?.launcher?.identifier == "com.openai.codex",
@@ -17734,8 +17757,104 @@ private func runClaudeOutsideBundleDefaultSelfCheck() -> Bool {
     return true
 }
 
+// Exercise attribution and policy together: the helper represents a strict parent
+// rule but must retain its own runtime posture (issue #378).
+private func runClaudeHelperRuntimeSelfCheck() -> Bool {
+    let helper = claudeCodeVerifiedLauncherHelper
+    let parent = StaticSigningInfo(
+        identifier: helper.appBundleIdentifier, teamIdentifier: helper.appTeamIdentifier,
+        designatedRequirement: "claude-parent-fixture"
+    )
+    let path = "/av-self-check/claude"
+    func candidates(
+        runtime: LauncherRuntimeProtection = .hardenedWithLibraryValidationDisabled,
+        enabled: Bool = true, outsideAllowed: Bool = true, verified: Bool = true,
+        team: String = "Q6L2SF6YDW", identifier: String = "com.anthropic.claude-code",
+        parentInstalled: Bool = true
+    ) -> [LauncherIdentity] {
+        var configuration = VerifiedLauncherHelperConfiguration()
+        if !enabled { configuration.disabledHelperIDs.insert(helper.id) }
+        if !outsideAllowed { configuration.allowedOutsideBundleHelperIDs.remove(helper.id) }
+        return launcherIdentities(
+            pid: 42, path: path,
+            signing: LiveSigningInfo(
+                identifier: identifier, teamIdentifier: team,
+                designatedRequirement: "claude-helper-fixture", mainExecutable: path,
+                isAdHoc: false, runtimeProtection: runtime, isDeveloperID: true
+            ),
+            helperConfiguration: configuration,
+            installedAppURL: { _ in parentInstalled ? URL(fileURLWithPath: "/av-self-check/Claude.app") : nil },
+            helperSigning: { _, _ in verified ? parent : nil }
+        )
+    }
+    for (gateID, protection, classification) in [
+        ("gh", SecretGateProtection.readOnly, SecretGateRequestClassification.readOnly),
+        ("ssh-agent", .fullExceptSecretDumps, .mutating),
+    ] {
+        let gate = SecretGate(id: gateID, keyPatterns: [], routes: [], defaultProtection: .noAccess,
+            appPolicies: [SecretGatePolicy(bundleIdentifier: parent.identifier,
+                requirement: parent.designatedRequirement, protection: protection,
+                runtimeRequirement: .hardened)])
+        for runtime in [LauncherRuntimeProtection.hardened, .hardenedWithLibraryValidationDisabled] {
+            guard let policy = resolveSecretGatePolicy(gate: gate, launchers: candidates(runtime: runtime)),
+                  policy.launcher?.designatedRequirement == parent.designatedRequirement,
+                  policy.launcher?.runtimeProtection == runtime,
+                  policy.launcher?.verifiedHelper == helper,
+                  policy.runtimeProtectionFailure == nil,
+                  policy.protection.allows(classification),
+                  !policy.protection.allows(.secretDump),
+                  !policy.protection.allows(.unknown)
+            else {
+                fputs("Claude helper runtime compatibility failed at \(gateID): \(runtime)\n", stderr)
+                return false
+            }
+        }
+        // No exception from identity strings, a failed verification, an opt-out,
+        // a missing parent, or a newly unsafe runtime.
+        let rejected = [
+            candidates(enabled: false), candidates(outsideAllowed: false), candidates(verified: false),
+            candidates(team: "OTHER"), candidates(identifier: "com.anthropic.other-helper"),
+            candidates(parentInstalled: false), candidates(runtime: .hardenedRuntimeMissing),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.get-task-allow"])),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.cs.allow-dyld-environment-variables"])),
+            candidates(runtime: .unsafeEntitlements(["com.apple.security.cs.disable-executable-page-protection"])),
+            [LauncherIdentity(pid: 42, path: path, identifier: parent.identifier,
+                teamIdentifier: parent.teamIdentifier, designatedRequirement: parent.designatedRequirement,
+                runtimeProtection: .hardenedWithLibraryValidationDisabled)],
+        ]
+        for launchers in rejected {
+            guard resolveSecretGatePolicy(gate: gate, launchers: launchers)?.protection.allows(classification) != true
+            else { fputs("Claude helper runtime exception escaped verification\n", stderr); return false }
+        }
+        let approvalGate = SecretGate(id: gateID, keyPatterns: [], routes: [], defaultProtection: protection,
+            appPolicies: [SecretGatePolicy(bundleIdentifier: parent.identifier,
+                requirement: parent.designatedRequirement, protection: .noAccess,
+                runtimeRequirement: .hardened)])
+        guard resolveSecretGatePolicy(gate: approvalGate, launchers: candidates())?.protection == .noAccess
+        else { fputs("Claude helper bypassed Approval Required\n", stderr); return false }
+    }
+    let standaloneGate = SecretGate(id: "gh", keyPatterns: [], routes: [], defaultProtection: .readOnly,
+        appPolicies: [SecretGatePolicy(bundleIdentifier: helper.helperSigningIdentifier,
+            requirement: "claude-helper-fixture", protection: .readOnly, runtimeRequirement: .hardened)])
+    guard resolveSecretGatePolicy(gate: standaloneGate, launchers: candidates(enabled: false))?
+        .runtimeProtectionFailure == .hardenedWithLibraryValidationDisabled
+    else { fputs("Standalone Claude rule lost its runtime requirement\n", stderr); return false }
+
+    let directRequest = ApprovalRequest(op: "inject", keys: ["TEST_TOKEN"], target: "/usr/bin/true",
+        args: [], cwd: "/", replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+        shebangScript: nil, scriptData: nil, tool: nil, title: nil, detail: nil)
+    let directRule = DirectAccessRule(secretName: "TEST_TOKEN",
+        launcher: BlessedScriptLauncher(bundleIdentifier: parent.identifier,
+            requirement: parent.designatedRequirement), runtimeRequirement: .hardened)
+    guard matchingDirectAccessLauncher(request: directRequest, configuredGate: nil,
+        trustedAVGateClient: true, launchers: candidates(), rules: [directRule]) == nil
+    else { fputs("Claude helper exception escaped into Direct Access\n", stderr); return false }
+    return true
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
     let codexVerifiedLauncherHelper = selfCheckCodexHelper()
+    guard runClaudeHelperRuntimeSelfCheck() else { return 1 }
     guard runClaudeOutsideBundleDefaultSelfCheck() else {
         fputs("Claude outside-bundle default failed\n", stderr)
         return 1

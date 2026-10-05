@@ -208,6 +208,13 @@ adding an exception beyond the stored requirement disables automic
 authorization. Legacy rules that predate runtime requirements retain their
 existing compatibility behavior.
 
+The built-in Claude Code association has one compatibility exception for
+Tool-specific Secret Gates and Execution Gates: a fully verified Claude Code
+helper may satisfy Claude.app's strict rule with library validation disabled.
+The rule stays strict for Claude.app itself and other helpers. Direct Access
+Rules and Temporary Access Grants keep their recorded runtime requirements.
+See [ADR 0063](adr/0063-claude-helper-runtime-compatibility.md).
+
 ### Agent Task Context
 
 An ephemeral narrowing label for one recognized agent invocation. The initial
@@ -246,7 +253,9 @@ association binds the helper and app signing identities and is enabled through
 an explicit positive catalog. The catalog contains the reviewed built-in Claude Code association and
 associations the user explicitly approves after Automic Vault discovers signed
 helpers sealed inside an app. Adding Claude always displays Claude Code for
-review and opt-out. Adding Codex preselects its exact sealed vendor-signed CLI;
+review and opt-out, with a warning that its library-validation exception lets
+loaded third-party code exercise Claude's Tool-specific gate permissions,
+including existing rules. Adding Codex preselects its exact sealed vendor-signed CLI;
 that review default grants no authority before Approval.
 A user-approved association also binds the helper's relative path inside that app. User-approved associations
 and disabled entries are stored in the Data Protection Keychain. Discovery,

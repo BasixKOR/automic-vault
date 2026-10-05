@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Runtime compatibility with strict Claude.app rules is specified by
+[ADR 0063](0063-claude-helper-runtime-compatibility.md).
+
 ## Context
 
 Claude Desktop installs its Claude Code runtime outside Claude.app under its

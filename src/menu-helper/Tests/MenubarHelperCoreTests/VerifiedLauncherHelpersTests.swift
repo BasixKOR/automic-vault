@@ -2,6 +2,22 @@ import Foundation
 import Testing
 @testable import MenubarHelperCore
 
+@Test func builtInClaudeHelperDisclosesRuntimeCompatibility() throws {
+    let helper = MenubarHelperCore.claudeCodeVerifiedLauncherHelper
+    let warning = try #require(helper.runtimeCompatibilityWarning)
+    #expect(!warning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    let decoded = try JSONDecoder().decode(
+        VerifiedLauncherHelper.self, from: JSONEncoder().encode(helper)
+    )
+    #expect(decoded.runtimeCompatibilityWarning == warning)
+}
+
+@Test func otherHelpersDoNotDiscloseClaudeRuntimeCompatibility() {
+    for helper in [codexVerifiedLauncherHelper, claudeCodeVerifiedLauncherHelper, userApprovedHelper()] {
+        #expect(helper.runtimeCompatibilityWarning == nil)
+    }
+}
+
 @Test func helperCatalogDefaultsToClaudeAndRoundTripsDisabledEntries() throws {
     let defaults = VerifiedLauncherHelperConfiguration()
     #expect(defaults.helpers == [MenubarHelperCore.claudeCodeVerifiedLauncherHelper])

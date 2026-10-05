@@ -1601,6 +1601,7 @@ final class DashboardModel: ObservableObject {
             !existingPolicy && gate.defaultDenialThreshold != nil
                 ? "This Launcher will use its own Denial Threshold instead of the Default Policy." : nil,
             helperDetail,
+            helpers.compactMap(\.runtimeCompatibilityWarning).first,
         ].compactMap(\.self).joined(separator: "\n\n")
         approveAuthorityChange(
             action: "gate-launcher:\(gate.id)",
@@ -5604,6 +5605,16 @@ private struct LauncherHelperReviewView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let warning = helper.runtimeCompatibilityWarning {
+                    Label {
+                        Text(warning)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let relativePath = helper.relativePath {
                     Text(relativePath)
                         .font(.system(size: 11, design: .monospaced))
@@ -6246,6 +6257,9 @@ private struct VerifiedLauncherHelpersSettingsView: View {
 
     private func helperRow(_ helper: VerifiedLauncherHelper) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let warning = helper.runtimeCompatibilityWarning {
+                InfoBlock(title: "Runtime warning", text: warning)
+            }
             Toggle(
                 isOn: Binding(
                     get: { configuration.isEnabled(helper) },
@@ -6257,6 +6271,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         approval.request(
                             helper.id, title: "Enable \(helper.name) Launcher Helper",
                             detail: "Signing ID: \(helper.helperSigningIdentifier) · Team \(helper.helperTeamIdentifier)\nPath: \(helper.relativePath ?? "Vendor-reviewed association")\n\nAllow the exact signed \(helper.name) helper\(configuration.allowedOutsideBundleHelperIDs.contains(helper.id) ? ", including outside the parent bundle," : " sealed inside \(helper.appName)") to represent \(helper.appName) at every Authorization Gate where that app has a current or future Launcher-specific rule. This may widen Secret access and controlled operations up to each rule’s Access Level."
+                                + (helper.runtimeCompatibilityWarning.map { "\n\n" + $0 } ?? "")
                         ) { approved in
                             if approved { persist(helper, enabled: true) }
                         }
@@ -6280,6 +6295,7 @@ private struct VerifiedLauncherHelpersSettingsView: View {
                         approval.request(
                             helper.id, title: "Allow \(helper.name) Outside Its Parent Bundle",
                             detail: "Allow any valid executable with this helper's exact signing identity to represent \(helper.appName) after being moved or copied outside its bundle. The helper will no longer be checked against the parent app's resource seal. Both signing identities and the helper's runtime protections remain verified, and the signed parent app must remain installed. This applies at every Authorization Gate where the app has a current or future Launcher-specific rule."
+                                + (helper.runtimeCompatibilityWarning.map { "\n\n" + $0 } ?? "")
                         ) { approved in
                             if approved { persistOutsideBundle(helper, allowed: true) }
                         }
