@@ -5525,6 +5525,20 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
+            let openReblessingReview: (@MainActor () -> Void)?
+            if lostBlessingExplanation(for: scriptApproval) != nil,
+               let scriptApproval, let scriptData = request.scriptData,
+               let declaration = scriptExecutionDeclaration(for: request) {
+                let review = BlessedScriptReviewRequest(
+                    path: scriptApproval.path,
+                    declaration: declaration,
+                    scriptData: scriptData,
+                    launcher: nil
+                )
+                openReblessingReview = { self.onBlessRequest(review) { _ in } }
+            } else {
+                openReblessingReview = nil
+            }
             let decision = await showApprovalAlert(
                 request: request,
                 callerPath: callerPath,
@@ -5544,7 +5558,8 @@ private final class ApprovalServer: @unchecked Sendable {
                 classification: classification,
                 denialGate: configuredGate,
                 cancellation: cancellation,
-                reevaluate: tryFulfillFromGrantOrCache
+                reevaluate: tryFulfillFromGrantOrCache,
+                rebless: openReblessingReview
             )
             if decision == .reevaluated {
                 return
@@ -13276,7 +13291,8 @@ private func showApprovalAlert(
     denialGate: SecretGate? = nil,
     cancellation: ApprovalCancellation? = nil,
     compact: Bool = false,
-    reevaluate: (@MainActor () -> Bool)? = nil
+    reevaluate: (@MainActor () -> Bool)? = nil,
+    rebless: (@MainActor () -> Void)? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let sshMonitor = request.sshPeer.map { peer in
@@ -13431,6 +13447,14 @@ private func showApprovalAlert(
                         scope: temporaryDenialScope, source: .standardMac)
                 } : nil,
                 temporaryDenialScope: temporaryDenialScope,
+                rebless: rebless.map { openReview in
+                    {
+                        // Release this execution and its approval queue slot before
+                        // requesting separate authority for a durable Blessing.
+                        guard state.resolve(.interrupted, source: .standardMac) else { return }
+                        openReview()
+                    }
+                },
                 decide: { userDecision, source in
                     state.resolve(userDecision, source: source)
                 }
@@ -14145,6 +14169,7 @@ private struct ApprovalPromptView: View {
     var denialLauncherName: String? = nil
     var temporaryDenial: (() -> Void)? = nil
     var temporaryDenialScope: TemporaryLauncherDenialScope? = nil
+    var rebless: (() -> Void)? = nil
     let decide: (ApprovalDecision, ApprovalDecisionSource) -> Void
     @State private var isAuthenticatingWithTouchID = false
     @StateObject private var embeddedTouchID = EmbeddedTouchIDAttempt()
@@ -14178,18 +14203,27 @@ private struct ApprovalPromptView: View {
                     }
 
                     if let explanation = content.automaticApprovalExplanation {
-                        Label {
-                            Text(explanation)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } icon: {
-                            Image(systemName: "exclamationmark.shield.fill")
-                                .foregroundStyle(.orange)
+                        HStack(spacing: 12) {
+                            Label {
+                                Text(explanation)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } icon: {
+                                Image(systemName: "exclamationmark.shield.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                            if let rebless {
+                                Spacer(minLength: 0)
+                                Button("Rebless…", action: rebless)
+                                    .buttonStyle(.bordered)
+                                    .fixedSize()
+                                    .help("Stop this request and review the script changes. Run the command again after reblessing.")
+                            }
                         }
                         .font(.callout)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                        .accessibilityElement(children: .combine)
+                        .accessibilityElement(children: .contain)
                     }
                 }
             }
