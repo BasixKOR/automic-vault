@@ -8036,18 +8036,17 @@ private struct ToolActivityStrip: View {
                             hoveredSlot = nil
                         }
                     }
-                    .popover(isPresented: Binding(
-                        get: { hoveredSlot != nil },
-                        set: { if !$0 { hoveredSlot = nil } }
-                    ), attachmentAnchor: .point(UnitPoint(
-                        x: (Double(hoveredSlot ?? 0) + 0.5) / Double(max(1, counts.count)), y: 0
-                    )), arrowEdge: .top) {
-                        if let slot = hoveredSlot, counts.indices.contains(slot), let record = latestRecord(slot) {
-                            ToolActivityPopover(record: record,
-                                interval: slotDescription(slot, count: counts[slot], slotCount: counts.count))
-                        }
+                    .background {
+                        InstantActivityPopover(
+                            content: hoveredSlot.flatMap { slot in
+                                guard counts.indices.contains(slot), let record = latestRecord(slot) else { return nil }
+                                return ToolActivityPopover(record: record,
+                                    interval: slotDescription(slot, count: counts[slot], slotCount: counts.count))
+                            },
+                            anchorX: (Double(hoveredSlot ?? 0) + 0.5) / Double(max(1, counts.count))
+                        )
+                        .allowsHitTesting(false)
                     }
-                    .transaction { $0.animation = nil }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Activity in the last 24 hours")
@@ -8075,6 +8074,62 @@ private struct ToolActivityStrip: View {
         let interval = start.formatted(.dateTime.hour().minute()) + "–"
             + end.formatted(.dateTime.hour().minute())
         return String(localized: "\(interval): \(String(count)) recorded requests")
+    }
+}
+
+/// SwiftUI's transaction animation does not control NSPopover's window animation.
+private struct InstantActivityPopover: NSViewRepresentable {
+    let content: ToolActivityPopover?
+    let anchorX: CGFloat
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ view: AnchorView, context: Context) {
+        view.content = content
+        view.anchorX = anchorX
+        view.refresh()
+    }
+
+    static func dismantleNSView(_ view: AnchorView, coordinator: ()) {
+        view.popover.close()
+    }
+
+    final class AnchorView: NSView {
+        let popover = NSPopover()
+        var content: ToolActivityPopover?
+        var anchorX: CGFloat = 0
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            popover.animates = false
+            popover.behavior = .transient
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            refresh()
+        }
+
+        func refresh() {
+            guard window != nil, let content else {
+                popover.close()
+                popover.contentViewController = nil
+                return
+            }
+            if let host = popover.contentViewController as? NSHostingController<ToolActivityPopover> {
+                host.rootView = content
+            } else {
+                popover.contentViewController = NSHostingController(rootView: content)
+            }
+            let anchor = NSRect(x: bounds.width * anchorX, y: bounds.minY, width: 1, height: bounds.height)
+            if popover.isShown {
+                popover.positioningRect = anchor
+            } else {
+                popover.show(relativeTo: anchor, of: self, preferredEdge: .minY)
+            }
+        }
     }
 }
 
