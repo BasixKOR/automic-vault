@@ -8043,7 +8043,7 @@ private func shortDashboardTimestamp(_ date: Date) -> String {
 
 /// Spatial acquisition tolerance only; once horizontal panning starts, buckets stay exact.
 private struct ActivityHoverSelection {
-    static let buffer: CGFloat = 6
+    static let buffer: CGFloat = 12
     private(set) var slot: Int?
     private var entryX: CGFloat?
     private var isPanning = false
@@ -8482,11 +8482,12 @@ private struct DashboardOverviewView: View {
                                         .padding(.trailing, 6)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(tool.title).fontWeight(.medium).lineLimit(1)
+                                            .help((issue?.message ?? tool.subtitle) + (hasGate
+                                                ? "\n" + String(localized: "Recorded authorization requests in the last 24 hours. This is not a count of Tool executions.") : ""))
                                         if !tool.isBuiltInTool && (!hasGate || !tool.isHardened) {
                                             Text(model.overviewVerification(for: tool))
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary).lineLimit(1)
-                                                .help(model.overviewVerification(for: tool))
                                         }
                                     }
                                     Spacer(minLength: 0)
@@ -8514,8 +8515,6 @@ private struct DashboardOverviewView: View {
                         }
                         .buttonStyle(OverviewToolButtonStyle())
                         .frame(height: 53)
-                        .help((issue?.message ?? tool.subtitle) + (hasGate
-                            ? "\n" + String(localized: "Recorded authorization requests in the last 24 hours. This is not a count of Tool executions.") : ""))
                         if tool.id != visibleTools.last?.id { Divider().padding(.leading, 30) }
                     }
                     HStack {
