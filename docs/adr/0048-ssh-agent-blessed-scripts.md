@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Per-credential authority and the scope of legacy script Capabilities are amended
+by [ADR 0064](0064-per-credential-ssh-authority.md).
+
 ## Context
 
 ADR 0044 excluded script authority from the SSH Agent Gate. That gate derives
