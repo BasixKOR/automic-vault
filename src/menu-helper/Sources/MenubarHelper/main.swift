@@ -2939,6 +2939,7 @@ private enum ApprovalDecision: Equatable {
     case alwaysApproved
     case temporaryWriteAccess
     case reevaluated
+    case rebless
 }
 
 private extension ApprovalDecision {
@@ -2950,8 +2951,8 @@ private extension ApprovalDecision {
         case .approved: .approved
         case .alwaysApproved: .alwaysApproved
         case .temporaryWriteAccess: .temporaryAccessGrant
-        case .reevaluated:
-            preconditionFailure(".reevaluated decisions must not be stored into reuse cache")
+        case .reevaluated, .rebless:
+            preconditionFailure("Nonterminal decisions must not be stored into reuse cache")
         }
     }
 }
@@ -5530,27 +5531,66 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
-            let decision = await showApprovalAlert(
-                request: request,
-                callerPath: callerPath,
-                pid: pid,
-                signing: signing,
-                scriptApproval: scriptApproval,
-                blessing: promptBlessing,
-                launcher: promptLauncher,
-                denialLaunchers: policyLaunchers,
-                launcherFallbackPath: launcherFallbackPath,
-                automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
-                    ?? retainedProcessExplanation
-                    ?? automaticApprovalExplanation,
-                accessLevel: promptAccessLevel,
-                temporaryGrantCandidate: temporaryGrantCandidate,
-                temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
-                classification: classification,
-                denialGate: configuredGate,
+            let approvalPanel = makeApprovalPanel()
+            defer {
+                approvalPanel.orderOut(nil)
+                approvalPanel.contentView = nil
+            }
+            let openReblessingReview: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
+            if lostBlessingExplanation(for: scriptApproval) != nil,
+               let scriptApproval, let scriptData = request.scriptData,
+               let declaration = scriptExecutionDeclaration(for: request) {
+                let review = BlessedScriptReviewRequest(
+                    path: scriptApproval.path,
+                    declaration: declaration,
+                    scriptData: scriptData,
+                    launcher: nil
+                )
+                openReblessingReview = { finished in
+                    presentBlessingReview(review, on: approvalPanel, cancellation: cancellation) {
+                        finished()
+                    }
+                }
+            } else {
+                openReblessingReview = nil
+            }
+            let decision = await approvalWithBlessingReview(
                 cancellation: cancellation,
-                reevaluate: tryFulfillFromGrantOrCache
-            )
+                review: openReblessingReview
+            ) {
+                let refreshedBlessing = scriptApproval.flatMap {
+                    self.matchingBlessedScriptExecution(request: request, approval: $0)
+                }.map {
+                    BlessedScriptPromptContext(
+                        script: $0,
+                        explanation: "Approval activates this stored authority for one execution."
+                    )
+                }
+                return await showApprovalAlert(
+                    request: request,
+                    callerPath: callerPath,
+                    pid: pid,
+                    signing: signing,
+                    scriptApproval: scriptApproval,
+                    blessing: activeBlessing == nil ? refreshedBlessing : promptBlessing,
+                    launcher: promptLauncher,
+                    denialLaunchers: policyLaunchers,
+                    launcherFallbackPath: launcherFallbackPath,
+                    automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
+                        ?? retainedProcessExplanation
+                        ?? automaticApprovalExplanation,
+                    accessLevel: promptAccessLevel,
+                    temporaryGrantCandidate: temporaryGrantCandidate,
+                    temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
+                    classification: classification,
+                    denialGate: configuredGate,
+                    cancellation: cancellation,
+                    reevaluate: tryFulfillFromGrantOrCache,
+                    allowsReblessing: openReblessingReview != nil
+                        && lostBlessingExplanation(for: scriptApproval) != nil,
+                    existingPanel: approvalPanel
+                )
+            }
             if decision == .reevaluated {
                 return
             }
@@ -5690,75 +5730,86 @@ private final class ApprovalServer: @unchecked Sendable {
                 }
                 return
             }
-            do {
-                let record = accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: "Approved",
-                    approvalSource: "Manual",
-                    reason: "Approved in prompt",
-                    launcher: promptLauncher
-                )
-                guard try self.fulfillApprovedRequest(
-                    request: request,
-                    signing: signing,
-                    awsRegistration: awsRegistration,
-                    pid: pid,
-                    identity: identity,
-                    record: record,
-                    launchers: policyLaunchers,
-                    launcher: promptLauncher,
-                    activateAfterRecording: {
-                        if let scriptApproval,
-                           let script = self.matchingBlessedScriptExecution(
-                               request: request,
-                               approval: scriptApproval
-                           )
-                        {
-                            self.registerBlessedExecution(script, pid: pid, identity: identity)
+            let fulfill: @Sendable () -> Void = { [policyLaunchers] in
+                do {
+                    let record = accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: "Approved",
+                        approvalSource: "Manual",
+                        reason: "Approved in prompt",
+                        launcher: promptLauncher
+                    )
+                    guard try self.fulfillApprovedRequest(
+                        request: request,
+                        signing: signing,
+                        awsRegistration: awsRegistration,
+                        pid: pid,
+                        identity: identity,
+                        record: record,
+                        launchers: policyLaunchers,
+                        launcher: promptLauncher,
+                        cancellation: cancellation,
+                        activateAfterRecording: {
+                            // SSH has neither decision reuse nor Blessed Script registration.
+                            // Keep the main-actor reuse cache out of the SSH worker.
+                            guard request.sshPeer == nil else { return }
+                            if let scriptApproval,
+                               let script = self.matchingBlessedScriptExecution(
+                                   request: request,
+                                   approval: scriptApproval
+                               )
+                            {
+                                self.registerBlessedExecution(script, pid: pid, identity: identity)
+                            }
+                            self.transientApprovals.remember(
+                                decision.reuseOutcome,
+                                for: transientApproval
+                            )
+                        },
+                        release: { payload in
+                            self.reply(
+                                peer,
+                                to: message,
+                                ok: true,
+                                error: nil,
+                                secrets: payload.secrets,
+                                value: payload.value,
+                                humanApprovalDecision: "approved"
+                            )
                         }
-                        self.transientApprovals.remember(
-                            decision.reuseOutcome,
-                            for: transientApproval
-                        )
-                    },
-                    release: { payload in
+                    ) else {
                         self.reply(
                             peer,
                             to: message,
-                            ok: true,
-                            error: nil,
-                            secrets: payload.secrets,
-                            value: payload.value,
+                            ok: false,
+                            error: "Authorization History is unavailable",
                             humanApprovalDecision: "approved"
                         )
+                        return
                     }
-                ) else {
+                } catch {
+                    _ = self.onAccessRequest(accessRequestRecord(
+                        request: request,
+                        callerPath: callerPath,
+                        decision: error is LauncherDenialError ? "Denied" : "Failed",
+                        approvalSource: error is LauncherDenialError ? "Auto" : "Manual",
+                        reason: error.localizedDescription,
+                        launcher: error is LauncherDenialError ? (error as? LauncherDenialError)?.launcher : promptLauncher
+                    ))
                     self.reply(
                         peer,
                         to: message,
                         ok: false,
-                        error: "Authorization History is unavailable",
+                        error: error.localizedDescription,
                         humanApprovalDecision: "approved"
                     )
-                    return
                 }
-            } catch {
-                _ = self.onAccessRequest(accessRequestRecord(
-                    request: request,
-                    callerPath: callerPath,
-                    decision: error is LauncherDenialError ? "Denied" : "Failed",
-                    approvalSource: error is LauncherDenialError ? "Auto" : "Manual",
-                    reason: error.localizedDescription,
-                    launcher: error is LauncherDenialError ? (error as? LauncherDenialError)?.launcher : promptLauncher
-                ))
-                self.reply(
-                    peer,
-                    to: message,
-                    ok: false,
-                    error: error.localizedDescription,
-                    humanApprovalDecision: "approved"
-                )
+            }
+            if request.sshPeer != nil {
+                await performAuthorizationWork(fulfill)
+            } else {
+                fulfill()
             }
         }
     }
@@ -6308,7 +6359,7 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .interrupted, .denied, .temporaryWriteAccess:
+                            case .canceled, .interrupted, .denied, .temporaryWriteAccess, .rebless:
                                 ProxyDestinationDecision.deny
                             case .reevaluated:
                                 preconditionFailure("proxy destination approval cannot be reevaluated")
@@ -9358,9 +9409,14 @@ private final class ApprovalServer: @unchecked Sendable {
         launchers: [LauncherIdentity],
         launcher: LauncherIdentity?,
         sshScriptAuthorization: SSHScriptAuthorization? = nil,
+        cancellation: ApprovalCancellation? = nil,
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
+        func validateCancellation() throws {
+            guard cancellation?.isCanceled != true else { throw CancellationError() }
+        }
+        try validateCancellation()
         func validateDenial() throws {
             let currentLaunchers = request.sshPeer?.launchers ?? launcherIdentities(for: identity)
             var attributedLaunchers = launchers + currentLaunchers
@@ -9393,7 +9449,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     try request.sshPeer?.validate()
                     try validateSSHScriptAuthority()
                     if let context = request.credentialParent?.gitContext, !gitCredentialContextValid(context) { return false }
+                    try validateCancellation()
                     guard onAccessRequest(record) else { return false }
+                    try validateCancellation()
                     try request.sshPeer?.validate()
                     try validateSSHScriptAuthority()
                     if let context = request.credentialParent?.gitContext, !gitCredentialContextValid(context) { return false }
@@ -9429,13 +9487,19 @@ private final class ApprovalServer: @unchecked Sendable {
                 )
             },
             release: { material in
+                try validateCancellation()
                 try validateDoctlTarget(request)
                 try validateHcloudTarget(request)
                 try validateDenial()
                 try releaseAfterSSHAuthorizationCheck(
                     material.payload,
                     authorization: sshScriptAuthorization,
-                    validatePeer: { try request.sshPeer?.validate() },
+                    validatePeer: {
+                        try request.sshPeer?.validate()
+                        // UI policy changes can now arrive while SSH peer validation runs.
+                        if request.sshPeer != nil { try validateDenial() }
+                        try validateCancellation()
+                    },
                     currentAuthority: {
                         request.sshPeer.map {
                             activeSSHScriptAuthority(ancestors: $0.ancestors)
@@ -12145,10 +12209,9 @@ private func approvalProcessIdentities(
     let chain = launcherPID.flatMap { launcherPID in
         chains.first { $0.contains(where: { $0.pid == launcherPID }) }
     } ?? chains.max(by: { $0.count < $1.count }) ?? [callerNode]
-    let bounded = launcherPID.flatMap { launcherPID in
-        chain.firstIndex(where: { $0.pid == launcherPID }).map { Array(chain[...$0]) }
-    } ?? chain
-    return bounded
+    // Keep ancestors above the selected Launcher for diagnostic presentation.
+    // This chain never selects the Launcher or supplies authorization authority.
+    return chain
 }
 
 private func mutableCodeExplanation(path: String) -> String? {
@@ -12257,11 +12320,14 @@ private func approvalProcessSecurity(
     }
 
     let targetPath = normalizedExecutablePath(request.target)
+    // Ancestors above the Launcher are context only, not Target candidates.
+    let launcherIndex = identities.firstIndex { $0.pid == launcher?.pid }
+    let targetCandidates = launcherIndex.map { Array(identities[...$0]) } ?? identities
     let liveTargetPID = approvalTargetPID(
         explicitPID: targetPID,
         dockerPID: request.credentialParent?.pid,
         targetPath: targetPath,
-        identities: identities
+        identities: targetCandidates
     )
     var nodes = identities.map { identity -> ApprovalProcessSecurityNode in
         let isLauncher = identity.pid == launcher?.pid
@@ -12272,7 +12338,12 @@ private func approvalProcessSecurity(
         if isTarget { roles.append(request.keys.isEmpty ? "Target" : "Secret recipient") }
         if isGateClient { roles.append("Verified Gate Client") }
         if identity.pid == request.sshPeer?.identity.pid { roles.append("SSH client") }
-        if roles.isEmpty { roles.append("Intermediary") }
+        if roles.isEmpty {
+            let isAncestor = launcherIndex.map { boundary in
+                identities[(boundary + 1)...].contains { $0.pid == identity.pid }
+            } ?? false
+            roles.append(isAncestor ? "Observed ancestor" : "Intermediary")
+        }
 
         let arguments = identity.execution.flatMap { execution -> [String]? in
             guard !isLauncher, approvalProcessExecutionIsLive(execution),
@@ -13124,6 +13195,8 @@ private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate:
     panel.setFrame(frame, display: true, animate: animate)
 }
 
+let approvalPresentationDidAbort = Notification.Name("AutomicVaultApprovalPresentationDidAbort")
+
 @MainActor
 private enum ActiveApprovalPrompt {
     static var current: ApprovalPromptState?
@@ -13131,6 +13204,7 @@ private enum ActiveApprovalPrompt {
 
     static func abort() {
         abortGeneration += 1
+        NotificationCenter.default.post(name: approvalPresentationDidAbort, object: nil)
         current?.resolve(.canceled)
         HumanApprovalQueue.shared.cancelAllPending()
     }
@@ -13213,8 +13287,13 @@ private final class ApprovalPromptState: @unchecked Sendable {
             PostHogTelemetry.shared.captureExplicitApproval()
         }
         #endif
-        panel?.orderOut(nil)
-        panel?.contentView = nil // Tear down any pending embedded biometric attempt.
+        if finalResult == .rebless,
+           let view = panel?.contentView as? NSHostingView<ApprovalPromptView> {
+            view.rootView.isReviewingBlessing = true
+        } else {
+            panel?.orderOut(nil)
+            panel?.contentView = nil // Tear down any pending embedded biometric attempt.
+        }
         continuation?.resume(returning: finalResult)
         continuation = nil
         return true
@@ -13244,6 +13323,42 @@ func denialActionLauncher(
     }
 }
 
+// A Blessing review is a separate authority change. Release the execution
+// prompt's queue slot while reviewing, but keep its immutable request pending.
+@MainActor
+private func approvalWithBlessingReview(
+    cancellation: ApprovalCancellation,
+    review: (@MainActor (@escaping @MainActor () -> Void) -> Void)?,
+    present: @MainActor () async -> ApprovalDecision
+) async -> ApprovalDecision {
+    let generation = ActiveApprovalPrompt.abortGeneration
+    while true {
+        guard !cancellation.isCanceled else { return .canceled }
+        guard ActiveApprovalPrompt.abortGeneration == generation else { return .interrupted }
+        let decision = await present()
+        guard decision == .rebless else { return decision }
+        guard ActiveApprovalPrompt.abortGeneration == generation,
+              let review else { return .interrupted }
+        let observerID = UUID()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var pending: CheckedContinuation<Void, Never>? = continuation
+            let finish: @MainActor @Sendable () -> Void = {
+                let continuation = pending
+                pending = nil
+                continuation?.resume()
+            }
+            guard cancellation.observe(id: observerID, finish) else {
+                finish()
+                return
+            }
+            review(finish)
+        }
+        cancellation.stopObserving(id: observerID)
+        // Review approval grants no execution approval. Present again through
+        // the ordinary denial, cancellation, and release checks.
+    }
+}
+
 @MainActor
 private func showApprovalAlert(
     request: ApprovalRequest,
@@ -13266,17 +13381,23 @@ private func showApprovalAlert(
     denialGate: SecretGate? = nil,
     cancellation: ApprovalCancellation? = nil,
     compact: Bool = false,
-    reevaluate: (@MainActor () -> Bool)? = nil
+    reevaluate: (@MainActor () -> Bool)? = nil,
+    allowsReblessing: Bool = false,
+    existingPanel: NSPanel? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
-    let sshTimer = request.sshPeer.map { peer in
-        let timer = Timer(timeInterval: 1, repeats: true) { _ in
-            do { try peer.validate() } catch { cancellation?.cancel() }
+    let sshMonitor = request.sshPeer.map { peer in
+        Task {
+            do {
+                try await monitorAuthorizationValidity { try peer.validate() }
+            } catch {
+                // A result from a dismissed prompt must not cancel its fulfillment.
+                guard !Task.isCancelled else { return }
+                cancellation?.cancel()
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        return timer
     }
-    defer { sshTimer?.invalidate() }
+    defer { sshMonitor?.cancel() }
 
     let startGeneration = ActiveApprovalPrompt.abortGeneration
     let queueToken = UUID()
@@ -13368,7 +13489,7 @@ private func showApprovalAlert(
     let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
     let usesTouchIDApproval = TouchIDApproval.isEnabled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = makeApprovalPanel()
+    let panel = existingPanel ?? makeApprovalPanel()
 
     let denialObserver = NotificationCenter.default.addObserver(
         forName: launcherDenialDidChange, object: nil, queue: .main
@@ -13417,6 +13538,9 @@ private func showApprovalAlert(
                         scope: temporaryDenialScope, source: .standardMac)
                 } : nil,
                 temporaryDenialScope: temporaryDenialScope,
+                rebless: allowsReblessing ? {
+                    state.resolve(.rebless, source: .standardMac)
+                } : nil,
                 decide: { userDecision, source in
                     state.resolve(userDecision, source: source)
                 }
@@ -13495,7 +13619,7 @@ private func showApprovalAlert(
         }
 
         fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
-        panel.center()
+        if !panel.isVisible { panel.center() }
         panel.orderFrontRegardless()
         if panel.isVisible, ActiveApprovalPrompt.current === state, let eligibleDenialLauncher, let temporaryDenialScope {
             _ = TemporaryLauncherDenials.shared.recordPrompt(eligibleDenialLauncher.designatedRequirement, gateID: temporaryDenialScope.gateID)
@@ -13767,8 +13891,8 @@ private extension ApprovalProcessSecurityNode {
 private extension ApprovalProcessSecurity {
     var launcher: ApprovalProcessSecurityNode? { nodes.first(where: \.isLauncher) }
     var target: ApprovalProcessSecurityNode? { nodes.first(where: \.isTarget) }
-    var middleNodes: [ApprovalProcessSecurityNode] {
-        Array(nodes.filter { !$0.isLauncher && !$0.isTarget }.reversed())
+    var timelineNodes: [ApprovalProcessSecurityNode] {
+        Array(nodes.filter { !$0.isTarget }.reversed()) + (target.map { [$0] } ?? [])
     }
 }
 
@@ -13786,6 +13910,8 @@ private func approvalPromptDetails(_ sections: [ApprovalPromptSection]) -> Strin
 private struct ApprovalPromptInfoButton: View {
     let title: String
     let details: String
+    var arrowEdge: Edge = .trailing
+    var popoverHeight: CGFloat = 280
     @State private var isPresented = false
 
     var body: some View {
@@ -13799,7 +13925,7 @@ private struct ApprovalPromptInfoButton: View {
         .help(details)
         .accessibilityLabel(localizedUIString(title))
         .accessibilityHint(String(localized: "Shows \(localizedUIString(title))"))
-        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+        .popover(isPresented: $isPresented, arrowEdge: arrowEdge) {
             ScrollView {
                 Text(details)
                     .font(.system(.callout, design: .monospaced))
@@ -13807,7 +13933,7 @@ private struct ApprovalPromptInfoButton: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-            .frame(width: 380, height: 280)
+            .frame(width: 380, height: popoverHeight)
         }
     }
 }
@@ -13893,7 +14019,7 @@ private struct ApprovalPromptProcessSecurityView: View {
     let processSecurity: ApprovalProcessSecurity
 
     private var nodes: [ApprovalProcessSecurityNode] {
-        processSecurity.middleNodes + (processSecurity.target.map { [$0] } ?? [])
+        processSecurity.timelineNodes
     }
 
     private var details: String {
@@ -13930,7 +14056,7 @@ private struct ApprovalPromptProcessSecurityView: View {
             .scrollIndicators(.hidden)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Process path from Verified Launcher to Target")
+        .accessibilityLabel("Observed process ancestry and Target")
     }
 }
 
@@ -13978,6 +14104,11 @@ private struct ApprovalPromptProcessNodeView: View {
                 Text("via \(node.executableName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if node.isLauncher {
+                Text("Verified Launcher")
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
             }
             if let script = node.scriptOperand {
                 Text(escapedSecurityPath(URL(fileURLWithPath: script).lastPathComponent))
@@ -14131,6 +14262,8 @@ private struct ApprovalPromptView: View {
     var denialLauncherName: String? = nil
     var temporaryDenial: (() -> Void)? = nil
     var temporaryDenialScope: TemporaryLauncherDenialScope? = nil
+    var rebless: (() -> Void)? = nil
+    var isReviewingBlessing = false
     let decide: (ApprovalDecision, ApprovalDecisionSource) -> Void
     @State private var isAuthenticatingWithTouchID = false
     @StateObject private var embeddedTouchID = EmbeddedTouchIDAttempt()
@@ -14164,18 +14297,27 @@ private struct ApprovalPromptView: View {
                     }
 
                     if let explanation = content.automaticApprovalExplanation {
-                        Label {
-                            Text(explanation)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } icon: {
-                            Image(systemName: "exclamationmark.shield.fill")
-                                .foregroundStyle(.orange)
+                        HStack(spacing: 12) {
+                            Label {
+                                Text(explanation)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } icon: {
+                                Image(systemName: "exclamationmark.shield.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                            if let rebless {
+                                Spacer(minLength: 0)
+                                Button("Rebless…", action: rebless)
+                                    .buttonStyle(.bordered)
+                                    .fixedSize()
+                                    .help("Review the script changes, then return to this pending request.")
+                            }
                         }
                         .font(.callout)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                        .accessibilityElement(children: .combine)
+                        .accessibilityElement(children: .contain)
                     }
                 }
             }
@@ -14183,7 +14325,8 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
-            if let reason = content.writeAccessUnavailableReason {
+            if usesIPhoneApproval && !usesTouchIDApproval,
+               let reason = content.writeAccessUnavailableReason {
                 Text(localizedUIString(reason))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -14207,28 +14350,19 @@ private struct ApprovalPromptView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-            } else if usesTouchIDApproval {
-                Text("Fresh Touch ID is required for every Approval on this Mac.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            if temporaryDenial != nil, let denialLauncherName, let temporaryDenialScope {
-                Text("Repeated requests from \(denialLauncherName) at \(temporaryDenialScope.gateName). Use the Deny menu to stop matching requests for 2 minutes. You can end this early from the menu bar.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if usesTouchIDApproval {
-                HStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     denyButton
+                    approvalInfoButton
+                        .padding(.top, 4)
                     if usesEmbeddedTouchID {
                         HStack(spacing: 8) {
                             HStack(spacing: 8) {
-                                if isAuthenticatingWithTouchID {
+                                if isReviewingBlessing {
+                                    Image(systemName: "touchid")
+                                } else if isAuthenticatingWithTouchID {
                                     ProgressView().controlSize(.small)
                                 } else {
                                     EmbeddedTouchIDView(attempt: embeddedTouchID) {
@@ -14240,7 +14374,6 @@ private struct ApprovalPromptView: View {
                             }
                             .padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: 32)
-                            .background(.quaternary, in: Capsule())
                             .allowsHitTesting(false)
                             .accessibilityElement(children: .contain)
                             .accessibilityHint("Touch the sensor to approve this request once. This is a status indicator, not a button.")
@@ -14258,15 +14391,21 @@ private struct ApprovalPromptView: View {
                                         }
                                     }
                                 } label: {
-                                    Image(systemName: "ellipsis")
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Rectangle())
                                 }
                                 .menuStyle(.borderlessButton)
+                                .menuIndicator(.hidden)
+                                .padding(.trailing, 10)
                                 .fixedSize()
                                 .accessibilityLabel("More approval options")
                                 .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                             }
                         }
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(.quaternary, in: Capsule())
                     } else {
                         ApprovalPromptApprovalMenu(
                             allowsPersistentApproval: allowsPersistentApproval,
@@ -14288,6 +14427,8 @@ private struct ApprovalPromptView: View {
             } else {
                 HStack(alignment: .top, spacing: 18) {
                     denyButton
+                    approvalInfoButton
+                        .padding(.top, 4)
 
                     VStack(spacing: 6) {
                         ApprovalPromptApprovalMenu(
@@ -14346,30 +14487,63 @@ private struct ApprovalPromptView: View {
                 .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .disabled(isReviewingBlessing)
+        .onChange(of: isReviewingBlessing) { _, reviewing in
+            if reviewing { embeddedTouchID.cancel() }
+        }
+    }
+
+    @ViewBuilder private var approvalInfoButton: some View {
+        let details = [
+            content.writeAccessUnavailableReason.map(localizedUIString),
+            usesTouchIDApproval
+                ? String(localized: "Fresh Touch ID is required for every Approval on this Mac.")
+                : nil,
+        ].compactMap { $0 }.joined(separator: "\n\n")
+        if !details.isEmpty {
+            ApprovalPromptInfoButton(
+                title: String(localized: "Approval details"),
+                details: details,
+                arrowEdge: .top,
+                popoverHeight: 140
+            )
+            .foregroundStyle(.secondary)
+        }
     }
 
     private var denyButton: some View {
-        Group {
-            if let temporaryDenial, let temporaryDenialScope {
-                Menu {
-                    Button("Deny Once") { decide(.denied, .standardMac) }
-                    Button(temporaryDenialScope.actionTitle, action: temporaryDenial)
-                    Text("Only \(denialLauncherName ?? "this Verified Launcher") at \(temporaryDenialScope.gateName)")
-                } label: {
-                    Text("Deny").frame(maxWidth: .infinity)
-                } primaryAction: {
-                    decide(.denied, .standardMac)
+        VStack(spacing: 6) {
+            Group {
+                if let temporaryDenial, let temporaryDenialScope {
+                    Menu {
+                        Button("Deny Once") { decide(.denied, .standardMac) }
+                        Button(temporaryDenialScope.actionTitle, action: temporaryDenial)
+                        Text("Only \(denialLauncherName ?? "this Verified Launcher") at \(temporaryDenialScope.gateName)")
+                    } label: {
+                        Text("Deny").frame(maxWidth: .infinity)
+                    } primaryAction: {
+                        decide(.denied, .standardMac)
+                    }
+                    .accessibilityLabel("Deny and more denial options")
+                    .accessibilityHint("Deny this request once, or open the menu for a two-minute denial")
+                } else {
+                    Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
                 }
-                .accessibilityLabel("Deny and more denial options")
-                .accessibilityHint("Deny this request once, or open the menu for a two-minute denial")
-            } else {
-                Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .keyboardShortcut(.cancelAction)
+            if temporaryDenial != nil, let denialLauncherName, let temporaryDenialScope {
+                Text("Spam Prevention Available")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help("Repeated requests from \(denialLauncherName) at \(temporaryDenialScope.gateName). Use the Deny menu to stop matching requests for 2 minutes. You can end this early from the menu bar.")
             }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
         .frame(maxWidth: .infinity)
-        .keyboardShortcut(.cancelAction)
     }
 
     private func authenticateWithTouchID(_ decision: ApprovalDecision) {
@@ -15992,6 +16166,25 @@ private func runApprovalSelfCheck() -> Int32 {
         explanation: "Hardened Runtime is not enabled; Executes mutable JavaScript and dependencies",
         isAutomicVaultSigned: false, invocationName: "npm"
     )
+    let ancestorNode = ApprovalProcessSecurityNode(
+        pid: 39, path: "/Applications/Parent.app/Contents/MacOS/Parent",
+        roles: ["Observed ancestor"], posture: .meetsRequirements,
+        explanation: "Valid code signature; diagnostic context only",
+        isAutomicVaultSigned: false
+    )
+    let fullAncestry = ApprovalProcessSecurity(nodes: [
+        promptProcessSecurity.nodes[1], npmNode, promptProcessSecurity.nodes[0], ancestorNode,
+    ])
+    guard fullAncestry.timelineNodes.map(\.pid) == [39, 40, 42, 41],
+          fullAncestry.launcher?.pid == 40,
+          fullAncestry.target?.pid == 41,
+          !ancestorNode.isLauncher,
+          ApprovalProcessSecurity(nodes: [promptProcessSecurity.nodes[1]])
+            .timelineNodes.map(\.pid) == [41]
+    else {
+        print("Full approval ancestry presentation self-check failed")
+        return 1
+    }
     for name in ["cargo-binstall", "cargo-binstall-with-a-long-executable-name"] {
         let node = ApprovalProcessSecurityNode(
             pid: 43, path: "/opt/homebrew/bin/\(name)", roles: ["Intermediary"],
@@ -16122,7 +16315,7 @@ private func runApprovalSelfCheck() -> Int32 {
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           promptProcessSecurity.launcher?.pid == 40,
           promptProcessSecurity.target?.pid == 41,
-          promptProcessSecurity.middleNodes.isEmpty,
+          promptProcessSecurity.timelineNodes.map(\.pid) == [40, 41],
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
@@ -16871,7 +17064,86 @@ private func awaitWithTimeout<T: Sendable>(
 }
 
 @MainActor
+private func runReblessingApprovalSelfCheck() async -> Bool {
+    // Drive real presentation/queue teardown without granting any authority.
+    for mode in 0..<3 {
+        HumanApprovalQueue.shared.resetForTesting()
+        let cancellation = ApprovalCancellation()
+        let panel = makeApprovalPanel()
+        defer { panel.orderOut(nil); panel.contentView = nil }
+        let scriptData = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho reviewed\n".utf8)
+        guard let declaration = try? blessedScriptDeclaration(data: scriptData) else { return false }
+        let reviewRequest = BlessedScriptReviewRequest(
+            path: "/tmp/av-sheet-self-check-\(UUID().uuidString)",
+            declaration: declaration, scriptData: scriptData, launcher: nil
+        )
+        var reviewAttached = false
+        var samePanel = true
+        var staleApprovalRejected = false
+        var priorState: ApprovalPromptState?
+        var presentations = 0
+        var reviewHadFreeSlot = false
+        var lateCompletion: (@MainActor () -> Void)?
+        let request = ApprovalRequest(
+            op: "inject", keys: [], target: "/self-check", args: [], cwd: "/",
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: nil, title: nil, detail: nil
+        )
+        let task = Task { @MainActor in
+            await approvalWithBlessingReview(cancellation: cancellation, review: { finish in
+                reviewHadFreeSlot = !HumanApprovalQueue.shared.hasActiveSlot
+                    && ActiveApprovalPrompt.current == nil
+                lateCompletion = finish
+                staleApprovalRejected = priorState?.resolve(.approved, source: .programmatic) == false
+                let sheetCancellation = mode == 1 ? cancellation : ApprovalCancellation()
+                presentBlessingReview(reviewRequest, on: panel, cancellation: sheetCancellation, completion: finish)
+                reviewAttached = panel.isVisible && panel.attachedSheet?.sheetParent === panel
+                    && (panel.contentView as? NSHostingView<ApprovalPromptView>)?.rootView.isReviewingBlessing == true
+                if mode == 2 {
+                    ActiveApprovalPrompt.abort()
+                } else {
+                    sheetCancellation.cancel()
+                }
+            }) {
+                presentations += 1
+                let nextDecision: ApprovalDecision = presentations == 1 ? .rebless : .denied
+                let driver = Task { @MainActor in
+                    while !Task.isCancelled {
+                        if let state = ActiveApprovalPrompt.current {
+                            samePanel = samePanel && state.panel === panel
+                            if presentations == 1 { priorState = state }
+                            state.resolve(nextDecision, source: .programmatic)
+                            return
+                        }
+                        await Task.yield()
+                    }
+                }
+                defer { driver.cancel() }
+                return await showApprovalAlert(
+                    request: request, callerPath: "/self-check", pid: getpid(),
+                    signing: SigningInfo(identifier: "self-check", teamIdentifier: "TEST"),
+                    scriptApproval: nil, launcher: nil, launcherFallbackPath: "/self-check",
+                    automaticApprovalExplanation: nil, cancellation: cancellation,
+                    allowsReblessing: presentations == 1, existingPanel: panel
+                )
+            }
+        }
+        let result = await awaitWithTimeout(duration: .seconds(5), cancellation: cancellation, task: task)
+        let expected: ApprovalDecision = mode == 0 ? .denied : mode == 1 ? .canceled : .interrupted
+        guard result == expected, presentations == (mode == 0 ? 2 : 1),
+              reviewHadFreeSlot, reviewAttached, samePanel, staleApprovalRejected,
+              !HumanApprovalQueue.shared.hasActiveSlot,
+              ActiveApprovalPrompt.current == nil else { return false }
+        // A late or duplicate review completion must not resume the command twice.
+        lateCompletion?()
+        lateCompletion?()
+    }
+    return true
+}
+
+@MainActor
 private func runApprovalCallsiteSelfCheck() async -> Int32 {
+    guard await runReblessingApprovalSelfCheck() else { return 20 }
     let denialGate = SecretGate(id: "gh", keyPatterns: ["TOKEN"], routes: [], defaultProtection: .noAccess, appPolicies: [])
     let denialScope = TemporaryLauncherDenialScope(gate: denialGate, classification: .mutating)!
     let deniedLauncher = LauncherIdentity(
@@ -17326,6 +17598,13 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
 private func runApprovalProcessExecutionSelfCheck() -> Int32 {
     var identity = AVProcessIdentity()
     guard av_process_identity(getpid(), &identity) else { return 1 }
+    let fullAncestry = approvalProcessIdentities(gateClientPID: getpid(), launcherPID: getpid())
+    guard identity.ppid > 1, fullAncestry.count > 1,
+          fullAncestry.first?.pid == getpid()
+    else {
+        print("Approval ancestry must continue above the selected Launcher")
+        return 1
+    }
     identity.pidversion = 0
     identity.audit_session_id = 0
     var reusedIdentity = identity

@@ -263,7 +263,7 @@
 "Pinned hashes" = "固定的哈希值";
 "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them." = "明文 Secret 没有操作系统提供的保护。任何有文件访问权限的本地进程都可复制并重复使用它们。";
 "Process chain" = "进程链";
-"Process path from Verified Launcher to Target" = "从已验证启动器到目标的进程路径";
+"Observed process ancestry and Target" = "观测到的进程祖先链与目标";
 "Protection level" = "访问级别";
 "Public key" = "公钥";
 "Public key unavailable." = "公钥不可用。";
@@ -567,3 +567,9 @@
 "Collapse Strip" = "折叠授权栏";
 
 "Claude Code disables library validation, so third-party code loaded into it can use Claude’s Tool-specific gate permissions. Automic Vault accepts this exception when the verified helper represents Claude, including for existing rules. Disable this helper to opt out." = "Claude Code 禁用了库验证，因此加载到其进程中的第三方代码可以使用 Claude 的工具专用关卡权限。当经过验证的辅助程序代表 Claude 时，Automic Vault 会接受这一例外，包括应用现有规则。禁用此辅助程序即可退出此关联。";
+"Rebless…" = "重新认可…";
+"Review the script changes, then return to this pending request." = "审查脚本更改，然后返回此待处理请求。";
+"Approval details" = "批准详情";
+"Spam Prevention Available" = "可启用重复请求防护";
+
+"Latest request" = "最近一次请求";

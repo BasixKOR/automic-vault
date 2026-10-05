@@ -236,11 +236,12 @@ final class AutomicVaultWindow: NSWindow {
 // Presentation-only index; authorization decisions never consult these counts.
 private struct DashboardActivityIndex {
     private let datesByTool: [String: [Date]]
+    private let recordsByTool: [String: [AccessRequestRecord]]
 
     init(_ records: [AccessRequestRecord]) {
-        var dates: [String: [Date]] = [:]
-        for record in records { dates[record.tool, default: []].append(record.date) }
-        datesByTool = dates.mapValues { $0.sorted() }
+        recordsByTool = Dictionary(grouping: records, by: \.tool)
+            .mapValues { $0.sorted { $0.date < $1.date } }
+        datesByTool = recordsByTool.mapValues { $0.map(\.date) }
     }
 
     func latestActivity(for tool: String) -> Date {
@@ -268,6 +269,17 @@ private struct DashboardActivityIndex {
             defer { previous = next }
             return next - previous
         }
+    }
+
+    func latestRecord(for tool: String, now: Date, slot: Int, count: Int) -> AccessRequestRecord? {
+        guard count > 0, (0..<count).contains(slot),
+              let dates = datesByTool[tool], let records = recordsByTool[tool] else { return nil }
+        let start = now.addingTimeInterval(-86_400)
+        let duration = 86_400 / Double(count)
+        let lower = boundary(start.addingTimeInterval(Double(slot) * duration), in: dates)
+        let upper = boundary(start.addingTimeInterval(Double(slot + 1) * duration),
+                             in: dates, includingEqual: slot == count - 1)
+        return upper > lower ? records[upper - 1] : nil
     }
 
     // Binary searches avoid scanning retained records during rendering.
@@ -1848,6 +1860,11 @@ final class DashboardModel: ObservableObject {
         return overviewActivityIndex?.slots(for: name, now: now, count: count)
     }
 
+    fileprivate func overviewLatestRecord(for tool: DashboardItem, now: Date,
+                                          slot: Int, count: Int) -> AccessRequestRecord? {
+        overviewActivityIndex?.latestRecord(for: tool.overviewToolName, now: now, slot: slot, count: count)
+    }
+
     fileprivate func overviewLatestActivity(for tool: DashboardItem) -> Date? {
         let name = tool.overviewToolName
         return overviewActivityIndex?.latestActivity(for: name)
@@ -2379,16 +2396,25 @@ func runDashboardSearchSelfCheck() -> Int32 {
             for slot in slots.indices {
                 let start = now.addingTimeInterval(-86_400 + Double(slot) * (86_400 / Double(count)))
                 let end = start.addingTimeInterval(86_400 / Double(count))
-                let expectedSlot = activityRecords.filter {
+                let expectedRecords = activityRecords.filter {
                     $0.date >= start && ($0.date < end || (slot == count - 1 && $0.date == end))
-                }.count
-                guard slots[slot] == expectedSlot else { return 1 }
+                }
+                let latest = activityIndex.latestRecord(for: "aws", now: now, slot: slot, count: count)
+                guard slots[slot] == expectedRecords.count,
+                      latest?.date == expectedRecords.map(\.date).max(),
+                      latest.map({ expectedRecords.contains($0) }) ?? expectedRecords.isEmpty,
+                      activityIndex.latestRecord(for: "missing", now: now, slot: slot, count: count) == nil
+                else { return 1 }
             }
         }
         guard activityIndex.count(for: "aws", now: now) == expected,
               activityIndex.count(for: "missing", now: now) == 0,
               DashboardActivityIndex([]).count(for: "aws", now: now) == 0 else { return 1 }
     }
+    guard activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: -1, count: 96) == nil,
+          activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: 96, count: 96) == nil,
+          activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: 0, count: 0) == nil
+    else { return 1 }
     // Built-in Tools must remain discoverable before credentials are configured.
     for (id, title) in [("gpg-signing", "GPG Signing"), ("ssh-agent", "SSH Agent")] {
         let unconfigured = DashboardModel(snapshot: .empty)
@@ -2599,6 +2625,23 @@ func runDashboardSearchSelfCheck() -> Int32 {
             do {
                 try png.write(to: URL(fileURLWithPath: directory)
                     .appendingPathComponent("loading-\(scheme == .dark ? "dark" : "light").png"))
+            } catch { return 1 }
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            let previewRecord = AccessRequestRecord(date: accessRequest.date, tool: "aws",
+                command: "never display this raw command", displayCommand: "aws s3 ls s3://release-artifacts",
+                decision: "Approved", reason: "Read Only", launcher: "Codex", callerPath: "/fixture/av",
+                target: "/fixture/aws", cwd: "/fixture", keys: [], detail: nil)
+            let renderer = ImageRenderer(content: ToolActivityPopover(record: previewRecord,
+                interval: "10:00–10:15: 4 recorded requests")
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, scheme))
+            renderer.scale = 2
+            guard let data = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) else { return 1 }
+            do {
+                try png.write(to: URL(fileURLWithPath: directory)
+                    .appendingPathComponent("activity-popover-\(scheme == .dark ? "dark" : "light").png"))
             } catch { return 1 }
         }
         var renderSnapshot = findingSnapshot
@@ -5262,6 +5305,56 @@ private struct AccessMetaLine: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+@MainActor
+func presentBlessingReview(
+    _ request: BlessedScriptReviewRequest,
+    on parent: NSPanel,
+    cancellation: ApprovalCancellation,
+    completion: @escaping @MainActor () -> Void
+) {
+    guard !cancellation.isCanceled else { completion(); return }
+    let model = DashboardModel()
+    let sheet = NSPanel(
+        contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false
+    )
+    sheet.isReleasedWhenClosed = false
+    let cancellationID = UUID()
+    let abortObserver = NotificationCenter.default.addObserver(
+        forName: approvalPresentationDidAbort, object: nil, queue: .main
+    ) { _ in
+        MainActor.assumeIsolated { model.cancelPendingBlessing() }
+    }
+    var completed = false
+    let finish: @MainActor () -> Void = {
+        guard !completed else { return }
+        completed = true
+        cancellation.stopObserving(id: cancellationID)
+        NotificationCenter.default.removeObserver(abortObserver)
+        sheet.orderOut(nil)
+        sheet.contentView = nil
+        completion()
+    }
+    model.reviewBlessing(request) { _ in
+        if sheet.sheetParent != nil {
+            parent.endSheet(sheet)
+        } else {
+            finish()
+        }
+    }
+    guard let pending = model.pendingBlessing else { return }
+    let view = NSHostingView(rootView: BlessedScriptReviewView(model: model, request: pending))
+    sheet.contentView = view
+    sheet.setContentSize(view.fittingSize)
+    guard cancellation.observe(id: cancellationID, { model.cancelPendingBlessing() }) else {
+        model.cancelPendingBlessing()
+        return
+    }
+    parent.beginSheet(sheet) { _ in
+        model.cancelPendingBlessing()
+        finish()
     }
 }
 
@@ -7964,37 +8057,102 @@ private func shortDashboardTimestamp(_ date: Date) -> String {
     date.formatted(.dateTime.month(.twoDigits).day(.twoDigits).hour().minute())
 }
 
+/// Spatial acquisition tolerance only; once horizontal panning starts, buckets stay exact.
+private struct ActivityHoverSelection {
+    static let buffer: CGFloat = 12
+    private(set) var slot: Int?
+    private var entryX: CGFloat?
+    private var isPanning = false
+
+    mutating func update(x: CGFloat, width: CGFloat, counts: [Int]) {
+        guard width > 0, !counts.isEmpty else { self = Self(); return }
+        let pitch = (width + 1) / CGFloat(counts.count)
+        let exact = Int(floor(x / pitch))
+        if let entryX {
+            if abs(x - entryX) >= 1 { isPanning = true }
+            if isPanning {
+                slot = x >= 0 && x <= width && counts.indices.contains(exact) && counts[exact] > 0
+                    ? exact : nil
+            }
+        } else {
+            entryX = x
+            // Only the initial entry may snap to a nearby populated bar.
+            slot = counts.indices.filter { counts[$0] > 0 }.min { lhs, rhs in
+                distance(to: lhs, x: x, pitch: pitch) < distance(to: rhs, x: x, pitch: pitch)
+            }
+            if let slot, distance(to: slot, x: x, pitch: pitch) > Self.buffer { self.slot = nil }
+        }
+    }
+
+    private func distance(to slot: Int, x: CGFloat, pitch: CGFloat) -> CGFloat {
+        let left = CGFloat(slot) * pitch
+        return max(left - x, x - (left + max(0.5, pitch - 1)), 0)
+    }
+}
+
 private struct ToolActivityStrip: View {
     let counts: [Int]?
     let now: Date
     let latestActivity: Date?
+    let latestRecord: (Int) -> AccessRequestRecord?
+    @State private var hover = ActivityHoverSelection()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = 0
 
     var body: some View {
         Group {
             if let counts {
-                HStack(spacing: 1) {
-                    ForEach(counts.indices, id: \.self) { slot in
-                        Rectangle()
-                            // A fixed logarithmic scale keeps Tools comparable: 1, 4, 16, 64 requests.
-                            .fill(Color.primary.opacity(counts[slot] == 0
-                                ? 0.06 : min(1, 0.25 + log2(Double(counts[slot])) / 8)))
-                            .overlay {
-                                if slot == counts.indices.last {
-                                    Rectangle().fill(Color.accentColor)
-                                        .keyframeAnimator(initialValue: 0.0, trigger: pulse) { content, opacity in
-                                            content.opacity(opacity)
-                                        } keyframes: { _ in
-                                            MoveKeyframe(1)
-                                            LinearKeyframe(0, duration: 0.8)
-                                        }
-                                        .opacity(reduceMotion ? 0 : 1)
+                GeometryReader { geometry in
+                    HStack(spacing: 1) {
+                        ForEach(counts.indices, id: \.self) { slot in
+                            Rectangle()
+                                // A fixed logarithmic scale keeps Tools comparable: 1, 4, 16, 64 requests.
+                                .fill(Color.primary.opacity(counts[slot] == 0
+                                    ? 0.06 : min(1, 0.25 + log2(Double(counts[slot])) / 8)))
+                                .overlay {
+                                    if slot == counts.indices.last {
+                                        Rectangle().fill(Color.accentColor)
+                                            .keyframeAnimator(initialValue: 0.0, trigger: pulse) { content, opacity in
+                                                content.opacity(opacity)
+                                            } keyframes: { _ in
+                                                MoveKeyframe(1)
+                                                LinearKeyframe(0, duration: 0.8)
+                                            }
+                                            .opacity(reduceMotion ? 0 : 1)
+                                    }
+                                }
+                                .frame(minWidth: 0.5)
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        Color.clear
+                            .frame(width: geometry.size.width + ActivityHoverSelection.buffer * 2,
+                                   height: 8 + ActivityHoverSelection.buffer * 2)
+                            .contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    hover.update(x: location.x - ActivityHoverSelection.buffer,
+                                                 width: geometry.size.width, counts: counts)
+                                case .ended:
+                                    hover = ActivityHoverSelection()
                                 }
                             }
-                            .frame(minWidth: 0.5)
-                            .help(slotDescription(slot, count: counts[slot], slotCount: counts.count))
+                            .offset(x: -ActivityHoverSelection.buffer, y: -ActivityHoverSelection.buffer)
                     }
+                    .background {
+                        InstantActivityPopover(
+                            content: hover.slot.flatMap { slot in
+                                guard counts.indices.contains(slot), let record = latestRecord(slot) else { return nil }
+                                return ToolActivityPopover(record: record,
+                                    interval: slotDescription(slot, count: counts[slot], slotCount: counts.count))
+                            },
+                            anchorX: (Double(hover.slot ?? 0) + 0.5) / Double(max(1, counts.count))
+                        )
+                        .frame(width: geometry.size.width, height: 8)
+                        .allowsHitTesting(false)
+                    }
+                    .onChange(of: counts) { _, _ in hover = ActivityHoverSelection() }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Activity in the last 24 hours")
@@ -8022,6 +8180,125 @@ private struct ToolActivityStrip: View {
         let interval = start.formatted(.dateTime.hour().minute()) + "–"
             + end.formatted(.dateTime.hour().minute())
         return String(localized: "\(interval): \(String(count)) recorded requests")
+    }
+}
+
+/// SwiftUI's transaction animation does not control NSPopover's window animation.
+private struct InstantActivityPopover: NSViewRepresentable {
+    let content: ToolActivityPopover?
+    let anchorX: CGFloat
+
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+
+    func updateNSView(_ view: AnchorView, context: Context) {
+        view.content = content
+        view.anchorX = anchorX
+        view.refresh()
+    }
+
+    static func dismantleNSView(_ view: AnchorView, coordinator: ()) {
+        view.popover.close()
+    }
+
+    final class AnchorView: NSView {
+        let popover = NSPopover()
+        var content: ToolActivityPopover?
+        var anchorX: CGFloat = 0
+        private var presentedContent: ToolActivityPopover?
+        private var presentedAnchor: NSRect?
+
+        override init(frame frameRect: NSRect) {
+            super.init(frame: frameRect)
+            popover.animates = false
+            popover.behavior = .transient
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            refresh()
+        }
+
+        override func layout() {
+            super.layout()
+            refresh()
+        }
+
+        func refresh() {
+            guard window != nil, let content else {
+                popover.close()
+                popover.contentViewController = nil
+                return
+            }
+            let anchor = NSRect(x: bounds.minX + (bounds.width + 1) * anchorX - 0.5,
+                                y: bounds.midY - 4, width: 1, height: 8)
+            guard !popover.isShown || presentedContent != content || presentedAnchor != anchor else { return }
+            if let host = popover.contentViewController as? NSHostingController<ToolActivityPopover> {
+                host.rootView = content
+            } else {
+                popover.contentViewController = NSHostingController(rootView: content)
+            }
+            // Resolve SwiftUI's ideal size before AppKit positions the window. Deferred
+            // sizing otherwise moves the arrow on the first pan or a command-length change.
+            if let host = popover.contentViewController {
+                host.view.layoutSubtreeIfNeeded()
+                popover.contentSize = host.view.fittingSize
+            }
+            presentedContent = content
+            presentedAnchor = anchor
+            popover.show(relativeTo: anchor, of: self, preferredEdge: .minY)
+        }
+    }
+}
+
+/// The same redacted command presentation as Authorization History; no Secret values are loaded.
+private struct ToolActivityPopover: View, Equatable {
+    let record: AccessRequestRecord
+    let interval: String
+
+    private var color: Color {
+        switch record.decision {
+        case "Approved": .green
+        case "Always Allowed": .blue
+        case "Denied": .red
+        default: .orange
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Latest request").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text(localizedUIString(record.decision))
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 7)
+                    .frame(height: 18)
+                    .outlinedPill(color)
+            }
+            Text(record.commandForDisplay)
+                .font(.system(size: 12, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Label(record.launcher ?? String(localized: "unknown"), systemImage: "app")
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text(localizedUIString(record.approvalSourceLabel))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Divider()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.date.formatted(.dateTime.month(.abbreviated).day().hour().minute().second().timeZone()))
+                    .font(.caption).monospacedDigit()
+                Text(interval).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(width: 440, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -8221,11 +8498,12 @@ private struct DashboardOverviewView: View {
                                         .padding(.trailing, 6)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(tool.title).fontWeight(.medium).lineLimit(1)
+                                            .help((issue?.message ?? tool.subtitle) + (hasGate
+                                                ? "\n" + String(localized: "Recorded authorization requests in the last 24 hours. This is not a count of Tool executions.") : ""))
                                         if !tool.isBuiltInTool && (!hasGate || !tool.isHardened) {
                                             Text(model.overviewVerification(for: tool))
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary).lineLimit(1)
-                                                .help(model.overviewVerification(for: tool))
                                         }
                                     }
                                     Spacer(minLength: 0)
@@ -8242,15 +8520,17 @@ private struct DashboardOverviewView: View {
                                 if hasGate {
                                     ToolActivityStrip(counts: model.overviewActivitySlots(for: tool, now: now,
                                                       count: slotCount), now: now,
-                                                      latestActivity: model.overviewLatestActivity(for: tool))
+                                                      latestActivity: model.overviewLatestActivity(for: tool),
+                                                      latestRecord: { slot in
+                                                          model.overviewLatestRecord(for: tool, now: now,
+                                                              slot: slot, count: slotCount)
+                                                      })
                                         .padding(.leading, 30)
                                 }
                             }.padding(.vertical, 8).contentShape(Rectangle())
                         }
                         .buttonStyle(OverviewToolButtonStyle())
                         .frame(height: 53)
-                        .help((issue?.message ?? tool.subtitle) + (hasGate
-                            ? "\n" + String(localized: "Recorded authorization requests in the last 24 hours. This is not a count of Tool executions.") : ""))
                         if tool.id != visibleTools.last?.id { Divider().padding(.leading, 30) }
                     }
                     HStack {
