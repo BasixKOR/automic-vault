@@ -8248,6 +8248,10 @@ private struct InstantActivityPopover: NSViewRepresentable {
             presentedContent = content
             presentedAnchor = anchor
             popover.show(relativeTo: anchor, of: self, preferredEdge: .minY)
+            // This is a read-only hover surface. Its window overlaps the acquisition
+            // buffer, so receiving mouse events would cause exit/dismiss/re-entry loops.
+            popover.contentViewController?.view.window?.ignoresMouseEvents = true
+
         }
     }
 }

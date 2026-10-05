@@ -144,6 +144,14 @@ MainActor.assumeIsolated {
     precondition(abs(beforePan.maxY - barOnScreen.minY) < 1,
                  "Popover arrow must meet the timeline on initial display")
     precondition(abs(beforePan.midX - barOnScreen.midX) < 1)
+    // The popover occupies the lower acquisition buffer. A mouse-receiving window
+    // here steals hover, dismisses, then re-enters the same bar indefinitely.
+    let bufferedPointer = NSPoint(x: barOnScreen.midX, y: barOnScreen.minY - 6)
+    let popoverWindow = liveAnchor.popover.contentViewController!.view.window!
+    precondition(beforePan.contains(bufferedPointer), "Fixture must overlap the entry/exit buffer")
+    precondition(popoverWindow.ignoresMouseEvents,
+                 "Informational popover must not steal hover from its timeline buffer")
+
 
     model.x = 0.6
     RunLoop.current.run(until: Date().addingTimeInterval(0.1))
@@ -154,6 +162,7 @@ MainActor.assumeIsolated {
         model.x = x
         RunLoop.current.run(until: Date().addingTimeInterval(0.03))
         let frame = liveAnchor.popover.contentViewController!.view.window!.frame
+        precondition(liveAnchor.popover.contentViewController!.view.window!.ignoresMouseEvents)
         precondition(abs(frame.maxY - barOnScreen.minY) < 1)
         precondition(abs(frame.midX - (barOnScreen.minX + 401 * x)) < 1)
     }
