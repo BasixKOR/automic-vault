@@ -14260,18 +14260,11 @@ private struct ApprovalPromptView: View {
                 }
             }
 
-            if temporaryDenial != nil, let denialLauncherName, let temporaryDenialScope {
-                Text("Repeated requests from \(denialLauncherName) at \(temporaryDenialScope.gateName). Use the Deny menu to stop matching requests for 2 minutes. You can end this early from the menu bar.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             if usesTouchIDApproval {
-                HStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     denyButton
                     approvalInfoButton
+                        .padding(.top, 4)
                     if usesEmbeddedTouchID {
                         HStack(spacing: 8) {
                             HStack(spacing: 8) {
@@ -14421,27 +14414,38 @@ private struct ApprovalPromptView: View {
     }
 
     private var denyButton: some View {
-        Group {
-            if let temporaryDenial, let temporaryDenialScope {
-                Menu {
-                    Button("Deny Once") { decide(.denied, .standardMac) }
-                    Button(temporaryDenialScope.actionTitle, action: temporaryDenial)
-                    Text("Only \(denialLauncherName ?? "this Verified Launcher") at \(temporaryDenialScope.gateName)")
-                } label: {
-                    Text("Deny").frame(maxWidth: .infinity)
-                } primaryAction: {
-                    decide(.denied, .standardMac)
+        VStack(spacing: 6) {
+            Group {
+                if let temporaryDenial, let temporaryDenialScope {
+                    Menu {
+                        Button("Deny Once") { decide(.denied, .standardMac) }
+                        Button(temporaryDenialScope.actionTitle, action: temporaryDenial)
+                        Text("Only \(denialLauncherName ?? "this Verified Launcher") at \(temporaryDenialScope.gateName)")
+                    } label: {
+                        Text("Deny").frame(maxWidth: .infinity)
+                    } primaryAction: {
+                        decide(.denied, .standardMac)
+                    }
+                    .accessibilityLabel("Deny and more denial options")
+                    .accessibilityHint("Deny this request once, or open the menu for a two-minute denial")
+                } else {
+                    Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
                 }
-                .accessibilityLabel("Deny and more denial options")
-                .accessibilityHint("Deny this request once, or open the menu for a two-minute denial")
-            } else {
-                Button("Deny", role: .cancel) { decide(.denied, .standardMac) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
+            .keyboardShortcut(.cancelAction)
+            if temporaryDenial != nil, let denialLauncherName, let temporaryDenialScope {
+                Text("Spam Prevention Available")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help("Repeated requests from \(denialLauncherName) at \(temporaryDenialScope.gateName). Use the Deny menu to stop matching requests for 2 minutes. You can end this early from the menu bar.")
             }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
         .frame(maxWidth: .infinity)
-        .keyboardShortcut(.cancelAction)
     }
 
     private func authenticateWithTouchID(_ decision: ApprovalDecision) {
