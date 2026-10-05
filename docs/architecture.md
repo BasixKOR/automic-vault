@@ -531,6 +531,12 @@ invocations are omitted, and script arguments are not displayed. SSH Approvals i
 the local SSH client separately from the `av` signing Target and describe the
 operation as authentication, which may permit remote writes.
 
+The horizontal Execution Chain also includes the selected Verified Launcher and
+its available observed ancestors, oldest first. Ancestors above that Launcher
+are diagnostic context only: they neither supply authority nor become Target
+candidates. Collection remains bounded and stops when process information is
+unavailable; it does not claim to reconstruct missing historical ancestry.
+
 For `av proxy`, the CLI remains the Gate Client and the signed proxy helper is
 the immediate Secret Target. The launched executable is bound as the Proxy
 Session Target and receives bearer Secret References. Its PID version, start

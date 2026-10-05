@@ -263,7 +263,7 @@
 "Pinned hashes" = "Pinned hashes";
 "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them." = "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them.";
 "Process chain" = "Process chain";
-"Process path from Verified Launcher to Target" = "Process path from Verified Launcher to Target";
+"Observed process ancestry and Target" = "Observed process ancestry and Target";
 "Protection level" = "Protection level";
 "Public key" = "Public key";
 "Public key unavailable." = "Public key unavailable.";

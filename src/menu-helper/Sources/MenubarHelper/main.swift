@@ -12200,10 +12200,9 @@ private func approvalProcessIdentities(
     let chain = launcherPID.flatMap { launcherPID in
         chains.first { $0.contains(where: { $0.pid == launcherPID }) }
     } ?? chains.max(by: { $0.count < $1.count }) ?? [callerNode]
-    let bounded = launcherPID.flatMap { launcherPID in
-        chain.firstIndex(where: { $0.pid == launcherPID }).map { Array(chain[...$0]) }
-    } ?? chain
-    return bounded
+    // Keep ancestors above the selected Launcher for diagnostic presentation.
+    // This chain never selects the Launcher or supplies authorization authority.
+    return chain
 }
 
 private func mutableCodeExplanation(path: String) -> String? {
@@ -12312,11 +12311,14 @@ private func approvalProcessSecurity(
     }
 
     let targetPath = normalizedExecutablePath(request.target)
+    // Ancestors above the Launcher are context only, not Target candidates.
+    let launcherIndex = identities.firstIndex { $0.pid == launcher?.pid }
+    let targetCandidates = launcherIndex.map { Array(identities[...$0]) } ?? identities
     let liveTargetPID = approvalTargetPID(
         explicitPID: targetPID,
         dockerPID: request.credentialParent?.pid,
         targetPath: targetPath,
-        identities: identities
+        identities: targetCandidates
     )
     var nodes = identities.map { identity -> ApprovalProcessSecurityNode in
         let isLauncher = identity.pid == launcher?.pid
@@ -12327,7 +12329,12 @@ private func approvalProcessSecurity(
         if isTarget { roles.append(request.keys.isEmpty ? "Target" : "Secret recipient") }
         if isGateClient { roles.append("Verified Gate Client") }
         if identity.pid == request.sshPeer?.identity.pid { roles.append("SSH client") }
-        if roles.isEmpty { roles.append("Intermediary") }
+        if roles.isEmpty {
+            let isAncestor = launcherIndex.map { boundary in
+                identities[(boundary + 1)...].contains { $0.pid == identity.pid }
+            } ?? false
+            roles.append(isAncestor ? "Observed ancestor" : "Intermediary")
+        }
 
         let arguments = identity.execution.flatMap { execution -> [String]? in
             guard !isLauncher, approvalProcessExecutionIsLive(execution),
@@ -13870,8 +13877,8 @@ private extension ApprovalProcessSecurityNode {
 private extension ApprovalProcessSecurity {
     var launcher: ApprovalProcessSecurityNode? { nodes.first(where: \.isLauncher) }
     var target: ApprovalProcessSecurityNode? { nodes.first(where: \.isTarget) }
-    var middleNodes: [ApprovalProcessSecurityNode] {
-        Array(nodes.filter { !$0.isLauncher && !$0.isTarget }.reversed())
+    var timelineNodes: [ApprovalProcessSecurityNode] {
+        Array(nodes.filter { !$0.isTarget }.reversed()) + (target.map { [$0] } ?? [])
     }
 }
 
@@ -13998,7 +14005,7 @@ private struct ApprovalPromptProcessSecurityView: View {
     let processSecurity: ApprovalProcessSecurity
 
     private var nodes: [ApprovalProcessSecurityNode] {
-        processSecurity.middleNodes + (processSecurity.target.map { [$0] } ?? [])
+        processSecurity.timelineNodes
     }
 
     private var details: String {
@@ -14035,7 +14042,7 @@ private struct ApprovalPromptProcessSecurityView: View {
             .scrollIndicators(.hidden)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Process path from Verified Launcher to Target")
+        .accessibilityLabel("Observed process ancestry and Target")
     }
 }
 
@@ -14083,6 +14090,11 @@ private struct ApprovalPromptProcessNodeView: View {
                 Text("via \(node.executableName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if node.isLauncher {
+                Text("Verified Launcher")
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
             }
             if let script = node.scriptOperand {
                 Text(escapedSecurityPath(URL(fileURLWithPath: script).lastPathComponent))
@@ -16140,6 +16152,25 @@ private func runApprovalSelfCheck() -> Int32 {
         explanation: "Hardened Runtime is not enabled; Executes mutable JavaScript and dependencies",
         isAutomicVaultSigned: false, invocationName: "npm"
     )
+    let ancestorNode = ApprovalProcessSecurityNode(
+        pid: 39, path: "/Applications/Parent.app/Contents/MacOS/Parent",
+        roles: ["Observed ancestor"], posture: .meetsRequirements,
+        explanation: "Valid code signature; diagnostic context only",
+        isAutomicVaultSigned: false
+    )
+    let fullAncestry = ApprovalProcessSecurity(nodes: [
+        promptProcessSecurity.nodes[1], npmNode, promptProcessSecurity.nodes[0], ancestorNode,
+    ])
+    guard fullAncestry.timelineNodes.map(\.pid) == [39, 40, 42, 41],
+          fullAncestry.launcher?.pid == 40,
+          fullAncestry.target?.pid == 41,
+          !ancestorNode.isLauncher,
+          ApprovalProcessSecurity(nodes: [promptProcessSecurity.nodes[1]])
+            .timelineNodes.map(\.pid) == [41]
+    else {
+        print("Full approval ancestry presentation self-check failed")
+        return 1
+    }
     for name in ["cargo-binstall", "cargo-binstall-with-a-long-executable-name"] {
         let node = ApprovalProcessSecurityNode(
             pid: 43, path: "/opt/homebrew/bin/\(name)", roles: ["Intermediary"],
@@ -16270,7 +16301,7 @@ private func runApprovalSelfCheck() -> Int32 {
           prettyShellCommand(target: "/bin/echo", args: []) == "/bin/echo",
           promptProcessSecurity.launcher?.pid == 40,
           promptProcessSecurity.target?.pid == 41,
-          promptProcessSecurity.middleNodes.isEmpty,
+          promptProcessSecurity.timelineNodes.map(\.pid) == [40, 41],
           promptBlessing.script.capabilities["gh"] == .readOnly,
           approvalPromptCapabilitySummary(promptBlessing.script)
             == "gh: Read Only • stripe: Write Access",
@@ -17553,6 +17584,13 @@ private func runApprovalCallsiteSelfCheck() async -> Int32 {
 private func runApprovalProcessExecutionSelfCheck() -> Int32 {
     var identity = AVProcessIdentity()
     guard av_process_identity(getpid(), &identity) else { return 1 }
+    let fullAncestry = approvalProcessIdentities(gateClientPID: getpid(), launcherPID: getpid())
+    guard identity.ppid > 1, fullAncestry.count > 1,
+          fullAncestry.first?.pid == getpid()
+    else {
+        print("Approval ancestry must continue above the selected Launcher")
+        return 1
+    }
     identity.pidversion = 0
     identity.audit_session_id = 0
     var reusedIdentity = identity

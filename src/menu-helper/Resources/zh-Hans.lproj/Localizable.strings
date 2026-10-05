@@ -263,7 +263,7 @@
 "Pinned hashes" = "固定的哈希值";
 "Plaintext secrets are stored without OS-backed protection. Any local process with file access can copy and reuse them." = "明文 Secret 没有操作系统提供的保护。任何有文件访问权限的本地进程都可复制并重复使用它们。";
 "Process chain" = "进程链";
-"Process path from Verified Launcher to Target" = "从已验证启动器到目标的进程路径";
+"Observed process ancestry and Target" = "观测到的进程祖先链与目标";
 "Protection level" = "访问级别";
 "Public key" = "公钥";
 "Public key unavailable." = "公钥不可用。";
