@@ -236,11 +236,12 @@ final class AutomicVaultWindow: NSWindow {
 // Presentation-only index; authorization decisions never consult these counts.
 private struct DashboardActivityIndex {
     private let datesByTool: [String: [Date]]
+    private let recordsByTool: [String: [AccessRequestRecord]]
 
     init(_ records: [AccessRequestRecord]) {
-        var dates: [String: [Date]] = [:]
-        for record in records { dates[record.tool, default: []].append(record.date) }
-        datesByTool = dates.mapValues { $0.sorted() }
+        recordsByTool = Dictionary(grouping: records, by: \.tool)
+            .mapValues { $0.sorted { $0.date < $1.date } }
+        datesByTool = recordsByTool.mapValues { $0.map(\.date) }
     }
 
     func latestActivity(for tool: String) -> Date {
@@ -268,6 +269,17 @@ private struct DashboardActivityIndex {
             defer { previous = next }
             return next - previous
         }
+    }
+
+    func latestRecord(for tool: String, now: Date, slot: Int, count: Int) -> AccessRequestRecord? {
+        guard count > 0, (0..<count).contains(slot),
+              let dates = datesByTool[tool], let records = recordsByTool[tool] else { return nil }
+        let start = now.addingTimeInterval(-86_400)
+        let duration = 86_400 / Double(count)
+        let lower = boundary(start.addingTimeInterval(Double(slot) * duration), in: dates)
+        let upper = boundary(start.addingTimeInterval(Double(slot + 1) * duration),
+                             in: dates, includingEqual: slot == count - 1)
+        return upper > lower ? records[upper - 1] : nil
     }
 
     // Binary searches avoid scanning retained records during rendering.
@@ -1847,6 +1859,11 @@ final class DashboardModel: ObservableObject {
         return overviewActivityIndex?.slots(for: name, now: now, count: count)
     }
 
+    fileprivate func overviewLatestRecord(for tool: DashboardItem, now: Date,
+                                          slot: Int, count: Int) -> AccessRequestRecord? {
+        overviewActivityIndex?.latestRecord(for: tool.overviewToolName, now: now, slot: slot, count: count)
+    }
+
     fileprivate func overviewLatestActivity(for tool: DashboardItem) -> Date? {
         let name = tool.overviewToolName
         return overviewActivityIndex?.latestActivity(for: name)
@@ -2378,16 +2395,25 @@ func runDashboardSearchSelfCheck() -> Int32 {
             for slot in slots.indices {
                 let start = now.addingTimeInterval(-86_400 + Double(slot) * (86_400 / Double(count)))
                 let end = start.addingTimeInterval(86_400 / Double(count))
-                let expectedSlot = activityRecords.filter {
+                let expectedRecords = activityRecords.filter {
                     $0.date >= start && ($0.date < end || (slot == count - 1 && $0.date == end))
-                }.count
-                guard slots[slot] == expectedSlot else { return 1 }
+                }
+                let latest = activityIndex.latestRecord(for: "aws", now: now, slot: slot, count: count)
+                guard slots[slot] == expectedRecords.count,
+                      latest?.date == expectedRecords.map(\.date).max(),
+                      latest.map({ expectedRecords.contains($0) }) ?? expectedRecords.isEmpty,
+                      activityIndex.latestRecord(for: "missing", now: now, slot: slot, count: count) == nil
+                else { return 1 }
             }
         }
         guard activityIndex.count(for: "aws", now: now) == expected,
               activityIndex.count(for: "missing", now: now) == 0,
               DashboardActivityIndex([]).count(for: "aws", now: now) == 0 else { return 1 }
     }
+    guard activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: -1, count: 96) == nil,
+          activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: 96, count: 96) == nil,
+          activityIndex.latestRecord(for: "aws", now: accessRequest.date, slot: 0, count: 0) == nil
+    else { return 1 }
     // Built-in Tools must remain discoverable before credentials are configured.
     for (id, title) in [("gpg-signing", "GPG Signing"), ("ssh-agent", "SSH Agent")] {
         let unconfigured = DashboardModel(snapshot: .empty)
@@ -2598,6 +2624,23 @@ func runDashboardSearchSelfCheck() -> Int32 {
             do {
                 try png.write(to: URL(fileURLWithPath: directory)
                     .appendingPathComponent("loading-\(scheme == .dark ? "dark" : "light").png"))
+            } catch { return 1 }
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            let previewRecord = AccessRequestRecord(date: accessRequest.date, tool: "aws",
+                command: "never display this raw command", displayCommand: "aws s3 ls s3://release-artifacts",
+                decision: "Approved", reason: "Read Only", launcher: "Codex", callerPath: "/fixture/av",
+                target: "/fixture/aws", cwd: "/fixture", keys: [], detail: nil)
+            let renderer = ImageRenderer(content: ToolActivityPopover(record: previewRecord,
+                interval: "10:00–10:15: 4 recorded requests")
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, scheme))
+            renderer.scale = 2
+            guard let data = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) else { return 1 }
+            do {
+                try png.write(to: URL(fileURLWithPath: directory)
+                    .appendingPathComponent("activity-popover-\(scheme == .dark ? "dark" : "light").png"))
             } catch { return 1 }
         }
         var renderSnapshot = findingSnapshot
@@ -7952,33 +7995,59 @@ private struct ToolActivityStrip: View {
     let counts: [Int]?
     let now: Date
     let latestActivity: Date?
+    let latestRecord: (Int) -> AccessRequestRecord?
+    @State private var hoveredSlot: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = 0
 
     var body: some View {
         Group {
             if let counts {
-                HStack(spacing: 1) {
-                    ForEach(counts.indices, id: \.self) { slot in
-                        Rectangle()
-                            // A fixed logarithmic scale keeps Tools comparable: 1, 4, 16, 64 requests.
-                            .fill(Color.primary.opacity(counts[slot] == 0
-                                ? 0.06 : min(1, 0.25 + log2(Double(counts[slot])) / 8)))
-                            .overlay {
-                                if slot == counts.indices.last {
-                                    Rectangle().fill(Color.accentColor)
-                                        .keyframeAnimator(initialValue: 0.0, trigger: pulse) { content, opacity in
-                                            content.opacity(opacity)
-                                        } keyframes: { _ in
-                                            MoveKeyframe(1)
-                                            LinearKeyframe(0, duration: 0.8)
-                                        }
-                                        .opacity(reduceMotion ? 0 : 1)
+                GeometryReader { geometry in
+                    HStack(spacing: 1) {
+                        ForEach(counts.indices, id: \.self) { slot in
+                            Rectangle()
+                                // A fixed logarithmic scale keeps Tools comparable: 1, 4, 16, 64 requests.
+                                .fill(Color.primary.opacity(counts[slot] == 0
+                                    ? 0.06 : min(1, 0.25 + log2(Double(counts[slot])) / 8)))
+                                .overlay {
+                                    if slot == counts.indices.last {
+                                        Rectangle().fill(Color.accentColor)
+                                            .keyframeAnimator(initialValue: 0.0, trigger: pulse) { content, opacity in
+                                                content.opacity(opacity)
+                                            } keyframes: { _ in
+                                                MoveKeyframe(1)
+                                                LinearKeyframe(0, duration: 0.8)
+                                            }
+                                            .opacity(reduceMotion ? 0 : 1)
+                                    }
                                 }
-                            }
-                            .frame(minWidth: 0.5)
-                            .help(slotDescription(slot, count: counts[slot], slotCount: counts.count))
+                                .frame(minWidth: 0.5)
+                        }
                     }
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let slot = min(counts.count - 1, max(0,
+                                Int(location.x / max(1, geometry.size.width + 1) * Double(counts.count))))
+                            hoveredSlot = counts.indices.contains(slot) && counts[slot] > 0 ? slot : nil
+                        case .ended:
+                            hoveredSlot = nil
+                        }
+                    }
+                    .popover(isPresented: Binding(
+                        get: { hoveredSlot != nil },
+                        set: { if !$0 { hoveredSlot = nil } }
+                    ), attachmentAnchor: .point(UnitPoint(
+                        x: (Double(hoveredSlot ?? 0) + 0.5) / Double(max(1, counts.count)), y: 0
+                    )), arrowEdge: .top) {
+                        if let slot = hoveredSlot, counts.indices.contains(slot), let record = latestRecord(slot) {
+                            ToolActivityPopover(record: record,
+                                interval: slotDescription(slot, count: counts[slot], slotCount: counts.count))
+                        }
+                    }
+                    .transaction { $0.animation = nil }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Activity in the last 24 hours")
@@ -8006,6 +8075,56 @@ private struct ToolActivityStrip: View {
         let interval = start.formatted(.dateTime.hour().minute()) + "–"
             + end.formatted(.dateTime.hour().minute())
         return String(localized: "\(interval): \(String(count)) recorded requests")
+    }
+}
+
+/// The same redacted command presentation as Authorization History; no Secret values are loaded.
+private struct ToolActivityPopover: View {
+    let record: AccessRequestRecord
+    let interval: String
+
+    private var color: Color {
+        switch record.decision {
+        case "Approved": .green
+        case "Always Allowed": .blue
+        case "Denied": .red
+        default: .orange
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Latest request").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text(localizedUIString(record.decision))
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 7)
+                    .frame(height: 18)
+                    .outlinedPill(color)
+            }
+            Text(record.commandForDisplay)
+                .font(.system(size: 12, design: .monospaced))
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Label(record.launcher ?? String(localized: "unknown"), systemImage: "app")
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text(localizedUIString(record.approvalSourceLabel))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            Divider()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.date.formatted(.dateTime.month(.abbreviated).day().hour().minute().second().timeZone()))
+                    .font(.caption).monospacedDigit()
+                Text(interval).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(width: 320, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -8226,7 +8345,11 @@ private struct DashboardOverviewView: View {
                                 if hasGate {
                                     ToolActivityStrip(counts: model.overviewActivitySlots(for: tool, now: now,
                                                       count: slotCount), now: now,
-                                                      latestActivity: model.overviewLatestActivity(for: tool))
+                                                      latestActivity: model.overviewLatestActivity(for: tool),
+                                                      latestRecord: { slot in
+                                                          model.overviewLatestRecord(for: tool, now: now,
+                                                              slot: slot, count: slotCount)
+                                                      })
                                         .padding(.leading, 30)
                                 }
                             }.padding(.vertical, 8).contentShape(Rectangle())

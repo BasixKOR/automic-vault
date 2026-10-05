@@ -569,3 +569,5 @@
 "Review the script changes, then return to this pending request." = "审查脚本更改，然后返回此待处理请求。";
 "Approval details" = "批准详情";
 "Spam Prevention Available" = "可启用重复请求防护";
+
+"Latest request" = "最近一次请求";
