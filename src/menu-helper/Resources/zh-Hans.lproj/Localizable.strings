@@ -566,6 +566,6 @@
 "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "此启动程序在 %@ 授权关卡没有规则。请审查其身份并批准新规则，以配置其访问级别。";
 "Collapse Strip" = "折叠授权栏";
 "Rebless…" = "重新认可…";
-"Stop this request and review the script changes. Run the command again after reblessing." = "停止此请求并审查脚本更改。重新认可后，请再次运行命令。";
+"Review the script changes, then return to this pending request." = "审查脚本更改，然后返回此待处理请求。";
 "Approval details" = "批准详情";
 "Spam Prevention Available" = "可启用重复请求防护";

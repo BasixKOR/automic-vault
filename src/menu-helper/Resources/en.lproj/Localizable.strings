@@ -566,6 +566,6 @@
 "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level." = "This Launcher has no rule at the %@ Authorization Gate. Review its identity and approve a new rule to configure its Access Level.";
 "Collapse Strip" = "Collapse Strip";
 "Rebless…" = "Rebless…";
-"Stop this request and review the script changes. Run the command again after reblessing." = "Stop this request and review the script changes. Run the command again after reblessing.";
+"Review the script changes, then return to this pending request." = "Review the script changes, then return to this pending request.";
 "Approval details" = "Approval details";
 "Spam Prevention Available" = "Spam Prevention Available";

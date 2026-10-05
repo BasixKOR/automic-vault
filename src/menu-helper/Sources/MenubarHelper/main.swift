@@ -2938,6 +2938,7 @@ private enum ApprovalDecision: Equatable {
     case alwaysApproved
     case temporaryWriteAccess
     case reevaluated
+    case rebless
 }
 
 private extension ApprovalDecision {
@@ -2949,8 +2950,8 @@ private extension ApprovalDecision {
         case .approved: .approved
         case .alwaysApproved: .alwaysApproved
         case .temporaryWriteAccess: .temporaryAccessGrant
-        case .reevaluated:
-            preconditionFailure(".reevaluated decisions must not be stored into reuse cache")
+        case .reevaluated, .rebless:
+            preconditionFailure("Nonterminal decisions must not be stored into reuse cache")
         }
     }
 }
@@ -5525,7 +5526,7 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
-            let openReblessingReview: (@MainActor () -> Void)?
+            let openReblessingReview: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
             if lostBlessingExplanation(for: scriptApproval) != nil,
                let scriptApproval, let scriptData = request.scriptData,
                let declaration = scriptExecutionDeclaration(for: request) {
@@ -5535,32 +5536,40 @@ private final class ApprovalServer: @unchecked Sendable {
                     scriptData: scriptData,
                     launcher: nil
                 )
-                openReblessingReview = { self.onBlessRequest(review) { _ in } }
+                openReblessingReview = { finished in
+                    self.onBlessRequest(review) { _ in finished() }
+                }
             } else {
                 openReblessingReview = nil
             }
-            let decision = await showApprovalAlert(
-                request: request,
-                callerPath: callerPath,
-                pid: pid,
-                signing: signing,
-                scriptApproval: scriptApproval,
-                blessing: promptBlessing,
-                launcher: promptLauncher,
-                denialLaunchers: policyLaunchers,
-                launcherFallbackPath: launcherFallbackPath,
-                automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
-                    ?? retainedProcessExplanation
-                    ?? automaticApprovalExplanation,
-                accessLevel: promptAccessLevel,
-                temporaryGrantCandidate: temporaryGrantCandidate,
-                temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
-                classification: classification,
-                denialGate: configuredGate,
+            let decision = await approvalWithBlessingReview(
                 cancellation: cancellation,
-                reevaluate: tryFulfillFromGrantOrCache,
-                rebless: openReblessingReview
-            )
+                review: openReblessingReview
+            ) {
+                await showApprovalAlert(
+                    request: request,
+                    callerPath: callerPath,
+                    pid: pid,
+                    signing: signing,
+                    scriptApproval: scriptApproval,
+                    blessing: promptBlessing,
+                    launcher: promptLauncher,
+                    denialLaunchers: policyLaunchers,
+                    launcherFallbackPath: launcherFallbackPath,
+                    automaticApprovalExplanation: lostBlessingExplanation(for: scriptApproval)
+                        ?? retainedProcessExplanation
+                        ?? automaticApprovalExplanation,
+                    accessLevel: promptAccessLevel,
+                    temporaryGrantCandidate: temporaryGrantCandidate,
+                    temporaryGrantUnavailableReason: temporaryGrantUnavailableReason,
+                    classification: classification,
+                    denialGate: configuredGate,
+                    cancellation: cancellation,
+                    reevaluate: tryFulfillFromGrantOrCache,
+                    allowsReblessing: openReblessingReview != nil
+                        && lostBlessingExplanation(for: scriptApproval) != nil
+                )
+            }
             if decision == .reevaluated {
                 return
             }
@@ -6329,7 +6338,7 @@ private final class ApprovalServer: @unchecked Sendable {
                             ) {
                             case .approved: ProxyDestinationDecision.allowOnce
                             case .alwaysApproved: ProxyDestinationDecision.allowForSession
-                            case .canceled, .interrupted, .denied, .temporaryWriteAccess:
+                            case .canceled, .interrupted, .denied, .temporaryWriteAccess, .rebless:
                                 ProxyDestinationDecision.deny
                             case .reevaluated:
                                 preconditionFailure("proxy destination approval cannot be reevaluated")
@@ -13269,6 +13278,42 @@ func denialActionLauncher(
     }
 }
 
+// A Blessing review is a separate authority change. Release the execution
+// prompt's queue slot while reviewing, but keep its immutable request pending.
+@MainActor
+private func approvalWithBlessingReview(
+    cancellation: ApprovalCancellation,
+    review: (@MainActor (@escaping @MainActor () -> Void) -> Void)?,
+    present: @MainActor () async -> ApprovalDecision
+) async -> ApprovalDecision {
+    let generation = ActiveApprovalPrompt.abortGeneration
+    while true {
+        guard !cancellation.isCanceled else { return .canceled }
+        guard ActiveApprovalPrompt.abortGeneration == generation else { return .interrupted }
+        let decision = await present()
+        guard decision == .rebless else { return decision }
+        guard ActiveApprovalPrompt.abortGeneration == generation,
+              let review else { return .interrupted }
+        let observerID = UUID()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var pending: CheckedContinuation<Void, Never>? = continuation
+            let finish: @MainActor @Sendable () -> Void = {
+                let continuation = pending
+                pending = nil
+                continuation?.resume()
+            }
+            guard cancellation.observe(id: observerID, finish) else {
+                finish()
+                return
+            }
+            review(finish)
+        }
+        cancellation.stopObserving(id: observerID)
+        // Review approval grants no execution approval. Present again through
+        // the ordinary denial, cancellation, and release checks.
+    }
+}
+
 @MainActor
 private func showApprovalAlert(
     request: ApprovalRequest,
@@ -13292,7 +13337,7 @@ private func showApprovalAlert(
     cancellation: ApprovalCancellation? = nil,
     compact: Bool = false,
     reevaluate: (@MainActor () -> Bool)? = nil,
-    rebless: (@MainActor () -> Void)? = nil
+    allowsReblessing: Bool = false
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let sshMonitor = request.sshPeer.map { peer in
@@ -13447,14 +13492,9 @@ private func showApprovalAlert(
                         scope: temporaryDenialScope, source: .standardMac)
                 } : nil,
                 temporaryDenialScope: temporaryDenialScope,
-                rebless: rebless.map { openReview in
-                    {
-                        // Release this execution and its approval queue slot before
-                        // requesting separate authority for a durable Blessing.
-                        guard state.resolve(.interrupted, source: .standardMac) else { return }
-                        openReview()
-                    }
-                },
+                rebless: allowsReblessing ? {
+                    state.resolve(.rebless, source: .standardMac)
+                } : nil,
                 decide: { userDecision, source in
                     state.resolve(userDecision, source: source)
                 }
@@ -14218,7 +14258,7 @@ private struct ApprovalPromptView: View {
                                 Button("Rebless…", action: rebless)
                                     .buttonStyle(.bordered)
                                     .fixedSize()
-                                    .help("Stop this request and review the script changes. Run the command again after reblessing.")
+                                    .help("Review the script changes, then return to this pending request.")
                             }
                         }
                         .font(.callout)
@@ -16947,7 +16987,73 @@ private func awaitWithTimeout<T: Sendable>(
 }
 
 @MainActor
+private func runReblessingApprovalSelfCheck() async -> Bool {
+    // Drive real presentation/queue teardown without granting any authority.
+    for mode in 0..<3 {
+        HumanApprovalQueue.shared.resetForTesting()
+        let cancellation = ApprovalCancellation()
+        var presentations = 0
+        var reviewHadFreeSlot = false
+        var lateCompletion: (@MainActor () -> Void)?
+        let request = ApprovalRequest(
+            op: "inject", keys: [], target: "/self-check", args: [], cwd: "/",
+            replaceExistingEnv: false, allowMissingKeys: false, envConflicts: [],
+            shebangScript: nil, scriptData: nil, tool: nil, title: nil, detail: nil
+        )
+        let task = Task { @MainActor in
+            await approvalWithBlessingReview(cancellation: cancellation, review: { finish in
+                reviewHadFreeSlot = !HumanApprovalQueue.shared.hasActiveSlot
+                    && ActiveApprovalPrompt.current == nil
+                lateCompletion = finish
+                if mode == 1 {
+                    cancellation.cancel()
+                } else {
+                    if mode == 2 { ActiveApprovalPrompt.abort() }
+                    Task { @MainActor in
+                        // A Blessing's authority approval must be able to acquire
+                        // the slot released by the execution prompt.
+                        guard await HumanApprovalQueue.shared.acquire() else { return }
+                        HumanApprovalQueue.shared.release()
+                        finish()
+                    }
+                }
+            }) {
+                presentations += 1
+                let nextDecision: ApprovalDecision = presentations == 1 ? .rebless : .denied
+                let driver = Task { @MainActor in
+                    while !Task.isCancelled {
+                        if let state = ActiveApprovalPrompt.current {
+                            state.resolve(nextDecision, source: .programmatic)
+                            return
+                        }
+                        await Task.yield()
+                    }
+                }
+                defer { driver.cancel() }
+                return await showApprovalAlert(
+                    request: request, callerPath: "/self-check", pid: getpid(),
+                    signing: SigningInfo(identifier: "self-check", teamIdentifier: "TEST"),
+                    scriptApproval: nil, launcher: nil, launcherFallbackPath: "/self-check",
+                    automaticApprovalExplanation: nil, cancellation: cancellation,
+                    allowsReblessing: presentations == 1
+                )
+            }
+        }
+        let result = await awaitWithTimeout(duration: .seconds(5), cancellation: cancellation, task: task)
+        let expected: ApprovalDecision = mode == 0 ? .denied : mode == 1 ? .canceled : .interrupted
+        guard result == expected, presentations == (mode == 0 ? 2 : 1),
+              reviewHadFreeSlot, !HumanApprovalQueue.shared.hasActiveSlot,
+              ActiveApprovalPrompt.current == nil else { return false }
+        // A late or duplicate review completion must not resume the command twice.
+        lateCompletion?()
+        lateCompletion?()
+    }
+    return true
+}
+
+@MainActor
 private func runApprovalCallsiteSelfCheck() async -> Int32 {
+    guard await runReblessingApprovalSelfCheck() else { return 20 }
     let denialGate = SecretGate(id: "gh", keyPatterns: ["TOKEN"], routes: [], defaultProtection: .noAccess, appPolicies: [])
     let denialScope = TemporaryLauncherDenialScope(gate: denialGate, classification: .mutating)!
     let deniedLauncher = LauncherIdentity(
