@@ -5526,6 +5526,11 @@ private final class ApprovalServer: @unchecked Sendable {
                 return
             }
 
+            let approvalPanel = makeApprovalPanel()
+            defer {
+                approvalPanel.orderOut(nil)
+                approvalPanel.contentView = nil
+            }
             let openReblessingReview: (@MainActor (@escaping @MainActor () -> Void) -> Void)?
             if lostBlessingExplanation(for: scriptApproval) != nil,
                let scriptApproval, let scriptData = request.scriptData,
@@ -5537,7 +5542,9 @@ private final class ApprovalServer: @unchecked Sendable {
                     launcher: nil
                 )
                 openReblessingReview = { finished in
-                    self.onBlessRequest(review) { _ in finished() }
+                    presentBlessingReview(review, on: approvalPanel, cancellation: cancellation) {
+                        finished()
+                    }
                 }
             } else {
                 openReblessingReview = nil
@@ -5546,13 +5553,21 @@ private final class ApprovalServer: @unchecked Sendable {
                 cancellation: cancellation,
                 review: openReblessingReview
             ) {
-                await showApprovalAlert(
+                let refreshedBlessing = scriptApproval.flatMap {
+                    self.matchingBlessedScriptExecution(request: request, approval: $0)
+                }.map {
+                    BlessedScriptPromptContext(
+                        script: $0,
+                        explanation: "Approval activates this stored authority for one execution."
+                    )
+                }
+                return await showApprovalAlert(
                     request: request,
                     callerPath: callerPath,
                     pid: pid,
                     signing: signing,
                     scriptApproval: scriptApproval,
-                    blessing: promptBlessing,
+                    blessing: activeBlessing == nil ? refreshedBlessing : promptBlessing,
                     launcher: promptLauncher,
                     denialLaunchers: policyLaunchers,
                     launcherFallbackPath: launcherFallbackPath,
@@ -5567,7 +5582,8 @@ private final class ApprovalServer: @unchecked Sendable {
                     cancellation: cancellation,
                     reevaluate: tryFulfillFromGrantOrCache,
                     allowsReblessing: openReblessingReview != nil
-                        && lostBlessingExplanation(for: scriptApproval) != nil
+                        && lostBlessingExplanation(for: scriptApproval) != nil,
+                    existingPanel: approvalPanel
                 )
             }
             if decision == .reevaluated {
@@ -13158,6 +13174,8 @@ private func fitApprovalPanel(_ panel: NSPanel, maximumHeight: CGFloat, animate:
     panel.setFrame(frame, display: true, animate: animate)
 }
 
+let approvalPresentationDidAbort = Notification.Name("AutomicVaultApprovalPresentationDidAbort")
+
 @MainActor
 private enum ActiveApprovalPrompt {
     static var current: ApprovalPromptState?
@@ -13165,6 +13183,7 @@ private enum ActiveApprovalPrompt {
 
     static func abort() {
         abortGeneration += 1
+        NotificationCenter.default.post(name: approvalPresentationDidAbort, object: nil)
         current?.resolve(.canceled)
         HumanApprovalQueue.shared.cancelAllPending()
     }
@@ -13247,8 +13266,13 @@ private final class ApprovalPromptState: @unchecked Sendable {
             PostHogTelemetry.shared.captureExplicitApproval()
         }
         #endif
-        panel?.orderOut(nil)
-        panel?.contentView = nil // Tear down any pending embedded biometric attempt.
+        if finalResult == .rebless,
+           let view = panel?.contentView as? NSHostingView<ApprovalPromptView> {
+            view.rootView.isReviewingBlessing = true
+        } else {
+            panel?.orderOut(nil)
+            panel?.contentView = nil // Tear down any pending embedded biometric attempt.
+        }
         continuation?.resume(returning: finalResult)
         continuation = nil
         return true
@@ -13337,7 +13361,8 @@ private func showApprovalAlert(
     cancellation: ApprovalCancellation? = nil,
     compact: Bool = false,
     reevaluate: (@MainActor () -> Bool)? = nil,
-    allowsReblessing: Bool = false
+    allowsReblessing: Bool = false,
+    existingPanel: NSPanel? = nil
 ) async -> ApprovalDecision {
     guard cancellation?.isCanceled != true else { return .canceled }
     let sshMonitor = request.sshPeer.map { peer in
@@ -13443,7 +13468,7 @@ private func showApprovalAlert(
     let usesIPhoneApproval = PhoneApprovalCoordinator.shared.isEnabled
     let usesTouchIDApproval = TouchIDApproval.isEnabled
     let maximumHeight = NSScreen.main?.visibleFrame.height ?? 660
-    let panel = makeApprovalPanel()
+    let panel = existingPanel ?? makeApprovalPanel()
 
     let denialObserver = NotificationCenter.default.addObserver(
         forName: launcherDenialDidChange, object: nil, queue: .main
@@ -13573,7 +13598,7 @@ private func showApprovalAlert(
         }
 
         fitApprovalPanel(panel, maximumHeight: maximumHeight, animate: false)
-        panel.center()
+        if !panel.isVisible { panel.center() }
         panel.orderFrontRegardless()
         if panel.isVisible, ActiveApprovalPrompt.current === state, let eligibleDenialLauncher, let temporaryDenialScope {
             _ = TemporaryLauncherDenials.shared.recordPrompt(eligibleDenialLauncher.designatedRequirement, gateID: temporaryDenialScope.gateID)
@@ -14212,6 +14237,7 @@ private struct ApprovalPromptView: View {
     var temporaryDenial: (() -> Void)? = nil
     var temporaryDenialScope: TemporaryLauncherDenialScope? = nil
     var rebless: (() -> Void)? = nil
+    var isReviewingBlessing = false
     let decide: (ApprovalDecision, ApprovalDecisionSource) -> Void
     @State private var isAuthenticatingWithTouchID = false
     @StateObject private var embeddedTouchID = EmbeddedTouchIDAttempt()
@@ -14308,7 +14334,9 @@ private struct ApprovalPromptView: View {
                     if usesEmbeddedTouchID {
                         HStack(spacing: 8) {
                             HStack(spacing: 8) {
-                                if isAuthenticatingWithTouchID {
+                                if isReviewingBlessing {
+                                    Image(systemName: "touchid")
+                                } else if isAuthenticatingWithTouchID {
                                     ProgressView().controlSize(.small)
                                 } else {
                                     EmbeddedTouchIDView(attempt: embeddedTouchID) {
@@ -14433,6 +14461,10 @@ private struct ApprovalPromptView: View {
                 .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .disabled(isReviewingBlessing)
+        .onChange(of: isReviewingBlessing) { _, reviewing in
+            if reviewing { embeddedTouchID.cancel() }
+        }
     }
 
     @ViewBuilder private var approvalInfoButton: some View {
@@ -16992,6 +17024,18 @@ private func runReblessingApprovalSelfCheck() async -> Bool {
     for mode in 0..<3 {
         HumanApprovalQueue.shared.resetForTesting()
         let cancellation = ApprovalCancellation()
+        let panel = makeApprovalPanel()
+        defer { panel.orderOut(nil); panel.contentView = nil }
+        let scriptData = Data("#!/usr/local/bin/av inject +TOKEN /bin/sh\necho reviewed\n".utf8)
+        guard let declaration = try? blessedScriptDeclaration(data: scriptData) else { return false }
+        let reviewRequest = BlessedScriptReviewRequest(
+            path: "/tmp/av-sheet-self-check-\(UUID().uuidString)",
+            declaration: declaration, scriptData: scriptData, launcher: nil
+        )
+        var reviewAttached = false
+        var samePanel = true
+        var staleApprovalRejected = false
+        var priorState: ApprovalPromptState?
         var presentations = 0
         var reviewHadFreeSlot = false
         var lateCompletion: (@MainActor () -> Void)?
@@ -17005,17 +17049,15 @@ private func runReblessingApprovalSelfCheck() async -> Bool {
                 reviewHadFreeSlot = !HumanApprovalQueue.shared.hasActiveSlot
                     && ActiveApprovalPrompt.current == nil
                 lateCompletion = finish
-                if mode == 1 {
-                    cancellation.cancel()
+                staleApprovalRejected = priorState?.resolve(.approved, source: .programmatic) == false
+                let sheetCancellation = mode == 1 ? cancellation : ApprovalCancellation()
+                presentBlessingReview(reviewRequest, on: panel, cancellation: sheetCancellation, completion: finish)
+                reviewAttached = panel.isVisible && panel.attachedSheet?.sheetParent === panel
+                    && (panel.contentView as? NSHostingView<ApprovalPromptView>)?.rootView.isReviewingBlessing == true
+                if mode == 2 {
+                    ActiveApprovalPrompt.abort()
                 } else {
-                    if mode == 2 { ActiveApprovalPrompt.abort() }
-                    Task { @MainActor in
-                        // A Blessing's authority approval must be able to acquire
-                        // the slot released by the execution prompt.
-                        guard await HumanApprovalQueue.shared.acquire() else { return }
-                        HumanApprovalQueue.shared.release()
-                        finish()
-                    }
+                    sheetCancellation.cancel()
                 }
             }) {
                 presentations += 1
@@ -17023,6 +17065,8 @@ private func runReblessingApprovalSelfCheck() async -> Bool {
                 let driver = Task { @MainActor in
                     while !Task.isCancelled {
                         if let state = ActiveApprovalPrompt.current {
+                            samePanel = samePanel && state.panel === panel
+                            if presentations == 1 { priorState = state }
                             state.resolve(nextDecision, source: .programmatic)
                             return
                         }
@@ -17035,14 +17079,15 @@ private func runReblessingApprovalSelfCheck() async -> Bool {
                     signing: SigningInfo(identifier: "self-check", teamIdentifier: "TEST"),
                     scriptApproval: nil, launcher: nil, launcherFallbackPath: "/self-check",
                     automaticApprovalExplanation: nil, cancellation: cancellation,
-                    allowsReblessing: presentations == 1
+                    allowsReblessing: presentations == 1, existingPanel: panel
                 )
             }
         }
         let result = await awaitWithTimeout(duration: .seconds(5), cancellation: cancellation, task: task)
         let expected: ApprovalDecision = mode == 0 ? .denied : mode == 1 ? .canceled : .interrupted
         guard result == expected, presentations == (mode == 0 ? 2 : 1),
-              reviewHadFreeSlot, !HumanApprovalQueue.shared.hasActiveSlot,
+              reviewHadFreeSlot, reviewAttached, samePanel, staleApprovalRejected,
+              !HumanApprovalQueue.shared.hasActiveSlot,
               ActiveApprovalPrompt.current == nil else { return false }
         // A late or duplicate review completion must not resume the command twice.
         lateCompletion?()

@@ -5307,6 +5307,56 @@ private struct AccessMetaLine: View {
     }
 }
 
+@MainActor
+func presentBlessingReview(
+    _ request: BlessedScriptReviewRequest,
+    on parent: NSPanel,
+    cancellation: ApprovalCancellation,
+    completion: @escaping @MainActor () -> Void
+) {
+    guard !cancellation.isCanceled else { completion(); return }
+    let model = DashboardModel()
+    let sheet = NSPanel(
+        contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false
+    )
+    sheet.isReleasedWhenClosed = false
+    let cancellationID = UUID()
+    let abortObserver = NotificationCenter.default.addObserver(
+        forName: approvalPresentationDidAbort, object: nil, queue: .main
+    ) { _ in
+        MainActor.assumeIsolated { model.cancelPendingBlessing() }
+    }
+    var completed = false
+    let finish: @MainActor () -> Void = {
+        guard !completed else { return }
+        completed = true
+        cancellation.stopObserving(id: cancellationID)
+        NotificationCenter.default.removeObserver(abortObserver)
+        sheet.orderOut(nil)
+        sheet.contentView = nil
+        completion()
+    }
+    model.reviewBlessing(request) { _ in
+        if sheet.sheetParent != nil {
+            parent.endSheet(sheet)
+        } else {
+            finish()
+        }
+    }
+    guard let pending = model.pendingBlessing else { return }
+    let view = NSHostingView(rootView: BlessedScriptReviewView(model: model, request: pending))
+    sheet.contentView = view
+    sheet.setContentSize(view.fittingSize)
+    guard cancellation.observe(id: cancellationID, { model.cancelPendingBlessing() }) else {
+        model.cancelPendingBlessing()
+        return
+    }
+    parent.beginSheet(sheet) { _ in
+        model.cancelPendingBlessing()
+        finish()
+    }
+}
+
 private struct BlessedScriptReviewView: View {
     @ObservedObject var model: DashboardModel
     let request: BlessedScriptReviewRequest
