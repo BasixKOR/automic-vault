@@ -14287,7 +14287,6 @@ private struct ApprovalPromptView: View {
                             }
                             .padding(.horizontal, 16)
                             .frame(maxWidth: .infinity, minHeight: 32)
-                            .background(.quaternary, in: Capsule())
                             .allowsHitTesting(false)
                             .accessibilityElement(children: .contain)
                             .accessibilityHint("Touch the sensor to approve this request once. This is a status indicator, not a button.")
@@ -14305,15 +14304,21 @@ private struct ApprovalPromptView: View {
                                         }
                                     }
                                 } label: {
-                                    Image(systemName: "ellipsis")
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Rectangle())
                                 }
                                 .menuStyle(.borderlessButton)
+                                .menuIndicator(.hidden)
+                                .padding(.trailing, 10)
                                 .fixedSize()
                                 .accessibilityLabel("More approval options")
                                 .disabled(isAuthenticatingWithTouchID || !TouchIDApproval.isAvailable)
                             }
                         }
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(.quaternary, in: Capsule())
                     } else {
                         ApprovalPromptApprovalMenu(
                             allowsPersistentApproval: allowsPersistentApproval,
