@@ -59,3 +59,22 @@ import Testing
         )
     }
 }
+
+@Test(arguments: [false, true])
+func authorizationFulfillmentPropagatesCancellationAroundRecording(recordWasPersisted: Bool) {
+    var events: [String] = []
+    let transaction = AuthorizationFulfillmentTransaction(material: "secret-material")
+
+    #expect(throws: CancellationError.self) {
+        try transaction.commit(
+            record: {
+                if recordWasPersisted { events.append("persisted-approved") }
+                throw CancellationError()
+            },
+            activate: { _ in events.append("activated") },
+            observe: { _ in events.append("observed") },
+            release: { _ in events.append("released") }
+        )
+    }
+    #expect(events == (recordWasPersisted ? ["persisted-approved"] : []))
+}

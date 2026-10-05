@@ -5788,6 +5788,15 @@ private final class ApprovalServer: @unchecked Sendable {
                         )
                         return
                     }
+                } catch is CancellationError {
+                    _ = self.onAccessRequest(canceledAccessRequestRecord(
+                        request: request, callerPath: callerPath,
+                        launcher: promptLauncher, launchers: policyLaunchers
+                    ))
+                    self.reply(
+                        peer, to: message, ok: false, error: "request canceled",
+                        humanApprovalDecision: "approved"
+                    )
                 } catch {
                     _ = self.onAccessRequest(accessRequestRecord(
                         request: request,
@@ -9456,6 +9465,8 @@ private final class ApprovalServer: @unchecked Sendable {
                     try validateSSHScriptAuthority()
                     if let context = request.credentialParent?.gitContext, !gitCredentialContextValid(context) { return false }
                     return true
+                } catch let error as CancellationError {
+                    throw error
                 } catch { return false }
             },
             activate: { material in

@@ -8,12 +8,12 @@ package struct AuthorizationFulfillmentTransaction<Material> {
 
     @discardableResult
     package func commit(
-        record: () -> Bool,
+        record: () throws -> Bool,
         activate: (Material) -> Void,
         observe: (Material) -> Void,
         release: (Material) throws -> Void
     ) rethrows -> Bool {
-        guard record() else { return false }
+        guard try record() else { return false }
         activate(material)
         observe(material)
         try release(material)
