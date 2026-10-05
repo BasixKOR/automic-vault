@@ -13824,6 +13824,8 @@ private func approvalPromptDetails(_ sections: [ApprovalPromptSection]) -> Strin
 private struct ApprovalPromptInfoButton: View {
     let title: String
     let details: String
+    var arrowEdge: Edge = .trailing
+    var popoverHeight: CGFloat = 280
     @State private var isPresented = false
 
     var body: some View {
@@ -13837,7 +13839,7 @@ private struct ApprovalPromptInfoButton: View {
         .help(details)
         .accessibilityLabel(localizedUIString(title))
         .accessibilityHint(String(localized: "Shows \(localizedUIString(title))"))
-        .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+        .popover(isPresented: $isPresented, arrowEdge: arrowEdge) {
             ScrollView {
                 Text(details)
                     .font(.system(.callout, design: .monospaced))
@@ -13845,7 +13847,7 @@ private struct ApprovalPromptInfoButton: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-            .frame(width: 380, height: 280)
+            .frame(width: 380, height: popoverHeight)
         }
     }
 }
@@ -14231,7 +14233,8 @@ private struct ApprovalPromptView: View {
             .defaultScrollAnchor(.top)
             .layoutPriority(1)
 
-            if let reason = content.writeAccessUnavailableReason {
+            if usesIPhoneApproval && !usesTouchIDApproval,
+               let reason = content.writeAccessUnavailableReason {
                 Text(localizedUIString(reason))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -14255,11 +14258,6 @@ private struct ApprovalPromptView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-            } else if usesTouchIDApproval {
-                Text("Fresh Touch ID is required for every Approval on this Mac.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
             }
 
             if temporaryDenial != nil, let denialLauncherName, let temporaryDenialScope {
@@ -14273,6 +14271,7 @@ private struct ApprovalPromptView: View {
             if usesTouchIDApproval {
                 HStack(spacing: 12) {
                     denyButton
+                    approvalInfoButton
                     if usesEmbeddedTouchID {
                         HStack(spacing: 8) {
                             HStack(spacing: 8) {
@@ -14336,6 +14335,8 @@ private struct ApprovalPromptView: View {
             } else {
                 HStack(alignment: .top, spacing: 18) {
                     denyButton
+                    approvalInfoButton
+                        .padding(.top, 4)
 
                     VStack(spacing: 6) {
                         ApprovalPromptApprovalMenu(
@@ -14394,6 +14395,24 @@ private struct ApprovalPromptView: View {
                 .accessibilityHidden(true)
         }
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    @ViewBuilder private var approvalInfoButton: some View {
+        let details = [
+            content.writeAccessUnavailableReason.map(localizedUIString),
+            usesTouchIDApproval
+                ? String(localized: "Fresh Touch ID is required for every Approval on this Mac.")
+                : nil,
+        ].compactMap { $0 }.joined(separator: "\n\n")
+        if !details.isEmpty {
+            ApprovalPromptInfoButton(
+                title: String(localized: "Approval details"),
+                details: details,
+                arrowEdge: .top,
+                popoverHeight: 140
+            )
+            .foregroundStyle(.secondary)
+        }
     }
 
     private var denyButton: some View {
