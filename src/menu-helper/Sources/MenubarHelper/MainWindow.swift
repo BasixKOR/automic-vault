@@ -8041,12 +8041,45 @@ private func shortDashboardTimestamp(_ date: Date) -> String {
     date.formatted(.dateTime.month(.twoDigits).day(.twoDigits).hour().minute())
 }
 
+/// Spatial acquisition tolerance only; once horizontal panning starts, buckets stay exact.
+private struct ActivityHoverSelection {
+    static let buffer: CGFloat = 6
+    private(set) var slot: Int?
+    private var entryX: CGFloat?
+    private var isPanning = false
+
+    mutating func update(x: CGFloat, width: CGFloat, counts: [Int]) {
+        guard width > 0, !counts.isEmpty else { self = Self(); return }
+        let pitch = (width + 1) / CGFloat(counts.count)
+        let exact = Int(floor(x / pitch))
+        if let entryX {
+            if abs(x - entryX) >= 1 { isPanning = true }
+            if isPanning {
+                slot = x >= 0 && x <= width && counts.indices.contains(exact) && counts[exact] > 0
+                    ? exact : nil
+            }
+        } else {
+            entryX = x
+            // Only the initial entry may snap to a nearby populated bar.
+            slot = counts.indices.filter { counts[$0] > 0 }.min { lhs, rhs in
+                distance(to: lhs, x: x, pitch: pitch) < distance(to: rhs, x: x, pitch: pitch)
+            }
+            if let slot, distance(to: slot, x: x, pitch: pitch) > Self.buffer { self.slot = nil }
+        }
+    }
+
+    private func distance(to slot: Int, x: CGFloat, pitch: CGFloat) -> CGFloat {
+        let left = CGFloat(slot) * pitch
+        return max(left - x, x - (left + max(0.5, pitch - 1)), 0)
+    }
+}
+
 private struct ToolActivityStrip: View {
     let counts: [Int]?
     let now: Date
     let latestActivity: Date?
     let latestRecord: (Int) -> AccessRequestRecord?
-    @State private var hoveredSlot: Int?
+    @State private var hover = ActivityHoverSelection()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = 0
 
@@ -8075,28 +8108,35 @@ private struct ToolActivityStrip: View {
                                 .frame(minWidth: 0.5)
                         }
                     }
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            let slot = min(counts.count - 1, max(0,
-                                Int(location.x / max(1, geometry.size.width + 1) * Double(counts.count))))
-                            hoveredSlot = counts.indices.contains(slot) && counts[slot] > 0 ? slot : nil
-                        case .ended:
-                            hoveredSlot = nil
-                        }
+                    .overlay(alignment: .topLeading) {
+                        Color.clear
+                            .frame(width: geometry.size.width + ActivityHoverSelection.buffer * 2,
+                                   height: 8 + ActivityHoverSelection.buffer * 2)
+                            .contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    hover.update(x: location.x - ActivityHoverSelection.buffer,
+                                                 width: geometry.size.width, counts: counts)
+                                case .ended:
+                                    hover = ActivityHoverSelection()
+                                }
+                            }
+                            .offset(x: -ActivityHoverSelection.buffer, y: -ActivityHoverSelection.buffer)
                     }
                     .background {
                         InstantActivityPopover(
-                            content: hoveredSlot.flatMap { slot in
+                            content: hover.slot.flatMap { slot in
                                 guard counts.indices.contains(slot), let record = latestRecord(slot) else { return nil }
                                 return ToolActivityPopover(record: record,
                                     interval: slotDescription(slot, count: counts[slot], slotCount: counts.count))
                             },
-                            anchorX: (Double(hoveredSlot ?? 0) + 0.5) / Double(max(1, counts.count))
+                            anchorX: (Double(hover.slot ?? 0) + 0.5) / Double(max(1, counts.count))
                         )
+                        .frame(width: geometry.size.width, height: 8)
                         .allowsHitTesting(false)
                     }
+                    .onChange(of: counts) { _, _ in hover = ActivityHoverSelection() }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Activity in the last 24 hours")
@@ -8162,8 +8202,13 @@ private struct InstantActivityPopover: NSViewRepresentable {
             refresh()
         }
 
+        override func layout() {
+            super.layout()
+            refresh()
+        }
+
         func refresh() {
-            guard window != nil, let content else {
+            guard let positioningView = window?.contentView, let content else {
                 popover.close()
                 popover.contentViewController = nil
                 return
@@ -8173,11 +8218,15 @@ private struct InstantActivityPopover: NSViewRepresentable {
             } else {
                 popover.contentViewController = NSHostingController(rootView: content)
             }
-            let anchor = NSRect(x: bounds.width * anchorX, y: bounds.minY, width: 1, height: bounds.height)
+            // Resolve after layout into a stable AppKit coordinate space. The representable
+            // can move or resize after updateNSView, including while the popover is open.
+            let bar = NSRect(x: bounds.minX + (bounds.width + 1) * anchorX - 0.5,
+                             y: bounds.midY - 4, width: 1, height: 8)
+            let anchor = convert(bar, to: positioningView)
             if popover.isShown {
                 popover.positioningRect = anchor
             } else {
-                popover.show(relativeTo: anchor, of: self, preferredEdge: .minY)
+                popover.show(relativeTo: anchor, of: positioningView, preferredEdge: .minY)
             }
         }
     }

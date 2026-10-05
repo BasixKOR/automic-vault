@@ -37,6 +37,7 @@ fi
 
 python3 "$repo/scripts/test-cli-install-refresh.py"
 python3 "$repo/scripts/test-cli-installer.py"
+python3 "$repo/scripts/test-overview-hover.py"
 localization_args=("$menubar")
 if [[ "$signed" -eq 1 ]]; then
   localization_args=(--signed "$menubar")
