@@ -8188,6 +8188,8 @@ private struct InstantActivityPopover: NSViewRepresentable {
         let popover = NSPopover()
         var content: ToolActivityPopover?
         var anchorX: CGFloat = 0
+        private var presentedContent: ToolActivityPopover?
+        private var presentedAnchor: NSRect?
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -8208,32 +8210,34 @@ private struct InstantActivityPopover: NSViewRepresentable {
         }
 
         func refresh() {
-            guard let positioningView = window?.contentView, let content else {
+            guard window != nil, let content else {
                 popover.close()
                 popover.contentViewController = nil
                 return
             }
+            let anchor = NSRect(x: bounds.minX + (bounds.width + 1) * anchorX - 0.5,
+                                y: bounds.midY - 4, width: 1, height: 8)
+            guard !popover.isShown || presentedContent != content || presentedAnchor != anchor else { return }
             if let host = popover.contentViewController as? NSHostingController<ToolActivityPopover> {
                 host.rootView = content
             } else {
                 popover.contentViewController = NSHostingController(rootView: content)
             }
-            // Resolve after layout into a stable AppKit coordinate space. The representable
-            // can move or resize after updateNSView, including while the popover is open.
-            let bar = NSRect(x: bounds.minX + (bounds.width + 1) * anchorX - 0.5,
-                             y: bounds.midY - 4, width: 1, height: 8)
-            let anchor = convert(bar, to: positioningView)
-            if popover.isShown {
-                popover.positioningRect = anchor
-            } else {
-                popover.show(relativeTo: anchor, of: positioningView, preferredEdge: .minY)
+            // Resolve SwiftUI's ideal size before AppKit positions the window. Deferred
+            // sizing otherwise moves the arrow on the first pan or a command-length change.
+            if let host = popover.contentViewController {
+                host.view.layoutSubtreeIfNeeded()
+                popover.contentSize = host.view.fittingSize
             }
+            presentedContent = content
+            presentedAnchor = anchor
+            popover.show(relativeTo: anchor, of: self, preferredEdge: .minY)
         }
     }
 }
 
 /// The same redacted command presentation as Authorization History; no Secret values are loaded.
-private struct ToolActivityPopover: View {
+private struct ToolActivityPopover: View, Equatable {
     let record: AccessRequestRecord
     let interval: String
 
@@ -8259,7 +8263,7 @@ private struct ToolActivityPopover: View {
             }
             Text(record.commandForDisplay)
                 .font(.system(size: 12, design: .monospaced))
-                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
                 Label(record.launcher ?? String(localized: "unknown"), systemImage: "app")
@@ -8277,7 +8281,7 @@ private struct ToolActivityPopover: View {
             }
         }
         .padding(14)
-        .frame(width: 320, alignment: .leading)
+        .frame(width: 440, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
