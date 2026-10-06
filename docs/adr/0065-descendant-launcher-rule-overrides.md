@@ -17,7 +17,9 @@ Authorization Gate editor. Default off, including legacy records. Use the neares
 explicit rule normally; the outermost enabled ancestor override takes precedence.
 Require live original-parent execution evidence between the nearer Launcher and
 the overriding ancestor. Do not treat helper aliases of one process or an appended
-Retained Launcher Provenance identity as proof of ancestry.
+Retained Launcher Provenance identity as proof of ancestry. If a candidate
+override lacks that evidence, require Approval rather than exposing a potentially
+broader descendant rule. The existing verified Apple login relay is supported.
 
 Keep every matching explicit Deny as a veto. Keep runtime requirements on both
 the selected rule and overridden explicit rules. Unknown still requires Approval
@@ -32,8 +34,12 @@ policy decoding. Preserve the setting through allow and denial edits.
 
 Record a warning in Authorization History when the selected override allows the
 current operation but an overridden explicit rule would require Approval.
+Automatic notifications also show this warning.
 SSH ancestry discovery collects verified ancestors beyond the nearest Launcher;
 it never crosses an unavailable original-parent link to obtain override authority.
+SSH retains its nearest-Launcher default-denial boundary: an upper ancestor's
+rule cannot suppress default Deny when the nearest Launcher has no explicit rule.
+Script-derived SSH authority remains bounded by the nearest Verified Launcher.
 
 ## Consequences
 

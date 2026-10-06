@@ -474,6 +474,7 @@ public struct SecretGatePolicy: Equatable, Sendable {
     public let protection: SecretGateProtection
     public let denialThreshold: SecretGateProtection?
     public let usesGateDefault: Bool
+    public let overridesDescendantRules: Bool
     public let runtimeRequirement: LauncherRuntimeRequirement
 
     public var requiresHardenedRuntime: Bool { runtimeRequirement != .legacyUnchecked }
@@ -484,7 +485,8 @@ public struct SecretGatePolicy: Equatable, Sendable {
         protection: SecretGateProtection,
         requiresHardenedRuntime: Bool = false,
         denialThreshold: SecretGateProtection? = nil,
-        usesGateDefault: Bool = false
+        usesGateDefault: Bool = false,
+        overridesDescendantRules: Bool = false
     ) {
         self.init(
             bundleIdentifier: bundleIdentifier,
@@ -492,7 +494,8 @@ public struct SecretGatePolicy: Equatable, Sendable {
             protection: protection,
             runtimeRequirement: requiresHardenedRuntime ? .hardened : .legacyUnchecked,
             denialThreshold: denialThreshold,
-            usesGateDefault: usesGateDefault
+            usesGateDefault: usesGateDefault,
+            overridesDescendantRules: overridesDescendantRules
         )
     }
 
@@ -502,13 +505,15 @@ public struct SecretGatePolicy: Equatable, Sendable {
         protection: SecretGateProtection,
         runtimeRequirement: LauncherRuntimeRequirement,
         denialThreshold: SecretGateProtection? = nil,
-        usesGateDefault: Bool = false
+        usesGateDefault: Bool = false,
+        overridesDescendantRules: Bool = false
     ) {
         self.bundleIdentifier = bundleIdentifier
         self.requirement = requirement
         self.protection = protection
         self.denialThreshold = denialThreshold
         self.usesGateDefault = usesGateDefault
+        self.overridesDescendantRules = overridesDescendantRules
         self.runtimeRequirement = runtimeRequirement
     }
 }
@@ -1272,7 +1277,8 @@ func loadedSecretGate(
                     protection: record.usesGateDefault == true ? defaultProtection : prototype.normalizedProtection(record.protection),
                     runtimeRequirement: record.resolvedRuntimeRequirement,
                     denialThreshold: record.denialThreshold,
-                    usesGateDefault: record.usesGateDefault == true
+                    usesGateDefault: record.usesGateDefault == true,
+                    overridesDescendantRules: record.overridesDescendantRules == true
                 )
             }
         }.uniqueSorted(),
@@ -1413,6 +1419,44 @@ public func setSecretGateAppProtection(
     )
 }
 
+/// Both directions require attended authority-change Approval. Do not overwrite a
+/// rule that changed while Approval was pending or recreate a removed rule.
+public func setSecretGateDescendantOverride(
+    _ enabled: Bool, for approvedPolicy: SecretGatePolicy, in gate: SecretGate,
+    service: String = secretGatePoliciesKeychainService,
+    account: String = secretGatePoliciesKeychainAccount
+) -> OSStatus {
+    secretGatePolicyLock.lock()
+    defer { secretGatePolicyLock.unlock() }
+    var records: [SecretGatePolicyRecord]
+    switch loadSecretGatePolicyRecords(service: service, account: account) {
+    case .success(let loaded): records = loaded
+    case .failure(let status): return status
+    }
+    let status = updateSecretGateDescendantOverride(enabled, for: approvedPolicy, in: gate, records: &records)
+    guard status == errSecSuccess else { return status }
+    return saveSecretGatePolicyRecords(records, service: service, account: account)
+}
+
+func updateSecretGateDescendantOverride(
+    _ enabled: Bool, for approvedPolicy: SecretGatePolicy, in gate: SecretGate,
+    records: inout [SecretGatePolicyRecord]
+) -> OSStatus {
+    guard !approvedPolicy.usesGateDefault,
+          let index = records.firstIndex(where: {
+              $0.gateID == gate.id && $0.requirement == approvedPolicy.requirement
+          }) else { return errSecAuthFailed }
+    let current = records[index]
+    guard current.usesGateDefault != true,
+          gate.normalizedProtection(current.protection) == approvedPolicy.protection,
+          current.denialThreshold == approvedPolicy.denialThreshold,
+          current.resolvedRuntimeRequirement == approvedPolicy.runtimeRequirement,
+          (current.overridesDescendantRules == true) == approvedPolicy.overridesDescendantRules
+    else { return errSecAuthFailed }
+    records[index].overridesDescendantRules = enabled
+    return errSecSuccess
+}
+
 /// Only the attended UI may weaken this rule, after authority-change Approval.
 /// The approved threshold must still match under the lock; a newer rule needs fresh Approval.
 /// A signingAccess selection replaces both fields atomically; its allow expansion also requires Approval.
@@ -1486,6 +1530,7 @@ public func secretGateDenial(
     gate: SecretGate,
     classification: SecretGateRequestClassification,
     launcherRequirements: [String],
+    defaultPolicyLauncherRequirements: [String]? = nil,
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> (reason: String, launcherRequirement: String?)? {
@@ -1497,12 +1542,14 @@ public func secretGateDenial(
     case .failure: return ("Denied because Authorization Policy is unavailable", nil)
     }
     return secretGateDenial(gate: gate, classification: classification,
-                           launcherRequirements: launcherRequirements, records: records)
+                           launcherRequirements: launcherRequirements,
+                           defaultPolicyLauncherRequirements: defaultPolicyLauncherRequirements, records: records)
 }
 
 func secretGateDenial(
     gate: SecretGate, classification: SecretGateRequestClassification,
-    launcherRequirements: [String], records: [SecretGatePolicyRecord]
+    launcherRequirements: [String], defaultPolicyLauncherRequirements: [String]? = nil,
+    records: [SecretGatePolicyRecord]
 ) -> (reason: String, launcherRequirement: String?)? {
     let matching = records.filter {
         $0.gateID == gate.id && $0.requirement.map { launcherRequirements.contains($0) } == true
@@ -1512,7 +1559,12 @@ func secretGateDenial(
             return ("Denied by Launcher rule: \(gate.protectionTitle(threshold)) and above at \(gate.authorizationGateName)", record.requirement)
         }
     }
-    if matching.isEmpty,
+    // SSH keeps its original nearest-Launcher default-denial boundary even when
+    // upper ancestors are collected for explicit overrides and denial vetoes.
+    let defaultMatches = defaultPolicyLauncherRequirements.map { requirements in
+        matching.filter { $0.requirement.map(requirements.contains) == true }
+    } ?? matching
+    if defaultMatches.isEmpty,
        let threshold = records.first(where: { $0.gateID == gate.id && $0.requirement == nil })?.denialThreshold,
        gate.denies(classification, at: threshold) {
         return ("Denied by default rule: \(gate.protectionTitle(threshold)) and above at \(gate.authorizationGateName)", launcherRequirements.first)
@@ -1609,6 +1661,7 @@ struct SecretGatePolicyRecord: Codable, Equatable {
     let requirement: String?
     var protection: SecretGateProtection
     var usesGateDefault: Bool?
+    var overridesDescendantRules: Bool?
     var denialThreshold: SecretGateProtection?
     let requiresHardenedRuntime: Bool?
     let runtimeRequirement: LauncherRuntimeRequirement?
@@ -1749,6 +1802,7 @@ func replaceSecretGatePolicyRecord(
     }
     var record = record
     record.denialThreshold = existing?.denialThreshold
+    record.overridesDescendantRules = existing?.overridesDescendantRules
     records.removeAll { $0.gateID == record.gateID && $0.requirement == record.requirement }
     records.append(record)
     return errSecSuccess

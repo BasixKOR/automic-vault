@@ -573,3 +573,11 @@
 "Spam Prevention Available" = "Spam Prevention Available";
 
 "Latest request" = "Latest request";
+
+/* Descendant Launcher rule overrides */
+"Override descendant Launcher rules" = "Override descendant Launcher rules";
+"Use this Launcher's rule when a Launcher it starts has its own rule at this Gate. Explicit Deny and runtime requirements still apply. Changing this setting requires Approval." = "Use this Launcher's rule when a Launcher it starts has its own rule at this Gate. Explicit Deny and runtime requirements still apply. Changing this setting requires Approval.";
+"Override descendant Launcher rules: Off → On" = "Override descendant Launcher rules: Off → On";
+"Override descendant Launcher rules: On → Off" = "Override descendant Launcher rules: On → Off";
+"Expanding allow, reducing deny, or changing descendant overrides requires Approval." = "Expanding allow, reducing deny, or changing descendant overrides requires Approval.";
+"Apply each change separately. Expanding allow, reducing deny, or changing descendant overrides requires Approval. Unapplied changes remain pending." = "Apply each change separately. Expanding allow, reducing deny, or changing descendant overrides requires Approval. Unapplied changes remain pending.";
