@@ -458,6 +458,16 @@ The durable rules for one Authorization Gate. A policy contains:
 
 An unverifiable Launcher does not receive the default Access Level. An unknown operation cannot be automically authorized.
 
+### Descendant Launcher Rule Override
+
+A per-Launcher, per-Gate choice presented as **Override descendant Launcher
+rules**. It defaults off. Normally the nearest Verified Launcher with an explicit
+Access Level supplies policy; intermediaries without such a rule are transparent.
+An enabled override lets a verified ancestor supply its rule instead. The
+outermost eligible override wins. Explicit Deny remains a veto, and runtime
+verification requirements remain mandatory. Changing this choice in either
+direction requires Approval because either can expose broader authority.
+
 ### Policy Decision
 
 The allow or deny result produced by applying an Authorization Policy to an Authorization Request.
