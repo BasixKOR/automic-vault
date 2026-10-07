@@ -29,7 +29,10 @@ Temporary Access Grants retain their own authority semantics.
 Stage checkbox edits in the existing Review Changes flow. Both directions require
 Approval: disabling a restrictive ancestor override can reveal a broader child
 rule. Compare the full reviewed Launcher rule under the policy lock before
-persisting either change. Missing fields default off; malformed values fail
+persisting either change. Removing an enabled override also requires Approval
+and compares the reviewed full rule under that lock. Unattended Launcher Bundle
+policy cleanup refuses to remove enabled overrides; remove those rules through
+the Gate's reviewed Approval flow first. Missing fields default off; malformed values fail
 policy decoding. Preserve the setting through allow and denial edits.
 
 Record a warning in Authorization History when the selected override allows the

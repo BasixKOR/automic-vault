@@ -611,7 +611,11 @@ order, including its existing compatibility classifications; they do not create
 a universal ranking of operation characteristics. Unknown only is a denial-only threshold (`unknownOnly`) for unclassified operations. Existing thresholds still include Unknown. Narrowing a broader denial to Unknown only requires Approval; the allow boundary cannot include Unknown.
 
 The default Denial Threshold applies only when no Launcher-specific record
-matches any attributed Launcher requirement. All matching explicit denials are
+matches any attributed Launcher requirement. SSH retains a narrower boundary:
+only records for the nearest Verified Launcher suppress its default Denial
+Threshold. An upper ancestor's override cannot suppress that default Deny; all
+attributed ancestors still participate in explicit denial vetoes.
+All matching explicit denials are
 checked first; one matching rule cannot bypass another matching denial. With no
 matching rule, missing or unverifiable attribution does not bypass the default
 denial. Default automic authorization requires an eligible Launcher runtime;

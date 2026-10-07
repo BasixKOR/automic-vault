@@ -1447,11 +1447,7 @@ func updateSecretGateDescendantOverride(
               $0.gateID == gate.id && $0.requirement == approvedPolicy.requirement
           }) else { return errSecAuthFailed }
     let current = records[index]
-    guard current.usesGateDefault != true,
-          gate.normalizedProtection(current.protection) == approvedPolicy.protection,
-          current.denialThreshold == approvedPolicy.denialThreshold,
-          current.resolvedRuntimeRequirement == approvedPolicy.runtimeRequirement,
-          (current.overridesDescendantRules == true) == approvedPolicy.overridesDescendantRules
+    guard current.usesGateDefault != true, current.matches(approvedPolicy, in: gate)
     else { return errSecAuthFailed }
     records[index].overridesDescendantRules = enabled
     return errSecSuccess
@@ -1587,6 +1583,7 @@ public func removeSecretGateAppPolicy(
     _ policy: SecretGatePolicy,
     from gate: SecretGate,
     approvedDenialThreshold: SecretGateProtection? = nil,
+    approvedOverridePolicy: SecretGatePolicy? = nil,
     service: String = secretGatePoliciesKeychainService,
     account: String = secretGatePoliciesKeychainAccount
 ) -> OSStatus {
@@ -1601,16 +1598,30 @@ public func removeSecretGateAppPolicy(
     case .success(let records): loaded = records
     case .failure(let status): return status
     }
-    guard !loaded.contains(where: {
-        $0.gateID == gate.id && $0.requirement == policy.requirement
-            && $0.denialThreshold != nil && $0.denialThreshold != approvedDenialThreshold
-    }) else { return errSecAuthFailed }
-    let records = loaded.filter {
-        !($0.gateID == gate.id && $0.requirement == policy.requirement)
-    }
+    var records = loaded
+    let removal = removeSecretGateAppPolicyRecords(policy, from: gate,
+        approvedDenialThreshold: approvedDenialThreshold, approvedOverridePolicy: approvedOverridePolicy, records: &records)
+    guard removal == errSecSuccess else { return removal }
     let status = saveSecretGatePolicyRecords(records, service: service, account: account)
     didChange = status == errSecSuccess
     return status
+}
+
+func removeSecretGateAppPolicyRecords(
+    _ policy: SecretGatePolicy, from gate: SecretGate,
+    approvedDenialThreshold: SecretGateProtection?, approvedOverridePolicy: SecretGatePolicy?,
+    records: inout [SecretGatePolicyRecord]
+) -> OSStatus {
+    let matching = records.filter { $0.gateID == gate.id && $0.requirement == policy.requirement }
+    for record in matching {
+        guard record.denialThreshold == nil || record.denialThreshold == approvedDenialThreshold else { return errSecAuthFailed }
+        if record.overridesDescendantRules == true || approvedOverridePolicy != nil {
+            guard let approved = approvedOverridePolicy, approved == policy,
+                  record.matches(approved, in: gate) else { return errSecAuthFailed }
+        }
+    }
+    records.removeAll { $0.gateID == gate.id && $0.requirement == policy.requirement }
+    return errSecSuccess
 }
 
 @discardableResult
@@ -1625,25 +1636,36 @@ public func removeSecretGatePolicies(
     }
     secretGatePolicyLock.lock()
     defer { secretGatePolicyLock.unlock() }
-    let records: [SecretGatePolicyRecord]
+    var records: [SecretGatePolicyRecord]
     switch loadSecretGatePolicyRecords(service: service, account: account) {
-    case .success(let loaded):
-        records = loaded.compactMap { record in
-            guard record.requirement == requirement else { return record }
-            guard let threshold = record.denialThreshold else { return nil }
-            var denied = SecretGatePolicyRecord(gateID: record.gateID, requirement: requirement,
-                                                 protection: .noAccess, runtimeRequirement: record.resolvedRuntimeRequirement)
-            // Preserve existing inheritance, but never turn a removed explicit allow
-            // into a potentially broader gate default without Approval.
-            denied.usesGateDefault = record.usesGateDefault
-            denied.denialThreshold = threshold
-            return denied
-        }
+    case .success(let loaded): records = loaded
     case .failure(let status): return status
     }
+    let removal = removeSecretGatePolicyRecords(forLauncherRequirement: requirement, records: &records)
+    guard removal == errSecSuccess else { return removal }
     let status = saveSecretGatePolicyRecords(records, service: service, account: account)
     didChange = status == errSecSuccess
     return status
+}
+
+func removeSecretGatePolicyRecords(
+    forLauncherRequirement requirement: String, records: inout [SecretGatePolicyRecord]
+) -> OSStatus {
+    // Unattended cleanup cannot remove an enabled restrictive override.
+    guard !records.contains(where: {
+        $0.requirement == requirement && $0.overridesDescendantRules == true
+    }) else { return errSecAuthFailed }
+    records = records.compactMap { record in
+        guard record.requirement == requirement else { return record }
+        guard let threshold = record.denialThreshold else { return nil }
+        var denied = SecretGatePolicyRecord(gateID: record.gateID, requirement: requirement,
+            protection: .noAccess, runtimeRequirement: record.resolvedRuntimeRequirement)
+        // Preserve denial-only inheritance without broadening an explicit allow.
+        denied.usesGateDefault = record.usesGateDefault
+        denied.denialThreshold = threshold
+        return denied
+    }
+    return errSecSuccess
 }
 
 public func secretGateProtection(
@@ -1665,6 +1687,15 @@ struct SecretGatePolicyRecord: Codable, Equatable {
     var denialThreshold: SecretGateProtection?
     let requiresHardenedRuntime: Bool?
     let runtimeRequirement: LauncherRuntimeRequirement?
+
+    func matches(_ policy: SecretGatePolicy, in gate: SecretGate) -> Bool {
+        gateID == gate.id && requirement == policy.requirement
+            && gate.normalizedProtection(protection) == policy.protection
+            && denialThreshold == policy.denialThreshold
+            && resolvedRuntimeRequirement == policy.runtimeRequirement
+            && (usesGateDefault == true) == policy.usesGateDefault
+            && (overridesDescendantRules == true) == policy.overridesDescendantRules
+    }
 
     var resolvedRuntimeRequirement: LauncherRuntimeRequirement {
         runtimeRequirement ?? (requiresHardenedRuntime == true ? .hardened : .legacyUnchecked)

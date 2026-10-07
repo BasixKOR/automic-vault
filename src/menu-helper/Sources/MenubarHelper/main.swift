@@ -14837,6 +14837,7 @@ private func automaticAccessToastAccessibilityLabel(
     compact: Bool
 ) -> String {
     "Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(automaticAccessToastCommand(record.displayCommand, compact: compact))"
+        + (record.policyWarning.map { ". " + $0 } ?? "")
 }
 
 private struct AutomaticAccessToastView: View {
@@ -19861,6 +19862,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
           sensitiveRetrospectiveRecord.displayCommand.contains("<redacted>"),
           !sensitiveMenuTitle.contains(rawCredential),
           sensitiveMenuTitle.contains("<redacted>"),
+          automaticAccessToastAccessibilityLabel({
+              var warningRecord = sensitiveRetrospectiveRecord
+              warningRecord.policyWarning = "Descendant rule override: child would require Approval."
+              return warningRecord
+          }(), compact: true).contains("Descendant rule override: child would require Approval."),
           !automaticAccessToastAccessibilityLabel(
               sensitiveRetrospectiveRecord,
               compact: true

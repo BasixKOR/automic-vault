@@ -1748,11 +1748,12 @@ final class DashboardModel: ObservableObject {
     func removeAppPolicy(_ app: SecretGatePolicy, from gate: SecretGate) {
         let update = { [weak self] in
             self?.finishSecretGatePolicyUpdate(
-                removeSecretGateAppPolicy(app, from: gate, approvedDenialThreshold: app.denialThreshold), gate: gate,
+                removeSecretGateAppPolicy(app, from: gate, approvedDenialThreshold: app.denialThreshold,
+                    approvedOverridePolicy: app.overridesDescendantRules ? app : nil), gate: gate,
                 error: "Could not delete the Launcher-specific rule for \(app.bundleIdentifier)"
             )
         }
-        guard app.denialThreshold != nil || gate.defaultProtection.addsAuthority(over: app.protection)
+        guard app.overridesDescendantRules || app.denialThreshold != nil || gate.defaultProtection.addsAuthority(over: app.protection)
         else { update(); return }
         approveAuthorityChange(
             action: "gate-policy:\(gate.id):\(app.requirement)",

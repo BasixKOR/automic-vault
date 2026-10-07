@@ -84,3 +84,36 @@ private let overridePolicy = SecretGatePolicy(bundleIdentifier: "test", requirem
     #expect(secretGateDenial(gate: gate, classification: .mutating,
         launcherRequirements: ["child", "parent"], defaultPolicyLauncherRequirements: ["child"], records: [parent]) != nil)
 }
+
+@Test func overrideRemovalRequiresApprovalAndRejectsStaleRulesAndCleanup() {
+    let approved = SecretGatePolicy(bundleIdentifier: "test", requirement: "test", protection: .readOnly,
+        runtimeRequirement: .hardened, overridesDescendantRules: true)
+    var original = SecretGatePolicyRecord(gateID: "gh", requirement: "test", protection: .readOnly, runtimeRequirement: .hardened)
+    original.overridesDescendantRules = true
+    var records = [original]
+    #expect(removeSecretGateAppPolicyRecords(approved, from: overrideGate, approvedDenialThreshold: nil,
+        approvedOverridePolicy: nil, records: &records) == errSecAuthFailed)
+    #expect(removeSecretGatePolicyRecords(forLauncherRequirement: "test", records: &records) == errSecAuthFailed)
+    #expect(records == [original])
+    for changed in 0..<4 {
+        records = [original]
+        switch changed {
+        case 0: records[0].protection = .noAccess
+        case 1: records[0].overridesDescendantRules = false
+        case 2: records[0].usesGateDefault = true
+        default: records[0].denialThreshold = .fullExceptSecretDumps
+        }
+        let before = records
+        #expect(removeSecretGateAppPolicyRecords(approved, from: overrideGate, approvedDenialThreshold: nil,
+            approvedOverridePolicy: approved, records: &records) == errSecAuthFailed)
+        #expect(records == before)
+    }
+    records = [original]
+    #expect(removeSecretGateAppPolicyRecords(approved, from: overrideGate, approvedDenialThreshold: nil,
+        approvedOverridePolicy: approved, records: &records) == errSecSuccess)
+    #expect(records.isEmpty)
+    original.overridesDescendantRules = false
+    records = [original]
+    #expect(removeSecretGatePolicyRecords(forLauncherRequirement: "test", records: &records) == errSecSuccess)
+    #expect(records.isEmpty)
+}
