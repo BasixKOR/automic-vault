@@ -458,6 +458,16 @@ The durable rules for one Authorization Gate. A policy contains:
 
 An unverifiable Launcher does not receive the default Access Level. An unknown operation cannot be automically authorized.
 
+### Descendant Launcher Rule Override
+
+A per-Launcher, per-Gate choice presented as **Override descendant Launcher
+rules**. It defaults off. Normally the nearest Verified Launcher with an explicit
+Access Level supplies policy; intermediaries without such a rule are transparent.
+An enabled override lets a verified ancestor supply its rule instead. The
+outermost eligible override wins. Explicit Deny remains a veto, and runtime
+verification requirements remain mandatory. Changing this choice in either
+direction requires Approval because either can expose broader authority.
+
 ### Policy Decision
 
 The allow or deny result produced by applying an Authorization Policy to an Authorization Request.
@@ -539,7 +549,9 @@ A gate may also set a default Denial Threshold. The default allow and deny
 settings are shown together as **Default Policy**. Default automic authorization
 requires an eligible Verified Launcher with Hardened Runtime. Default denial
 applies regardless of runtime posture when no Launcher-specific rule matches,
-including when no Launcher can be verified.
+including when no Launcher can be verified. For SSH, only a rule for the nearest
+Verified Launcher suppresses default Deny; upper-ancestor overrides do not.
+Explicit Deny from any attributed ancestor still wins.
 A matching Launcher-specific rule uses its own Denial Threshold, including None;
 a denial-only rule inherits the default allow level, but not the default denial.
 Adding a rule that weakens the fallback denial requires Approval.

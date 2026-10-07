@@ -1683,6 +1683,24 @@ final class DashboardModel: ObservableObject {
         )
     }
 
+    func setDescendantOverride(_ enabled: Bool, for app: SecretGatePolicy, in gate: SecretGate) {
+        guard !app.usesGateDefault, enabled != app.overridesDescendantRules else { return }
+        approveAuthorityChange(
+            action: "gate-descendant-override:\(gate.id):\(app.requirement)",
+            enabled ? "Override descendant Launcher rules for \(app.bundleIdentifier)"
+                : "Stop overriding descendant Launcher rules for \(app.bundleIdentifier)",
+            detail: enabled
+                ? "At the \(gate.displayName) Gate, this Launcher's rule may replace more restrictive descendant rules. Explicit Deny and runtime requirements still apply."
+                : "At the \(gate.displayName) Gate, descendant rules will apply again and may allow more operations. Explicit Deny still applies.",
+            perform: { [weak self] in
+                self?.finishSecretGatePolicyUpdate(
+                    setSecretGateDescendantOverride(enabled, for: app, in: gate),
+                    gate: gate, error: "Could not update descendant Launcher rule override; review the current rule and try again"
+                )
+            }
+        )
+    }
+
     func setDenialThreshold(_ threshold: SecretGateProtection?, for app: SecretGatePolicy?, in gate: SecretGate) {
         let previous = app == nil ? gate.defaultDenialThreshold : app?.denialThreshold
         let needsApproval = gate.weakeningDenial(from: previous, to: threshold)
@@ -1730,11 +1748,12 @@ final class DashboardModel: ObservableObject {
     func removeAppPolicy(_ app: SecretGatePolicy, from gate: SecretGate) {
         let update = { [weak self] in
             self?.finishSecretGatePolicyUpdate(
-                removeSecretGateAppPolicy(app, from: gate, approvedDenialThreshold: app.denialThreshold), gate: gate,
+                removeSecretGateAppPolicy(app, from: gate, approvedDenialThreshold: app.denialThreshold,
+                    approvedOverridePolicy: app.overridesDescendantRules ? app : nil), gate: gate,
                 error: "Could not delete the Launcher-specific rule for \(app.bundleIdentifier)"
             )
         }
-        guard app.denialThreshold != nil || gate.defaultProtection.addsAuthority(over: app.protection)
+        guard app.overridesDescendantRules || app.denialThreshold != nil || gate.defaultProtection.addsAuthority(over: app.protection)
         else { update(); return }
         approveAuthorityChange(
             action: "gate-policy:\(gate.id):\(app.requirement)",
@@ -7368,6 +7387,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
         case allow(SecretGateProtection)
         case denial(SecretGateProtection?)
         case signing(SigningGateAccess)
+        case descendantOverride(Bool)
     }
     let requirement: String?
     let value: Value
@@ -7377,6 +7397,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
         case .allow: requirement.map { "gate-policy:\($0)" } ?? "gate-default"
         case .denial: "gate-denial:\(requirement ?? "")"
         case .signing: "gate-signing:\(requirement ?? "")"
+        case .descendantOverride: "gate-descendant-override:\(requirement ?? "")"
         }
     }
 
@@ -7385,6 +7406,7 @@ private struct GatePolicyChange: Identifiable, Equatable {
         case .allow: requirement.map { "gate-policy:\(gate.id):\($0)" } ?? "gate-default:\(gate.id)"
         case .denial: requirement.map { "gate-denial:\(gate.id):\($0)" } ?? "gate-default-denial:\(gate.id)"
         case .signing: "gate-signing:\(gate.id):\(requirement ?? "")"
+        case .descendantOverride: "gate-descendant-override:\(gate.id):\(requirement ?? "")"
         }
     }
 }
@@ -7424,6 +7446,8 @@ private struct GatePolicyTable: View {
             case .denial(let level): return level != denialThreshold(for: app)
             case .signing(let access):
                 return access != signingAccess(for: app)
+            case .descendantOverride(let enabled):
+                return app?.usesGateDefault == false && enabled != app?.overridesDescendantRules
             }
         }
     }
@@ -7478,7 +7502,7 @@ private struct GatePolicyTable: View {
                 ? String(localized: "Denial wins over allow rules. Unknown requires Approval unless a Denial Threshold is set.")
                 : String(localized: "Denial wins over allow rules."), systemImage: "info.circle")
                 .font(.caption).foregroundStyle(.secondary)
-            Text("Expanding allow or reducing deny requires Approval.")
+            Text("Expanding allow, reducing deny, or changing descendant overrides requires Approval.")
                 .font(.caption).foregroundStyle(.secondary)
             if !changes.isEmpty {
                 HStack {
@@ -7557,10 +7581,23 @@ private struct GatePolicyTable: View {
                                     setProtection: { stage(.allow($0), for: app) },
                                     setDenial: { stage(.denial($0), for: app) })
                 }
+                if let app, !app.usesGateDefault {
+                    let override = rowChanges.compactMap { change -> Bool? in
+                        if case .descendantOverride(let enabled) = change.value { return enabled }
+                        return nil
+                    }.first ?? app.overridesDescendantRules
+                    Toggle("Override descendant Launcher rules", isOn: Binding(
+                        get: { override }, set: { stage(.descendantOverride($0), for: app) }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                    .help("Use this Launcher's rule when a Launcher it starts has its own rule at this Gate. Explicit Deny and runtime requirements still apply. Changing this setting requires Approval.")
+                    .accessibilityIdentifier("gate-descendant-override:\(app.requirement)")
+                }
                 if app?.usesGateDefault == true && !rowChanges.contains(where: {
                     switch $0.value {
                     case .allow, .signing: return true
-                    case .denial: return false
+                    case .denial, .descendantOverride: return false
                     }
                 }) {
                     Text("Auto-allow uses gate default").font(.caption).foregroundStyle(.secondary)
@@ -7596,7 +7633,7 @@ private struct GatePolicyTable: View {
     private var review: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Review Changes").font(.title2.bold())
-            Text("Apply each change separately. Expanding allow or reducing deny requires Approval. Unapplied changes remain pending.")
+            Text("Apply each change separately. Expanding allow, reducing deny, or changing descendant overrides requires Approval. Unapplied changes remain pending.")
                 .foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -7610,6 +7647,8 @@ private struct GatePolicyTable: View {
                                     Text("Allow ≤ \(gate.protectionTitle(app?.protection ?? gate.defaultProtection)) → \(gate.protectionTitle(level))")
                                 case .signing(let access):
                                     Text("\(signingAccess(for: app).title(for: gate)) → \(access.title(for: gate))")
+                                case .descendantOverride(let enabled):
+                                    Text(enabled ? "Override descendant Launcher rules: Off → On" : "Override descendant Launcher rules: On → Off")
                                 case .denial(let level):
                                     Text("Deny ≥ \(denialTitle(denialThreshold(for: app))) → \(denialTitle(level))")
                                 }
@@ -7623,6 +7662,8 @@ private struct GatePolicyTable: View {
                                         model.setDenialThreshold(level, for: app, in: gate)
                                     case .signing(let access):
                                         model.setSigningAccess(access, for: app, in: gate)
+                                    case .descendantOverride(let enabled):
+                                        if let app { model.setDescendantOverride(enabled, for: app, in: gate) }
                                     }
                                 } label: {
                                     AuthorityApprovalLabel(title: "Apply", approval: approval,
@@ -7655,6 +7696,7 @@ private struct GatePolicyTable: View {
         switch change.value {
         case .allow(let level):
             return level.addsAuthority(over: app.map { $0.usesGateDefault ? .noAccess : $0.protection } ?? gate.defaultProtection)
+        case .descendantOverride: return true
         case .denial(let level): return gate.weakeningDenial(from: denialThreshold(for: app), to: level)
         case .signing(let access):
             return access.requiresApproval(in: gate, protection: app?.protection ?? gate.defaultProtection,

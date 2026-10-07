@@ -1840,6 +1840,7 @@ private struct AutoApprovalRecord {
     let keys: [String]
     let wasCanceled: Bool
     let wasDenied: Bool
+    var policyWarning: String? = nil
 }
 
 private struct AutoApprovalGroup {
@@ -1867,6 +1868,7 @@ private func groupedAutoApprovals(_ records: [AutoApprovalRecord]) -> [AutoAppro
         if let index = groups.indices.last,
            groups[index].record.launcher == record.launcher,
            groups[index].record.tool == record.tool,
+           groups[index].record.policyWarning == record.policyWarning,
            groups[index].record.wasCanceled == record.wasCanceled,
            groups[index].record.wasDenied == record.wasDenied
         {
@@ -1912,7 +1914,8 @@ private func autoApprovalRecord(
     accessRequestID: UUID,
     request: ApprovalRequest,
     script: ScriptApproval?,
-    launcher: LauncherIdentity
+    launcher: LauncherIdentity,
+    policyWarning: String? = nil
 ) -> AutoApprovalRecord {
     let requester = approvalPromptRequester(launcher: launcher, fallback: launcher.path)
     return AutoApprovalRecord(
@@ -1924,7 +1927,8 @@ private func autoApprovalRecord(
         displayCommand: authorizationHistoryCommand(request, scriptPath: script?.path),
         keys: request.keys,
         wasCanceled: false,
-        wasDenied: false
+        wasDenied: false,
+        policyWarning: policyWarning
     )
 }
 
@@ -2245,32 +2249,38 @@ private struct SSHAgentAncestry {
     let ancestors: [AVProcessIdentity]
 }
 
+// Terminal's root-owned Apple login relay supplies ancestry, never authority.
+private func verifiedOriginalLauncherParent(_ child: AVProcessIdentity, parent: inout AVProcessIdentity) -> Bool {
+    var child = child
+    if av_original_parent_identity(&child, &parent) { return true }
+    var code: SecCode?
+    var requirement: SecRequirement?
+    guard av_original_login_parent_identity(&child, &parent),
+          SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: child.ppid] as CFDictionary, [], &code) == errSecSuccess,
+          let code,
+          SecRequirementCreateWithString("anchor apple and identifier com.apple.login" as CFString, [], &requirement) == errSecSuccess,
+          let requirement,
+          SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+    else { return false }
+    return true
+}
+
 private func sshAgentAncestry(for identity: AVProcessIdentity) -> SSHAgentAncestry? {
     var child = identity
     var ancestors: [AVProcessIdentity] = []
+    var launchers: [LauncherIdentity] = []
     for _ in 0..<32 {
         var parent = AVProcessIdentity()
-        if !av_original_parent_identity(&child, &parent) {
-            // Terminal uses a root-owned login relay; it supplies no Launcher authority.
-            var code: SecCode?
-            var requirement: SecRequirement?
-            guard av_original_login_parent_identity(&child, &parent),
-                  SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: child.ppid] as CFDictionary, [], &code) == errSecSuccess,
-                  let code,
-                  SecRequirementCreateWithString("anchor apple and identifier com.apple.login" as CFString, [], &requirement) == errSecSuccess,
-                  let requirement,
-                  SecCodeCheckValidity(code, [], requirement) == errSecSuccess
-            else { return nil }
+        guard verifiedOriginalLauncherParent(child, parent: &parent) else {
+            return launchers.isEmpty ? nil : SSHAgentAncestry(launchers: launchers, ancestors: ancestors)
         }
         ancestors.append(parent)
         let candidates = launcherIdentities(pid: parent.pid, identity: parent)
             .filter { $0.runtimeProtection.allowsSecretGateAccess }
-        if !candidates.isEmpty {
-            return SSHAgentAncestry(launchers: candidates, ancestors: ancestors)
-        }
+        launchers.append(contentsOf: candidates)
         child = parent
     }
-    return nil
+    return launchers.isEmpty ? nil : SSHAgentAncestry(launchers: launchers, ancestors: ancestors)
 }
 
 /// Retains the kernel socket evidence through Approval and release.
@@ -2283,6 +2293,14 @@ private final class SSHAgentPeer: Sendable {
     let arguments: [String]
     let cwd: String
     let helperIdentity: AVProcessIdentity
+
+    // Collecting ancestors for overrides must not expand script-derived authority
+    // beyond the nearest Verified Launcher used by the existing SSH boundary.
+    var scriptAncestors: [AVProcessIdentity] {
+        guard let nearest = launchers.first,
+              let index = ancestors.firstIndex(where: { $0.pid == nearest.pid }) else { return [] }
+        return Array(ancestors.prefix(through: index))
+    }
 
     init(socket: FileHandle, identity: AVProcessIdentity, configuration: SSHAgentConfiguration,
          launchers: [LauncherIdentity], ancestors: [AVProcessIdentity], arguments: [String], cwd: String,
@@ -2925,7 +2943,9 @@ private func evaluateLauncherDenial(
     // Direct Secret requests have no tool-gate policy. A failed read of an
     // existing gate remains a denial, as enforced by secretGateDenial.
     guard let gate, let denial = secretGateDenial(
-        gate: gate, classification: classification, launcherRequirements: launchers.map(\.designatedRequirement)
+        gate: gate, classification: classification, launcherRequirements: launchers.map(\.designatedRequirement),
+        defaultPolicyLauncherRequirements: gate.isSSHAgentGate
+            ? launchers.filter { $0.pid == launchers.first?.pid }.map(\.designatedRequirement) : nil
     ) else { return nil }
     return LauncherDenialError(reason: denial.reason,
         launcher: launchers.first { $0.designatedRequirement == denial.launcherRequirement })
@@ -4967,7 +4987,7 @@ private final class ApprovalServer: @unchecked Sendable {
         if denyRequestIfNeeded(request, signing: signing, launchers: policyLaunchers,
                                callerPath: callerPath, peer: peer, message: message) { return }
         let scriptAuthority = if let sshPeer = request.sshPeer {
-            activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+            activeSSHScriptAuthority(ancestors: sshPeer.scriptAncestors)
         } else {
             ActiveScriptAuthority(
                 blessings: activeBlessedScripts(pid: pid, identity: identity),
@@ -5255,7 +5275,23 @@ private final class ApprovalServer: @unchecked Sendable {
         {
             let authorizingLauncher = resolvedPolicy.launcher ?? policyLauncher
             do {
+                let warning = descendantOverrideWarning(policy: resolvedPolicy, gate: configuredGate, classification: classification)
                 let reason = "\(configuredGate.protectionTitle(resolvedPolicy.protection)) from \(resolvedPolicy.source)"
+                    + (warning.map { "; " + $0 } ?? "")
+                let overrideExecutions = try resolvedPolicy.overriddenLaunchers.map { descendant in
+                    var current = AVProcessIdentity()
+                    guard av_process_identity(descendant.pid, &current),
+                          let execution = retainedProcessExecution(pid: descendant.pid, identity: current)
+                    else { throw AppError("Descendant Launcher execution is unavailable") }
+                    return execution
+                }
+                let ancestorExecution: RetainedProcessExecution? = {
+                    guard !overrideExecutions.isEmpty, let authorizingLauncher else { return nil }
+                    var current = AVProcessIdentity()
+                    guard av_process_identity(authorizingLauncher.pid, &current) else { return nil }
+                    return retainedProcessExecution(pid: authorizingLauncher.pid, identity: current)
+                }()
+
                 let accessRequestID = UUID()
                 let record = accessRequestRecord(
                     id: accessRequestID,
@@ -5276,6 +5312,16 @@ private final class ApprovalServer: @unchecked Sendable {
                     launchers: policyLaunchers,
                     launcher: authorizingLauncher,
                     sshScriptAuthorization: request.sshPeer == nil ? nil : .inheritedPolicy,
+                    validateAuthority: {
+                        guard !overrideExecutions.isEmpty else { return }
+                        guard let ancestorExecution, retainedProcessExecutionIsLive(ancestorExecution),
+                              overrideExecutions.allSatisfy(retainedProcessExecutionIsLive),
+                              reloadSecretGatePolicy(for: configuredGate) == configuredGate,
+                              let authorizingLauncher,
+                              resolvedPolicy.overriddenLaunchers.allSatisfy({
+                                  verifiedLauncherOverrideAncestry(authorizingLauncher, $0)
+                              }) else { throw AppError("Launcher override authority changed before release") }
+                    },
                     activateAfterRecording: {
                         if let authorizingLauncher {
                             rememberRetainedProvenance(
@@ -5292,7 +5338,8 @@ private final class ApprovalServer: @unchecked Sendable {
                                     accessRequestID: accessRequestID,
                                     request: request,
                                     script: scriptApproval,
-                                    launcher: authorizingLauncher
+                                    launcher: authorizingLauncher,
+                                    policyWarning: warning
                                 ))
                             }
                         }
@@ -5324,7 +5371,7 @@ private final class ApprovalServer: @unchecked Sendable {
             }
             return
         }
-        let promptLauncher = policyLauncher
+        let promptLauncher = resolvedPolicy?.launcher ?? policyLauncher
         let temporaryGrantCandidate = scriptAuthority.hasEmptyCapabilityCeiling ? nil : temporaryAccessGrantCandidate(
             gate: configuredGate,
             classification: classification,
@@ -9420,11 +9467,13 @@ private final class ApprovalServer: @unchecked Sendable {
         launcher: LauncherIdentity?,
         sshScriptAuthorization: SSHScriptAuthorization? = nil,
         cancellation: ApprovalCancellation? = nil,
+        validateAuthority: () throws -> Void = {},
         activateAfterRecording: () -> Void = {},
         release: (ApprovedPayload) -> Void
     ) throws -> Bool {
         func validateCancellation() throws {
             guard cancellation?.isCanceled != true else { throw CancellationError() }
+            try validateAuthority()
         }
         try validateCancellation()
         func validateDenial() throws {
@@ -9442,7 +9491,7 @@ private final class ApprovalServer: @unchecked Sendable {
         func validateSSHScriptAuthority() throws {
             guard let sshScriptAuthorization, let sshPeer = request.sshPeer else { return }
             guard sshScriptAuthorization.allows(
-                activeSSHScriptAuthority(ancestors: sshPeer.ancestors)
+                activeSSHScriptAuthority(ancestors: sshPeer.scriptAncestors)
             ) else { throw AppError("SSH script authority changed before signing") }
         }
         try request.sshPeer?.validate()
@@ -9514,7 +9563,7 @@ private final class ApprovalServer: @unchecked Sendable {
                     },
                     currentAuthority: {
                         request.sshPeer.map {
-                            activeSSHScriptAuthority(ancestors: $0.ancestors)
+                            activeSSHScriptAuthority(ancestors: $0.scriptAncestors)
                         }
                     },
                     deliver: release
@@ -10152,6 +10201,7 @@ private struct ResolvedSecretGatePolicy {
     let source: String
     let launcher: LauncherIdentity?
     let runtimeProtectionFailure: LauncherRuntimeProtection?
+    var overriddenLaunchers: [LauncherIdentity] = []
 }
 
 private func matchingSecretGate(
@@ -10217,35 +10267,89 @@ private func routeKeysMatch(_ patterns: [String], _ keys: [String]) -> Bool {
     }
 }
 
+// An override needs actual original-parent execution links, not ordering in the
+// candidate list (which may contain helper aliases and retained provenance).
+private func verifiedLauncherOverrideAncestry(_ ancestor: LauncherIdentity, _ descendant: LauncherIdentity) -> Bool {
+    guard ancestor.pid != descendant.pid else { return false }
+    for launcher in [ancestor, descendant] {
+        guard let signing = liveSigningInfo(pid: launcher.pid),
+              launcherIdentities(pid: launcher.pid, path: launcher.path, signing: signing).contains(where: {
+                  $0.designatedRequirement == launcher.designatedRequirement
+                      && $0.runtimeProtection == launcher.runtimeProtection
+                      && $0.verifiedHelper == launcher.verifiedHelper
+              }) else { return false }
+    }
+    var child = AVProcessIdentity()
+    guard av_process_identity(descendant.pid, &child) else { return false }
+    for _ in 0..<32 {
+        var parent = AVProcessIdentity()
+        guard verifiedOriginalLauncherParent(child, parent: &parent) else { return false }
+        if parent.pid == ancestor.pid { return true }
+        child = parent
+    }
+    return false
+}
+
 private func resolveSecretGatePolicy(
     gate: SecretGate,
-    launchers: [LauncherIdentity]
+    launchers: [LauncherIdentity],
+    verifiesOverride: (LauncherIdentity, LauncherIdentity) -> Bool = verifiedLauncherOverrideAncestry
 ) -> ResolvedSecretGatePolicy? {
+    var matches: [(launcher: LauncherIdentity, policy: SecretGatePolicy)] = []
+    var seenPIDs = Set<pid_t>()
     for launcher in launchers {
         if let policy = gate.appPolicies.first(where: {
             $0.requirement == launcher.designatedRequirement && !$0.usesGateDefault
-        }) {
-            // ADR 0063: accept the reviewed helper's known exception without
-            // weakening the stored app rule or misreporting the live posture.
-            let acceptsClaudeCodeRuntime = launcher.verifiedHelper == claudeCodeVerifiedLauncherHelper
-                && policy.runtimeRequirement == .hardened
-                && launcher.runtimeProtection == .hardenedWithLibraryValidationDisabled
-            let runtimeProtectionFailure = !policy.runtimeRequirement.allows(launcher.runtimeProtection)
-                && !acceptsClaudeCodeRuntime
-                ? launcher.runtimeProtection
-                : nil
-            return ResolvedSecretGatePolicy(
-                protection: runtimeProtectionFailure == nil ? policy.protection : .noAccess,
-                configuredProtection: policy.protection,
-                source: shortAppName(launcher.identifier),
-                launcher: launcher,
-                runtimeProtectionFailure: runtimeProtectionFailure
-            )
+        }), seenPIDs.insert(launcher.pid).inserted {
+            // Preserve existing helper-alias precedence within a single process.
+            matches.append((launcher, policy))
         }
     }
-    guard let defaultLauncher = launchers.first(where: { !$0.isStandalone })
-        ?? launchers.first(where: { $0.runtimeProtection.allowsSecretGateAccess })
-        ?? launchers.first
+    // SSH historically stops at the nearest eligible Launcher; collecting upper
+    // candidates for opt-in overrides must not introduce ordinary policy fallback.
+    let baselineIndex = gate.isSSHAgentGate
+        ? matches.firstIndex(where: { $0.launcher.pid == launchers.first?.pid })
+        : matches.indices.first
+    let baselineLauncher = baselineIndex.map { matches[$0].launcher } ?? launchers.first
+    var selectedIndex = baselineIndex
+    if let baselineLauncher {
+        for index in matches.indices where matches[index].policy.overridesDescendantRules
+            && matches[index].launcher.pid != baselineLauncher.pid {
+            // Losing evidence for a configured override must not expose a broader
+            // descendant rule. Human Approval is required instead of falling back.
+            guard verifiesOverride(matches[index].launcher, baselineLauncher) else { return nil }
+            selectedIndex = index
+        }
+    }
+    if let selected = selectedIndex {
+        let (launcher, policy) = matches[selected]
+        // Overriding Access Levels never waives a descendant rule's runtime requirement.
+        let runtimeMatches = selectedIndex == baselineIndex ? [matches[selected]] : Array(matches.prefix(selected + 1))
+        for match in runtimeMatches {
+            let acceptsClaudeCodeRuntime = match.launcher.verifiedHelper == claudeCodeVerifiedLauncherHelper
+                && match.policy.runtimeRequirement == .hardened
+                && match.launcher.runtimeProtection == .hardenedWithLibraryValidationDisabled
+            if !match.policy.runtimeRequirement.allows(match.launcher.runtimeProtection) && !acceptsClaudeCodeRuntime {
+                return ResolvedSecretGatePolicy(protection: .noAccess,
+                    configuredProtection: match.policy.protection, source: shortAppName(match.launcher.identifier),
+                    launcher: match.launcher, runtimeProtectionFailure: match.launcher.runtimeProtection)
+            }
+        }
+        return ResolvedSecretGatePolicy(
+            protection: policy.protection, configuredProtection: policy.protection,
+            source: shortAppName(launcher.identifier), launcher: launcher, runtimeProtectionFailure: nil,
+            overriddenLaunchers: selectedIndex == baselineIndex ? [] :
+                ([baselineLauncher].compactMap { $0 } + matches.prefix(selected).map(\.launcher))
+                    .reduce(into: [LauncherIdentity]()) { result, candidate in
+                        if !result.contains(where: { $0.pid == candidate.pid }) { result.append(candidate) }
+                    }
+        )
+    }
+    let defaultCandidates = gate.isSSHAgentGate
+        ? Array(launchers.prefix(while: { $0.pid == launchers.first?.pid })) : launchers
+    guard let defaultLauncher = defaultCandidates.first(where: { !$0.isStandalone })
+        ?? defaultCandidates.first(where: { $0.runtimeProtection.allowsSecretGateAccess })
+        ?? defaultCandidates.first
     else { return nil }
     let runtimeProtectionFailure = !defaultLauncher.runtimeProtection.allowsSecretGateAccess
         ? defaultLauncher.runtimeProtection
@@ -10257,6 +10361,21 @@ private func resolveSecretGatePolicy(
         launcher: defaultLauncher,
         runtimeProtectionFailure: runtimeProtectionFailure
     )
+}
+
+private func descendantOverrideWarning(
+    policy: ResolvedSecretGatePolicy, gate: SecretGate, classification: SecretGateRequestClassification
+) -> String? {
+    guard policy.protection.allows(classification) else { return nil }
+    let restricted = policy.overriddenLaunchers.filter { launcher in
+        gate.appPolicies.contains {
+            $0.requirement == launcher.designatedRequirement && !$0.usesGateDefault
+                && !$0.protection.allows(classification)
+        }
+    }
+    guard !restricted.isEmpty else { return nil }
+    let names = restricted.map { shortAppName($0.identifier) }.joined(separator: ", ")
+    return "Descendant rule override: \(names) would require Approval for this operation."
 }
 
 private func launcherRuntimeProtectionApprovalExplanation(
@@ -14718,6 +14837,7 @@ private func automaticAccessToastAccessibilityLabel(
     compact: Bool
 ) -> String {
     "Dismiss \(record.wasDenied ? "rejection" : "approval") notification for \(automaticAccessToastCommand(record.displayCommand, compact: compact))"
+        + (record.policyWarning.map { ". " + $0 } ?? "")
 }
 
 private struct AutomaticAccessToastView: View {
@@ -14759,6 +14879,13 @@ private struct AutomaticAccessToastView: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(record.wasDenied ? .red : .green)
                     .accessibilityLabel(record.wasDenied ? "Rejected" : "Approved")
+            }
+
+            if let warning = record.policyWarning {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -17885,7 +18012,52 @@ private func runClaudeHelperRuntimeSelfCheck() -> Bool {
     return true
 }
 
+private func runDescendantOverrideSelfCheck() -> Bool {
+    func launcher(_ name: String, _ pid: pid_t, runtime: LauncherRuntimeProtection = .hardened) -> LauncherIdentity {
+        LauncherIdentity(pid: pid, path: "/fixture/" + name, identifier: name,
+            teamIdentifier: "TEST", designatedRequirement: name, runtimeProtection: runtime)
+    }
+    let child = launcher("child", 10), parent = launcher("parent", 20), terminal = launcher("terminal", 30)
+    func rule(_ name: String, _ access: SecretGateProtection, override: Bool = false,
+              inherited: Bool = false) -> SecretGatePolicy {
+        SecretGatePolicy(bundleIdentifier: name, requirement: name, protection: access,
+            runtimeRequirement: .hardened, usesGateDefault: inherited, overridesDescendantRules: override)
+    }
+    func gate(_ rules: [SecretGatePolicy]) -> SecretGate {
+        SecretGate(id: "gh", keyPatterns: [], routes: [], defaultProtection: .fullExceptSecretDumps, appPolicies: rules)
+    }
+    let ordinary = gate([rule("child", .readOnly), rule("parent", .fullExceptSecretDumps)])
+    let overridden = gate([rule("child", .readOnly), rule("parent", .fullExceptSecretDumps, override: true)])
+    let valid: (LauncherIdentity, LauncherIdentity) -> Bool = { $0.pid > $1.pid }
+    guard resolveSecretGatePolicy(gate: ordinary, launchers: [child, parent, terminal], verifiesOverride: valid)?.launcher?.pid == child.pid,
+          let selected = resolveSecretGatePolicy(gate: overridden, launchers: [child, parent, terminal], verifiesOverride: valid),
+          selected.launcher?.pid == parent.pid, selected.protection.allows(.mutating),
+          !selected.protection.allows(.unknown), selected.overriddenLaunchers.count == 1,
+          descendantOverrideWarning(policy: selected, gate: overridden, classification: .mutating) != nil,
+          descendantOverrideWarning(policy: selected, gate: overridden, classification: .readOnly) == nil,
+          resolveSecretGatePolicy(gate: overridden, launchers: [child, parent], verifiesOverride: { _, _ in false }) == nil,
+          resolveSecretGatePolicy(gate: overridden, launchers: [child, launcher("parent", 10)], verifiesOverride: valid)?.launcher?.pid == child.pid,
+          resolveSecretGatePolicy(gate: gate([rule("child", .readOnly), rule("parent", .fullExceptSecretDumps, override: true, inherited: true)]),
+              launchers: [child, parent], verifiesOverride: valid)?.launcher?.pid == child.pid,
+          resolveSecretGatePolicy(gate: gate(overridden.appPolicies + [rule("terminal", .noAccess, override: true)]),
+              launchers: [child, parent, terminal], verifiesOverride: valid)?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: overridden,
+              launchers: [launcher("child", 10, runtime: .hardenedRuntimeMissing), parent], verifiesOverride: valid)?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: overridden,
+              launchers: [child, launcher("parent", 20, runtime: .hardenedRuntimeMissing)], verifiesOverride: valid)?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: SecretGate(id: "ssh-agent", keyPatterns: ["SSH"], routes: [],
+              defaultProtection: .noAccess, appPolicies: [rule("parent", .fullExceptSecretDumps)]),
+              launchers: [child, parent], verifiesOverride: valid)?.protection == .noAccess,
+          resolveSecretGatePolicy(gate: SecretGate(id: "ssh-agent", keyPatterns: ["SSH"], routes: [],
+              defaultProtection: .noAccess, appPolicies: [rule("parent", .fullExceptSecretDumps, override: true)]),
+              launchers: [child, parent], verifiesOverride: valid)?.overriddenLaunchers.first?.pid == child.pid,
+          !verifiedLauncherOverrideAncestry(parent, child)
+    else { fputs("Descendant Launcher override resolution failed\n", stderr); return false }
+    return true
+}
+
 private func runStandaloneLauncherSelfCheck() -> Int32 {
+    guard runDescendantOverrideSelfCheck() else { return 1 }
     let codexVerifiedLauncherHelper = selfCheckCodexHelper()
     guard runClaudeHelperRuntimeSelfCheck() else { return 1 }
     guard runClaudeOutsideBundleDefaultSelfCheck() else {
@@ -19690,6 +19862,11 @@ private func runMenuStatusSelfCheck() -> Int32 {
           sensitiveRetrospectiveRecord.displayCommand.contains("<redacted>"),
           !sensitiveMenuTitle.contains(rawCredential),
           sensitiveMenuTitle.contains("<redacted>"),
+          automaticAccessToastAccessibilityLabel({
+              var warningRecord = sensitiveRetrospectiveRecord
+              warningRecord.policyWarning = "Descendant rule override: child would require Approval."
+              return warningRecord
+          }(), compact: true).contains("Descendant rule override: child would require Approval."),
           !automaticAccessToastAccessibilityLabel(
               sensitiveRetrospectiveRecord,
               compact: true

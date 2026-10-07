@@ -584,6 +584,23 @@ Unconstrained Secret Application for exact Secret Names in the matching
 Launcher’s Direct Access Rules. It does not turn unknown Tool operations into
 recognized operations and does not apply to Tool-specific Gate Clients.
 
+### Descendant Launcher rule overrides
+
+Launcher rules default to nearest explicit rule precedence. A per-rule
+`overridesDescendantRules` choice, absent or false for existing records, lets an
+ancestor take precedence only with verified live original-parent execution
+links to the nearer Launcher. The outermost eligible override wins; aliases of
+the same process do not override each other. Denial-only rows do not supply an
+explicit Access Level or an override. Retained provenance alone cannot prove
+this relationship. Runtime requirements on overridden explicit rules still
+apply, and all matching explicit Denial Thresholds remain vetoes.
+
+Both enabling and disabling require human Approval and compare the reviewed
+rule against current protected storage before saving. Other policy edits retain
+the choice. Authorization History records when an override permits an operation
+that a descendant's explicit rule would have sent to Approval. See
+[ADR 0065](adr/0065-descendant-launcher-rule-overrides.md).
+
 ### Denial precedence
 
 Default and Launcher-specific Denial Thresholds are stored alongside allow presets in the
@@ -594,7 +611,11 @@ order, including its existing compatibility classifications; they do not create
 a universal ranking of operation characteristics. Unknown only is a denial-only threshold (`unknownOnly`) for unclassified operations. Existing thresholds still include Unknown. Narrowing a broader denial to Unknown only requires Approval; the allow boundary cannot include Unknown.
 
 The default Denial Threshold applies only when no Launcher-specific record
-matches any attributed Launcher requirement. All matching explicit denials are
+matches any attributed Launcher requirement. SSH retains a narrower boundary:
+only records for the nearest Verified Launcher suppress its default Denial
+Threshold. An upper ancestor's override cannot suppress that default Deny; all
+attributed ancestors still participate in explicit denial vetoes.
+All matching explicit denials are
 checked first; one matching rule cannot bypass another matching denial. With no
 matching rule, missing or unverifiable attribution does not bypass the default
 denial. Default automic authorization requires an eligible Launcher runtime;

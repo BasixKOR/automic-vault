@@ -573,3 +573,11 @@
 "Spam Prevention Available" = "可启用重复请求防护";
 
 "Latest request" = "最近一次请求";
+
+/* Descendant Launcher rule overrides */
+"Override descendant Launcher rules" = "覆盖后代启动器规则";
+"Use this Launcher's rule when a Launcher it starts has its own rule at this Gate. Explicit Deny and runtime requirements still apply. Changing this setting requires Approval." = "当此启动器启动的另一个启动器在此授权关卡有自己的规则时，使用此启动器的规则。明确拒绝和运行时要求仍然适用。更改此设置需要批准。";
+"Override descendant Launcher rules: Off → On" = "覆盖后代启动器规则：关闭 → 开启";
+"Override descendant Launcher rules: On → Off" = "覆盖后代启动器规则：开启 → 关闭";
+"Expanding allow, reducing deny, or changing descendant overrides requires Approval." = "扩大允许范围、缩小拒绝范围或更改后代规则覆盖均需要批准。";
+"Apply each change separately. Expanding allow, reducing deny, or changing descendant overrides requires Approval. Unapplied changes remain pending." = "请分别应用每项更改。扩大允许范围、缩小拒绝范围或更改后代规则覆盖均需要批准。未应用的更改将继续保留。";
