@@ -20,11 +20,101 @@ Each gate offers the Access Levels that describe its operations:
 6. **Full Access:** Automic Vault may automically authorize recognized sensitive
    operations. Unknown operations still need Approval.
 
-The GPG Signing Gate offers **Approval Required** and **Allow Signing**. The
+The GPG Signing Gate offers **Approval Required**, **Allow Signing**, and **Deny**.
+Each SSH credential has its own gate with **Approval Required**,
+**Allow Authentication**, and **Deny**. Authentication can permit remote writes. The
 Direct Secret Gate defaults to **Approval Required** and offers explicit
 [Direct Access Rules](direct-secret-access.md) for exact Secret Names.
 See the canonical [Access Levels](domain-language.md#access-levels) for the full
 mapping; these presets are not a universal ladder shared by every gate.
+
+## Default Policy and denial
+
+Each gate's **Default Policy** combines its default Access Level with an optional
+Denial Threshold. Launcher-specific rules can set their own allow and deny
+boundaries. Operations above the allow level need Approval unless a denial
+applies. A Denial Threshold blocks its selected level and everything above it
+without offering Approval. **Unknown only**, where available, blocks unclassified
+operations without denying recognized ones.
+
+Explicit matching denials take precedence over allow rules, Blessings, Temporary
+Access Grants, and reused decisions. A denial-only Launcher row uses the default
+allow level but has its own denial. Adding a rule that weakens default denial,
+or weakening an existing denial, requires Approval.
+
+The default denial applies when no Launcher-specific record matches an attributed
+Launcher, even if no Launcher can be verified. SSH uses the nearest Verified
+Launcher for this check; an upper ancestor's rule cannot suppress default Deny.
+
+## Descendant Launcher rule overrides
+
+Normally, the nearest Verified Launcher with an explicit Access Level supplies
+policy. Intermediaries without an explicit Access Level do not displace that rule.
+For example, at the GitHub gate:
+
+```text
+Terminal (Write Access) → agent (Read Only) → gh issue create
+                         ^ agent rule: Approval required
+```
+
+To make a harness supply its rule for Launchers it starts:
+
+1. Open **Authorization Gates** and select the relevant gate.
+2. Add or select the harness's Verified Launcher rule and choose its Access Level.
+3. Enable **Override descendant Launcher rules** on that row.
+4. Choose **Review Changes** and approve the change.
+
+The choice applies to that Launcher at that gate only, and defaults off for new
+and existing rules. A denial-only row cannot supply an override. If several
+verified ancestors enable it, the outermost eligible override wins.
+
+| Harness rule with override enabled | Agent rule | GitHub write under Launcher policy |
+| --- | --- | --- |
+| Read Only | Write Access | Requires Approval |
+| Write Access | Read Only | Automic authorization, with an override warning |
+| Write Access | Deny | Denied |
+
+These examples assume valid live identities and runtime protections, a recognized
+write, and no other denial or independent authority source. An override replaces
+the selected Launcher Access Level; it is not a ceiling on all authority. Direct
+Access, Blessings, and Temporary Access Grants keep their own scope and rules.
+
+Automic Vault requires live original-parent execution evidence connecting the
+ancestor to the nearer Launcher. A helper alias for the same process or Retained
+Launcher Provenance alone cannot prove that relationship. Missing override
+evidence requires Approval instead of falling back to a potentially broader
+child rule. Runtime requirements on overridden explicit rules still apply, and
+all matching explicit denials remain vetoes. Unknown operations still require
+Approval unless denied.
+
+Both enabling and disabling require Approval. Removing an enabled override rule
+also requires Approval: removing a restrictive parent rule can expose a child's
+broader access. Launcher Bundle replacement or removal cannot silently clean up
+an enabled override; remove its rule through the gate's reviewed flow first.
+
+Authorization History and automic notifications warn when an override permits an
+operation that an overridden explicit rule would have sent to Approval. Check
+the decision source and warning when verifying your setup.
+
+SSH retains its nearest-Launcher boundary: without an explicit rule there, an
+ordinary ancestor rule does not supply fallback access. An approved ancestor
+override can supply an Access Level, but cannot suppress default Deny for a nearest
+Launcher with no explicit rule. Each SSH key's gate evaluates this separately.
+
+See [ADR 0065](adr/0065-descendant-launcher-rule-overrides.md) for the security
+invariants and [Signed CLI Launchers](signed-cli-launchers.md) for eligibility.
+
+## Temporary Launcher Denial
+
+After two Approval presentations for the same eligible Launcher and gate within
+thirty seconds, the Mac Deny menu and full iPhone app offer a two-minute denial
+at the requested operation level and above. You must select it; repeated prompts
+never activate it on their own. Unknown operations do not offer this action.
+
+The denial follows that Launcher at that gate, blocks new matching requests,
+and leaves already released Secrets untouched. End it from the Mac menu bar,
+let it expire, or restart the service to return to ordinary policy. Expiry does
+not approve a request. Use a durable Denial Threshold for a lasting rule.
 
 ## Approval While Locked
 
@@ -153,6 +243,14 @@ An optional setting collapses the strip after five seconds into a visible
 warning tab. The menu-bar shield stays orange, and the menu keeps each grant
 and its End action available.
 
+## Reviewing the execution chain
+
+The Approval window shows the available process path, code-signing status, and
+runtime posture, including observed ancestors above the selected Launcher.
+Those extra ancestors provide diagnostic context; their presence in the display
+does not grant authority. A signed interpreter does not authenticate the scripts,
+dependencies, or plug-ins it loads.
+
 ## Authorization History
 
 Automic Vault keeps local records of allowed and denied requests, including the
@@ -168,8 +266,9 @@ that phone observed and does not prove that a Mac accepted a response.
 
 The Mac stores separately encrypted records in one SQLite database in
 Application Support. The encryption key stays in the Data Protection Keychain.
-The rolling store makes up to 30 days or 25 MiB of encrypted record payloads
-available, whichever bound comes first. The dashboard browses all retained
+The rolling store makes up to 30 days of encrypted record payloads available,
+subject to a configurable 1–1024 MiB payload cap (25 MiB by default), whichever
+bound comes first. SQLite overhead is additional. The dashboard browses all retained
 records by day; `av history` shows the newest 50 by default. See the
 [canonical definition](domain-language.md#authorization-history).
 
@@ -195,6 +294,11 @@ Authorization History Access in Settings. This grant has its own setting row;
 Secret Name Access for `av list` does not grant history access, or vice versa.
 An unverifiable Launcher cannot use the automatic grant and needs Approval.
 The menu bar app filters records before returning them to `av`.
+
+On records with the required gate and Launcher metadata, **Configure Launcher…**
+opens the exact rule after reverifying the installed Launcher. If no rule exists,
+it opens the reviewed creation flow; opening it grants no authority. Older records
+may not offer this action.
 
 Migration leaves older Keychain and UserDefaults history in place to avoid
 deleting an older helper's concurrent write. Those pre-existing copies can

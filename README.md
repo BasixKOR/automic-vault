@@ -2,9 +2,10 @@
 
 [English](README.md) · [简体中文](README.zh-Hans.md)
 
-**CLI security is broken. The packaging layer is where we fix it.**
+**macOS protects your apps. We protect your command line.**
 
-I created Homebrew. Now I’m fixing what happens when agents use it.
+Since I created Homebrew, Apple has transformed Mac app security. I’m bringing
+that same care to the command line.
 
 — [Max Howell](https://mxcl.dev/)
 
@@ -126,6 +127,20 @@ receiving it.
 
 [Access Levels, Approval, and locked-device behavior](docs/authorization.md)
 
+### Descendant Launcher policies
+
+By default, the nearest Verified Launcher with an explicit Access Level supplies
+policy. Terminal's Write Access does not override an agent's Read Only rule.
+For a harness that should supply policy for the Launchers it starts, enable
+**Override descendant Launcher rules** on its rule at that gate, then review
+and approve the change. The outermost eligible override wins; explicit Deny and
+runtime requirements still apply.
+
+The option defaults off. Turning it off or removing an enabled rule also requires
+Approval, because doing so can expose broader access in a child rule.
+
+[Examples, setup, and SSH policy boundaries](docs/authorization.md#descendant-launcher-rule-overrides)
+
 ### Temporary Access Grants
 
 An eligible Codex task or Claude Code session can request **Allow Write Access
@@ -188,7 +203,8 @@ and needs Approval. The read itself appears in the returned history.
 
 History is local, stored as encrypted rows in one SQLite file with its key in
 the Data Protection Keychain. It is available for up to 30 days or 25 MiB of
-encrypted record payloads, whichever comes first. `--since` returns every retained
+encrypted record payloads by default, whichever comes first. Settings lets you
+choose a payload limit from 1–1024 MiB; SQLite overhead is additional. `--since` returns every retained
 record in the window. Terminal tables use a pager; `--no-pager`, `--json`, and
 redirected output bypass it. History is not tamper-proof or a
 complete forensic log.
@@ -403,18 +419,23 @@ The GPG Signing Gate authorizes private-key use while your normal Git commands
 keep working. You can select a separate signing credential for exact Verified
 Launchers so agents use a distinct signing identity.
 
-The gate offers **Approval Required** and **Allow Signing**. The signing
+The gate offers **Approval Required**, **Allow Signing**, and **Deny**. The signing
 Target handles the private key while creating the signature.
 
 [Configure Git signing](docs/securing-git.md#gate-gpg-commit-signing)
     
 ## SSH Agent
 
-Use our SSH-agent; not because you are exposed—that is easy to mitigate—but because
-agents and malware should not be able to `ssh` to any host your keys connect to without
-your consent.
+Give each SSH key its own Default Policy and Verified Launcher rules. You can
+allow an agent to authenticate with a GitHub key while requiring Approval for
+a separate homelab key. New keys start at **Approval Required**; the original
+key keeps its existing policy.
 
-With our ssh-agent allow specific apps to `ssh`; everything else gets a gate.
+SSH clients receive signatures, never the private key. **Allow Authentication**
+can permit remote writes. A key's name does not restrict destinations: any service
+accepting that key remains reachable with its authentication authority.
+
+[Configure the SSH agent and per-key policies](docs/securing-git.md#gate-ssh-authentication)
 
 &nbsp;
 

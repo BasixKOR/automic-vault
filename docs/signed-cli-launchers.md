@@ -22,8 +22,8 @@ new rule.
 Automic Vault continues to reject launchers that allow DYLD environment
 variables, disable executable-page protection, enable debugger attachment, or
 do not enable Hardened Runtime. Every request rechecks the live posture. A rule
-created for a strictly hardened Launcher does not silently expand if the
-Launcher later disables library validation.
+created for a strictly hardened Launcher retains that requirement, except for
+the reviewed built-in Claude Code association described below.
 
 Unsigned and arbitrary ad-hoc signed executables are rejected. Ad-hoc signing
 can protect one build from modification, but it does not establish a vendor or
@@ -62,7 +62,9 @@ Approval.
 
 Creating the same name again makes a new generation. The old enrollment and
 Launcher-specific rules are revoked and the old bundle is moved to Trash only
-after the replacement verifies and enrolls successfully.
+after the replacement verifies and enrolls successfully. If a rule has
+**Override descendant Launcher rules** enabled, remove it through the gate’s
+reviewed Approval flow first; bundle cleanup refuses to remove it unattended.
 
 ## Claude Desktop and Claude Code
 
@@ -74,14 +76,23 @@ installed executables with the exact Claude Code signing identity; it does not
 prove Desktop installed them. Disable **Allow outside the parent bundle** in
 Verified Launcher Helpers settings to retain containment, or disable the
 association to use separate Claude Code Launcher-specific rules.
-See [ADR 0062](adr/0062-claude-code-outside-parent-default.md).
+For Tool-specific Secret Gates and Execution Gates, the verified Claude Code
+association accepts disabled library validation even against an existing strict
+Claude.app rule. Third-party code loaded into the helper can exercise that
+rule's permissions. The helper review shows this warning and lets you opt out.
+This exception does not apply to Claude.app itself, standalone Claude Code rules,
+other helpers, Direct Access Rules, or Temporary Access Grants. All other runtime
+and identity checks still apply.
+
+See [ADR 0062](adr/0062-claude-code-outside-parent-default.md) and
+[ADR 0063](adr/0063-claude-helper-runtime-compatibility.md).
 
 ## Allow a CLI launcher
 
 1. Run `av doctor claude` or `av doctor codex` to inspect the corresponding
    executable selected by your current `PATH`.
-2. In Automic Vault Settings, add a launcher to the relevant tool or blessed
-   script policy.
+2. In **Authorization Gates**, add a Launcher to the relevant Tool’s policy;
+   for a script, use its **Blessed Scripts** policy.
 3. Select the resolved native executable, not a shell or package-manager shim.
    The picker starts in `/Applications`; press Command-Shift-G to enter another
    path directly. Version-numbered executables such as `2.1.226` are supported.
@@ -101,6 +112,10 @@ Approval.
 An Authorization Gate's default Access Level applies to every Verified Launcher
 without a matching launcher-specific rule, including eligible standalone
 executables. A launcher-specific rule takes precedence over the default.
+The nearest explicit Access Level normally supplies policy. An approved
+**Override descendant Launcher rules** setting lets an ancestor take precedence
+at that gate, subject to live original-parent evidence, runtime requirements,
+and all explicit denials. See the [precedence examples and SSH exception](authorization.md#descendant-launcher-rule-overrides).
 Standalone executables receive default access only while their live Developer ID
 identity and Hardened Runtime protections remain valid. New launcher-specific
 rules enforce the same eligibility; persisted older rules retain their recorded

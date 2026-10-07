@@ -1,6 +1,8 @@
 # Securing Git on macOS
 
-Use SSH transport with a passphrase-protected key stored in the macOS Keychain.
+Use SSH transport. Automic Vault’s optional SSH agent can keep private keys in
+Secret Custody and authorize each authentication signature. The Apple-agent
+setup below protects a key at rest but does not add Automic Vault authorization.
 
 > [!IMPORTANT]
 > If Git can fetch or push over HTTPS without prompting a human, some credential
@@ -35,6 +37,45 @@ the `gh` Secret Gate evaluates the request before applying the token.
 
 Use SSH.
 
+## Gate SSH Authentication
+
+Open **Settings → SSH Agent**, choose **Add SSH Key…**, and import an OpenSSH
+private key or generate an Ed25519 key. Register its public key with your Git
+host, enable the agent, and choose **Configure OpenSSH**. Settings supports up to
+32 named credentials, with each key's policy also available in **Authorization
+Gates**.
+
+Each key has its own Default Policy and Verified Launcher rules. New keys start
+at **Approval Required**. Set **Allow Authentication** for the exact Launcher
+that should use a key without prompting, or **Deny** to block it. The original
+credential keeps its existing policy. Renaming changes its label; replacing a
+key requires adding a fresh credential and reviewing fresh policy.
+
+For example, let your agent use a GitHub key while keeping a separate homelab
+key at Approval Required. Register different keys at those services: names do
+not enforce destination restrictions. Allow Authentication can permit remote
+writes, including Git pushes, and is not Read Only access.
+
+SSH clients receive signatures, never private keys. Each request binds the
+selected public-key digest to that credential's policy and requires the local
+socket peer's verified original Launcher ancestry. Missing or changed ancestry
+denies use. There is no fallback to another credential, decision reuse, Temporary
+Access Grant, or retained provenance at this gate.
+
+An explicit `ssh-agent: trusted` Blessed Script Capability applies only to the
+original credential, while the script remains in the client's verified ancestry.
+It does not grant access to new keys. Public-key enumeration needs no Secret Use;
+OpenSSH may try more than one key, and an Approval covers only the selected key.
+
+Importing does not remove old private-key files, Keychain passphrases, or keys in
+other agents. After verifying the protected route, remove those independent
+access paths yourself. Explicit `IdentityFile` settings may still select other
+keys. Shared or forwarded connections can carry other software's requests under
+the local client's Launcher attribution.
+
+See [per-credential SSH authority](adr/0064-per-credential-ssh-authority.md) and
+[descendant rule precedence](authorization.md#descendant-launcher-rule-overrides).
+
 ## Gate GPG Commit Signing
 
 Open **Settings → GPG Signing**:
@@ -56,7 +97,7 @@ complete signing request and the signed `av gpg-sign` Target creates the
 detached signature. Git and `av-gpg` never receive the private key or
 passphrase.
 
-The gate offers **Approval Required** and **Allow Signing**. To give agents a
+The gate offers **Approval Required**, **Allow Signing**, and **Deny**. To give agents a
 distinct signing identity, import or generate an alternate credential, upload
 its displayed public key, then add the exact Verified Launchers that should use
 it. Missing alternate credential material fails closed instead of falling back
