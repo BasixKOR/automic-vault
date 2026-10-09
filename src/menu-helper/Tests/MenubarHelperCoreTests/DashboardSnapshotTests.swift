@@ -296,6 +296,8 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
         {"kind":"hardening_not_applied","command":"aws","message":"not hardened","remediation":"Harden it.","stub_path":"/usr/local/bin/aws","target_path":"/opt/homebrew/bin/aws","resolved_path":null}
       ]},
       {"name":"gh","commands":["gh"],"issues":[
+        {"kind":"gh_git_adapter_not_first_on_path","message":"adapter unavailable on PATH","remediation":"Fix PATH."},
+        {"kind":"gh_git_configuration","message":"runtime needs repair","remediation":"Repair runtime."},
         {"kind":"isotope_not_first_on_path","command":"gh","message":"gh is not available through PATH","remediation":"Fix PATH.","stub_path":"/opt/homebrew/opt/gh-cli/bin/gh","target_path":"/opt/homebrew/opt/gh-cli/bin/gh","resolved_path":null}
       ]},
       {"name":"herdr Launcher Bundle","commands":["herdr"],"issues":[
@@ -313,7 +315,8 @@ printf '%s\n' '{"secret_gates":[{"id":"docker","key_patterns":["DOCKER_REGISTRY_
 
     let issues = try doctorIssues(from: data, loginShellPATHAvailable: false)
 
-    #expect(issues.map(\.kind) == ["hardening_not_applied"])
+    #expect(issues.map(\.kind) == ["hardening_not_applied", "gh_git_configuration"])
+    #expect(try doctorIssues(from: data).contains { $0.kind == "gh_git_adapter_not_first_on_path" })
 }
 
 @Test func JSONLoaderCanAcceptDoctorIssueExitStatus() throws {

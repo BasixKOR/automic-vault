@@ -76,7 +76,7 @@ fn verify_adapter() -> Result<(), String> {
     if fs::read(ADAPTER).map_err(|error| error.to_string())? != ADAPTER_SCRIPT.as_bytes() {
         return Err("the installed Git adapter is not Automic Vault's adapter".into());
     }
-    verify_adapter_resolution()
+    Ok(())
 }
 
 pub(crate) fn verify_adapter_resolution() -> Result<(), String> {
@@ -96,6 +96,11 @@ pub(crate) fn verify_adapter_resolution() -> Result<(), String> {
 }
 
 pub(crate) fn verify_transport(gh: &Path) -> Result<(), String> {
+    verify_transport_installation(gh)?;
+    verify_adapter_resolution()
+}
+
+pub(crate) fn verify_transport_installation(gh: &Path) -> Result<(), String> {
     verify_adapter()?;
     verify_runtime()?;
     let digest = crate::isotopes::hardeners::isotope::sha256_file;

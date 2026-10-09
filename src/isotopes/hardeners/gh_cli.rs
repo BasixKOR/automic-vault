@@ -112,10 +112,13 @@ pub(crate) fn run(
 pub(crate) fn detect() -> HardenerDetection {
     let mut detection = isotope::detect(isotope::GH);
     if detection.hardened {
-        match gh_hosts_paths().and_then(|paths| gh_git::diagnose(&paths[0])) {
+        match gh_hosts_paths()
+            .map_err(|message| ("gh_git_configuration", message))
+            .and_then(|paths| gh_git::diagnose(&paths[0]))
+        {
             Ok(()) => {}
-            Err(message) => detection.diagnostics.push(super::HardenerDiagnostic {
-                kind: "gh_git_configuration",
+            Err((kind, message)) => detection.diagnostics.push(super::HardenerDiagnostic {
+                kind,
                 message,
                 remediation: "Run `av harden gh` to repair protected Git transport setup, or `av harden gh --without-git-configuration` to manage Git configuration yourself.".into(),
                 path: None,

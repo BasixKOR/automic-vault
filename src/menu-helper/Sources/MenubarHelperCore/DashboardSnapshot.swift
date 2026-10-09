@@ -1156,6 +1156,7 @@ private func doctorIssues(
         $0.kind.hasSuffix("_command_shadowed") || [
             "agent_cli_signature_invalid",
             "agent_cli_unavailable",
+            "gh_git_adapter_not_first_on_path",
             "isotope_not_first_on_path",
             "launcher_bundle_not_first_on_path",
             "stub_not_first_on_path",

@@ -143,15 +143,22 @@ pub(super) fn apply(without_configuration: bool, hosts: &Path) -> Result<(), Str
     }
 }
 
-pub(super) fn diagnose(hosts: &Path) -> Result<(), String> {
+pub(super) fn diagnose(hosts: &Path) -> Result<(), (&'static str, String)> {
     if manual(hosts) {
         return Ok(());
     }
-    inspect_environment()?;
-    if !configuration(config())? {
-        return Err("GitHub HTTPS operations are not globally routed through Automic Vault".into());
-    }
-    crate::cli::git::verify_transport(&isotope::target(isotope::GH))
+    (|| {
+        inspect_environment()?;
+        if !configuration(config())? {
+            return Err(
+                "GitHub HTTPS operations are not globally routed through Automic Vault".into(),
+            );
+        }
+        crate::cli::git::verify_transport_installation(&isotope::target(isotope::GH))
+    })()
+    .map_err(|message| ("gh_git_configuration", message))?;
+    crate::cli::git::verify_adapter_resolution()
+        .map_err(|message| ("gh_git_adapter_not_first_on_path", message))
 }
 
 #[cfg(test)]
